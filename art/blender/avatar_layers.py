@@ -290,8 +290,33 @@ obj_sphere((0, -0.32, 1.16), (0.04, 0.035, 0.04), m=W_CLOTH)
 
 CUR[0] = 'dress_tutu'
 lathe([(0.2, 1.56), (0.3, 1.5), (0.33, 1.36), (0.35, 1.18), (0.36, 1.05)], W_CLOTH)
-lathe([(0.34, 1.06), (0.55, 1.0), (0.74, 0.9), (0.8, 0.84), (0.76, 0.82)], W_CLOTH, thick=0.03, sy=0.9)
-lathe([(0.34, 1.0), (0.52, 0.94), (0.7, 0.82), (0.74, 0.76), (0.7, 0.74)], W_CLOTH, thick=0.03, sy=0.9)
+def ruffle(r0, r1, z0, drop, waves, amp, m, sy=0.9, phase=0.0, thick=0.025):
+    """Wavy tulle layer: a cone-like skirt whose hem ripples up/down and in/out."""
+    me = bpy.data.meshes.new('ruffle'); bmr = bmesh.new()
+    N, S = 192, 10; grid = []
+    for j in range(S + 1):
+        t = j / S; row = []
+        for i in range(N):
+            th = 2 * math.pi * i / N
+            w = math.sin(waves * th + phase)
+            rr = r0 + (r1 - r0) * t + amp * 0.6 * t * t * math.cos(waves * th + phase)
+            zz = z0 - drop * t + amp * t * t * w
+            row.append(bmr.verts.new((rr * math.cos(th), rr * math.sin(th) * sy, zz)))
+        grid.append(row)
+    for j in range(S):
+        for i in range(N):
+            bmr.faces.new((grid[j][i], grid[j][(i + 1) % N], grid[j + 1][(i + 1) % N], grid[j + 1][i]))
+    bmr.to_mesh(me); bmr.free()
+    o = bpy.data.objects.new('ruffle', me); sc.collection.objects.link(o)
+    so = o.modifiers.new('so', 'SOLIDIFY'); so.thickness = thick
+    ss = o.modifiers.new('ss', 'SUBSURF'); ss.levels = 1; ss.render_levels = 2
+    o.data.materials.append(m)
+    for pf in me.polygons: pf.use_smooth = True
+    return put(o)
+
+ruffle(0.35, 0.84, 1.06, 0.2, 14, 0.06, W_CLOTH, phase=0.0)
+ruffle(0.35, 0.78, 1.02, 0.26, 14, 0.06, W_CLOTH, phase=math.pi / 14)
+ruffle(0.35, 0.7, 0.99, 0.3, 12, 0.05, W_CLOTH, phase=0.4)
 torus(0.36, 0.04, (0, 0, 1.06), W_CLOTH)
 for sx in (-1, 1): obj_curve([(sx * 0.18, -0.2, 1.5), (sx * 0.25, -0.05, 1.62), (sx * 0.24, 0.12, 1.5)], 0.03, m=W_CLOTH)
 star_mesh(0.09, 0.04, (0, -0.33, 1.3), (0, 0, 0), W_CLOTH, 0.04)

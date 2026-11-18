@@ -1,0 +1,57 @@
+name: Glimmie
+options:
+  bundleIdPrefix: com.glimmie
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Glimmie:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources/Art
+        buildPhase: resources
+      - path: App/Resources/Sounds
+        buildPhase: resources
+      - path: App/Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glimmie.closet
+        PRODUCT_NAME: Glimmie
+        TARGETED_DEVICE_FAMILY: "2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_PREVIEWS: YES
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Glimmie
+        UILaunchScreen: {}
+        UIViewControllerBasedStatusBarAppearance: false
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+schemes:
+  Glimmie:
+    build:
+      targets:
+        Glimmie: all
+    run:
+      config: Debug
+    archive:
+      config: Release
