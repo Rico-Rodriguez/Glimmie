@@ -1,6 +1,6 @@
 # Glimmie Closet
 
-Dress-up sticker game for iPad, made for a little girl who loves reusable
+Dress-up sticker game for iPad (also runs on iPhone in landscape), made for a little girl who loves reusable
 sticker books and cute magical pets.
 
 - **Status:** v1 Boutique app built (SwiftUI, iPad landscape). GitHub Actions builds an unsigned `Glimmie.ipa` to sideload.

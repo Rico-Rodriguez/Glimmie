@@ -143,7 +143,7 @@ struct BoutiqueView: View {
             .onPreferenceChange(FrameKey.self) { frames = $0 }
         }
         .fullScreenCover(isPresented: $showShelf) {
-            ShelfView { showShelf = false }.environmentObject(game)
+            DesignCanvas { ShelfView { showShelf = false } }.environmentObject(game)
         }
         .onAppear(perform: appear)
     }
