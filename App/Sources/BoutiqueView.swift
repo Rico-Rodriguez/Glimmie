@@ -146,12 +146,14 @@ struct BoutiqueView: View {
             .onPreferenceChange(FrameKey.self) { frames = $0 }
         }
         .fullScreenCover(isPresented: $showShelf) {
-            ShelfView { showShelf = false }.environmentObject(game)
+            DesignCanvas { ShelfView { showShelf = false } }.environmentObject(game)
         }
         .fullScreenCover(isPresented: $showHouse) {
-            HouseView {
-                showHouse = false
-                if wish == nil { scheduleWish(after: 3) }
+            DesignCanvas {
+                HouseView {
+                    showHouse = false
+                    if wish == nil { scheduleWish(after: 3) }
+                }
             }
             .environmentObject(game)
         }
