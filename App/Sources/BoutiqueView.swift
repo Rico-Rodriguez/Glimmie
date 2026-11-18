@@ -171,7 +171,7 @@ struct BoutiqueView: View {
                 wishView(wish)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, 100).padding(.leading, 20)
+                    .padding(.top, 90).padding(.leading, 10)
             }
         }
         .animation(.spring(response: 0.25, dampingFraction: 0.45), value: squish)
@@ -182,7 +182,7 @@ struct BoutiqueView: View {
     private func wishView(_ wish: Wish) -> some View {
         HStack(alignment: .top, spacing: 0) {
             GlimmieView(kind: wish.glimmie)
-                .frame(width: 140, height: 140)
+                .frame(width: 190, height: 190)
                 .scaleEffect(celebrating ? 1.15 : 1)
                 .rotationEffect(.degrees(celebrating ? -8 : 0))
                 .onTapGesture { Sound.shared.say(wish.sentence) }
@@ -198,10 +198,10 @@ struct BoutiqueView: View {
                                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                                 }
                             }
-                            .frame(width: 84, height: 84)
+                            .frame(width: 112, height: 112)
                             Image(systemName: met ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 30, weight: .bold))
-                                .foregroundColor(met ? Color(red: 0.3, green: 0.8, blue: 0.45) : Color.white)
+                                .font(.system(size: 34, weight: .bold))
+                                .foregroundColor(met ? Color(red: 0.3, green: 0.8, blue: 0.45) : Theme.ink.opacity(0.25))
                                 .background(Circle().fill(Color.white).padding(2))
                                 .scaleEffect(met ? 1.15 : 1)
                                 .animation(.spring(response: 0.3, dampingFraction: 0.4), value: met)
@@ -219,7 +219,7 @@ struct BoutiqueView: View {
             }
             .frameTag("wish")
             .onTapGesture { Sound.shared.say(wish.sentence) }
-            .offset(y: 10)
+            .offset(y: 30)
         }
     }
 

@@ -212,7 +212,7 @@ struct EggView: View {
     var body: some View {
         ZStack {
             EggShape()
-                .fill(LinearGradient(colors: [Color.white, Color(red: 1, green: 0.88, blue: 0.95), Color(red: 0.93, green: 0.8, blue: 1)],
+                .fill(LinearGradient(colors: [Color(red: 1, green: 0.95, blue: 0.98), Color(red: 1, green: 0.82, blue: 0.92), Color(red: 0.86, green: 0.74, blue: 1)],
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
                 .overlay(
                     // pastel spots and stars
@@ -227,8 +227,9 @@ struct EggView: View {
                     .clipShape(EggShape())
                 )
                 .overlay(
-                    EggShape().fill(LinearGradient(colors: [Color.white.opacity(0.9), .clear], startPoint: .topLeading, endPoint: .center))
-                        .scaleEffect(0.82).offset(x: -10, y: -14).blendMode(.screen)
+                    Ellipse().fill(Color.white.opacity(0.55))
+                        .frame(width: 46, height: 80).rotationEffect(.degrees(24))
+                        .offset(x: -48, y: -46).blur(radius: 4)
                 )
                 .shadow(color: Theme.ink.opacity(0.25), radius: 16, y: 10)
             CrackShape(amount: cracks)

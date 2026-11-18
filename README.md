@@ -16,3 +16,11 @@ SAMPLES=32 .bl/bin/python art/blender/avatar_layers.py -- art/renders ALL
 .bl/bin/python art/blender/glimmie_layers.py -- body && .bl/bin/python art/blender/glimmie_layers.py -- face
 python3 tools/process_art.py
 ```
+
+## Screenshots (iPad simulator)
+
+| Avatar maker | Boutique + wish | Magic egg |
+|---|---|---|
+| ![](docs/screenshots/1-avatar-maker.jpg) | ![](docs/screenshots/3-boutique-wish.jpg) | ![](docs/screenshots/4-egg.jpg) |
+
+Refresh them by running **Build iPad app** manually (Actions → Run workflow) with "Commit simulator screenshots" ticked.
