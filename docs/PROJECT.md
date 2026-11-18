@@ -142,6 +142,8 @@ App/Resources/Assets.xcassets     app icon (tools/make_icon.py)
 - To install: download the artifact → sideload with AltStore or Sideloadly (they sign it with your Apple ID; free accounts need re-signing every 7 days).
 
 ### 3.4 After v1
+The prioritized plan now lives in [ROADMAP.md](ROADMAP.md). The original list is kept below for reference.
+
 1. Play-test with her; tune whatever she loves or ignores.
 2. Art polish backlog (above) and more content: more dresses (tops/skirts, PJs, swimsuit), hairstyles, accessories, Glimmie accessories.
 3. Later modes (mocked up earlier, not built): town map hub, Glimmie House (pet care), Design Studio (paint your own dress → becomes a sticker), capsule machine, runway dance show, decorate my room, arcade mini-games (laundry sort, find the Glimmie, sewing, memory, bubbles), daily mailbox gift, Heart Kingdom story chapters.
