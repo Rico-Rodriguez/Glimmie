@@ -3,6 +3,7 @@
 Dress-up sticker game for iPad, made for a little girl who loves reusable
 sticker books and cute magical pets.
 
+- **Status:** art pipeline and all v1 art done; iPad app and .ipa build not started yet.
 - **Project notes, decisions and roadmap:** [docs/PROJECT.md](docs/PROJECT.md)
 - **Art pipeline (Blender):** `art/blender/` → `art/renders/` → `tools/process_art.py` → `App/Resources/Art/`
 
