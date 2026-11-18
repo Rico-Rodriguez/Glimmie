@@ -2,6 +2,8 @@
 
 _Written 2026-11-18 against main at `2e859b3` (release v1.0.17); file and line references point at that commit. It replaces the short "After v1" list in [PROJECT.md](PROJECT.md#34-after-v1). Since then, Glimmie House shipped as the second mode (PR #5), and a separate thread is reworking the models and adding outfits._
 
+_Update, later the same day: the save-data P0 and P1 shipped in PR #7, the art rework with 22 new items in PR #8, and [MODEL_UPGRADE.md](MODEL_UPGRADE.md) is the exact plan for better models, with a tested prototype._
+
 Sizes: **S** is about an hour of work and a quick review, **M** about half a day, **L** several days.
 
 ## In one minute
@@ -93,6 +95,8 @@ Afterwards, ask two open questions: "What was your favorite part?" and "What sho
 ## 1. v1.1 safety update (before session 2)
 
 Small, mostly invisible fixes that make every later update safe. They fit in one or two PRs and don't change how the game plays.
+
+**Done:** the P0 and P1 below shipped in PR #7 (`App/Sources/SaveData.swift`, with 14 tests that run in CI before every release).
 
 | Pri | Problem | Evidence | Fix | Size |
 |---|---|---|---|---|
@@ -222,6 +226,7 @@ The scripts in `art/blender/` are reproducible, which is a real strength: any se
 5. **Render in CI.** `bpy` installs from pip on Linux, a full render takes about 6 minutes on CPU, and Actions minutes are free on a public repo. A workflow that re-renders when `art/blender/**` changes and attaches the renders plus the art check sheet keeps art changes reviewable. M
 6. **Blender MCP, when it's available:** use it for interactive look development, then always land the result as script changes so the art stays reproducible.
 7. **Let her art-direct.** For faces and new outfits, render 2 or 3 variants and let her pick.
+8. **Better models.** [MODEL_UPGRADE.md](MODEL_UPGRADE.md) has the exact changes: render headroom, a gloss pass, ramp tinting, contact shadows and 2x layers first, then the face, hair, hands and clothes. A prototype of the first steps is in `art/blender/experiments/`, with before and after pictures. It builds on items 2, 3 and 5. L
 
 ---
 
@@ -244,7 +249,7 @@ The scripts in `art/blender/` are reproducible, which is a real strength: any se
 
 ## 7. Engineering hygiene
 
-- **Unit tests in CI** for the model: wish generation never creates an impossible or already-met wish, phrases read correctly ("an orange tutu"), secret looks match, and old saves load. Add a test target to `project.yml` and run `xcodebuild test` on the simulator the workflow already boots. M
+- **Unit tests in CI** for the model: wish generation never creates an impossible or already-met wish, phrases read correctly ("an orange tutu"), secret looks match, and old saves load. The test target and the CI job exist since PR #7 (save data), so the rest is new files in `Tests/`. S
 - **One controller for wishes, stars and eggs.** `BoutiqueView` sequences celebrations with nested `asyncAfter` timers (`BoutiqueView.swift:493-543`), which is where the timing bugs in section 1 come from. Move this into a small state machine with cancellable tasks the next time wishes change. M
 - **Future-proof the layout.** iPadOS 26 deprecated `UIRequiresFullScreen` (`project.yml:41`), so a later release may make every app resizable. The layout is built from fixed point sizes, so check it at smaller window sizes before that happens. M
 - **No haptics on iPad.** `tapHaptic()` (`Sound.swift:53-55`) does nothing on iPads, so all feedback has to come from sound and motion.
