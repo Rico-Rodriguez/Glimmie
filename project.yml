@@ -46,12 +46,34 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+  GlimmieTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: Glimmie
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.glimmie.closet.tests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Glimmie.app/Glimmie"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
 schemes:
   Glimmie:
     build:
       targets:
         Glimmie: all
+        GlimmieTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - GlimmieTests
     archive:
       config: Release

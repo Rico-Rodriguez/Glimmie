@@ -144,18 +144,7 @@ enum Glimmies {
 }
 
 // MARK: - Avatar + outfit
-
-struct Avatar: Codable, Equatable {
-    var skin = 1
-    var hairStyle = 1
-    var hairColor = 0
-    var eyes = 0
-}
-
-struct Worn: Codable, Equatable {
-    var item: String
-    var color: Int
-}
+// Avatar and Worn are saved, so they live in SaveData.swift with the rules for changing them.
 
 typealias Outfit = [Category: Worn]
 
@@ -214,7 +203,7 @@ struct Wish: Equatable {
     static func make(level: Int, glimmies: [Int], avoid outfit: Outfit) -> Wish {
         let count = level < 3 ? 1 : (level < 8 ? 2 : 3)
         let colorChance = level < 2 ? 0.0 : (level < 6 ? 0.4 : 0.7)
-        let glim = glimmies.randomElement() ?? 0
+        let glim = glimmies.filter { Glimmies.all.indices.contains($0) }.randomElement() ?? 0
         for _ in 0..<30 {
             let cats = Category.allCases.shuffled().prefix(count)
             var wants: [Want] = []
@@ -264,23 +253,11 @@ enum Secrets {
     ]
 }
 
-// MARK: - Save data
+// MARK: - Game state
 
-struct SaveData: Codable {
-    var madeAvatar = false
-    var avatar = Avatar()
-    var outfit: [String: Worn] = ["dress": Worn(item: "dress_aline", color: 0),
-                                  "shoes": Worn(item: "shoes_mary", color: 1)]
-    var stars = 0
-    var wishesDone = 0
-    var owned: [Int] = [0]
-    var secrets: [String] = []
-    var eggWaiting = false
-}
-
+/// The live game. Saved through SaveStore (SaveData.swift) on every change.
 final class GameState: ObservableObject {
     static let jarSize = 5
-    private static let key = "glimmie.save.v1"
 
     @Published var avatar: Avatar { didSet { save() } }
     @Published var outfit: Outfit { didSet { save() } }
@@ -292,13 +269,17 @@ final class GameState: ObservableObject {
     @Published var eggWaiting: Bool { didSet { save() } }
 
     private var loading = true
+    private let store: SaveStore
+    /// The save version written back; never lower than the one loaded.
+    private var version = SaveData.currentVersion
+    /// Glimmie kinds that only a newer build knows: kept in the save, hidden here.
+    private var futureOwned: [Int] = []
 
-    init() {
-        var d = SaveData()
+    init(defaults: UserDefaults = .standard) {
+        store = SaveStore(defaults: defaults)
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-resetSave") { UserDefaults.standard.removeObject(forKey: Self.key) }
-        if let data = UserDefaults.standard.data(forKey: Self.key),
-           let saved = try? JSONDecoder().decode(SaveData.self, from: data) { d = saved }
+        if args.contains("-resetSave") { defaults.removeObject(forKey: SaveStore.key) }
+        var d = store.load()
         if args.contains("-demoBoutique") {
             d.madeAvatar = true
             d.avatar = Avatar(skin: 1, hairStyle: 1, hairColor: 0, eyes: 0)
@@ -310,36 +291,74 @@ final class GameState: ObservableObject {
             d.madeAvatar = true
             d.eggWaiting = true
         }
+        version = max(d.version, SaveData.currentVersion)
+        futureOwned = d.owned.filter { $0 >= Glimmies.all.count }
+        d = Self.sanitized(d)
         avatar = d.avatar
         madeAvatar = d.madeAvatar
         stars = d.stars
         wishesDone = d.wishesDone
-        owned = d.owned.isEmpty ? [0] : d.owned
+        owned = d.owned
         secrets = d.secrets
         eggWaiting = d.eggWaiting
-        var o: Outfit = [:]
-        for (k, v) in d.outfit { if let c = Category(rawValue: k), Catalog.item(v.item) != nil { o[c] = v } }
-        outfit = o
+        outfit = Self.outfit(from: d.outfit)
         loading = false
     }
 
     func save() {
         guard !loading else { return }
         var d = SaveData()
+        d.version = version
         d.madeAvatar = madeAvatar; d.avatar = avatar; d.stars = stars; d.wishesDone = wishesDone
-        d.owned = owned; d.secrets = secrets; d.eggWaiting = eggWaiting
+        d.owned = owned + futureOwned.filter { !owned.contains($0) }
+        d.secrets = secrets; d.eggWaiting = eggWaiting
         d.outfit = Dictionary(uniqueKeysWithValues: outfit.map { ($0.key.rawValue, $0.value) })
-        if let data = try? JSONEncoder().encode(d) { UserDefaults.standard.set(data, forKey: Self.key) }
+        store.save(d)
     }
 
     var nextGlimmie: Int? { Glimmies.all.map(\.id).first { !owned.contains($0) } }
 
+    /// Starts over. The old save is kept under a backup key in case it was an accident.
     func resetAll() {
+        store.reset()
         let d = SaveData()
         loading = true
-        avatar = d.avatar; madeAvatar = false; stars = 0; wishesDone = 0; owned = [0]; secrets = []; eggWaiting = false
-        outfit = [.dress: Worn(item: "dress_aline", color: 0), .shoes: Worn(item: "shoes_mary", color: 1)]
+        version = SaveData.currentVersion
+        futureOwned = []
+        avatar = d.avatar; madeAvatar = d.madeAvatar; stars = d.stars; wishesDone = d.wishesDone
+        owned = d.owned; secrets = d.secrets; eggWaiting = d.eggWaiting
+        outfit = Self.outfit(from: d.outfit)
         loading = false
         save()
+    }
+
+    /// Makes any loaded save safe to show: indices in range, items in their own slot,
+    /// and a full star jar becomes the egg (the app was closed right after the 5th star).
+    static func sanitized(_ save: SaveData) -> SaveData {
+        var s = save
+        func clamp(_ v: Int, _ count: Int) -> Int { min(max(v, 0), count - 1) }
+        s.avatar.skin = clamp(s.avatar.skin, Palette.skin.count)
+        s.avatar.hairStyle = clamp(s.avatar.hairStyle, Catalog.hairStyles.count)
+        s.avatar.hairColor = clamp(s.avatar.hairColor, Palette.hair.count)
+        s.avatar.eyes = clamp(s.avatar.eyes, Palette.eyes.count)
+        var outfit: [String: Worn] = [:]
+        for (slot, w) in s.outfit {
+            guard let c = Category(rawValue: slot), let it = Catalog.item(w.item), it.category == c else { continue }
+            outfit[slot] = Worn(item: it.id, color: clamp(w.color, Palette.clothes.count))
+        }
+        s.outfit = outfit
+        s.stars = max(0, s.stars)
+        s.wishesDone = max(0, s.wishesDone)
+        if s.stars >= jarSize { s.stars = 0; s.eggWaiting = true }
+        var seen = Set<Int>()
+        s.owned = s.owned.filter { Glimmies.all.indices.contains($0) && seen.insert($0).inserted }
+        if s.owned.isEmpty { s.owned = [0] }
+        return s
+    }
+
+    static func outfit(from saved: [String: Worn]) -> Outfit {
+        var o: Outfit = [:]
+        for (k, v) in saved { if let c = Category(rawValue: k) { o[c] = v } }
+        return o
     }
 }
