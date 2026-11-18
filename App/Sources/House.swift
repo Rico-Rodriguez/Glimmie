@@ -10,15 +10,14 @@ struct Food: Identifiable {
     let loves: String   // spoken, e.g. "I love strawberries!"
 }
 
-/// Something a Glimmie can wear. Positions are fractions of the square Glimmie canvas.
+/// Something a Glimmie can wear: a full-canvas layer on the Glimmie camera (stacks after L_glim_face).
+/// `x`/`y` (fractions of the Glimmie square) are where a tapped sticker flies to.
 struct PetAccessory: Identifiable {
-    let id: String
-    let name: String
-    let art: String?    // icon art name (I_/B_ prefix added); nil = drawn sunglasses
-    let width: CGFloat
+    let id: String      // saved in PetCare.wearing
+    let name: String    // spoken
+    let layer: String   // art name; L_/I_/B_ prefixes are added
     let x: CGFloat
     let y: CGFloat
-    let tinted: Bool
 }
 
 enum CareMode: String, CaseIterable, Identifiable {
@@ -83,19 +82,15 @@ enum HouseCatalog {
         Food(id: "watermelon", emoji: "🍉", name: "watermelon", loves: "Juicy watermelon!"),
     ]
     static let accessories: [PetAccessory] = [
-        PetAccessory(id: "crown", name: "crown", art: "hat_crown", width: 0.34, x: 0.5, y: 0.25, tinted: false),
-        PetAccessory(id: "flowers", name: "flower crown", art: "hat_flowers", width: 0.52, x: 0.5, y: 0.31, tinted: false),
-        PetAccessory(id: "bow", name: "bow", art: "hat_bow", width: 0.27, x: 0.66, y: 0.31, tinted: true),
-        PetAccessory(id: "stars", name: "star clips", art: "hat_star", width: 0.46, x: 0.5, y: 0.33, tinted: false),
-        PetAccessory(id: "glasses", name: "sunglasses", art: nil, width: 0.44, x: 0.5, y: 0.535, tinted: false),
+        PetAccessory(id: "bow", name: "bow", layer: "glim_acc_bow", x: 0.68, y: 0.36),
+        PetAccessory(id: "crown", name: "crown", layer: "glim_acc_crown", x: 0.42, y: 0.27),
+        PetAccessory(id: "flowers", name: "flower", layer: "glim_acc_flower", x: 0.33, y: 0.34),
+        PetAccessory(id: "partyhat", name: "party hat", layer: "glim_acc_partyhat", x: 0.41, y: 0.25),
+        PetAccessory(id: "glasses", name: "heart glasses", layer: "glim_acc_glasses", x: 0.5, y: 0.55),
     ]
     static func food(_ id: String) -> Food? { foods.first { $0.id == id } }
     static func accessory(_ id: String) -> PetAccessory? { accessories.first { $0.id == id } }
 
-    /// Bow color that stands out on each Glimmie.
-    static func bowColor(for kind: Int) -> Color {
-        kind == 0 || kind == 6 ? Palette.clothes[6].color : Palette.clothes[0].color
-    }
 }
 
 // MARK: - Care state
