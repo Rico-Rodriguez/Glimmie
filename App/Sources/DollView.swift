@@ -24,7 +24,8 @@ enum Art {
         DispatchQueue.global(qos: .userInitiated).async {
             var loaded: [String: UIImage] = [:]
             let names = ["skin", "under", "eyes", "eyeshine", "happy", "face", "glim_body", "glim_face"]
-                + Catalog.hairStyles + Catalog.items.map(\.id)
+                + Catalog.hairStyles + Catalog.hairStyles.map { $0 + "_shine" } + Catalog.items.map(\.id)
+                + GlimmieAccessories.all.map(\.id)
             for n in names {
                 for prefix in ["L_", "I_", "B_"] {
                     let key = prefix + n
@@ -77,7 +78,9 @@ struct DollView: View {
             Layer(name: "face")
             if let w = worn(.shoes) { Layer(name: w.0, tint: w.1) }
             if let w = worn(.dress) { Layer(name: w.0, tint: w.1) }
-            Layer(name: Catalog.hairStyles[avatar.hairStyle], tint: Palette.hair[avatar.hairColor].color)
+            let hair = Catalog.hairStyles[min(max(avatar.hairStyle, 0), Catalog.hairStyles.count - 1)]
+            Layer(name: hair, tint: Palette.hair[avatar.hairColor].color)
+            Layer(name: hair + "_shine")
             if let w = worn(.hat) { Layer(name: w.0, tint: w.1) }
             if let w = worn(.hold) { Layer(name: w.0, tint: w.1) }
         }

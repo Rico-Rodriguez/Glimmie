@@ -1,5 +1,5 @@
 import bpy, math, sys
-from mathutils import Vector
+from mathutils import Vector, Matrix
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -85,6 +85,73 @@ for x, r in ((-1.0, 28), (1.0, -28)):
     w.rotation_euler = (0, math.radians(r), math.radians(-18 if x < 0 else 18))
 sphere('tail', (0.8, 0.5, 0.55), (0.17, 0.17, 0.17), BODY)
 
+
+# ---------------- accessories (each its own layer, same camera; LAYER = 'acc_<name>') ----------------
+import bmesh
+ACC = {}
+def acc(name, o):
+    ACC.setdefault(name, []).append(o); return o
+GOLD = mat('gold', srgb('#FFD36B'), 0.28); GOLD.node_tree.nodes['Principled BSDF'].inputs['Metallic'].default_value = 0.9
+PINK = mat('accpink', srgb('#FF7FB8'), 0.4, coat=0.5)
+GEM = mat('gem', srgb('#59B8FF'), 0.05, coat=1.0)
+PET = mat('petal', srgb('#FFB3D6'), 0.5); MID = mat('mid', srgb('#FFE07A'), 0.5)
+STRIPE_A = mat('sa', srgb('#8FD3FF'), 0.45, coat=0.4); STRIPE_B = mat('sb', srgb('#FFFFFF'), 0.45, coat=0.4)
+GLASS = mat('glass', srgb('#FF5FA2'), 0.2, coat=0.8); LENS = mat('lens', srgb('#FFD1E6'), 0.1, emit=0.2)
+LENS.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.45
+# bow on the right ear
+for sx in (-1, 1):
+    o = sphere('accbow', (0.62 + sx * 0.15, -0.28, 1.6 + 0.02), (0.16, 0.07, 0.11), PINK); o.rotation_euler = (0, math.radians(-sx * 25), 0); acc('bow', o)
+acc('bow', sphere('accknot', (0.62, -0.33, 1.6), (0.06, 0.05, 0.06), PINK))
+# little crown, tilted on the left of the head
+bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=0.22, depth=0.12, location=(-0.32, -0.05, 1.86), rotation=(0, math.radians(-18), 0))
+cr = bpy.context.object; cr.data.materials.append(GOLD); acc('crown', cr)
+for i in range(5):
+    a = math.radians(-90 + (i - 2) * 36); x0, y0 = 0.22 * math.cos(a), -0.05 + 0.22 * math.sin(a)
+    bpy.ops.mesh.primitive_cone_add(vertices=16, radius1=0.06, radius2=0.0, depth=0.16, location=(-0.32 + x0, y0, 1.98))
+    c = bpy.context.object; c.data.materials.append(GOLD); bpy.ops.object.shade_smooth(); acc('crown', c)
+acc('crown', sphere('accgem', (-0.32, -0.28, 1.87), (0.045, 0.025, 0.045), GEM, 24))
+for o in ACC['crown']:
+    o.location = Vector((-0.32, -0.05, 1.86)) + (Matrix.Rotation(math.radians(18), 3, 'Y') @ (o.location - Vector((-0.32, -0.05, 1.86))))
+    if o.name.startswith('Cone'): o.rotation_euler = (0, math.radians(18), 0)
+# flower on the left ear
+for p in range(5):
+    pa = 2 * math.pi * p / 5
+    acc('flower', sphere('accpet', (-0.6 + 0.1 * math.cos(pa), -0.3, 1.74 + 0.1 * math.sin(pa)), (0.08, 0.04, 0.08), PET, 24))
+acc('flower', sphere('accmid', (-0.6, -0.34, 1.74), (0.05, 0.03, 0.05), MID, 24))
+# striped party hat, tilted left
+for k in range(4):
+    z0 = k * 0.1
+    bpy.ops.mesh.primitive_cone_add(vertices=32, radius1=0.24 - k * 0.06, radius2=0.24 - (k + 1) * 0.06 + 0.001, depth=0.1, location=(0, 0, z0 + 0.05))
+    c = bpy.context.object; c.data.materials.append(STRIPE_A if k % 2 == 0 else STRIPE_B); bpy.ops.object.shade_smooth(); acc('partyhat', c)
+acc('partyhat', sphere('pom', (0, 0, 0.42), (0.06, 0.06, 0.06), PINK, 24))
+for o in ACC['partyhat']:
+    M = Matrix.Translation((-0.3, -0.02, 1.78)) @ Matrix.Rotation(math.radians(-20), 4, 'Y')
+    o.matrix_world = M @ o.matrix_world
+# heart glasses over the eyes
+def heart(sz, loc, m, name):
+    me = bpy.data.meshes.new(name); bmx = bmesh.new(); vs = []
+    for i in range(36):
+        t = 2 * math.pi * i / 36
+        x = 16 * math.sin(t) ** 3; z = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+        vs.append(bmx.verts.new((x * sz / 16, 0, z * sz / 16)))
+    bmx.faces.new(vs); bmx.to_mesh(me); bmx.free()
+    o = bpy.data.objects.new(name, me); bpy.context.collection.objects.link(o); o.location = loc
+    so = o.modifiers.new('so', 'SOLIDIFY'); so.thickness = 0.03; so.offset = 0
+    o.data.materials.append(m); return o
+for x in (-0.34, 0.34):
+    y = front(x, 1.12) - 0.09
+    acc('glasses', heart(0.2, (x, y, 1.13), LENS, 'lens'))
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.19, minor_radius=0.025, location=(x, y - 0.01, 1.12), rotation=(math.radians(90), 0, 0))
+    r = bpy.context.object; r.scale = (1, 1, 0.95); r.data.materials.append(GLASS); bpy.ops.object.shade_smooth(); acc('glasses', r)
+bpy.ops.mesh.primitive_cylinder_add(vertices=16, radius=0.02, depth=0.3, location=(0, front(0, 1.14) - 0.1, 1.16), rotation=(0, math.radians(90), 0))
+br = bpy.context.object; br.data.materials.append(GLASS); acc('glasses', br)
+# grow each accessory about its anchor so it reads at sticker size
+for name, (anchor, k, lift) in {'bow': ((0.55, -0.3, 1.62), 1.9, (-0.05, -0.05, 0.08)), 'crown': ((-0.32, -0.05, 1.86), 1.7, (0.0, 0.0, 0.06)),
+                                'flower': ((-0.6, -0.3, 1.74), 1.8, (0, -0.04, 0)), 'partyhat': ((-0.3, -0.02, 1.78), 1.7, (-0.05, 0, 0.0))}.items():
+    M = Matrix.Translation(Vector(anchor) + Vector(lift)) @ Matrix.Scale(k, 4) @ Matrix.Translation(-Vector(anchor))
+    for o in ACC[name]: o.matrix_world = M @ o.matrix_world
+ACC_OBJS = {o.name for v in ACC.values() for o in v}
+
 FACE_MATS = {'belly','eye','white','blush','star','wing','mouth'}
 # ground + backdrop
 # lights
@@ -114,6 +181,12 @@ def matname(o):
     return o.data.materials[0].name if (o.type in ('MESH','CURVE') and o.data.materials) else ''
 for o in bpy.data.objects:
     if o.type not in ('MESH','CURVE'): continue
+    if LAYER.startswith('acc_'):   # accessory alone; the Glimmie itself is a holdout so it tucks behind ears etc.
+        mine = o.name in {x.name for x in ACC[LAYER[4:]]}
+        o.hide_render = (o.name in ACC_OBJS and not mine) or matname(o) == 'wing'
+        o.is_holdout = not mine
+        continue
+    if o.name in ACC_OBJS: o.hide_render = True; continue
     isface = matname(o) in FACE_MATS
     if LAYER == 'body':
         o.hide_render = False; o.is_holdout = isface and matname(o) in ('belly','eye','white','blush','mouth','star')

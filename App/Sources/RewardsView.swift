@@ -173,7 +173,8 @@ struct ShelfView: View {
                     }
                 }
 
-                // Secret looks
+                // Secret looks (scrolls sideways once there are more than fit)
+                ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 26) {
                     ForEach(Secrets.all) { s in
                         let has = game.secrets.contains(s.id)
@@ -197,6 +198,8 @@ struct ShelfView: View {
                             if has { Sound.shared.say(s.name) } else { Sound.shared.say("A secret look! Can you find it?") }
                         }
                     }
+                }
+                .padding(.horizontal, 30).padding(.vertical, 12)
                 }
                 Spacer(minLength: 0)
             }
