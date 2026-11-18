@@ -21,7 +21,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -50,13 +50,13 @@ jobs:
           zip -qry Glimmie.ipa Payload
           ls -lh Glimmie.ipa
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Glimmie-ipa
           path: Glimmie.ipa
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: build-log
@@ -69,7 +69,7 @@ jobs:
       contents: write
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: brew install xcodegen && xcodegen generate
       - name: Build for simulator
         run: |
@@ -99,7 +99,7 @@ jobs:
           xcrun simctl launch "$UDID" com.glimmie.closet -demoEgg
           sleep 6
           xcrun simctl io "$UDID" screenshot shots/4-egg.png
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: screenshots
