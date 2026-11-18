@@ -5,7 +5,7 @@
   "description": "Builds of Glimmie Closet, a dress-up sticker game for iPad.",
   "iconURL": "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "website": "https://github.com/Rico-Rodriguez/Glimmie",
-  "tintColor": "#FF8FC4",
+  "tintColor": "FF8FC4",
   "apps": [
     {
       "name": "Glimmie",
@@ -14,8 +14,7 @@
       "subtitle": "Dress-up sticker game",
       "localizedDescription": "Design your own girl, drag stickers to dress her up, grant Glimmie wishes, fill the star jar and hatch magic eggs.",
       "iconURL": "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
-      "tintColor": "#FF8FC4",
-      "category": "games",
+      "tintColor": "FF8FC4",
       "screenshotURLs": [
         "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/1-avatar-maker.jpg",
         "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/3-boutique-wish.jpg",
@@ -24,22 +23,16 @@
       "versions": [
         {
           "version": "1.0.17",
-          "buildVersion": "17",
-          "date": "2026-11-18T15:06:37Z",
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.17/Glimmie.ipa",
+          "date": "2026-11-18T15:11:08Z",
           "size": 3681098,
-          "localizedDescription": "Build 17",
-          "minOSVersion": "16.0"
+          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.17/Glimmie.ipa"
         }
       ],
       "version": "1.0.17",
-      "versionDate": "2026-11-18T15:06:37Z",
+      "versionDate": "2026-11-18T15:11:08Z",
       "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.17/Glimmie.ipa",
       "size": 3681098,
-      "appPermissions": {
-        "entitlements": [],
-        "privacy": {}
-      }
+      "appPermissions": {}
     }
   ],
   "news": []

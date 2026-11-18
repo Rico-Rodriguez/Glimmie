@@ -13,9 +13,10 @@ if os.path.exists('source.json'):
         old = json.load(open('source.json'))['apps'][0].get('versions', [])
     except Exception:
         old = []
-entry = {"version": version, "buildVersion": build, "date": date, "downloadURL": url, "size": size,
-         "localizedDescription": f"Build {build}", "minOSVersion": "16.0"}
-versions = [entry] + [v for v in old if v.get('version') != version][:9]
+# Keep each version to the fields Feather's own sample source uses (claration/feather app-repo.json).
+entry = {"version": version, "date": date, "size": size, "downloadURL": url}
+keep = ("version", "date", "size", "downloadURL")
+versions = [entry] + [{k: v[k] for k in keep if k in v} for v in old if v.get('version') != version][:9]
 
 source = {
     "name": "Glimmie",
@@ -24,7 +25,7 @@ source = {
     "description": "Builds of Glimmie Closet, a dress-up sticker game for iPad.",
     "iconURL": f"{RAW}/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
     "website": f"https://github.com/{REPO}",
-    "tintColor": "#FF8FC4",
+    "tintColor": "FF8FC4",
     "apps": [{
         "name": "Glimmie",
         "bundleIdentifier": "com.glimmie.closet",
@@ -32,13 +33,13 @@ source = {
         "subtitle": "Dress-up sticker game",
         "localizedDescription": "Design your own girl, drag stickers to dress her up, grant Glimmie wishes, fill the star jar and hatch magic eggs.",
         "iconURL": f"{RAW}/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
-        "tintColor": "#FF8FC4",
-        "category": "games",
+        "tintColor": "FF8FC4",
         "screenshotURLs": [f"{RAW}/docs/screenshots/{n}.jpg" for n in ("1-avatar-maker", "3-boutique-wish", "4-egg")],
         "versions": versions,
         # legacy single-version fields, still read by some clients
         "version": version, "versionDate": date, "downloadURL": url, "size": size,
-        "appPermissions": {"entitlements": [], "privacy": {}},
+        # Older Feather builds fail on "privacy": {} (they expect an array), so leave it empty like Feather's sample.
+        "appPermissions": {},
     }],
     "news": [],
 }
