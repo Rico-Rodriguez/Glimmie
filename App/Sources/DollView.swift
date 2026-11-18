@@ -177,6 +177,9 @@ struct DollView: View {
 
     @State private var blinking = false
 
+    /// Held items hugged in front of the hand rather than gripped by a handle.
+    static let notGripped: Set<String> = ["hold_teddy"]
+
     private func worn(_ c: Category) -> (String, Swatch?)? {
         guard let w = outfit[c], let it = Catalog.item(w.item) else { return nil }
         return (it.id, it.tintable ? Palette.clothes[min(max(w.color, 0), Palette.clothes.count - 1)] : nil)
@@ -209,6 +212,10 @@ struct DollView: View {
             Layer(name: hair + "_shine")
             item(.hat)
             item(.hold)
+            if let w = outfit[.hold], !Self.notGripped.contains(w.item) {
+                // the right hand's fingers closed round the held item's handle
+                Layer(name: "handgrip", swatch: Palette.skin[min(max(avatar.skin, 0), Palette.skin.count - 1)], gloss: Gloss.skin)
+            }
         }
         .compositingGroup()   // shadows multiply and gloss screens only onto the doll, never the background
         .aspectRatio(0.8, contentMode: .fit)

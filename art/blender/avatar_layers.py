@@ -81,13 +81,27 @@ def fuse(objs, m, voxel, smooth_iters=10, name='fused'):
     bpy.ops.object.shade_smooth()
     return put(o)
 
-def lathe(prof, m, thick=0.03, sy=0.86):
-    me = bpy.data.meshes.new('lathe'); bm = bmesh.new()
-    vs = [bm.verts.new((r, 0, z)) for r, z in prof]
-    for i in range(len(vs) - 1): bm.edges.new((vs[i], vs[i + 1]))
+def fold_r(r, z, th, folds):
+    """Radius of a folded skirt at height z and angle th. folds = (N, depth, z_waist, z_hem, phase):
+    waves grow with t^2 from the waist (t=0) to the hem (t=1), plus 24 small gathers just under the waist."""
+    if not folds: return r
+    N, d, zw, zh, ph = folds
+    t = max(0.0, min(1.0, (zw - z) / (zw - zh)))
+    g = 0.018 * math.sin(24 * th) * max(0.0, 1 - t / 0.18) if t > 0 else 0.0
+    return r * (1 + d * t * t * math.sin(N * th + ph) + g)
+
+def lathe(prof, m, thick=0.03, sy=0.86, folds=None, steps=96):
+    """Surface of revolution from a (radius, z) profile; `folds` adds hem folds and waist gathers."""
+    me = bpy.data.meshes.new('lathe'); bm = bmesh.new(); rows = []
+    for r, z in prof:
+        rows.append([bm.verts.new((fold_r(r, z, 2 * math.pi * i / steps, folds) * math.cos(2 * math.pi * i / steps),
+                                   fold_r(r, z, 2 * math.pi * i / steps, folds) * math.sin(2 * math.pi * i / steps), z))
+                     for i in range(steps)])
+    for j in range(len(rows) - 1):
+        for i in range(steps):
+            bm.faces.new((rows[j][i], rows[j][(i + 1) % steps], rows[j + 1][(i + 1) % steps], rows[j + 1][i]))
     bm.to_mesh(me); bm.free()
     o = bpy.data.objects.new('lathe', me); sc.collection.objects.link(o)
-    s = o.modifiers.new('sc', 'SCREW'); s.steps = 80; s.render_steps = 80
     so = o.modifiers.new('so', 'SOLIDIFY'); so.thickness = thick
     ss = o.modifiers.new('ss', 'SUBSURF'); ss.levels = 2; ss.render_levels = 2
     o.scale = (1, sy, 1); o.data.materials.append(m)
@@ -97,6 +111,16 @@ def lathe(prof, m, thick=0.03, sy=0.86):
 def torus(R, r, loc, m, sy=0.86, rot=(0, 0, 0)):
     bpy.ops.mesh.primitive_torus_add(major_radius=R, minor_radius=r, location=loc, rotation=rot, major_segments=64, minor_segments=16)
     t = bpy.context.object; t.scale = (1, sy, 1); t.data.materials.append(m); bpy.ops.object.shade_smooth(); return put(t)
+
+def hem_trim(R, r, z, m, folds, sy=0.86, n=96):
+    """A trim that follows a folded hem (instead of a perfect torus)."""
+    bpy.ops.curve.primitive_bezier_circle_add(radius=1, location=(0, 0, 0))
+    c = bpy.context.object; c.data.dimensions = '3D'; c.data.bevel_depth = r; c.data.bevel_resolution = 6
+    sp = c.data.splines[0]; sp.bezier_points.add(n - len(sp.bezier_points))
+    for i, bp in enumerate(sp.bezier_points):
+        th = 2 * math.pi * i / n; rr = fold_r(R, z, th, folds)
+        bp.co = (rr * math.cos(th), rr * math.sin(th) * sy, z); bp.handle_left_type = bp.handle_right_type = 'AUTO'
+    c.data.materials.append(m); return put(c)
 
 def star_mesh(R, r, loc, rot, m, thick=0.07, name='star'):
     me = bpy.data.meshes.new(name); bmx = bmesh.new(); vs = []
@@ -114,6 +138,9 @@ def star_mesh(R, r, loc, rot, m, thick=0.07, name='star'):
 W_SKIN = mat('wskin', '#FFF3EE', 0.45, sss=0.35, coat=0.15)
 W_HAIR = mat('whair', '#F7F3F5', 0.34, coat=0.5, spec=0.5, sss=0.1)
 W_CLOTH = mat('wcloth', '#FBFAFB', 0.42, coat=0.25, sss=0.05)
+W_CLOTH.node_tree.nodes['Principled BSDF'].inputs['Sheen Weight'].default_value = 0.3   # soft fabric edge
+# ~55% grey on a tinted layer lands near the ramp's shadow tone: a second tone for soles, collars and cuffs
+W_TRIM = mat('wtrim', '#8C8A8E', 0.45, coat=0.2)
 W_SHOE = mat('wshoe', '#EDEBED', 0.3, coat=0.6)   # a touch darker: toe tops facing the key light clipped
 W_WING = mat('wwing', '#FFFFFF', 0.15, trans=0.55, emit=0.15, coat=0.6)
 UNDER = mat('under', '#FFFFFF', 0.6, sss=0.05)
@@ -127,7 +154,32 @@ G_LIGHT = mat('glight', '#E4E4E4', 0.2, emit=0.1)
 WHITE = mat('white', '#FFFFFF', 0.2, emit=0.7)
 DARK = mat('dark', '#2E1238', 0.25, coat=0.6)
 BLUSH = mat('blush', '#FF8FB4', 0.6, emit=0.2)
-BLUSH.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.2
+def soft_blush(m):
+    """Opacity falls off from the decal's centre (smootherstep), so the blush has no edge and no grain."""
+    nt = m.node_tree; N = nt.nodes; Lk = nt.links; b = N['Principled BSDF']
+    tc = N.new('ShaderNodeTexCoord')
+    sub = N.new('ShaderNodeVectorMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = (0.5, 0.5, 0.5)
+    mul = N.new('ShaderNodeVectorMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = (2, 0, 2)
+    ln = N.new('ShaderNodeVectorMath'); ln.operation = 'LENGTH'
+    mr = N.new('ShaderNodeMapRange'); mr.interpolation_type = 'SMOOTHERSTEP'
+    mr.inputs['From Min'].default_value = 0.15; mr.inputs['From Max'].default_value = 1.0
+    mr.inputs['To Min'].default_value = 0.55; mr.inputs['To Max'].default_value = 0.0
+    tr = N.new('ShaderNodeBsdfTransparent'); mix = N.new('ShaderNodeMixShader')
+    Lk.new(tc.outputs['Generated'], sub.inputs[0]); Lk.new(sub.outputs[0], mul.inputs[0])
+    Lk.new(mul.outputs[0], ln.inputs[0]); Lk.new(ln.outputs['Value'], mr.inputs['Value'])
+    Lk.new(mr.outputs['Result'], mix.inputs['Fac'])
+    Lk.new(tr.outputs[0], mix.inputs[1]); Lk.new(b.outputs[0], mix.inputs[2])
+    Lk.new(mix.outputs[0], N['Material Output'].inputs['Surface'])
+FACE_BLUSH = mat('faceblush', '#FF8FB4', 0.6, emit=0.2); soft_blush(FACE_BLUSH)
+def hair_gloss(m):
+    """Anisotropic gloss so each clump gets a soft streak along its length."""
+    N = m.node_tree.nodes; b = N['Principled BSDF']
+    t = N.new('ShaderNodeTangent'); t.direction_type = 'RADIAL'; t.axis = 'Z'
+    m.node_tree.links.new(t.outputs['Tangent'], b.inputs['Tangent'])
+    b.inputs['Anisotropic'].default_value = 0.85; b.inputs['Anisotropic Rotation'].default_value = 0
+    b.inputs['Roughness'].default_value = 0.3; b.inputs['Specular IOR Level'].default_value = 0.6
+    b.inputs['Coat Weight'].default_value = 0.12     # a sharp coat would add round glints on top
+hair_gloss(W_HAIR)
 SHINE = mat('shine', '#FFFFFF', 0.3, emit=1.0)
 SHINE.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.5
 MOUTHM = mat('mouth', '#D9487A', 0.4)
@@ -156,14 +208,40 @@ parts = [obj_sphere((0, -0.02, 1.38), (0.3, 0.24, 0.3)), obj_sphere((0, 0, 1.1),
          obj_curve([(0, 0, 1.4), (0, 0, 1.62)], 0.11)]
 for sx in (-1, 1):
     parts.append(obj_curve([(sx * 0.27, 0, 1.42), (sx * 0.43, -0.06, 1.2), (sx * 0.5, -0.12, 1.02)], 0.085, [1, 0.95, 1.05]))
-    parts.append(obj_sphere((sx * 0.51, -0.13, 0.97), (0.11, 0.1, 0.11)))
+    parts.append(obj_sphere((sx * 0.5, -0.125, 0.99), (0.07, 0.08, 0.07)))   # wrist; the mitten is built below
     parts.append(obj_curve([(sx * 0.15, 0, 0.95), (sx * 0.16, -0.01, 0.55), (sx * 0.16, -0.02, 0.2)], 0.1, [1.1, 0.9, 0.85]))
     parts.append(obj_sphere((sx * 0.165, -0.06, 0.13), (0.12, 0.17, 0.09)))
 body = fuse(parts, W_SKIN, 0.018, 8, 'body')
-head = fuse([obj_sphere((0, 0, HZ), (HX, HY, HZR), seg=96),
-             obj_sphere((-0.42, -0.36, HZ - 0.4), (0.4, 0.36, 0.34), seg=48),
-             obj_sphere((0.42, -0.36, HZ - 0.4), (0.4, 0.36, 0.34), seg=48),
-             obj_sphere((0, -0.3, HZ - 0.5), (0.5, 0.4, 0.3), seg=48)], W_SKIN, 0.012, 12, 'head')
+# One smooth head pushed out by soft bumps along its normals (no creases or notches).
+# Every normal is read before any vertex moves; moving while reading crumples the surface.
+CHEEK = float(os.environ.get('CHEEK', '0.10'))
+# mitten hands: flat palm facing the thigh, finger mass, and a thumb pointing forward and down
+for sx in (-1, 1):
+    hp = [obj_sphere((sx * 0.515, -0.13, 0.95), (0.07, 0.1, 0.12), (0, math.radians(sx * 8), 0)),
+          obj_sphere((sx * 0.52, -0.13, 0.86), (0.062, 0.088, 0.07)),
+          obj_curve([(sx * 0.5, -0.2, 0.99), (sx * 0.49, -0.26, 0.94)], 0.035, [1.0, 0.85])]
+    fuse(hp, W_SKIN, 0.008, 6, 'hand')
+head = obj_sphere((0, 0, HZ), (HX, HY, HZR), seg=128, m=W_SKIN); head.name = 'head'
+bpy.ops.object.select_all(action='DESELECT'); head.select_set(True); bpy.context.view_layer.objects.active = head
+bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+BUMPS = (((-0.5, -0.5, -0.52), CHEEK, 0.25), ((0.5, -0.5, -0.52), CHEEK, 0.25),     # cheeks, under the blush
+         ((-0.78, -0.3, -0.5), CHEEK, 0.3), ((0.78, -0.3, -0.5), CHEEK, 0.3),       # cheeks out: the chubby outline
+         ((0.0, -0.48, -0.7), 0.025, 0.25))                                          # chin
+_n = len(head.data.vertices); _co = [0.0] * (3 * _n); _nr = [0.0] * (3 * _n)
+head.data.vertices.foreach_get('co', _co); head.data.vertices.foreach_get('normal', _nr)
+for _i in range(0, 3 * _n, 3):
+    _x, _y, _z = _co[_i:_i + 3]
+    _d = sum(a * math.exp(-((_x - c[0]) ** 2 + (_y - c[1]) ** 2 + (_z - c[2]) ** 2) / (w * w)) for c, a, w in BUMPS)
+    _co[_i:_i + 3] = (_x + _nr[_i] * _d, _y + _nr[_i + 1] * _d, _z + _nr[_i + 2] * _d)
+head.data.vertices.foreach_set('co', _co); head.data.update(); bpy.context.view_layer.update()
+
+def face(x, z, off=0.0):
+    """Front surface of the real head at (x, z), found with a ray; the plain ellipsoid if it misses."""
+    ok, loc, _, _ = head.ray_cast(Vector((x, -3.0, z - HZ)), Vector((0, 1, 0)))
+    if not ok:
+        t = 1 - (x / HX) ** 2 - ((z - HZ) / HZR) ** 2
+        return -HY * math.sqrt(max(t, 0)) - off
+    return loc.y - off
 
 # ---------------- underwear ----------------
 CUR[0] = 'under'
@@ -226,7 +304,7 @@ def lid(x, sx, m):
         pts.append((lx, face(lx, lz) - 0.03, lz))
     obj_curve(pts, 0.014, [0.3, 0.85, 1.0, 1.0, 0.6], m=m)
     lx0 = x + sx * 0.19; lz0 = EZ + 0.11
-    obj_curve([(lx0, face(lx0, lz0) - 0.03, lz0), (lx0 + sx * 0.06, face(lx0 + sx * 0.06, lz0 + 0.04) - 0.02, lz0 + 0.04)], 0.012, [1.0, 0.2], m=m)
+    obj_curve([(lx0, face(lx0, lz0) - 0.03, lz0), (lx0 + sx * 0.06, face(lx0 + sx * 0.06, lz0 + 0.04) - 0.02, lz0 + 0.04)], 0.016, [1.0, 0.75], m=m)   # soft flick, not a spike
 
 # eyes (tinted) and highlights (untinted)
 for sx in (-1, 1):
@@ -251,8 +329,7 @@ for sx in (-1, 1):
         pts.append((lx, face(lx, lz) - 0.03, lz))
     obj_curve(pts, 0.026, [0.5, 1.0, 1.1, 1.0, 0.5], m=DARK)
     CUR[0] = 'face'
-    for k, f in enumerate((1.0, 0.82, 0.64, 0.46, 0.3)):   # stacked see-through discs = soft blush
-        decal(sx * 0.52, EZ - 0.24, 0.15 * f, 0.09 * f, BLUSH, 0.004 + 0.002 * k)
+    decal(sx * 0.52, EZ - 0.24, 0.17, 0.1, FACE_BLUSH, 0.004)   # one decal that fades out (soft_blush below)
 CUR[0] = 'face'
 mz = EZ - 0.33
 def smile(w, h, n=14):
@@ -265,12 +342,24 @@ decal(0, mz - 0.042, 0.035, 0.018, TONGUE, 0.009)
 # ---------------- hair styles (all share one cap) ----------------
 def cap(): return obj_sphere((0, 0.2, HZ + 0.2), (0.98, 0.9, 0.9), seg=64)
 def bangs_mass(name):
+    """7 overlapping clumps whose rounded tips curl in toward the middle of the face like commas,
+    plus two thin loose strands, so the edge is soft and not a perfect scallop."""
     BG = []
-    for (rx, rz, tx, tz, r) in ((-0.66, HZ + 0.6, -0.8, HZ + 0.02, 0.2), (-0.34, HZ + 0.7, -0.46, HZ + 0.12, 0.22), (0.0, HZ + 0.72, -0.1, HZ + 0.15, 0.23),
-                                (0.32, HZ + 0.7, 0.26, HZ + 0.13, 0.22), (0.62, HZ + 0.6, 0.66, HZ + 0.03, 0.2)):
+    for k in range(7):
+        u = (k - 3) / 3                                   # -1 .. 1 across the forehead
+        rx = 0.72 * u; rz = HZ + 0.72 - 0.12 * u * u
+        tx = rx * 1.12 - 0.04; tz = HZ + 0.15 - 0.13 * u * u + (0.03 if k % 2 else -0.02)
+        r = 0.235 - 0.09 * u * u
+        side = -1 if tx > 0.02 else 1                      # curl toward the centre line
         mx = (rx + tx) / 2 + 0.03; mz2 = (rz + tz) / 2
-        BG.append(obj_curve([(rx, face(rx, min(rz, HZ + 0.6)) + 0.06, rz), (mx, face(mx, mz2) - 0.1, mz2), (tx, face(tx, tz) - 0.04, tz)], r, [1.0, 0.85, 0.15]))
-    return fuse(BG, W_HAIR, 0.014, 4, name)
+        cx, cz = tx + side * 0.04, tz + 0.035
+        BG.append(obj_curve([(rx, face(rx, min(rz, HZ + 0.6)) + 0.06, rz), (mx, face(mx, mz2) - 0.1, mz2),
+                             (tx, face(tx, tz) - 0.05, tz), (cx, face(cx, cz) - 0.045, cz)], r, [1.0, 0.82, 0.48, 0.28]))
+    for sx in (-1, 1):
+        x0, x1 = sx * 0.4, sx * 0.5
+        BG.append(obj_curve([(x0, face(x0, HZ + 0.55) - 0.02, HZ + 0.62), (sx * 0.47, face(sx * 0.47, HZ + 0.25) - 0.07, HZ + 0.25),
+                             (x1, face(x1, HZ + 0.05) - 0.04, HZ + 0.05)], 0.055, [1.0, 0.7, 0.35]))
+    return fuse(BG, W_HAIR, 0.014, 7, name)
 def side_locks(H, long=False):
     for sx in (-1, 1):
         if long:
@@ -334,8 +423,9 @@ obj_sphere((0, 0.2, HZ + 0.2), (0.98, 0.9, 0.9), seg=64, m=W_HAIR)
 
 # ---------------- dresses (tintable) ----------------
 CUR[0] = 'dress_aline'
-lathe([(0.2, 1.56), (0.3, 1.5), (0.33, 1.36), (0.35, 1.18), (0.44, 1.04), (0.6, 0.82), (0.68, 0.7), (0.66, 0.67)], W_CLOTH)
-torus(0.66, 0.055, (0, 0, 0.7), W_CLOTH)
+F_ALINE = (12, 0.05, 1.12, 0.68, 0.0)
+lathe([(0.2, 1.56), (0.3, 1.5), (0.33, 1.36), (0.35, 1.18), (0.44, 1.04), (0.6, 0.82), (0.68, 0.7), (0.66, 0.67)], W_CLOTH, folds=F_ALINE)
+hem_trim(0.67, 0.05, 0.69, W_CLOTH, F_ALINE)
 torus(0.355, 0.035, (0, 0, 1.16), W_CLOTH)
 for sx in (-1, 1): obj_sphere((sx * 0.31, 0, 1.44), (0.16, 0.15, 0.13), m=W_CLOTH)
 obj_sphere((-0.08, -0.31, 1.16), (0.09, 0.04, 0.06), (0, math.radians(-25), 0), m=W_CLOTH)
@@ -376,17 +466,20 @@ for sx in (-1, 1): obj_curve([(sx * 0.18, -0.2, 1.5), (sx * 0.25, -0.05, 1.62), 
 star_mesh(0.09, 0.04, (0, -0.33, 1.3), (0, 0, 0), W_CLOTH, 0.04)
 
 CUR[0] = 'dress_gown'
-lathe([(0.2, 1.56), (0.3, 1.5), (0.33, 1.36), (0.35, 1.18), (0.42, 1.0), (0.58, 0.72), (0.74, 0.44), (0.83, 0.25), (0.81, 0.21)], W_CLOTH)
-torus(0.82, 0.05, (0, 0, 0.24), W_CLOTH)
+F_GOWN = (16, 0.035, 1.14, 0.22, 0.3)
+lathe([(0.2, 1.56), (0.3, 1.5), (0.33, 1.36), (0.35, 1.18), (0.42, 1.0), (0.58, 0.72), (0.74, 0.44), (0.83, 0.25), (0.81, 0.21)], W_CLOTH, folds=F_GOWN)
+hem_trim(0.82, 0.05, 0.235, W_CLOTH, F_GOWN)
 torus(0.36, 0.04, (0, 0, 1.16), W_CLOTH)
 for sx in (-1, 1): obj_sphere((sx * 0.31, 0, 1.44), (0.15, 0.14, 0.12), m=W_CLOTH)
 for k, (zz, rr) in enumerate(((0.95, 0.46), (0.7, 0.6), (0.45, 0.74))):
     for a in range(-2, 3):
         ang = math.radians(-90 + a * 22)
-        obj_sphere((rr * math.cos(ang), rr * math.sin(ang) * 0.86 - 0.02, zz), (0.035, 0.02, 0.035), m=W_CLOTH)
+        rf = fold_r(rr, zz, ang % (2 * math.pi), F_GOWN) + 0.01
+        obj_sphere((rf * math.cos(ang), rf * math.sin(ang) * 0.86 - 0.02, zz), (0.035, 0.02, 0.035), m=W_CLOTH)
 
 CUR[0] = 'dress_puff'
-lathe([(0.2, 1.56), (0.3, 1.5), (0.34, 1.36), (0.36, 1.18), (0.5, 1.05), (0.64, 0.92), (0.66, 0.84), (0.58, 0.78), (0.5, 0.77)], W_CLOTH, thick=0.04)
+lathe([(0.2, 1.56), (0.3, 1.5), (0.34, 1.36), (0.36, 1.18), (0.5, 1.05), (0.64, 0.92), (0.66, 0.84), (0.58, 0.78), (0.5, 0.77)], W_CLOTH, thick=0.04,
+      folds=(10, 0.06, 1.16, 0.8, 0.2))
 for sx in (-1, 1): obj_sphere((sx * 0.33, 0, 1.44), (0.21, 0.19, 0.17), m=W_CLOTH)
 torus(0.36, 0.04, (0, 0, 1.18), W_CLOTH)
 for a in range(-3, 4):
@@ -402,10 +495,10 @@ torus(0.395, 0.035, (0, 0, 0.87), W_CLOTH)
 for sx in (-1, 1):
     obj_sphere((sx * 0.3, 0, 1.45), (0.15, 0.14, 0.12), m=W_CLOTH)
     obj_curve([(sx * 0.27, 0, 1.44), (sx * 0.43, -0.06, 1.2), (sx * 0.485, -0.11, 1.07)], 0.115, [1.0, 1.0, 1.05], m=W_CLOTH)
-    torus(0.115, 0.03, (sx * 0.485, -0.11, 1.07), W_CLOTH, sy=1.0, rot=(math.radians(-15), math.radians(sx * 20), 0))
+    torus(0.115, 0.03, (sx * 0.485, -0.11, 1.07), W_TRIM, sy=1.0, rot=(math.radians(-15), math.radians(sx * 20), 0))
     obj_curve([(sx * 0.15, 0, 1.0), (sx * 0.16, -0.01, 0.6), (sx * 0.16, -0.02, 0.3)], 0.14, [1.15, 1.0, 1.0], m=W_CLOTH)
     torus(0.14, 0.03, (sx * 0.16, -0.02, 0.3), W_CLOTH, sy=1.0)
-    obj_sphere((sx * 0.1, -0.27, 1.53), (0.11, 0.03, 0.07), (0, math.radians(sx * 25), 0), m=W_CLOTH)   # collar
+    obj_sphere((sx * 0.1, -0.27, 1.53), (0.11, 0.03, 0.07), (0, math.radians(sx * 25), 0), m=W_TRIM)   # collar
 obj_sphere((0, 0, 0.98), (0.36, 0.29, 0.14), m=W_CLOTH)
 for zz in (1.34, 1.18, 1.03):
     obj_sphere((0, front_y(0.36) - 0.01, zz), (0.035, 0.02, 0.035), m=W_CLOTH)
@@ -430,7 +523,7 @@ for zz in (1.4, 1.3, 1.2):   # stripes
     torus(0.352 if zz < 1.35 else 0.34, 0.016, (0, 0, zz), W_CLOTH)
 for sx in (-1, 1):
     obj_sphere((sx * 0.31, 0, 1.45), (0.17, 0.16, 0.13), m=W_CLOTH)
-    obj_sphere((sx * 0.13, -0.24, 1.5), (0.14, 0.03, 0.1), (0, math.radians(sx * 30), 0), m=W_CLOTH)   # sailor collar
+    obj_sphere((sx * 0.13, -0.24, 1.5), (0.14, 0.03, 0.1), (0, math.radians(sx * 30), 0), m=W_TRIM)   # sailor collar
 obj_sphere((-0.07, -0.31, 1.43), (0.07, 0.03, 0.045), (0, math.radians(-25), 0), m=W_CLOTH)
 obj_sphere((0.07, -0.31, 1.43), (0.07, 0.03, 0.045), (0, math.radians(25), 0), m=W_CLOTH)
 obj_sphere((0, -0.32, 1.43), (0.03, 0.025, 0.03), m=W_CLOTH)
@@ -469,6 +562,7 @@ star_mesh(0.08, 0.035, (0.22, -0.31, 1.12), (0, math.radians(30), 0.3), W_CLOTH,
 CUR[0] = 'shoes_mary'
 for sx in (-1, 1):
     obj_sphere((sx * 0.17, -0.08, 0.13), (0.15, 0.22, 0.11), m=W_SHOE)
+    obj_sphere((sx * 0.17, -0.08, 0.055), (0.158, 0.228, 0.035), m=W_TRIM)   # sole
     obj_curve([(sx * 0.07, -0.14, 0.2), (sx * 0.17, -0.2, 0.25), (sx * 0.27, -0.14, 0.2)], 0.02, m=W_SHOE)
     obj_sphere((sx * 0.17, -0.27, 0.2), (0.04, 0.025, 0.04), m=W_SHOE)
 CUR[0] = 'shoes_boots'
@@ -582,6 +676,13 @@ for sx in (-1, 1):
 
 # ---------------- held items (right hand at 0.51,-0.13,0.97) ----------------
 HAND = Vector((0.51, -0.13, 0.97))
+CUR[0] = 'handgrip'     # drawn over the held item: right fingers closed round a handle at HAND
+G = [obj_sphere((0.515, -0.12, 0.98), (0.085, 0.1, 0.1))]
+for k in range(4):     # four finger rolls wrapping round the front of the handle
+    zz = 1.04 - k * 0.042
+    G.append(obj_curve([(0.58, -0.12, zz), (0.56, -0.21, zz), (0.5, -0.24, zz), (0.46, -0.2, zz)], 0.026, [1.0, 1.0, 1.0, 0.8]))
+G.append(obj_curve([(0.47, -0.16, 1.06), (0.49, -0.24, 1.04), (0.53, -0.26, 1.0)], 0.03, [1.0, 0.95, 0.8]))   # thumb over the top
+fuse(G, W_SKIN, 0.008, 6, 'grip')
 CUR[0] = 'hold_wand'
 obj_curve([(0.5, -0.16, 0.92), (0.66, -0.22, 1.42)], 0.03, m=WAND)
 star_mesh(0.17, 0.075, (0.69, -0.24, 1.52), (0, 0, math.radians(-12)), GOLD, 0.08)
@@ -701,7 +802,7 @@ HOLD = {  # layer -> groups used as holdout (must sit in front of it)
     'wings_butterfly': [], 'hold_teddy': [], 'hold_icecream': [],
     'hat_crown': ['skin', 'capproxy'], 'hat_bow': ['skin', 'capproxy'], 'hat_flowers': ['skin', 'capproxy'],
     'hat_star': ['skin'], 'hat_ears': ['skin', 'capproxy'],
-    'hold_wand': [], 'hold_balloon': [], 'hold_bouquet': [], 'hold_purse': [],
+    'handgrip': [], 'hold_wand': [], 'hold_balloon': [], 'hold_bouquet': [], 'hold_purse': [],
     'eyes': [], 'eyeshine': [], 'happy': [], 'face': [], 'skin': [], 'wings_fairy': [],
 }
 ALL = list(HOLD.keys())
@@ -716,7 +817,7 @@ def render(path):
     bpy.ops.render.render(write_still=True)
 
 # ---------------- passes (docs/MODEL_UPGRADE.md 1.1 and 1.2) ----------------
-TINTED = [W_SKIN, W_HAIR, W_CLOTH, W_SHOE, W_WING]
+TINTED = [W_SKIN, W_HAIR, W_CLOTH, W_SHOE, W_WING, W_TRIM]
 LIGHTS = {tuple(round(v, 2) for v in o.location): o for o in bpy.data.objects if o.type == 'LIGHT'}
 BACK_LIGHTS = [o for o in LIGHTS.values() if o.location.y > 0]      # edge lights behind / above the doll
 FILL, LEFT_BACK = LIGHTS[(3.5, -4.0, 1.5)], LIGHTS[(-3.2, 2.5, 3.2)]
