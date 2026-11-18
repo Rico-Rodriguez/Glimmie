@@ -564,14 +564,14 @@ heart_mesh(0.11, (-0.62, face(-0.62, HZ + 0.4) - 0.2, HZ + 0.4), (math.radians(-
 # ---------------- wings ----------------
 CUR[0] = 'wings_fairy'
 for sx in (-1, 1):
-    obj_sphere((sx * 0.92, 0.42, 1.62), (0.78, 0.05, 0.46), (0, math.radians(-sx * 30), math.radians(sx * 12)), m=W_WING)
-    obj_sphere((sx * 0.74, 0.4, 0.98), (0.48, 0.045, 0.28), (0, math.radians(sx * 28), math.radians(sx * 10)), m=W_WING)
+    obj_sphere((sx * 1.05, 0.42, 1.8), (0.78, 0.05, 0.5), (0, math.radians(-sx * 30), math.radians(sx * 12)), m=W_WING)
+    obj_sphere((sx * 0.95, 0.4, 1.0), (0.55, 0.045, 0.3), (0, math.radians(sx * 28), math.radians(sx * 10)), m=W_WING)
 
 CUR[0] = 'wings_butterfly'
 for sx in (-1, 1):
-    obj_sphere((sx * 0.85, 0.42, 1.75), (0.62, 0.05, 0.55), (0, math.radians(-sx * 35), 0), m=W_WING)
-    obj_sphere((sx * 0.7, 0.4, 1.02), (0.42, 0.045, 0.4), (0, math.radians(sx * 30), 0), m=W_WING)
-    for (dx, dz, r) in ((1.05, 1.95, 0.16), (0.8, 1.6, 0.1), (0.8, 0.95, 0.12)):
+    obj_sphere((sx * 1.1, 0.42, 1.85), (0.68, 0.05, 0.6), (0, math.radians(-sx * 35), 0), m=W_WING)
+    obj_sphere((sx * 0.92, 0.4, 1.02), (0.48, 0.045, 0.44), (0, math.radians(sx * 30), 0), m=W_WING)
+    for (dx, dz, r) in ((1.35, 2.05, 0.17), (1.05, 1.65, 0.11), (1.05, 0.95, 0.13)):
         obj_sphere((sx * dx, 0.36, dz), (r, 0.02, r), m=W_CLOTH)
 
 # ---------------- held items (right hand at 0.51,-0.13,0.97) ----------------
