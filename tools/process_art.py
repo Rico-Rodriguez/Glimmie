@@ -6,12 +6,12 @@ import os, glob
 from PIL import Image, ImageFilter
 SRC, DST = 'art/renders', 'App/Resources/Art'
 os.makedirs(DST, exist_ok=True)
-ITEMS = ('dress_', 'shoes_', 'hat_', 'hold_', 'wings_', 'hair_')
+ITEMS = ('dress_', 'shoes_', 'hat_', 'hold_', 'wings_', 'hair_', 'glim_acc_')
 for p in sorted(glob.glob(f'{SRC}/*.png')):
     name = os.path.basename(p)[:-4]
     im = Image.open(p).convert('RGBA')
     im.save(f'{DST}/L_{name}.png', optimize=True)
-    if not name.startswith(ITEMS):
+    if not name.startswith(ITEMS) or name.endswith('_shine'):
         continue
     a = im.getchannel('A'); bbox = a.point(lambda v: 255 if v > 20 else 0).getbbox()
     crop = im.crop(bbox)

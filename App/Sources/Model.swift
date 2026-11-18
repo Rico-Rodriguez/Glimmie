@@ -102,24 +102,38 @@ enum Catalog {
         Item(id: "dress_tutu", category: .dress, name: "tutu", tintable: true, defaultColor: 6, plural: false),
         Item(id: "dress_gown", category: .dress, name: "princess gown", tintable: true, defaultColor: 5, plural: false),
         Item(id: "dress_puff", category: .dress, name: "puffy dress", tintable: true, defaultColor: 3, plural: false),
+        Item(id: "dress_skirt", category: .dress, name: "skirt and top", tintable: true, defaultColor: 6, plural: false),
+        Item(id: "dress_overalls", category: .dress, name: "overalls", tintable: true, defaultColor: 5, plural: true),
+        Item(id: "dress_mermaid", category: .dress, name: "mermaid dress", tintable: true, defaultColor: 4, plural: false),
+        Item(id: "dress_swim", category: .dress, name: "swimsuit", tintable: true, defaultColor: 1, plural: false),
+        Item(id: "dress_pjs", category: .dress, name: "pajamas", tintable: true, defaultColor: 5, plural: true),
         Item(id: "shoes_mary", category: .shoes, name: "party shoes", tintable: true, defaultColor: 1, plural: true),
         Item(id: "shoes_boots", category: .shoes, name: "boots", tintable: true, defaultColor: 6, plural: true),
+        Item(id: "shoes_sandals", category: .shoes, name: "sandals", tintable: true, defaultColor: 2, plural: true),
+        Item(id: "shoes_slippers", category: .shoes, name: "bunny slippers", tintable: true, defaultColor: 0, plural: true),
         Item(id: "hat_crown", category: .hat, name: "crown", tintable: false, defaultColor: 0, plural: false),
         Item(id: "hat_flowers", category: .hat, name: "flower crown", tintable: false, defaultColor: 0, plural: false),
         Item(id: "hat_star", category: .hat, name: "star clips", tintable: false, defaultColor: 0, plural: true),
         Item(id: "hat_bow", category: .hat, name: "bow", tintable: true, defaultColor: 0, plural: false),
         Item(id: "hat_ears", category: .hat, name: "bunny ears", tintable: true, defaultColor: 7, plural: true),
+        Item(id: "hat_cat", category: .hat, name: "kitty ears", tintable: true, defaultColor: 6, plural: true),
+        Item(id: "hat_sunhat", category: .hat, name: "sun hat", tintable: true, defaultColor: 3, plural: false),
+        Item(id: "hat_hearts", category: .hat, name: "heart clips", tintable: false, defaultColor: 0, plural: true),
         Item(id: "hold_wand", category: .hold, name: "magic wand", tintable: false, defaultColor: 0, plural: false),
         Item(id: "hold_bouquet", category: .hold, name: "bouquet", tintable: false, defaultColor: 0, plural: false),
         Item(id: "hold_balloon", category: .hold, name: "balloon", tintable: true, defaultColor: 1, plural: false),
         Item(id: "hold_purse", category: .hold, name: "purse", tintable: true, defaultColor: 0, plural: false),
+        Item(id: "hold_teddy", category: .hold, name: "teddy bear", tintable: false, defaultColor: 0, plural: false),
+        Item(id: "hold_icecream", category: .hold, name: "ice cream", tintable: false, defaultColor: 0, plural: false),
         Item(id: "wings_fairy", category: .wings, name: "fairy wings", tintable: true, defaultColor: 6, plural: true),
+        Item(id: "wings_butterfly", category: .wings, name: "butterfly wings", tintable: true, defaultColor: 4, plural: true),
     ]
     static func item(_ id: String) -> Item? { items.first { $0.id == id } }
     static func items(in c: Category) -> [Item] { items.filter { $0.category == c } }
 
-    static let hairStyles = ["hair_curls", "hair_long", "hair_buns"]
-    static let hairStyleNames = ["curly", "long", "buns"]
+    // Order matters: Avatar.hairStyle is an index into this list, so only append.
+    static let hairStyles = ["hair_curls", "hair_long", "hair_buns", "hair_pony", "hair_braids"]
+    static let hairStyleNames = ["curly", "long", "buns", "ponytail", "braids"]
 }
 
 // MARK: - Glimmies (collectible pets)
@@ -140,6 +154,23 @@ enum Glimmies {
         GlimmieKind(id: 5, name: "Peachy", color: rgb(0xFFC29E)),
         GlimmieKind(id: 6, name: "Cherry", color: rgb(0xFF8A96)),
         GlimmieKind(id: 7, name: "Snowy", color: rgb(0xF4F1FF)),
+    ]
+}
+
+/// Things a Glimmie can wear. Each is a full-canvas layer (L_glim_acc_*) drawn over
+/// L_glim_body + L_glim_face, with I_/B_ sticker icons like the closet items.
+struct GlimmieAccessory: Identifiable, Hashable {
+    let id: String      // e.g. "glim_acc_bow"
+    let name: String
+}
+
+enum GlimmieAccessories {
+    static let all: [GlimmieAccessory] = [
+        GlimmieAccessory(id: "glim_acc_bow", name: "bow"),
+        GlimmieAccessory(id: "glim_acc_crown", name: "crown"),
+        GlimmieAccessory(id: "glim_acc_flower", name: "flower"),
+        GlimmieAccessory(id: "glim_acc_partyhat", name: "party hat"),
+        GlimmieAccessory(id: "glim_acc_glasses", name: "heart glasses"),
     ]
 }
 
@@ -261,6 +292,26 @@ enum Secrets {
             Want(category: .hat, item: "hat_ears", color: nil),
             Want(category: .hold, item: "hold_balloon", color: nil),
             Want(category: .dress, item: "dress_tutu", color: nil)]),
+        SecretLook(id: "sleepy_time", name: "Sleepy Time", badgeItem: "hold_teddy", wants: [
+            Want(category: .dress, item: "dress_pjs", color: nil),
+            Want(category: .shoes, item: "shoes_slippers", color: nil),
+            Want(category: .hold, item: "hold_teddy", color: nil)]),
+        SecretLook(id: "beach_day", name: "Beach Day", badgeItem: "hat_sunhat", wants: [
+            Want(category: .dress, item: "dress_swim", color: nil),
+            Want(category: .hat, item: "hat_sunhat", color: nil),
+            Want(category: .hold, item: "hold_icecream", color: nil)]),
+        SecretLook(id: "mermaid_princess", name: "Mermaid Princess", badgeItem: "dress_mermaid", wants: [
+            Want(category: .dress, item: "dress_mermaid", color: nil),
+            Want(category: .hat, item: "hat_crown", color: nil)]),
+        SecretLook(id: "kitty_cat", name: "Kitty Cat", badgeItem: "hat_cat", wants: [
+            Want(category: .hat, item: "hat_cat", color: nil),
+            Want(category: .dress, item: "dress_overalls", color: nil)]),
+        SecretLook(id: "butterfly_garden", name: "Butterfly Garden", badgeItem: "wings_butterfly", wants: [
+            Want(category: .wings, item: "wings_butterfly", color: nil),
+            Want(category: .hat, item: "hat_flowers", color: nil)]),
+        SecretLook(id: "sweetheart", name: "Sweetheart", badgeItem: "hat_hearts", wants: [
+            Want(category: .hat, item: "hat_hearts", color: nil),
+            Want(category: .dress, item: "dress_skirt", color: 0)]),
     ]
 }
 
