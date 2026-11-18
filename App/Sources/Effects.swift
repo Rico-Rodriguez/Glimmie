@@ -224,6 +224,7 @@ struct EggView: View {
                         StarShape().fill(Color(red: 1, green: 0.75, blue: 0.9)).frame(width: 28, height: 28).offset(x: 54, y: 58)
                         Twinkle().fill(Color.white).frame(width: 30, height: 30).offset(x: -40, y: -90)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipShape(EggShape())
                 )
                 .overlay(
