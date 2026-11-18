@@ -122,7 +122,8 @@ eyes, outfits) and 4 Glimmie colors all line up and recolor cleanly.
 project.yml                       XcodeGen config (iPad only, landscape, iOS 16+)
 App/Sources/
   GlimmieApp.swift                entry; shows avatar maker on first launch
-  Model.swift                     catalog, palette, avatar, outfit, wishes, secrets, save data
+  Model.swift                     catalog, palette, outfit, wishes, secrets, game state
+  SaveData.swift                  what is saved on the device, and the rules for changing it
   Sound.swift                     sound effects + voice
   DollView.swift                  art loader, layered doll (blinks), Glimmie, die-cut sticker
   AvatarMakerView.swift
@@ -132,6 +133,7 @@ App/Sources/
 App/Resources/Art/                generated PNGs
 App/Resources/Sounds/             generated .wav files (tools/make_sounds.py)
 App/Resources/Assets.xcassets     app icon (tools/make_icon.py)
+Tests/SaveDataTests.swift         old saves load, nothing is lost, bad values are clamped
 .github/workflows/build-ipa.yml
 ```
 
@@ -164,6 +166,8 @@ Rendering all 25 avatar layers takes ~6 minutes on CPU.
 
 ## 5. Building, installing, testing
 - Every push to `main` and every PR runs **Build iPad app** on a macOS runner. Download the `Glimmie-ipa` artifact from the run page, then sideload it with AltStore or Sideloadly.
+- The same run tests the save data (`Tests/SaveDataTests.swift`) on an iPad simulator. A new version is published only when those tests pass.
+- Before changing anything that is saved, read the rules at the top of `App/Sources/SaveData.swift`.
 - The `screenshots` artifact has simulator captures of the avatar maker, Boutique, a wish, and the egg.
 - Local build on a Mac: `brew install xcodegen && xcodegen generate && open Glimmie.xcodeproj`.
 - Launch arguments for testing: `-resetSave` (fresh start), `-demoBoutique` (skip the avatar maker, sample outfit), `-demoEgg` (egg ready to hatch).
