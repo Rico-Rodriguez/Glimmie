@@ -4,7 +4,11 @@ Dress-up sticker game for iPad, made for a little girl who loves reusable
 sticker books and cute magical pets.
 
 - **Status:** v1 Boutique app built (SwiftUI, iPad landscape). GitHub Actions builds an unsigned `Glimmie.ipa` to sideload.
-- **Get the app:** open the latest **Build iPad app** run under Actions, download `Glimmie-ipa`, sideload with AltStore or Sideloadly.
+- **Get the app (Feather):** add this source in Feather → Sources → +:
+  `https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/source.json`
+  Every push to `main` builds a new version, attaches `Glimmie.ipa` to a GitHub Release (`v1.0.<build>`), and updates `source.json`.
+  The repo must be **public** for Feather to read the source and download the .ipa.
+- **Or by hand:** grab `Glimmie.ipa` from the latest [Release](https://github.com/Rico-Rodriguez/Glimmie/releases/latest) and import it into Feather, AltStore or Sideloadly.
 - **Project notes, decisions and roadmap:** [docs/PROJECT.md](docs/PROJECT.md)
 - **Art pipeline (Blender):** `art/blender/` → `art/renders/` → `tools/process_art.py` → `App/Resources/Art/`
 
