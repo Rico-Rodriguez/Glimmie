@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      commit_screenshots:
+        description: "Commit simulator screenshots to docs/screenshots on this branch"
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
@@ -60,6 +65,8 @@ jobs:
   screenshots:
     name: Simulator screenshots
     runs-on: macos-15
+    permissions:
+      contents: write
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -97,12 +104,13 @@ jobs:
         with:
           name: screenshots
           path: shots
-      - name: Print small previews (for remote review)
-        if: always()
+      - name: Commit screenshots (manual runs only)
+        if: github.event_name == 'workflow_dispatch' && inputs.commit_screenshots
         run: |
-          for f in shots/*.png; do
-            sips -s format jpeg -s formatOptions 55 -Z 900 "$f" --out "${f%.png}.jpg" >/dev/null
-            echo "BEGIN_PREVIEW $(basename "${f%.png}")"
-            base64 -i "${f%.png}.jpg" | fold -w 4000
-            echo "END_PREVIEW"
-          done
+          mkdir -p docs/screenshots
+          for f in shots/*.png; do sips -s format jpeg -s formatOptions 70 -Z 1400 "$f" --out "docs/screenshots/$(basename "${f%.png}").jpg" >/dev/null; done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          git commit -m "Update simulator screenshots" || exit 0
+          git push origin HEAD:${{ github.ref_name }}
