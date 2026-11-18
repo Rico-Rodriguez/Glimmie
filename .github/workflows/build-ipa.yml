@@ -132,6 +132,10 @@ jobs:
           xcrun simctl launch "$UDID" com.glimmie.closet -demoEgg
           sleep 6
           xcrun simctl io "$UDID" screenshot shots/4-egg.png
+          xcrun simctl terminate "$UDID" com.glimmie.closet
+          xcrun simctl launch "$UDID" com.glimmie.closet -demoBoutique -demoHouse
+          sleep 8
+          xcrun simctl io "$UDID" screenshot shots/5-house.png
           xcrun simctl shutdown "$UDID"
           PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$PHONE"
@@ -139,7 +143,7 @@ jobs:
           xcrun simctl install "$PHONE" "$APP"
           xcrun simctl launch "$PHONE" com.glimmie.closet -demoBoutique
           sleep 14
-          xcrun simctl io "$PHONE" screenshot shots/5-iphone-boutique.png
+          xcrun simctl io "$PHONE" screenshot shots/6-iphone-boutique.png
       - uses: actions/upload-artifact@v5
         if: always()
         with:
