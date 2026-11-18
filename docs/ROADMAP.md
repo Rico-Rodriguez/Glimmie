@@ -1,6 +1,6 @@
 # Glimmie roadmap (after v1)
 
-_Written 2026-11-18 against main at `2e859b3` (release v1.0.17). It replaces the short "After v1" list in [PROJECT.md](PROJECT.md#34-after-v1)._
+_Written 2026-11-18 against main at `2e859b3` (release v1.0.17); file and line references point at that commit. It replaces the short "After v1" list in [PROJECT.md](PROJECT.md#34-after-v1). Since then, Glimmie House shipped as the second mode (PR #5), and a separate thread is reworking the models and adding outfits._
 
 Sizes: **S** is about an hour of work and a quick review, **M** about half a day, **L** several days.
 
@@ -37,7 +37,7 @@ v1 is built, the repo is public, and every push to `main` publishes a new build 
 - **She is the product manager.** Watch what she reaches for, repeats, ignores and asks for, then build that.
 - **Never lose her stuff.** Her collection is the emotional core. Every update must load an old save, and the app must never be deleted to fix a problem.
 - **Main ships to her iPad.** Every merge becomes a Feather update, so `main` has to be safe to install at any moment.
-- **One great mode first.** Keep the Boutique focus from PROJECT.md. A second mode waits until playtests show what she wants more of.
+- **Two loved modes before a third.** Glimmie House (PR #5) is the second mode. A third waits until playtests show what she wants more of.
 - **Public repo, private child.** The repo is public now. Keep her name, photos and detailed play notes out of it, and write learnings here without personal details.
 
 ---
@@ -196,18 +196,18 @@ Not all of these are worth doing. Choose by what sessions 1 to 3 show; the table
 
 Collecting all 8 Glimmies takes 35 wishes (7 eggs of 5 stars, since Rosie comes free). After that, every egg shows the same "you found every Glimmie" screen (`RewardsView.swift:64-67`). If session 1 shows she loves the egg, fix this early:
 
-- **Dress up the Glimmies** with hats and bows, reusing the sticker drag. It's the most natural next goal for a dress-up game. M
+- **More for Glimmie House.** PR #5 lets her feed, bathe and dress the Glimmies she has hatched; new pet accessories and foods extend that loop without new screens. S to M
 - New egg types that hatch a second set of Glimmies, or rare sparkly versions. M
 - Rewards that unlock items, for example a secret look unlocking a matching outfit piece. S to M
 
 ### 4.4 The next mode (later, one at a time)
 
-Pick by evidence, not by the list in PROJECT.md. Two candidates build on what exists:
+Glimmie House is the second mode now. Pick the next one by evidence, not by the list in PROJECT.md. Two candidates build on what exists:
 
 - **Photo booth and lookbook (recommended first, S to M):** snap her outfit with a frame and her Glimmie into an in-app album (SwiftUI's `ImageRenderer`), with "save to Photos" in the grown-up corner. It uses every existing asset and gives her something to show the family.
 - **Design Studio lite (M to L):** pick a pattern and colors for a dress, which then becomes a sticker. It's the most magical idea on the list, and patterns can be masked by the existing layer shapes.
 
-Glimmie House, the town map, the runway show and the arcade games stay parked until she shows she wants more than dress-up.
+The town map, the runway show and the arcade games stay parked until she shows she wants more.
 
 ---
 
@@ -251,7 +251,7 @@ The scripts in `art/blender/` are reproducible, which is a real strength: any se
 
 ## 8. Not now
 
-New game modes before the Boutique is loved, an App Store release, accounts or cloud sync, multiplayer or "friend girls", and a Mac build. Each is reasonable later, and none of them helps her this month.
+A third game mode before the Boutique and the House are loved, an App Store release, accounts or cloud sync, multiplayer or "friend girls", and a Mac build. Each is reasonable later, and none of them helps her this month.
 
 ## 9. Decisions for Rico
 
