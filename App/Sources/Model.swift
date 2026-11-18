@@ -6,6 +6,16 @@ struct Swatch: Identifiable, Hashable {
     let id: Int
     let name: String
     let color: Color
+    /// Shadow, base and light tones for ramp tinting (docs/MODEL_UPGRADE.md 1.3). nil = tint by multiply.
+    var ramp: Ramp? = nil
+}
+
+/// Three tones from tools/make_ramps.py. The app maps a layer's brightness through
+/// shadow x 0.62 (0), shadow (0.45), base (0.86) and light (1.0).
+struct Ramp: Hashable {
+    let shadow: UInt32
+    let base: UInt32
+    let light: UInt32
 }
 
 private func rgb(_ hex: UInt32) -> Color {
@@ -15,33 +25,33 @@ private func rgb(_ hex: UInt32) -> Color {
 }
 
 enum Palette {
-    /// Clothing colors. Layers are rendered near-white and multiplied by these.
+    /// Clothing colors. Layers are rendered near-white and ramp-tinted with these tones.
     static let clothes: [Swatch] = [
-        Swatch(id: 0, name: "pink", color: rgb(0xFF8FC4)),
-        Swatch(id: 1, name: "red", color: rgb(0xFF6470)),
-        Swatch(id: 2, name: "orange", color: rgb(0xFFB25C)),
-        Swatch(id: 3, name: "yellow", color: rgb(0xFFE36B)),
-        Swatch(id: 4, name: "green", color: rgb(0x8EE08A)),
-        Swatch(id: 5, name: "blue", color: rgb(0x7DB4FF)),
-        Swatch(id: 6, name: "purple", color: rgb(0xB993FF)),
-        Swatch(id: 7, name: "white", color: rgb(0xFFFFFF)),
+        Swatch(id: 0, name: "pink", color: rgb(0xFF8FC4), ramp: Ramp(shadow: 0xB450A1, base: 0xFF8FC4, light: 0xFDB5C8)),
+        Swatch(id: 1, name: "red", color: rgb(0xFF6470), ramp: Ramp(shadow: 0xB60D5A, base: 0xFF6470, light: 0xFE8E7F)),
+        Swatch(id: 2, name: "orange", color: rgb(0xFFB25C), ramp: Ramp(shadow: 0xCB671F, base: 0xFFB25C, light: 0xFFCF88)),
+        Swatch(id: 3, name: "yellow", color: rgb(0xFFE36B), ramp: Ramp(shadow: 0xD39700, base: 0xFFE36B, light: 0xFFF4DD)),
+        Swatch(id: 4, name: "green", color: rgb(0x8EE08A), ramp: Ramp(shadow: 0x13A36A, base: 0x8EE08A, light: 0xBCED9A)),
+        Swatch(id: 5, name: "blue", color: rgb(0x7DB4FF), ramp: Ramp(shadow: 0x5B6DC4, base: 0x7DB4FF, light: 0x92CBFF)),
+        Swatch(id: 6, name: "purple", color: rgb(0xB993FF), ramp: Ramp(shadow: 0x8051C2, base: 0xB993FF, light: 0xD6A7FC)),
+        Swatch(id: 7, name: "white", color: rgb(0xFFFFFF), ramp: Ramp(shadow: 0xBBBBD1, base: 0xFFFFFF, light: 0xFCFCFC)),
     ]
     static let skin: [Swatch] = [
-        Swatch(id: 0, name: "peach", color: rgb(0xFFE2D0)),
-        Swatch(id: 1, name: "rosy", color: rgb(0xF6C9AE)),
-        Swatch(id: 2, name: "honey", color: rgb(0xE0A97F)),
-        Swatch(id: 3, name: "caramel", color: rgb(0xB97E57)),
-        Swatch(id: 4, name: "cocoa", color: rgb(0x8A5A3D)),
+        Swatch(id: 0, name: "peach", color: rgb(0xFFE2D0), ramp: Ramp(shadow: 0xCFACA1, base: 0xFFE2D0, light: 0xFFF3E8)),
+        Swatch(id: 1, name: "rosy", color: rgb(0xF6C9AE), ramp: Ramp(shadow: 0xC89283, base: 0xF6C9AE, light: 0xFFDDC0)),
+        Swatch(id: 2, name: "honey", color: rgb(0xE0A97F), ramp: Ramp(shadow: 0xB57156, base: 0xE0A97F, light: 0xE6BE93)),
+        Swatch(id: 3, name: "caramel", color: rgb(0xB97E57), ramp: Ramp(shadow: 0x8E4833, base: 0xB97E57, light: 0xC39163)),
+        Swatch(id: 4, name: "cocoa", color: rgb(0x8A5A3D), ramp: Ramp(shadow: 0x5F291A, base: 0x8A5A3D, light: 0x956C48)),
     ]
     static let hair: [Swatch] = [
-        Swatch(id: 0, name: "golden", color: rgb(0xFFD36E)),
-        Swatch(id: 1, name: "brown", color: rgb(0x9A6440)),
-        Swatch(id: 2, name: "black", color: rgb(0x4A3A44)),
-        Swatch(id: 3, name: "red", color: rgb(0xE8774E)),
-        Swatch(id: 4, name: "pink", color: rgb(0xFF9AD0)),
-        Swatch(id: 5, name: "purple", color: rgb(0xB48CFF)),
-        Swatch(id: 6, name: "blue", color: rgb(0x79C3FF)),
-        Swatch(id: 7, name: "mint", color: rgb(0x86E6C4)),
+        Swatch(id: 0, name: "golden", color: rgb(0xFFD36E), ramp: Ramp(shadow: 0xD18819, base: 0xFFD36E, light: 0xFEEFCE)),
+        Swatch(id: 1, name: "brown", color: rgb(0x9A6440), ramp: Ramp(shadow: 0x632512, base: 0x9A6440, light: 0xAA7C51)),
+        Swatch(id: 2, name: "black", color: rgb(0x4A3A44), ramp: Ramp(shadow: 0x1D111E, base: 0x4A3A44, light: 0x5E4D54)),
+        Swatch(id: 3, name: "red", color: rgb(0xE8774E), ramp: Ramp(shadow: 0xAB292E, base: 0xE8774E, light: 0xF99458)),
+        Swatch(id: 4, name: "pink", color: rgb(0xFF9AD0), ramp: Ramp(shadow: 0xB35CAA, base: 0xFF9AD0, light: 0xFFC3D6)),
+        Swatch(id: 5, name: "purple", color: rgb(0xB48CFF), ramp: Ramp(shadow: 0x7C48C1, base: 0xB48CFF, light: 0xD4A4FE)),
+        Swatch(id: 6, name: "blue", color: rgb(0x79C3FF), ramp: Ramp(shadow: 0x517DC7, base: 0x79C3FF, light: 0x9FDBFE)),
+        Swatch(id: 7, name: "mint", color: rgb(0x86E6C4), ramp: Ramp(shadow: 0x09A79A, base: 0x86E6C4, light: 0xB4F9D1)),
     ]
     static let eyes: [Swatch] = [
         Swatch(id: 0, name: "blue", color: rgb(0x6FA2F0)),

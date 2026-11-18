@@ -1,13 +1,19 @@
 """Render every dress-up layer of the avatar from one fixed camera.
-usage: python layers.py -- outdir layer1 layer2 ...   (or 'ALL' / 'preview')
-Tinted layers are rendered in near-white so the app can colour them by multiply."""
+usage: python avatar_layers.py -- outdir layer1 layer2 ...   (or 'ALL' / 'preview')
+Tinted layers are rendered near-white and ramp-tinted by the app (docs/MODEL_UPGRADE.md step 1):
+  <layer>.png    base pass: diffuse shading only, lit with headroom so the colours keep their shape
+  G_<layer>.png  gloss pass (tinted layers only): highlights only, screened on top by the app
+Layers the app draws as rendered (eyes, face, glints, gold...) get one pass with the original light.
+env: SAMPLES (default 48, adaptive), SCALE (render size, default 2 = 1600x2000), GLOSS=0 skips gloss passes"""
 import bpy, math, sys, bmesh, os
 from mathutils import Vector, Matrix
 
 ARGS = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 OUTDIR = ARGS[0] if ARGS else '/home/claude/blend/out'
 WANT = ARGS[1:] if len(ARGS) > 1 else ['preview']
-SAMPLES = int(os.environ.get('SAMPLES', '40'))
+SAMPLES = int(os.environ.get('SAMPLES', '48'))
+SCALE = int(os.environ.get('SCALE', '2'))
+DO_GLOSS = os.environ.get('GLOSS', '1') != '0'
 os.makedirs(OUTDIR, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -108,7 +114,7 @@ def star_mesh(R, r, loc, rot, m, thick=0.07, name='star'):
 W_SKIN = mat('wskin', '#FFF3EE', 0.45, sss=0.35, coat=0.15)
 W_HAIR = mat('whair', '#F7F3F5', 0.34, coat=0.5, spec=0.5, sss=0.1)
 W_CLOTH = mat('wcloth', '#FBFAFB', 0.42, coat=0.25, sss=0.05)
-W_SHOE = mat('wshoe', '#FBFAFB', 0.3, coat=0.6)
+W_SHOE = mat('wshoe', '#EDEBED', 0.3, coat=0.6)   # a touch darker: toe tops facing the key light clipped
 W_WING = mat('wwing', '#FFFFFF', 0.15, trans=0.55, emit=0.15, coat=0.6)
 UNDER = mat('under', '#FFFFFF', 0.6, sss=0.05)
 # eyes in greys (tinted later); highlights separate & untinted
@@ -678,7 +684,8 @@ for g in HAIRS:
 
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = SAMPLES; sc.cycles.use_denoising = True
 sc.render.film_transparent = True
-sc.render.resolution_x = 800; sc.render.resolution_y = 1000
+sc.render.resolution_x = 800; sc.render.resolution_y = 1000; sc.render.resolution_percentage = 100 * SCALE
+sc.cycles.use_adaptive_sampling = True; sc.cycles.adaptive_threshold = 0.02
 sc.render.image_settings.color_mode = 'RGBA'
 sc.view_settings.view_transform = 'Standard'; sc.view_settings.look = 'Medium High Contrast'; sc.view_settings.exposure = -0.95
 
@@ -708,15 +715,73 @@ def render(path):
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
 
-if WANT == ['ALL']: WANT = ALL
+# ---------------- passes (docs/MODEL_UPGRADE.md 1.1 and 1.2) ----------------
+TINTED = [W_SKIN, W_HAIR, W_CLOTH, W_SHOE, W_WING]
+LIGHTS = {tuple(round(v, 2) for v in o.location): o for o in bpy.data.objects if o.type == 'LIGHT'}
+BACK_LIGHTS = [o for o in LIGHTS.values() if o.location.y > 0]      # edge lights behind / above the doll
+FILL, LEFT_BACK = LIGHTS[(3.5, -4.0, 1.5)], LIGHTS[(-3.2, 2.5, 3.2)]
+BG = sc.world.node_tree.nodes['Background']
+TODAY = dict(fill=(FILL.data.energy, tuple(FILL.data.color)), left=LEFT_BACK.data.energy,
+             world=BG.inputs['Strength'].default_value, exposure=sc.view_settings.exposure)
+
+def lighting(headroom):
+    """Tinted layers: weaker cooler fill, dimmer left edge light, less ambient and lower exposure,
+    so lit areas land around 0.75 instead of clipping at 1.0. Untinted layers keep the original light."""
+    FILL.data.energy, FILL.data.color = (70, (0.92, 0.94, 1.0)) if headroom else TODAY['fill']
+    LEFT_BACK.data.energy = 450 if headroom else TODAY['left']
+    BG.inputs['Strength'].default_value = 0.3 if headroom else TODAY['world']
+    sc.view_settings.exposure = -1.35 if headroom else TODAY['exposure']
+
+def _b(m): return m.node_tree.nodes.get('Principled BSDF')
+SAVED = {}
+for m in bpy.data.materials:
+    b = _b(m)
+    if b: SAVED[m.name] = (tuple(b.inputs['Base Color'].default_value), b.inputs['Subsurface Weight'].default_value,
+                           b.inputs['Specular IOR Level'].default_value, b.inputs['Coat Weight'].default_value,
+                           b.inputs['Emission Strength'].default_value)
+
+def materials(mode):
+    """full: as authored. base: tinted materials lose spec and coat (diffuse only).
+    gloss: tinted materials keep only spec and coat on black; everything else goes black."""
+    for m in bpy.data.materials:
+        b = _b(m)
+        if not b: continue
+        base, sss, spec, coat, emit = SAVED[m.name]; t = m in TINTED
+        g = mode == 'gloss'
+        b.inputs['Base Color'].default_value = (0, 0, 0, 1) if g else base
+        b.inputs['Subsurface Weight'].default_value = 0 if g else sss
+        b.inputs['Emission Strength'].default_value = 0 if g else emit
+        b.inputs['Specular IOR Level'].default_value = 0 if (mode == 'base' and t) or (g and not t) else spec
+        b.inputs['Coat Weight'].default_value = 0 if (mode == 'base' and t) or (g and not t) else coat
+    for o in BACK_LIGHTS: o.visible_glossy = mode != 'gloss'    # no bright outline round every item
+    sc.world.cycles_visibility.glossy = mode != 'gloss'         # no pink sheen from the sky
+
+def tinted(layer):
+    return any(m in TINTED for o in COLL[layer].objects for m in getattr(o.data, 'materials', []) if m)
+
+def render_pass(layer, kind):
+    t = tinted(layer)
+    materials('gloss' if kind == 'G' else ('base' if t else 'full'))
+    lighting(t)
+    show_only(layer, HOLD[layer])
+    # see-through pieces (blush discs, glints) render grainy at low sample counts
+    sc.cycles.samples = max(SAMPLES, 256) if layer == 'face' or layer.endswith('_shine') else SAMPLES
+    render(os.path.join(OUTDIR, ('G_' if kind == 'G' else '') + f'{layer}.png'))
+    print('DONE', kind, layer, flush=True)
+
+HOLD['capproxy'] = []      # the shared hair cap: process_art.py lets hat contact shadows fall on it
+if WANT == ['ALL']: WANT = ALL + ['capproxy']
 for L in WANT:
     if L == 'preview':
+        materials('full'); lighting(False)
         vis = set(os.environ.get('VIS', 'skin,under,eyes,eyeshine,face,hair_curls,hair_curls_shine,dress_aline,shoes_mary,hat_star').split(','))
         for g, c in COLL.items():
             for o in c.objects:
                 o.hide_render = g not in vis; o.is_holdout = False
         render(os.path.join(OUTDIR, 'preview.png'))
-    else:
-        show_only(L, HOLD[L])
-        render(os.path.join(OUTDIR, f'{L}.png'))
-    print('DONE', L, flush=True)
+        continue
+    if L.startswith('G_'):
+        render_pass(L[2:], 'G'); continue
+    render_pass(L, 'L')
+    if DO_GLOSS and tinted(L) and L != 'capproxy':
+        render_pass(L, 'G')
