@@ -49,6 +49,7 @@ struct BoutiqueView: View {
 
     @State private var tab: Category = .dress
     @State private var drawerColor: [Category: Int] = [:]
+    @State private var drawerPage: [Category: Int] = [:]
     @State private var drag: DragState? = nil
     @State private var frames: [String: CGRect] = [:]
 
@@ -273,10 +274,15 @@ struct BoutiqueView: View {
     }
 
     private func drawer(height: CGFloat) -> some View {
-        let items = Catalog.items(in: tab)
-        let anyTint = items.contains { $0.tintable }
+        let all = Catalog.items(in: tab)
+        // 5 stickers + "take off" per page; big arrows flip pages when a tab has more.
+        let perPage = 5
+        let pages = max(1, (all.count + perPage - 1) / perPage)
+        let page = min(drawerPage[tab] ?? 0, pages - 1)
+        let items = Array(all[(page * perPage)..<min(all.count, (page + 1) * perPage)])
+        let anyTint = all.contains { $0.tintable }
         let sel = drawerColor[tab] ?? currentColor(tab)
-        let stickerSize: CGFloat = min(150, (height - 260) / 3)
+        let stickerSize: CGFloat = min(150, (height - (pages > 1 ? 340 : 260)) / 3)
         return VStack(spacing: 14) {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 10) {
                 ForEach(Palette.clothes) { s in
@@ -294,6 +300,23 @@ struct BoutiqueView: View {
                     sticker(.item(it.id), tint: tint, size: stickerSize, wearing: game.outfit[tab]?.item == it.id)
                 }
                 sticker(.takeOff(tab), tint: nil, size: stickerSize, wearing: false)
+            }
+            .id("\(tab.rawValue)-\(page)")
+            .transition(.opacity)
+            if pages > 1 {
+                HStack(spacing: 18) {
+                    CandyButton(symbol: "chevron.left", color: tab.tabColor, size: 60) { flipPage(-1, pages: pages) }
+                        .opacity(page > 0 ? 1 : 0.35)
+                    HStack(spacing: 10) {
+                        ForEach(0..<pages, id: \.self) { i in
+                            Circle().fill(i == page ? tab.tabColor : Color.white)
+                                .overlay(Circle().stroke(tab.tabColor, lineWidth: 3))
+                                .frame(width: 18, height: 18)
+                        }
+                    }
+                    CandyButton(symbol: "chevron.right", color: tab.tabColor, size: 60) { flipPage(1, pages: pages) }
+                        .opacity(page < pages - 1 ? 1 : 0.35)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -411,6 +434,14 @@ struct BoutiqueView: View {
         Sound.shared.tapHaptic()
         react()
         checkProgress()
+    }
+
+    private func flipPage(_ step: Int, pages: Int) {
+        let cur = min(drawerPage[tab] ?? 0, pages - 1)
+        let next = cur + step
+        guard next >= 0, next < pages else { Sound.shared.play(.boing, volume: 0.5); return }
+        Sound.shared.play(.whoosh, volume: 0.6)
+        withAnimation(.easeInOut(duration: 0.2)) { drawerPage[tab] = next }
     }
 
     private func pickColor(_ i: Int) {

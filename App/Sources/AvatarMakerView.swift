@@ -34,7 +34,7 @@ struct AvatarMakerView: View {
                         ForEach(Catalog.hairStyles.indices, id: \.self) { i in
                             Button { pick(say: Catalog.hairStyleNames[i] + " hair") { draft.hairStyle = i } } label: {
                                 StickerIcon(name: Catalog.hairStyles[i], tint: Palette.hair[draft.hairColor].color)
-                                    .frame(width: 104, height: 104)
+                                    .frame(width: 82, height: 82)
                                     .scaleEffect(draft.hairStyle == i ? 1.1 : 0.92)
                                     .opacity(draft.hairStyle == i ? 1 : 0.75)
                                     .animation(.spring(response: 0.3, dampingFraction: 0.55), value: draft.hairStyle)
