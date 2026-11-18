@@ -3,7 +3,8 @@
 Dress-up sticker game for iPad, made for a little girl who loves reusable
 sticker books and cute magical pets.
 
-- **Status:** art pipeline and all v1 art done; iPad app and .ipa build not started yet.
+- **Status:** v1 Boutique app built (SwiftUI, iPad landscape). GitHub Actions builds an unsigned `Glimmie.ipa` to sideload.
+- **Get the app:** open the latest **Build iPad app** run under Actions, download `Glimmie-ipa`, sideload with AltStore or Sideloadly.
 - **Project notes, decisions and roadmap:** [docs/PROJECT.md](docs/PROJECT.md)
 - **Art pipeline (Blender):** `art/blender/` → `art/renders/` → `tools/process_art.py` → `App/Resources/Art/`
 

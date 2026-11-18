@@ -15,8 +15,8 @@ All characters and art are original; no Teenieping characters are copied.
 | Art pipeline | **Done.** Scripts render every layer from one fixed camera. |
 | Avatar + item renders | **Done.** 25 avatar layers + Glimmie body/face in `art/renders/`. |
 | App-ready assets | **Done.** `App/Resources/Art/`: full layers (`L_*`), sticker icons (`I_*`), white die-cut borders (`B_*`). |
-| iPad app (Swift) | **Not started.** Spec below. |
-| GitHub Action (.ipa build) | **Not started.** Spec below. |
+| iPad app (Swift) | **v1 built.** Avatar maker + Boutique with drag-to-wear, color dots, wishes, star jar, egg hatching, Glimmie shelf, secret looks, sounds and voice. |
+| GitHub Action (.ipa build) | **Done.** `.github/workflows/build-ipa.yml` builds an unsigned `Glimmie.ipa` plus simulator screenshots. |
 | Play-testing | Not started. |
 
 ### What's in the repo
@@ -82,7 +82,7 @@ eyes, outfits) and 4 Glimmie colors all line up and recolor cleanly.
 
 ### Known art issues (polish backlog)
 - Still "leans a little creepy" per feedback — eyes/face can be pushed further toward the reference (rounder cheeks, eye spacing, softer lid).
-- Tutu reads like a flat disc; needs ruffles.
+- ~~Tutu reads like a flat disc~~ fixed: three rippled tulle layers.
 - Balloon is partly hidden behind long hair.
 - No hair shine band; only 3 hairstyles, 4 dresses so far.
 - Single neutral pose; waving/arms-up would need extra arm layers.
@@ -117,20 +117,21 @@ eyes, outfits) and 4 Glimmie colors all line up and recolor cleanly.
 - Text-to-speech voice for every wish (AVSpeechSynthesizer).
 - Progress saved on the device (UserDefaults).
 
-### 3.2 App structure (planned)
+### 3.2 App structure (built)
 ```
 project.yml                       XcodeGen config (iPad only, landscape, iOS 16+)
 App/Sources/
   GlimmieApp.swift                entry; shows avatar maker on first launch
   Model.swift                     catalog, palette, avatar, outfit, wishes, secrets, save data
   Sound.swift                     sound effects + voice
-  DollView.swift                  stacks the layers with tints, blink/happy faces
+  DollView.swift                  art loader, layered doll (blinks), Glimmie, die-cut sticker
   AvatarMakerView.swift
-  BoutiqueView.swift              stage, drawer, drag-and-drop, wishes, rewards
-  Effects.swift                   sparkles, confetti, egg, hatch overlay
-App/Resources/Art/                generated PNGs (already done)
-App/Resources/Sounds/             generated .wav files
-App/Resources/Assets.xcassets     app icon
+  BoutiqueView.swift              stage, drawer, drag-and-drop, wishes, star flight
+  RewardsView.swift               star jar, egg -> hatch, Glimmie shelf + secret looks
+  Effects.swift                   theme, sparkles, confetti, egg drawing, buttons
+App/Resources/Art/                generated PNGs
+App/Resources/Sounds/             generated .wav files (tools/make_sounds.py)
+App/Resources/Assets.xcassets     app icon (tools/make_icon.py)
 .github/workflows/build-ipa.yml
 ```
 
@@ -156,3 +157,13 @@ SAMPLES=32 .bl/bin/python art/blender/avatar_layers.py -- art/renders ALL
 python3 tools/process_art.py
 ```
 Rendering all 25 avatar layers takes ~6 minutes on CPU.
+
+---
+
+## 5. Building, installing, testing
+- Every push to `main` and every PR runs **Build iPad app** on a macOS runner. Download the `Glimmie-ipa` artifact from the run page, then sideload it with AltStore or Sideloadly.
+- The `screenshots` artifact has simulator captures of the avatar maker, Boutique, a wish, and the egg.
+- Local build on a Mac: `brew install xcodegen && xcodegen generate && open Glimmie.xcodeproj`.
+- Launch arguments for testing: `-resetSave` (fresh start), `-demoBoutique` (skip the avatar maker, sample outfit), `-demoEgg` (egg ready to hatch).
+- Grown-ups: on the Glimmie shelf, press and hold the small arrow at the bottom left for 3 seconds to reset all progress.
+- Regenerate assets: `python3 tools/make_sounds.py`, `python3 tools/make_icon.py`.
