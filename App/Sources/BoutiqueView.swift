@@ -70,6 +70,7 @@ struct BoutiqueView: View {
     @State private var jarPulse = false
     @State private var showEgg = false
     @State private var showShelf = false
+    @State private var showHouse = ProcessInfo.processInfo.arguments.contains("-demoHouse")
     @State private var secretBanner: SecretLook? = nil
     @State private var hintFor: String? = nil
     @State private var lastHint = Date.distantPast
@@ -98,6 +99,7 @@ struct BoutiqueView: View {
                         CandyButton(symbol: "face.smiling", color: Color(red: 1, green: 0.85, blue: 0.92), size: 66) { editAvatar() }
                         StarJar(stars: game.stars, pulse: jarPulse).frameTag("jar")
                         Spacer()
+                        CandyButton(symbol: "house.fill", color: Color(red: 1, green: 0.8, blue: 0.62), size: 66) { showHouse = true }
                         CandyButton(symbol: "square.grid.2x2.fill", color: Theme.lilac, size: 66) { showShelf = true }
                     }
                     .padding(.leading, 22)
@@ -145,6 +147,13 @@ struct BoutiqueView: View {
         }
         .fullScreenCover(isPresented: $showShelf) {
             ShelfView { showShelf = false }.environmentObject(game)
+        }
+        .fullScreenCover(isPresented: $showHouse) {
+            HouseView {
+                showHouse = false
+                if wish == nil { scheduleWish(after: 3) }
+            }
+            .environmentObject(game)
         }
         .onAppear(perform: appear)
     }
@@ -508,7 +517,7 @@ struct BoutiqueView: View {
     private func scheduleWish(after t: Double) {
         wishTask?.cancel()
         let task = DispatchWorkItem {
-            guard wish == nil, !showEgg else { return }
+            guard wish == nil, !showEgg, !showHouse else { return }
             let w = Wish.make(level: game.wishesDone, glimmies: game.owned, avoid: game.outfit)
             wish = w
             Sound.shared.play(.whoosh, volume: 0.7)

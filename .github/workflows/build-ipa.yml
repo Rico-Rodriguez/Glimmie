@@ -132,6 +132,10 @@ jobs:
           xcrun simctl launch "$UDID" com.glimmie.closet -demoEgg
           sleep 6
           xcrun simctl io "$UDID" screenshot shots/4-egg.png
+          xcrun simctl terminate "$UDID" com.glimmie.closet
+          xcrun simctl launch "$UDID" com.glimmie.closet -demoBoutique -demoHouse
+          sleep 8
+          xcrun simctl io "$UDID" screenshot shots/5-house.png
       - uses: actions/upload-artifact@v5
         if: always()
         with:
