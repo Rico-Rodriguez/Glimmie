@@ -1,0 +1,5 @@
+.bl/
+*.blend1
+.DS_Store
+build/
+*.xcodeproj/
