@@ -24,9 +24,13 @@ All characters and art are original; no Teenieping characters are copied.
 art/blender/avatar_layers.py   builds avatar + all wearables, renders any/all layers
 art/blender/glimmie_layers.py  Glimmie pet: tintable body + untinted face
 art/renders/                   raw renders (800x1000 avatar, 600x600 Glimmie), RGBA
+art/blender/experiments/       prototypes of art changes (model_v2_proto.py: docs/MODEL_UPGRADE.md)
 tools/process_art.py           renders -> App/Resources/Art (layers, icons, borders)
+tools/compose_layers.py        before/after sheet: shipped layers next to new renders, drawn as the app draws them
+tools/make_ramps.py            shadow, base and light tones for every palette color (for ramp tinting)
 App/Resources/Art/             app-ready PNGs (~7 MB)
 docs/PROJECT.md                this file
+docs/MODEL_UPGRADE.md          the exact plan for better models
 ```
 
 ### Layers (draw order, back → front)
