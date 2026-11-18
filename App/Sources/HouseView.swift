@@ -241,21 +241,9 @@ struct HouseView: View {
         .onTapGesture { tickle() }
     }
 
-    @ViewBuilder
     private func accessoryOnPet(_ a: PetAccessory, size s: CGFloat) -> some View {
-        if let art = a.art {
-            // Icons carry 22px of padding on a 220px item, so scale the frame up to match.
-            let img = Art.image("I_" + art).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-            Group {
-                if a.tinted { img.colorMultiply(HouseCatalog.bowColor(for: selected)) } else { img }
-            }
-            .frame(width: s * a.width * 1.2)
-            .position(x: s * a.x, y: s * a.y)
-        } else {
-            PetGlasses()
-                .frame(width: s * a.width, height: s * 0.17)
-                .position(x: s * a.x, y: s * a.y)
-        }
+        Art.image("L_" + a.layer).resizable().interpolation(.high)
+            .frame(width: s, height: s)
     }
 
     private func thoughtBubble(_ n: Need) -> some View {
@@ -371,16 +359,8 @@ struct HouseView: View {
         case .sponge:
             EmojiSticker(emoji: "🧽")
         case .accessory(let id):
-            if let a = HouseCatalog.accessory(id), let art = a.art {
-                StickerIcon(name: art, tint: a.tinted ? HouseCatalog.bowColor(for: selected) : nil)
-                    .padding(6)
-            } else {
-                ZStack {
-                    Circle().fill(Color.white).shadow(color: Theme.ink.opacity(0.25), radius: 3, y: 4)
-                    PetGlasses().aspectRatio(2.6, contentMode: .fit).padding(16)
-                }
-                .padding(8)
-            }
+            StickerIcon(name: HouseCatalog.accessory(id)?.layer ?? "glim_acc_bow")
+                .padding(6)
         case .takeOff:
             ZStack {
                 Circle().fill(Color.white).shadow(color: Theme.ink.opacity(0.25), radius: 3, y: 4)
@@ -712,33 +692,6 @@ struct EmojiSticker: View {
             .frame(width: d * 0.9, height: d * 0.9)
             .position(x: g.size.width / 2, y: g.size.height / 2)
         }
-    }
-}
-
-struct PetGlasses: View {
-    var body: some View {
-        GeometryReader { g in
-            let w = g.size.width, h = g.size.height
-            let lens = min(h, w * 0.4)
-            let rim = Color(red: 0.96, green: 0.38, blue: 0.64)
-            HStack(spacing: 0) {
-                glassLens(rim).frame(width: lens, height: lens)
-                Capsule().fill(rim).frame(width: max(4, w - lens * 2), height: max(4, lens * 0.12))
-                glassLens(rim).frame(width: lens, height: lens)
-            }
-            .frame(width: w, height: h)
-        }
-    }
-
-    private func glassLens(_ rim: Color) -> some View {
-        Circle()
-            .fill(Color(red: 1, green: 0.6, blue: 0.82).opacity(0.5))
-            .overlay(Circle().stroke(rim, lineWidth: 6))
-            .overlay(
-                Ellipse().fill(Color.white.opacity(0.75))
-                    .frame(width: 14, height: 8).rotationEffect(.degrees(-30))
-                    .offset(x: -10, y: -12)
-            )
     }
 }
 
