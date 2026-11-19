@@ -1,8 +1,8 @@
 {
   "name": "Glimmie",
   "identifier": "com.glimmie.source",
-  "subtitle": "Glimmie Closet dress-up sticker game",
-  "description": "Builds of Glimmie Closet, a dress-up sticker game for iPad.",
+  "subtitle": "A drawer of kids' games, with no ads and nothing to buy",
+  "description": "Builds of Glimmie, a drawer of kids' games for iPad and iPhone.",
   "iconURL": "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "website": "https://github.com/Rico-Rodriguez/Glimmie",
   "tintColor": "FF8FC4",
@@ -11,16 +11,22 @@
       "name": "Glimmie",
       "bundleIdentifier": "com.glimmie.closet",
       "developerName": "Glimmie",
-      "subtitle": "Dress-up sticker game",
-      "localizedDescription": "Design your own girl, drag stickers to dress her up, grant Glimmie wishes, fill the star jar and hatch magic eggs.",
+      "subtitle": "Kids' game drawer",
+      "localizedDescription": "A drawer of kids' games. Dress Up: a chibi doll with hundreds of hair, face, clothes and accessory choices, colors, patterns, scenes and a photo gallery. Everything is free: no ads, no purchases, nothing locked.",
       "iconURL": "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/App/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
       "tintColor": "FF8FC4",
       "screenshotURLs": [
-        "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/1-avatar-maker.jpg",
-        "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/3-boutique-wish.jpg",
-        "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/4-egg.jpg"
+        "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/1-drawer.jpg",
+        "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/2-dressup.jpg",
+        "https://raw.githubusercontent.com/Rico-Rodriguez/Glimmie/main/docs/screenshots/4-dressup-clothes.jpg"
       ],
       "versions": [
+        {
+          "version": "1.0.57",
+          "date": "2026-11-19T07:55:46Z",
+          "size": 1738892,
+          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.57/Glimmie.ipa"
+        },
         {
           "version": "1.0.48",
           "date": "2026-11-19T03:44:57Z",
@@ -74,18 +80,12 @@
           "date": "2026-11-18T19:44:07Z",
           "size": 6297010,
           "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.30/Glimmie.ipa"
-        },
-        {
-          "version": "1.0.27",
-          "date": "2026-11-18T15:47:32Z",
-          "size": 4198951,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.27/Glimmie.ipa"
         }
       ],
-      "version": "1.0.48",
-      "versionDate": "2026-11-19T03:44:57Z",
-      "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.48/Glimmie.ipa",
-      "size": 23153209,
+      "version": "1.0.57",
+      "versionDate": "2026-11-19T07:55:46Z",
+      "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.57/Glimmie.ipa",
+      "size": 1738892,
       "appPermissions": {}
     }
   ],
