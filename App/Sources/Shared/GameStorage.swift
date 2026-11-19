@@ -1,0 +1,36 @@
+import Foundation
+
+/// Each game's own save folder: Application Support/Games/<game id>/.
+enum GameStorage {
+    static var root: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Games", isDirectory: true)
+    }
+
+    static func folder(_ game: String) -> URL {
+        let url = root.appendingPathComponent(game, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// Reads a JSON file from a game's folder, or nil if it is missing or unreadable.
+    static func load<T: Decodable>(_ type: T.Type, game: String, file: String) -> T? {
+        let url = folder(game).appendingPathComponent(file)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// Writes a JSON file into a game's folder atomically.
+    static func save<T: Encodable>(_ value: T, game: String, file: String) {
+        let url = folder(game).appendingPathComponent(file)
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        try? data.write(to: url, options: .atomic)
+    }
+}
+
+/// Files bundled for one game, from App/Resources/Games/<game>/.
+enum GameFiles {
+    static func url(_ name: String, _ ext: String, game: String) -> URL? {
+        Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Games/\(game)")
+    }
+}
