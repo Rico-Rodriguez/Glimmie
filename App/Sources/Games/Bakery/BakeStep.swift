@@ -633,12 +633,19 @@ struct OvenHeat: View {
     let t: Double
 
     var body: some View {
-        Canvas { ctx, size in
+        let time = t
+        return Canvas { ctx, size in OvenHeat.paint(ctx, size: size, t: time) }
+    }
+
+    static func paint(_ ctx: GraphicsContext, size: CGSize, t: Double) {
+        do {
             let rect = CGRect(origin: .zero, size: size)
             var g = ctx
             g.clip(to: RoundedRectangle(cornerRadius: 22, style: .continuous).path(in: rect))
             let warm = Double(fxEase(t / 0.9))
-            let flicker = 0.85 + 0.15 * sin(t * 9) * sin(t * 3.7)
+            let f1: Double = sin(t * 9)
+            let f2: Double = sin(t * 3.7)
+            let flicker: Double = 0.85 + 0.15 * f1 * f2
             var w = g
             w.opacity = warm * 0.45 * flicker
             w.fill(Path(rect), with: .linearGradient(Gradient(colors: [Color(hex: 0xFF8A3D), Color(hex: 0x7A2E1E), Color(hex: 0xFF9A4A)]),
@@ -666,7 +673,9 @@ struct OvenHeat: View {
                 for j in 0...n {
                     let u = CGFloat(j) / CGFloat(n)
                     let y = size.height * (1 - u)
-                    let x = x0 + CGFloat(sin(Double(y) * 0.06 - t * 5 + Double(k) * 1.3)) * (3 + 6 * u)
+                    let wave: Double = sin(Double(y) * 0.06 - t * 5 + Double(k) * 1.3)
+                    let amp: CGFloat = 3 + 6 * u
+                    let x: CGFloat = x0 + CGFloat(wave) * amp
                     if j == 0 { p.move(to: CGPoint(x: x, y: y)) } else { p.addLine(to: CGPoint(x: x, y: y)) }
                 }
                 var s = g
@@ -682,10 +691,16 @@ struct SteamWisps: View {
     let t: Double
 
     var body: some View {
-        Canvas { ctx, size in
+        let time = t
+        return Canvas { ctx, size in SteamWisps.paint(ctx, size: size, t: time) }
+    }
+
+    static func paint(_ ctx: GraphicsContext, size: CGSize, t: Double) {
+        do {
             var g = ctx
             g.addFilter(.blur(radius: 4))
-            let overall = Double(fxEase(t / 0.5)) * max(0.35, 1 - t / 10)
+            let fadeIn = Double(fxEase(t / 0.5))
+            let overall: Double = fadeIn * max(0.35, 1 - t / 10)
             for k in 0..<4 {
                 let period = 2.4
                 let ph = (t + Double(k) * 0.6).truncatingRemainder(dividingBy: period) / period
@@ -694,12 +709,15 @@ struct SteamWisps: View {
                 let n = 18
                 for j in 0...n {
                     let u = CGFloat(j) / CGFloat(n)
-                    let y = size.height * (1 - u) - CGFloat(ph) * 60
-                    let x = x0 + CGFloat(sin(Double(u) * 5 + t * 2.2 + Double(k) * 1.7)) * (4 + 16 * u)
+                    let y: CGFloat = size.height * (1 - u) - CGFloat(ph) * 60
+                    let wave: Double = sin(Double(u) * 5 + t * 2.2 + Double(k) * 1.7)
+                    let amp: CGFloat = 4 + 16 * u
+                    let x: CGFloat = x0 + CGFloat(wave) * amp
                     if j == 0 { p.move(to: CGPoint(x: x, y: y)) } else { p.addLine(to: CGPoint(x: x, y: y)) }
                 }
                 var w = g
-                w.opacity = 0.85 * sin(ph * .pi) * overall
+                let lift: Double = sin(ph * Double.pi)
+                w.opacity = 0.85 * lift * overall
                 w.stroke(p, with: .linearGradient(Gradient(colors: [.white.opacity(0), .white, .white.opacity(0)]),
                                                  startPoint: CGPoint(x: x0, y: size.height), endPoint: CGPoint(x: x0, y: 0)),
                          style: StrokeStyle(lineWidth: 12, lineCap: .round, lineJoin: .round))
