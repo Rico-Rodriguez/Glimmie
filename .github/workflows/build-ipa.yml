@@ -143,27 +143,25 @@ jobs:
           sleep 8
           xcrun simctl io "$UDID" screenshot shots/1-avatar-maker.png
           xcrun simctl terminate "$UDID" com.glimmie.closet
-          xcrun simctl launch "$UDID" com.glimmie.closet -demoBoutique
-          sleep 9
-          xcrun simctl io "$UDID" screenshot shots/2-boutique.png
-          sleep 6
-          xcrun simctl io "$UDID" screenshot shots/3-boutique-wish.png
-          xcrun simctl terminate "$UDID" com.glimmie.closet
-          xcrun simctl launch "$UDID" com.glimmie.closet -demoEgg
-          sleep 6
-          xcrun simctl io "$UDID" screenshot shots/4-egg.png
-          xcrun simctl terminate "$UDID" com.glimmie.closet
-          xcrun simctl launch "$UDID" com.glimmie.closet -demoBoutique -demoHouse
-          sleep 8
-          xcrun simctl io "$UDID" screenshot shots/5-house.png
+          shot() { name=$1; wait=$2; shift 2; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
+          shot 2-map 7 -demoMap
+          shot 3-boutique-wish 13 -demoMap -demoBoutique
+          shot 4-egg 6 -demoMap -demoEgg
+          shot 5-house 8 -demoMap -demoHouse
+          shot 7-star-catch 11 -demoMap -demoPlay catchStars
+          shot 8-match-cards 6 -demoMap -demoPlay memory
+          shot 9-bubble-pop 7 -demoMap -demoPlay bubbles
+          shot 10-glimmie-dance 6 -demoMap -demoPlay dance
+          shot 11-fashion-show-wish 9 -demoMap -demoPlay dress
+          shot 12-treasure-chest 4 -demoMap -demoPlay chest
           xcrun simctl shutdown "$UDID"
           PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$PHONE"
           xcrun simctl bootstatus "$PHONE" -b
           xcrun simctl install "$PHONE" "$APP"
-          xcrun simctl launch "$PHONE" com.glimmie.closet -demoBoutique
+          xcrun simctl launch "$PHONE" com.glimmie.closet -demoMap
           sleep 14
-          xcrun simctl io "$PHONE" screenshot shots/6-iphone-boutique.png
+          xcrun simctl io "$PHONE" screenshot shots/6-iphone-map.png
       - uses: actions/upload-artifact@v5
         if: always()
         with:

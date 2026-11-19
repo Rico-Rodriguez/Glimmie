@@ -9,6 +9,7 @@ sticker books and cute magical pets.
   Every push to `main` builds a new version, attaches `Glimmie.ipa` to a GitHub Release (`v1.0.<build>`), and updates `source.json`.
   The repo must be **public** for Feather to read the source and download the .ipa.
 - **Or by hand:** grab `Glimmie.ipa` from the latest [Release](https://github.com/Rico-Rodriguez/Glimmie/releases/latest) and import it into Feather, AltStore or Sideloadly.
+- **How the game plays (Sparkle Path, mini-games):** [docs/GAMEPLAY.md](docs/GAMEPLAY.md)
 - **Project notes and decisions:** [docs/PROJECT.md](docs/PROJECT.md)
 - **Next steps (prioritized roadmap):** [docs/ROADMAP.md](docs/ROADMAP.md)
 - **Art pipeline (Blender):** `art/blender/` → `art/renders/` → `tools/process_art.py` → `App/Resources/Art/`

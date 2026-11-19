@@ -16,7 +16,8 @@ final class SaveDataTests: XCTestCase {
         version: 7, madeAvatar: true,
         avatar: Avatar(skin: 4, hairStyle: 0, hairColor: 7, eyes: 3),
         outfit: ["wings": Worn(item: "wings_fairy", color: 2)],
-        stars: 2, wishesDone: 9, owned: [0, 1, 2, 3], secrets: ["star_fairy", "party_bunny"], eggWaiting: true)
+        stars: 2, wishesDone: 9, owned: [0, 1, 2, 3], secrets: ["star_fairy", "party_bunny"], eggWaiting: true,
+        adventure: AdventureSave(stop: 14, backdrops: ["sea", "stars"], backdrop: "stars", buddy: 3, best: ["memory": 28]))
 
     private var suite = ""
     private var defaults: UserDefaults!
@@ -45,6 +46,17 @@ final class SaveDataTests: XCTestCase {
         XCTAssertEqual(s.owned, [0, 3, 5])
         XCTAssertEqual(s.secrets, ["fairy_queen"])
         XCTAssertFalse(s.eggWaiting)
+        XCTAssertEqual(s.adventure, AdventureSave(), "a save from before the Sparkle Path starts at the first stop")
+    }
+
+    func testABadAdventureFieldOnlyResetsThatField() throws {
+        let json = #"{"stars":2,"adventure":{"stop":"far","backdrops":["sea",3,"snow"],"backdrop":"snow","buddy":2}}"#
+        let s = try JSONDecoder().decode(SaveData.self, from: Data(json.utf8))
+        XCTAssertEqual(s.stars, 2)
+        XCTAssertEqual(s.adventure.stop, 0)
+        XCTAssertEqual(s.adventure.backdrops, ["sea", "snow"])
+        XCTAssertEqual(s.adventure.backdrop, "snow")
+        XCTAssertEqual(s.adventure.buddy, 2)
     }
 
     func testMissingFieldsGetTheirDefaults() throws {
@@ -77,7 +89,8 @@ final class SaveDataTests: XCTestCase {
     /// which would let a forgotten `init(from:)` line slip through the round trip.
     func testEveryFieldFixtureCoversAllFields() {
         let pairs = [(Mirror(reflecting: SaveData()), Mirror(reflecting: Self.everyField), "SaveData"),
-                     (Mirror(reflecting: Avatar()), Mirror(reflecting: Self.everyField.avatar), "Avatar")]
+                     (Mirror(reflecting: Avatar()), Mirror(reflecting: Self.everyField.avatar), "Avatar"),
+                     (Mirror(reflecting: AdventureSave()), Mirror(reflecting: Self.everyField.adventure), "AdventureSave")]
         for (base, fixture, name) in pairs {
             XCTAssertEqual(base.children.count, fixture.children.count)
             for (d, f) in zip(base.children, fixture.children) {
@@ -131,6 +144,7 @@ final class SaveDataTests: XCTestCase {
         g.owned = [0, 2]
         g.secrets = ["garden_girl"]
         g.eggWaiting = true
+        g.adventure = AdventureSave(stop: 7, backdrops: ["castle"], backdrop: "castle", buddy: 2, best: ["catchStars": 19])
 
         let again = GameState(defaults: defaults)
         XCTAssertTrue(again.madeAvatar)
@@ -141,6 +155,62 @@ final class SaveDataTests: XCTestCase {
         XCTAssertEqual(again.owned, [0, 2])
         XCTAssertEqual(again.secrets, ["garden_girl"])
         XCTAssertTrue(again.eggWaiting)
+        XCTAssertEqual(again.adventure, g.adventure)
+    }
+
+    // MARK: Sparkle Path
+
+    func testStarsFillTheJarAndBecomeAnEgg() {
+        let g = GameState(defaults: defaults)
+        g.addStars(3)
+        XCTAssertEqual(g.stars, 3)
+        XCTAssertFalse(g.eggWaiting)
+        g.addStars(3)
+        XCTAssertTrue(g.eggWaiting)
+        XCTAssertEqual(g.stars, 1, "extra stars carry over")
+        g.addStars(3)
+        XCTAssertEqual(g.stars, GameState.jarSize - 1, "while an egg waits the jar never overflows")
+    }
+
+    func testBestScoresOnlyGoUp() {
+        let g = GameState(defaults: defaults)
+        XCTAssertTrue(g.record("memory", score: 20))
+        XCTAssertFalse(g.record("memory", score: 12))
+        XCTAssertEqual(g.adventure.best["memory"], 20)
+    }
+
+    func testBuddyIsAlwaysAnOwnedGlimmie() {
+        let g = GameState(defaults: defaults)
+        g.owned = [0, 3]
+        g.adventure.buddy = 5
+        XCTAssertEqual(g.buddy, 3)
+        g.adventure.buddy = 0
+        XCTAssertEqual(g.buddy, 0)
+    }
+
+    func testPathHasChestsEveryFourthStopAndEveryGameEachWorld() {
+        for stop in 0..<(Adventure.stopsPerWorld * 8) {
+            XCTAssertEqual(Adventure.kind(at: stop) == .chest, stop % 4 == 3, "stop \(stop)")
+        }
+        XCTAssertEqual(Adventure.kind(at: 0), .catchStars, "the first game is the easiest to understand")
+        for w in 0..<8 {
+            let kinds = Set((0..<Adventure.stopsPerWorld).map { Adventure.kind(at: w * Adventure.stopsPerWorld + $0) })
+            XCTAssertEqual(kinds, Set(StopKind.allCases), "world \(w) has every kind of stop")
+        }
+        XCTAssertTrue(Adventure.isWorldEnd(11))
+        XCTAssertFalse(Adventure.isWorldEnd(7))
+        XCTAssertEqual(Adventure.spots.count, Adventure.stopsPerWorld)
+    }
+
+    func testUnknownBackdropsFromANewerBuildAreKept() throws {
+        defaults.set(Data(#"{"madeAvatar":true,"adventure":{"stop":4,"backdrops":["sea","sea","moonbase"],"backdrop":"moonbase"}}"#.utf8),
+                     forKey: SaveStore.key)
+        let g = GameState(defaults: defaults)
+        XCTAssertEqual(g.adventure.backdrops, ["sea", "moonbase"])
+        XCTAssertNil(Backdrops.find(g.adventure.backdrop), "the stage shows the classic pink for a backdrop it doesn't know")
+        g.stars = 1
+        let saved = try JSONDecoder().decode(SaveData.self, from: XCTUnwrap(defaults.data(forKey: SaveStore.key)))
+        XCTAssertEqual(saved.adventure.backdrops, ["sea", "moonbase"])
     }
 
     func testGameStateLoadsAVersion1Save() {

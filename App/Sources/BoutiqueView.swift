@@ -45,7 +45,11 @@ struct DragState {
 
 struct BoutiqueView: View {
     @EnvironmentObject var game: GameState
-    let editAvatar: () -> Void
+    /// Back to the map.
+    var onClose: (() -> Void)? = nil
+    /// Set for a Fashion Show stop on the Sparkle Path: one wish, then the runway, then this.
+    var questDone: (() -> Void)? = nil
+    private var quest: Bool { questDone != nil }
 
     @State private var tab: Category = .dress
     @State private var drawerColor: [Category: Int] = [:]
@@ -69,8 +73,7 @@ struct BoutiqueView: View {
     @State private var starAtJar = false
     @State private var jarPulse = false
     @State private var showEgg = false
-    @State private var showShelf = false
-    @State private var showHouse = ProcessInfo.processInfo.arguments.contains("-demoHouse")
+    @State private var runway = false
     @State private var secretBanner: SecretLook? = nil
     @State private var hintFor: String? = nil
     @State private var lastHint = Date.distantPast
@@ -80,7 +83,7 @@ struct BoutiqueView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                DreamyBackground()
+                stageBackground
 
                 HStack(spacing: 0) {
                     stage(height: geo.size.height)
@@ -96,11 +99,19 @@ struct BoutiqueView: View {
                 // top bar
                 VStack {
                     HStack(spacing: 16) {
-                        CandyButton(symbol: "face.smiling", color: Color(red: 1, green: 0.85, blue: 0.92), size: 66) { editAvatar() }
-                        StarJar(stars: game.stars, pulse: jarPulse).frameTag("jar")
+                        if let onClose {
+                            CandyButton(symbol: "xmark", color: .white, size: 60) {
+                                wishTask?.cancel()
+                                onClose()
+                            }
+                        }
+                        if !quest {
+                            StarJar(stars: game.stars, pulse: jarPulse).frameTag("jar")
+                        }
                         Spacer()
-                        CandyButton(symbol: "house.fill", color: Color(red: 1, green: 0.8, blue: 0.62), size: 66) { showHouse = true }
-                        CandyButton(symbol: "square.grid.2x2.fill", color: Theme.lilac, size: 66) { showShelf = true }
+                        if !quest, !unlockedBackdrops.isEmpty {
+                            CandyButton(symbol: "photo.fill", color: Color(red: 0.75, green: 0.9, blue: 1), size: 66) { nextBackdrop() }
+                        }
                     }
                     .padding(.leading, 22)
                     .padding(.trailing, min(380, geo.size.width * 0.32) + 104 + 30)
@@ -141,26 +152,43 @@ struct BoutiqueView: View {
                         .transition(.opacity)
                         .zIndex(10)
                 }
+
+                if runway {
+                    RunwayView(avatar: game.avatar, outfit: game.outfit, judges: Array(game.owned.suffix(3))) {
+                        questDone?()
+                    }
+                    .transition(.opacity)
+                    .zIndex(11)
+                }
             }
             .coordinateSpace(name: space)
             .onPreferenceChange(FrameKey.self) { frames = $0 }
         }
-        .fullScreenCover(isPresented: $showShelf) {
-            DesignCanvas { ShelfView { showShelf = false } }.environmentObject(game)
-        }
-        .fullScreenCover(isPresented: $showHouse) {
-            DesignCanvas {
-                HouseView {
-                    showHouse = false
-                    if wish == nil { scheduleWish(after: 3) }
-                }
-            }
-            .environmentObject(game)
-        }
         .onAppear(perform: appear)
+        .onDisappear { wishTask?.cancel() }
     }
 
     // MARK: Stage
+
+    private var unlockedBackdrops: [Backdrop] { game.adventure.backdrops.compactMap { Backdrops.find($0) } }
+
+    @ViewBuilder private var stageBackground: some View {
+        if let b = Backdrops.find(game.adventure.backdrop) {
+            BackdropView(backdrop: b).id(b.id).transition(.opacity)
+        } else {
+            DreamyBackground()
+        }
+    }
+
+    /// Cycles the stage through the classic pink and every backdrop she has found.
+    private func nextBackdrop() {
+        let ids = [""] + unlockedBackdrops.map(\.id)
+        let i = ids.firstIndex(of: game.adventure.backdrop) ?? 0
+        let next = ids[(i + 1) % ids.count]
+        Sound.shared.play(.whoosh, volume: 0.7)
+        withAnimation(.easeInOut(duration: 0.5)) { game.adventure.backdrop = next }
+        Sound.shared.say(Backdrops.find(next)?.name ?? "Pink stage")
+    }
 
     private func stage(height: CGFloat) -> some View {
         let hovering = drag.map { !$0.returning && overAvatar($0.location) } ?? false
@@ -505,6 +533,11 @@ struct BoutiqueView: View {
     private func appear() {
         Art.preload()
         withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { breathe = true }
+        if quest {
+            Sound.shared.say("Fashion show time! A Glimmie needs your help to dress up!")
+            scheduleWish(after: 3)
+            return
+        }
         if game.eggWaiting {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { withAnimation { showEgg = true } }
             return
@@ -519,7 +552,7 @@ struct BoutiqueView: View {
     private func scheduleWish(after t: Double) {
         wishTask?.cancel()
         let task = DispatchWorkItem {
-            guard wish == nil, !showEgg, !showHouse else { return }
+            guard wish == nil, !showEgg, !runway else { return }
             let w = Wish.make(level: game.wishesDone, glimmies: game.owned, avoid: game.outfit)
             wish = w
             Sound.shared.play(.whoosh, volume: 0.7)
@@ -552,6 +585,15 @@ struct BoutiqueView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             Sound.shared.say(["Yay! Thank you!", "You did it! So pretty!", "Wow! Perfect!", "Hooray! I love it!"].randomElement()!,
                              interrupt: secretBanner == nil)
+        }
+        if quest {
+            // Fashion Show stop: the runway instead of the jar (the map adds the stars)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                game.wishesDone += 1
+                withAnimation(.easeIn(duration: 0.4)) { wishShown = false }
+                withAnimation(.easeInOut(duration: 0.5)) { runway = true }
+            }
+            return
         }
         // star flies to the jar
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {

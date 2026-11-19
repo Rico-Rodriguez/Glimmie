@@ -144,15 +144,16 @@ struct ShelfView: View {
                 }
                 .padding(.horizontal, 30).padding(.top, 20)
 
-                // Glimmie shelf: two wooden-ish shelves of 4
+                // Glimmie shelf: shelves of 6
+                let perRow = 6
                 VStack(spacing: 0) {
-                    ForEach(0..<2, id: \.self) { row in
-                        HStack(spacing: 18) {
-                            ForEach(0..<4, id: \.self) { col in
-                                let id = row * 4 + col
+                    ForEach(0..<((Glimmies.all.count + perRow - 1) / perRow), id: \.self) { row in
+                        HStack(spacing: 14) {
+                            ForEach(0..<min(perRow, Glimmies.all.count - row * perRow), id: \.self) { col in
+                                let id = row * perRow + col
                                 let has = game.owned.contains(id)
                                 GlimmieView(kind: id, silhouette: !has)
-                                    .frame(width: 150, height: 150)
+                                    .frame(width: 124, height: 124)
                                     .scaleEffect(tapped == id ? 1.18 : 1)
                                     .animation(.spring(response: 0.3, dampingFraction: 0.4), value: tapped)
                                     .onTapGesture {
@@ -167,7 +168,7 @@ struct ShelfView: View {
                         RoundedRectangle(cornerRadius: 10)
                             .fill(LinearGradient(colors: [Color(red: 1, green: 0.84, blue: 0.9), Color(red: 0.93, green: 0.66, blue: 0.8)],
                                                  startPoint: .top, endPoint: .bottom))
-                            .frame(width: 700, height: 22)
+                            .frame(width: 840, height: 22)
                             .shadow(color: Theme.ink.opacity(0.2), radius: 4, y: 4)
                             .padding(.bottom, 14)
                     }

@@ -164,6 +164,11 @@ enum Glimmies {
         GlimmieKind(id: 5, name: "Peachy", color: rgb(0xFFC29E)),
         GlimmieKind(id: 6, name: "Cherry", color: rgb(0xFF8A96)),
         GlimmieKind(id: 7, name: "Snowy", color: rgb(0xF4F1FF)),
+        // Only append: saves keep Glimmies by index.
+        GlimmieKind(id: 8, name: "Berry", color: rgb(0xE58CF2)),
+        GlimmieKind(id: 9, name: "Mango", color: rgb(0xFFB04D)),
+        GlimmieKind(id: 10, name: "Splash", color: rgb(0x6FE0E4)),
+        GlimmieKind(id: 11, name: "Cocoa", color: rgb(0xCFA27C)),
     ]
 }
 
@@ -328,6 +333,7 @@ final class GameState: ObservableObject {
     @Published var owned: [Int] { didSet { save() } }
     @Published var secrets: [String] { didSet { save() } }
     @Published var eggWaiting: Bool { didSet { save() } }
+    @Published var adventure: AdventureSave { didSet { save() } }
 
     private var loading = true
     private let store: SaveStore
@@ -348,6 +354,12 @@ final class GameState: ObservableObject {
                         "shoes": Worn(item: "shoes_mary", color: 1)]
             d.stars = 3; d.owned = [0, 1, 2]
         }
+        if args.contains("-demoMap") {
+            d.madeAvatar = true
+            d.stars = 3; d.owned = [0, 1, 2, 4]
+            d.adventure.stop = 5; d.adventure.buddy = 4
+            d.adventure.backdrops = ["sea"]
+        }
         if args.contains("-demoEgg") {
             d.madeAvatar = true
             d.eggWaiting = true
@@ -362,6 +374,7 @@ final class GameState: ObservableObject {
         owned = d.owned
         secrets = d.secrets
         eggWaiting = d.eggWaiting
+        adventure = d.adventure
         outfit = Self.outfit(from: d.outfit)
         loading = false
     }
@@ -373,11 +386,39 @@ final class GameState: ObservableObject {
         d.madeAvatar = madeAvatar; d.avatar = avatar; d.stars = stars; d.wishesDone = wishesDone
         d.owned = owned + futureOwned.filter { !owned.contains($0) }
         d.secrets = secrets; d.eggWaiting = eggWaiting
+        d.adventure = adventure
         d.outfit = Dictionary(uniqueKeysWithValues: outfit.map { ($0.key.rawValue, $0.value) })
         store.save(d)
     }
 
     var nextGlimmie: Int? { Glimmies.all.map(\.id).first { !owned.contains($0) } }
+
+    /// The Glimmie who plays the mini-games: her pick if she owns it, else her newest.
+    var buddy: Int { owned.contains(adventure.buddy) ? adventure.buddy : (owned.last ?? 0) }
+
+    /// Puts stars in the jar. A full jar becomes the magic egg; extra stars carry over.
+    func addStars(_ n: Int) {
+        guard n > 0 else { return }
+        if eggWaiting {
+            stars = min(Self.jarSize - 1, stars + n)
+            return
+        }
+        let total = stars + n
+        if total >= Self.jarSize {
+            stars = min(total - Self.jarSize, Self.jarSize - 1)
+            eggWaiting = true
+        } else {
+            stars = total
+        }
+    }
+
+    /// Records a finished mini-game score and says whether it beat her best.
+    @discardableResult
+    func record(_ kind: String, score: Int) -> Bool {
+        guard score > (adventure.best[kind] ?? 0) else { return false }
+        adventure.best[kind] = score
+        return true
+    }
 
     /// Starts over. The old save is kept under a backup key in case it was an accident.
     func resetAll() {
@@ -388,6 +429,7 @@ final class GameState: ObservableObject {
         futureOwned = []
         avatar = d.avatar; madeAvatar = d.madeAvatar; stars = d.stars; wishesDone = d.wishesDone
         owned = d.owned; secrets = d.secrets; eggWaiting = d.eggWaiting
+        adventure = d.adventure
         outfit = Self.outfit(from: d.outfit)
         loading = false
         save()
@@ -414,6 +456,10 @@ final class GameState: ObservableObject {
         var seen = Set<Int>()
         s.owned = s.owned.filter { Glimmies.all.indices.contains($0) && seen.insert($0).inserted }
         if s.owned.isEmpty { s.owned = [0] }
+        s.adventure.stop = max(0, s.adventure.stop)
+        // Backdrops this build doesn't know (from a newer build) stay in the save; the stage just skips them.
+        var seenBackdrops = Set<String>()
+        s.adventure.backdrops = s.adventure.backdrops.filter { seenBackdrops.insert($0).inserted }
         return s
     }
 

@@ -85,6 +85,8 @@ struct SaveData: Codable, Equatable {
     var owned: [Int] = [0]
     var secrets: [String] = []
     var eggWaiting = false
+    /// The Sparkle Path: how far she has got, and the treasures found on it.
+    var adventure = AdventureSave()
 
     /// The stored property names, which are also the JSON keys.
     static let fieldNames = Set(Mirror(reflecting: SaveData()).children.compactMap { $0.label })
@@ -103,6 +105,33 @@ extension SaveData {
         owned = c.lenientArray(.owned, default: d.owned)
         secrets = c.lenientArray(.secrets, default: d.secrets)
         eggWaiting = c.value(.eggWaiting, default: d.eggWaiting)
+        adventure = c.value(.adventure, default: d.adventure)
+    }
+}
+
+/// Progress on the Sparkle Path (Adventure.swift).
+struct AdventureSave: Codable, Equatable {
+    /// Stops finished. The path never ends: worlds repeat, a little harder each time.
+    var stop = 0
+    /// Stage backdrops found in treasure chests (Backdrops.all ids), in the order found.
+    var backdrops: [String] = []
+    /// The backdrop on the boutique stage. "" = the classic pink stage.
+    var backdrop = ""
+    /// The Glimmie who plays the mini-games with her.
+    var buddy = 0
+    /// Best score per mini-game (StopKind raw value).
+    var best: [String: Int] = [:]
+}
+
+extension AdventureSave {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = AdventureSave()
+        stop = c.value(.stop, default: d.stop)
+        backdrops = c.lenientArray(.backdrops, default: d.backdrops)
+        backdrop = c.value(.backdrop, default: d.backdrop)
+        buddy = c.value(.buddy, default: d.buddy)
+        best = c.lenientDictionary(.best, default: d.best)
     }
 }
 
