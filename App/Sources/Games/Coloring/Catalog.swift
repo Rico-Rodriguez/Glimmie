@@ -8,6 +8,8 @@ struct ColoringCategory: Identifiable, Decodable {
     let icon: String
     let color: [Double]
     let pages: [String]
+    /// A page whose thumbnail stands in for the icon (grown-up tabs).
+    var cover: String? = nil
 
     var tint: Color {
         color.count == 3 ? Color(.sRGB, red: color[0], green: color[1], blue: color[2]) : Theme.lilac
@@ -29,7 +31,11 @@ enum ColoringCatalog {
 
     private static let thumbs = NSCache<NSString, UIImage>()
 
+    /// Grown-up tabs first, then the built-in book.
+    static var all: [ColoringCategory] { ColoringCustom.shared.categories + categories }
+
     static func thumbnail(_ page: String) -> UIImage? {
+        if ColoringCustom.isCustom(page) { return ColoringCustom.shared.thumbnail(page) }
         if let t = thumbs.object(forKey: page as NSString) { return t }
         guard let url = GameFiles.url(page + "_t", "png", game: game), let img = UIImage(contentsOfFile: url.path) else { return nil }
         thumbs.setObject(img, forKey: page as NSString)
@@ -37,6 +43,7 @@ enum ColoringCatalog {
     }
 
     static func lineArt(_ page: String) -> CGImage? {
+        if ColoringCustom.isCustom(page) { return ColoringCustom.shared.lineArt(page) }   // nil (blank) if it was deleted
         guard page != blank, let url = GameFiles.url(page, "png", game: game) else { return nil }
         return UIImage(contentsOfFile: url.path)?.cgImage
     }

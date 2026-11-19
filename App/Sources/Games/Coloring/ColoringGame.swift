@@ -22,10 +22,10 @@ enum ColoringGame {
 struct ColoringGameView: View {
     let onExit: () -> Void
 
-    private enum Screen { case book, studio, gallery }
+    private enum Screen { case book, studio, gallery, grownUp }
     @State private var screen: Screen = .book
     @State private var studio: ColoringStudio?
-    @State private var category = ColoringCatalog.categories.first?.id ?? ""
+    @State private var category = ColoringCatalog.all.first?.id ?? ""
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
@@ -33,8 +33,16 @@ struct ColoringGameView: View {
             ZStack {
                 switch screen {
                 case .book:
-                    ColoringBookView(category: $category, onExit: onExit, onPick: openPage, onGallery: { go(.gallery) })
+                    ColoringBookView(category: $category, onExit: onExit, onPick: openPage, onGallery: { go(.gallery) },
+                                     onGrownUp: { go(.grownUp) })
                         .transition(.opacity)
+                case .grownUp:
+                    ColoringGrownUpView(onDone: { tab in
+                        if let tab { category = tab }
+                        if !ColoringCatalog.all.contains(where: { $0.id == category }) { category = ColoringCatalog.all.first?.id ?? "" }
+                        go(.book)
+                    })
+                    .transition(.opacity)
                 case .studio:
                     if let studio {
                         ColoringStudioView(studio: studio, onBack: closeStudio, onDone: { closeStudio(); go(.gallery) })
@@ -74,8 +82,11 @@ struct ColoringBookView: View {
     let onExit: () -> Void
     let onPick: (String) -> Void
     let onGallery: () -> Void
+    let onGrownUp: () -> Void
+    @ObservedObject private var custom = ColoringCustom.shared
 
-    private var current: ColoringCategory? { ColoringCatalog.categories.first { $0.id == category } }
+    private var all: [ColoringCategory] { ColoringCatalog.all }
+    private var current: ColoringCategory? { all.first { $0.id == category } }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -84,6 +95,7 @@ struct ColoringBookView: View {
                 Spacer()
                 ColoringIcon().frame(width: 74, height: 74)
                 Spacer()
+                GrownUpButton(action: onGrownUp)
                 ColoringButton(icon: "doc.fill", tint: Theme.sky) { onPick(ColoringCatalog.blank) }
                 ColoringButton(icon: "photo.on.rectangle.angled", tint: Theme.pink, action: onGallery)
             }
@@ -93,16 +105,15 @@ struct ColoringBookView: View {
             HStack(alignment: .top, spacing: 16) {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 12) {
-                        ForEach(ColoringCatalog.categories) { c in
+                        ForEach(all) { c in
                             Button {
                                 Sound.shared.play(.tap, volume: 0.5)
                                 withAnimation(.spring(response: 0.3)) { category = c.id }
                             } label: {
-                                Image(systemName: c.icon)
-                                    .font(.system(size: 34, weight: .bold))
-                                    .foregroundStyle(.white)
+                                CategoryTabIcon(category: c)
                                     .frame(width: 84, height: 84)
-                                    .background(RoundedRectangle(cornerRadius: 24).fill(c.tint))
+                                    .background(RoundedRectangle(cornerRadius: 24).fill(c.cover == nil ? c.tint : .white))
+                                    .clipShape(RoundedRectangle(cornerRadius: 24))
                                     .overlay(RoundedRectangle(cornerRadius: 24).stroke(category == c.id ? Theme.ink : .white, lineWidth: category == c.id ? 6 : 4))
                                     .scaleEffect(category == c.id ? 1.08 : 1)
                                     .shadow(color: Theme.ink.opacity(0.2), radius: 4, y: 3)
@@ -131,6 +142,40 @@ struct ColoringBookView: View {
             }
             .padding(.leading, 16)
         }
+    }
+}
+
+/// A category tab: its symbol, or for a grown-up tab the first page's picture.
+private struct CategoryTabIcon: View {
+    let category: ColoringCategory
+    var body: some View {
+        if let cover = category.cover, let img = ColoringCatalog.thumbnail(cover) {
+            Image(uiImage: img).resizable().scaledToFill().frame(width: 84, height: 84)
+        } else {
+            Image(systemName: category.icon)
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(.white)
+        }
+    }
+}
+
+/// The grown-ups' door: a small gear that only opens when held for 1.5 seconds.
+struct GrownUpButton: View {
+    let action: () -> Void
+    @State private var holding = false
+    var body: some View {
+        Image(systemName: "gearshape.fill")
+            .font(.system(size: 24, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 52, height: 52)
+            .background(Circle().fill(Theme.ink.opacity(holding ? 0.8 : 0.35)))
+            .overlay(Circle().trim(from: 0, to: holding ? 1 : 0).stroke(.white, lineWidth: 4).rotationEffect(.degrees(-90))
+                .animation(.linear(duration: holding ? 1.5 : 0.1), value: holding))
+            .onLongPressGesture(minimumDuration: 1.5, pressing: { holding = $0 }, perform: {
+                holding = false
+                Sound.shared.play(.ding, volume: 0.5)
+                action()
+            })
     }
 }
 
