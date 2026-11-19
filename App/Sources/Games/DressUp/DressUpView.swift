@@ -11,8 +11,13 @@ struct DressUpView: View {
     @State private var flash = false
     @State private var showGallery = false
     @State private var galleryBounce = false
+    @State private var showPets = false
+    @State private var battle: BattleState?
 
     private let art = DressUpArt.shared
+    /// The part of the 600x900 art canvas shown on the stage: hat tips at the top, soles at the bottom.
+    static let stageBox = CGRect(x: 30, y: 14, width: 540, height: 760)
+    static let stageScale: CGFloat = 1.06
 
     var body: some View {
         ZStack {
@@ -42,6 +47,39 @@ struct DressUpView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(2)
             }
+            if let b = battle, b.phase == .intro {
+                BattleIntroView(state: b,
+                                start: {
+                                    Sound.shared.play(.sparkle)
+                                    store.current.bg = b.theme.scene
+                                    withAnimation(.spring(response: 0.4)) { battle?.phase = .dressing }
+                                },
+                                cancel: { withAnimation(.spring(response: 0.4)) { battle = nil } },
+                                reroll: {
+                                    Sound.shared.play(.ding)
+                                    withAnimation(.spring(response: 0.4)) { battle = .new() }
+                                })
+                    .transition(.opacity)
+                    .zIndex(4)
+            }
+            if let b = battle, b.phase == .runway {
+                RunwayView(state: b, mine: store.current,
+                           again: { withAnimation(.spring(response: 0.4)) { battle = .new() } },
+                           done: { withAnimation(.spring(response: 0.4)) { battle = nil } })
+                    .transition(.opacity)
+                    .zIndex(4)
+            }
+            if showPets {
+                PetCornerView(look: store.current,
+                              close: { withAnimation(.spring(response: 0.4)) { showPets = false } },
+                              takeAlong: { pet in
+                                  store.current.wear(pet, in: "hold")
+                                  withAnimation(.spring(response: 0.4)) { showPets = false }
+                                  celebrate()
+                              })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(3)
+            }
         }
         .animation(.easeInOut(duration: 0.35), value: store.current.bg)
         .task { await blinkLoop() }
@@ -53,24 +91,33 @@ struct DressUpView: View {
         ZStack(alignment: .top) {
             ZStack(alignment: .bottom) {
                 Ellipse()
-                    .fill(Theme.ink.opacity(0.16))
-                    .frame(width: 260, height: 44)
-                    .offset(y: -40)
-                DollView(look: store.current, expression: expression)
-                    .frame(width: 520, height: 780)
+                    .fill(Theme.ink.opacity(0.18))
+                    .frame(width: 250, height: 40)
+                    .offset(y: -6)
+                // Frame her from hat tip to shoe soles so she fills the stage and stands on the floor.
+                DollView(look: store.current, expression: expression, box: Self.stageBox)
+                    .frame(width: Self.stageBox.width * Self.stageScale, height: Self.stageBox.height * Self.stageScale)
                     .offset(y: hop ? -26 : 0)
                     .contentShape(Rectangle())
                     .onTapGesture { cheer() }
                 SparkleBurst()
                     .id(burst)
-                    .offset(y: -380)
+                    .offset(y: -420)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, 4)
+            .padding(.bottom, 0)
 
             HStack(spacing: 18) {
                 HomeButton { store.flush(); exit() }
                 Spacer()
+                RoundButton(symbol: "pawprint.fill", tint: Color(hex: 0xFFA24C)) {
+                    Sound.shared.play(.whoosh)
+                    withAnimation(.spring(response: 0.4)) { showPets = true }
+                }
+                RoundButton(symbol: "trophy.fill", tint: Color(hex: 0xF2B83E)) {
+                    Sound.shared.play(.whoosh)
+                    withAnimation(.spring(response: 0.4)) { battle = .new() }
+                }
                 RoundButton(symbol: "dice.fill", tint: Color(hex: 0x9B79E0)) { surprise() }
                 RoundButton(symbol: "camera.fill", tint: Color(hex: 0xF45C9A)) { snap() }
                 RoundButton(symbol: "photo.on.rectangle.angled", tint: Color(hex: 0x46B7B0)) {
@@ -91,6 +138,16 @@ struct DressUpView: View {
             }
             .padding(.horizontal, 26)
             .padding(.top, 22)
+
+            if let b = battle, b.phase == .dressing {
+                BattleBanner(state: b) {
+                    Sound.shared.play(.fanfare, volume: 0.7)
+                    store.flush()
+                    withAnimation(.spring(response: 0.5)) { battle?.phase = .runway }
+                }
+                .padding(.top, 112)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
     }
 
@@ -102,6 +159,9 @@ struct DressUpView: View {
             group = args[i + 1]
             cat = art.categories.first { $0.group == group }?.id ?? cat
         }
+        if args.contains("-demoPets") { showPets = true }
+        if args.contains("-demoBattle") { battle = .new() }
+        if args.contains("-demoRunway") { var b = BattleState.new(); b.phase = .runway; battle = b }
         if args.contains("-demoGallery") {
             let keep = store.current
             for _ in 0..<8 { store.current = Look.random().sanitized(); store.saveToGallery() }
