@@ -15,11 +15,19 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 |---|---|
 | **Dress Up** | A chibi doll to dress: 8 skin tones, 18 back hairstyles × 16 fringes in 18 colors, 12 eyes in 12 colors, brows, mouths, cheeks, 16 dresses, 16 tops, 10 bottoms, 4 coats, 7 socks, 10 shoes, 22 hats and hair pieces, glasses, necklaces, wings, pets and things to hold, in 24 colors and 7 fabric patterns, on 16 scenes. Dice for a surprise look, camera to save it, gallery to bring it back. Tap her and she cheers. |
 | Coloring | In progress in its own branch. |
+| **Pet Vet** | 16 animal patients (puppy, kitty, bunny, piglet, panda, fox, hamster, lamb, bear, duckling, frog, mouse, koala, penguin, unicorn, fawn) wait with silly problems: mud, thorns, scrapes, a cold, a toothache, bugs, an itchy rash, a tummy ache, a sore foot, leaves in their fur. Drag 20 tools onto them (sponge, shower, tweezers, bandages, thermometer, medicine, toothbrush, ice pack, stethoscope...) and their faces react. Treats, bows, sparkle spray and a tickle feather for pampering. |
 
 ## Adding a game to the drawer
 
 See `App/Sources/Drawer/GameRegistry.swift`: code in `App/Sources/Games/<Name>/`, files in
 `App/Resources/Games/<Name>/`, one `GameEntry`, one line in `GameRegistry.all`.
+
+## Pet Vet art
+
+```
+python3 tools/petvet/build.py         # -> App/Resources/Games/PetVet/petvet.json
+python3 tools/petvet/make_sounds.py   # -> App/Resources/Games/PetVet/*.wav
+```
 
 ## Dress Up art
 
