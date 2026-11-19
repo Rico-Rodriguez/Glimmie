@@ -15,7 +15,7 @@ Build iPad app) runs this before building the app, so nothing generated is commi
     python3 tools/build_my_pages.py [--jobs N]
 
 Writes into App/Resources/Games/Coloring/:
-  my_<folder>_<file>.png / _t.png   line art and thumbnail (same pipeline as import_coloring.py)
+  my_<folder>_<file>.png / _t.png   line art and thumbnail (crisp: line weight is kept)
   mypages.json                      the tabs, plus a hash per page so unchanged files are skipped
 Pages that were removed from art/coloring/mine are removed from the output too.
 """
@@ -33,6 +33,9 @@ MINE = os.path.join(ROOT, "art", "coloring", "mine")
 OUT = ic.OUT
 INDEX = os.path.join(OUT, "mypages.json")
 EXTS = (".svg", ".png", ".jpg", ".jpeg")
+# Bump when the same source file should come out as different pixels. The Actions cache
+# restores an older mypages.json by prefix; a matching file hash would otherwise skip the rebuild.
+PIPELINE = 2
 
 
 def slug(s):
@@ -64,12 +67,12 @@ def build_one(job):
     pid, path = job
     try:
         if path.lower().endswith(".svg"):
-            alpha = ic.build(path)
+            alpha = ic.build(path, crisp=True)
         else:
             orig = ic.ink_of
             ic.ink_of = lambda _p, long_side: raster_ink(path, long_side)
             try:
-                alpha = ic.build(path)
+                alpha = ic.build(path, crisp=True)
             finally:
                 ic.ink_of = orig
         a = Image.fromarray(alpha)
@@ -87,7 +90,10 @@ def main():
     old = {}
     if os.path.exists(INDEX):
         with open(INDEX) as f:
-            old = json.load(f).get("hashes", {})
+            saved = json.load(f)
+        # A different pipeline (or an index from before pipelines were recorded) rebuilds every page.
+        if saved.get("pipeline") == PIPELINE:
+            old = saved.get("hashes", {})
     cats, hashes, todo, seen = [], {}, [], set()
     folders = sorted(d for d in os.listdir(MINE) if os.path.isdir(os.path.join(MINE, d))) if os.path.isdir(MINE) else []
     for folder in folders:
@@ -133,7 +139,7 @@ def main():
             if not keep:
                 os.remove(os.path.join(OUT, name))
     with open(INDEX, "w") as f:
-        json.dump({"categories": cats, "hashes": hashes}, f, indent=1)
+        json.dump({"pipeline": PIPELINE, "categories": cats, "hashes": hashes}, f, indent=1)
 
 
 if __name__ == "__main__":

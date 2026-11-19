@@ -76,7 +76,7 @@ def line_width(d):
     return float(np.median(dt[ridge]) * 2)
 
 
-def build(svg_path):
+def build(svg_path, crisp=False):
     # Render big, then fit into the 4:3 page.
     d = ink_of(svg_path, 2400)
     box_w, box_h = W * (1 - 2 * MARGIN), H * (1 - 2 * MARGIN)
@@ -86,16 +86,18 @@ def build(svg_path):
     d = np.asarray(img, dtype=np.float32)
     # Drop light shading / grey fills; keep anti-aliasing on real lines.
     d = np.clip((d - 70) * 255 / (255 - 70), 0, 255)
-    # Thicken thin lines.
-    lw = line_width(d)
-    if lw < MIN_LINE:
-        r = int(round((MIN_LINE - lw) / 2))
-        if r > 0:
-            yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
-            d = ndimage.grey_dilation(d, footprint=(xx * xx + yy * yy) <= r * r + r)
-    # Bridge small gaps in outlines (a closing only adds ink where two lines nearly meet).
-    yy, xx = np.mgrid[-GAP:GAP + 1, -GAP:GAP + 1]
-    d = ndimage.grey_closing(d, footprint=(xx * xx + yy * yy) <= GAP * GAP)
+    # Openclipart outlines are a few pixels wide and full of tiny gaps, so fatten them
+    # and bridge the gaps. Detailed coloring pages already have real line weight; the
+    # same closing merges hair, leaves and plaid into black blobs, so they pass crisp=True.
+    if not crisp:
+        lw = line_width(d)
+        if lw < MIN_LINE:
+            r = int(round((MIN_LINE - lw) / 2))
+            if r > 0:
+                yy, xx = np.mgrid[-r:r + 1, -r:r + 1]
+                d = ndimage.grey_dilation(d, footprint=(xx * xx + yy * yy) <= r * r + r)
+        yy, xx = np.mgrid[-GAP:GAP + 1, -GAP:GAP + 1]
+        d = ndimage.grey_closing(d, footprint=(xx * xx + yy * yy) <= GAP * GAP)
     page = np.zeros((H, W), dtype=np.float32)
     y0, x0 = (H - d.shape[0]) // 2, (W - d.shape[1]) // 2
     page[y0:y0 + d.shape[0], x0:x0 + d.shape[1]] = d

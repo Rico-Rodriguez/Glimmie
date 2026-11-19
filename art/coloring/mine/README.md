@@ -13,8 +13,8 @@ art/coloring/mine/
 
 - Every folder becomes a tab; its first page (A to Z) is the tab's picture. Tabs sort by folder name, so
   "01 Cats", "02 Unicorns" sets the order. Your tabs come before the built-in ones.
-- SVG, PNG and JPG all work. Black lines on white or transparent work best; grey shading is dropped and thin
-  lines are thickened so taps fill the right areas.
+- SVG, PNG and JPG all work. Black lines on white or transparent work best. Grey shading is dropped, and the
+  lines stay at the weight they were drawn so fine detail stays sharp.
 - Push to `main` and the next build (Actions, "Build iPad app") turns them into pages: the new version shows up
   in Feather like any other update. Unchanged files are skipped, so later builds stay quick.
 - Delete or rename a file or folder and the page or tab goes away (or moves) on the next build.
