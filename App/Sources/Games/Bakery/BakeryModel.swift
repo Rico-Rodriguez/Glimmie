@@ -83,8 +83,16 @@ struct Treat: Codable, Equatable {
     var scoops: [Int] = []
     var sauce: Int?
     var toppings: [PlacedTopping] = []
+    /// Spatula strokes in the cake frosting, as flat x, y pairs (stage units). nil in older saves.
+    var swoosh: [[Int]]?
 
     init(kind: TreatKind = .cake) { self.kind = kind }
+
+    var swooshPoints: [[CGPoint]] {
+        (swoosh ?? []).map { s in
+            stride(from: 0, to: s.count - 1, by: 2).map { CGPoint(x: CGFloat(s[$0]), y: CGFloat(s[$0 + 1])) }
+        }
+    }
 
     /// A pretty finished treat (for the wish bubble, tiles and screenshots).
     static func sample(_ kind: TreatKind, seed: Int) -> Treat {
@@ -164,6 +172,7 @@ final class BakeryStore: ObservableObject {
 /// Effects only: no voice, never text-to-speech.
 enum BakeSFX: String, CaseIterable {
     case plop, pour, swish, squeeze, shake, nom, tick, doorbell, scoop, drizzle, oven, yay, magic, freeze
+    case poof, grains, glug, sizzle, smear, batter
 }
 
 final class BakerySound {

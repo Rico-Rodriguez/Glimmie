@@ -94,4 +94,33 @@ write('magic', mix(*[(tone(lambda t, fr=fr: fr * (1 + t), 0.3, 0.003, 0.1, ((1, 
 # freeze: icy tinkle for ice cream
 write('freeze', mix(*[(tone(lambda t, fr=fr: fr, 0.35, 0.002, 0.1, ((1, 1), (3.1, 0.2))), i * 0.05)
                       for i, fr in enumerate([3136, 2637, 3520, 2960, 3951])]), 0.45)
+
+# ---- realistic kitchen sounds (added for the realistic kitchen) ----
+# poof: a soft puff of flour landing
+write('poof', mix((noise(0.45, lambda t: 0.02 + 0.10 * math.exp(-t * 9), lambda t: min(1, t / 0.02) * math.exp(-t * 7)), 0),
+                  (noise(0.3, 0.015, lambda t: 0.8 * math.exp(-t * 10)), 0.03)), 0.5)
+# grains: sugar pattering into the bowl
+gr = []
+for k in range(36):
+    gr.append((noise(0.012, 0.95, lambda t: math.exp(-t * 400)), k * 0.026 + random.uniform(0, 0.02)))
+gr.append((noise(1.0, 0.4, lambda t: 0.12 * math.sin(math.pi * t)), 0))
+write('grains', mix(*gr), 0.45)
+# glug: milk pouring out of the carton
+gl = [(noise(1.1, lambda t: 0.03 + 0.02 * math.sin(t * 40), lambda t: 0.5 * min(1, t / 0.1) * min(1, (1.1 - t) / 0.2)), 0)]
+for k in range(7):
+    gl.append((tone(lambda t, k=k: 240 + 900 * t + 25 * (k % 3), 0.08, 0.004, 0.03, ((1, 1), (2, 0.25))), 0.05 + k * 0.145 + random.uniform(0, 0.03)))
+write('glug', mix(*gl), 0.55)
+# sizzle: the cake crackling as it bakes
+sz = [(noise(1.6, 0.5, lambda t: 0.06 * min(1, t / 0.3) * min(1, (1.6 - t) / 0.3)), 0)]
+for k in range(40):
+    sz.append((noise(0.01, 0.9, lambda t: math.exp(-t * 500)), random.uniform(0, 1.55)))
+write('sizzle', mix(*sz), 0.4)
+# smear: the spatula spreading thick frosting
+write('smear', mix((noise(0.32, lambda t: 0.015 + 0.04 * math.sin(math.pi * t / 0.32), lambda t: math.sin(math.pi * t / 0.32) ** 1.5), 0),
+                   (tone(lambda t: 90 + 40 * math.sin(t * 30), 0.32, 0.05, 0.3, ((1, 0.3), (2, 0.1))), 0)), 0.5)
+# batter: a thick ribbon of batter flopping into the pan
+bt = [(noise(0.9, 0.03, lambda t: 0.5 * min(1, t / 0.1) * min(1, (0.9 - t) / 0.2)), 0)]
+for k in range(4):
+    bt.append((tone(lambda t: 150 - 300 * t, 0.12, 0.004, 0.05, ((1, 1), (2, 0.2))), 0.1 + k * 0.2 + random.uniform(0, 0.04)))
+write('batter', mix(*bt), 0.6)
 print(sorted(f for f in os.listdir(OUT) if f.endswith('.wav')))
