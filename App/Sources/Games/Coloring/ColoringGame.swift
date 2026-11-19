@@ -6,7 +6,8 @@ import SwiftUI
 // paint with markers, crayons, glitter and rainbow pens or stamps, add stickers, undo,
 // and keep everything in a gallery. Every page and tool is free and open. No voice.
 //
-// Pages are drawn in code in art/coloring/*.py and built with tools/make_coloring.py.
+// Pages are public-domain line art from Openclipart, listed in art/coloring/imported.json
+// and built with tools/import_coloring.py.
 
 enum ColoringGame {
     static let entry = GameEntry(
