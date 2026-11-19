@@ -180,8 +180,32 @@ def hair_gloss(m):
     b.inputs['Roughness'].default_value = 0.3; b.inputs['Specular IOR Level'].default_value = 0.6
     b.inputs['Coat Weight'].default_value = 0.12     # a sharp coat would add round glints on top
 hair_gloss(W_HAIR)
-SHINE = mat('shine', '#FFFFFF', 0.3, emit=1.0)
-SHINE.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.5
+
+def ring_band(m, center=0.5, width=0.14):
+    """'Angel ring': light where the hair faces a little upward as seen from the camera, faded toward the
+    outline. Its strength is 0 except in the gloss pass (spec 3.2)."""
+    nt = m.node_tree; N = nt.nodes; Lk = nt.links
+    geo = N.new('ShaderNodeNewGeometry')
+    vt = N.new('ShaderNodeVectorTransform'); vt.vector_type = 'NORMAL'; vt.convert_from = 'WORLD'; vt.convert_to = 'CAMERA'
+    sep = N.new('ShaderNodeSeparateXYZ')
+    band = N.new('ShaderNodeValToRGB'); band.color_ramp.interpolation = 'EASE'; els = band.color_ramp.elements
+    els[0].position, els[0].color = center - width, (0, 0, 0, 1)
+    els[1].position, els[1].color = center + width, (0, 0, 0, 1)
+    for x in (center - width * 0.3, center + width * 0.3): els.new(x).color = (1, 1, 1, 1)
+    lw = N.new('ShaderNodeLayerWeight'); lw.inputs['Blend'].default_value = 0.35
+    face_on = N.new('ShaderNodeMath'); face_on.operation = 'SUBTRACT'; face_on.inputs[0].default_value = 1.0
+    mul = N.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'
+    em = N.new('ShaderNodeEmission'); em.inputs['Strength'].default_value = 0.0
+    add = N.new('ShaderNodeAddShader')
+    Lk.new(geo.outputs['Normal'], vt.inputs['Vector']); Lk.new(vt.outputs['Vector'], sep.inputs['Vector'])
+    Lk.new(sep.outputs['Y'], band.inputs['Fac'])
+    Lk.new(lw.outputs['Facing'], face_on.inputs[1])
+    Lk.new(band.outputs['Color'], mul.inputs[0]); Lk.new(face_on.outputs['Value'], mul.inputs[1])
+    Lk.new(mul.outputs['Value'], em.inputs['Color'])
+    Lk.new(N['Principled BSDF'].outputs['BSDF'], add.inputs[0]); Lk.new(em.outputs['Emission'], add.inputs[1])
+    Lk.new(add.outputs['Shader'], N['Material Output'].inputs['Surface'])
+    return em
+RING = ring_band(W_HAIR); RING_STRENGTH = float(os.environ.get('RING', '0.3'))
 MOUTHM = mat('mouth', '#D9487A', 0.4)
 TONGUE = mat('tongue', '#FFA3BC', 0.4)
 GOLD = mat('gold', '#FFD36B', 0.28, metal=0.9)
@@ -340,7 +364,21 @@ decal_poly(smile(0.07, 0.065), MOUTHM, 0.006)
 decal(0, mz - 0.042, 0.035, 0.018, TONGUE, 0.009)
 
 # ---------------- hair styles (all share one cap) ----------------
-def cap(): return obj_sphere((0, 0.2, HZ + 0.2), (0.98, 0.9, 0.9), seg=64)
+def cap():
+    """The hair cap as 12 clumps that start at a crown whorl and run down to the hairline, over a slightly
+    smaller base, so shallow grooves survive the fuse and break the gloss along each clump (spec 3.3)."""
+    C = Vector((0, 0.2, HZ + 0.2)); A, B, Cz = 0.98, 0.9, 0.9
+    parts = [obj_sphere(tuple(C), (A * 0.97, B * 0.97, Cz * 0.97), seg=64)]
+    def on(th, ph, k=1.0):
+        th2 = th + 0.12 * math.sin(th * 2.2) * math.sin(ph)          # a little swirl from the whorl
+        return (C.x + A * k * math.sin(th2) * math.sin(ph), C.y - B * k * math.sin(th2) * math.cos(ph), C.z + Cz * k * math.cos(th2))
+    for i in range(12):
+        ph = 2 * math.pi * i / 12 + 0.12
+        front = math.cos(ph)                                          # 1 at the face, -1 at the back
+        th_end = 1.25 + 0.35 * (1 - front)                            # the front stops under the bangs
+        pts = [on(0.08 + (th_end - 0.08) * t, ph + 0.18 * t, 0.97) for t in (0, 0.33, 0.66, 1.0)]
+        parts.append(obj_curve(pts, 0.2, [0.5, 1.0, 0.9, 0.55]))
+    return parts
 def bangs_mass(name):
     """7 overlapping clumps whose rounded tips curl in toward the middle of the face like commas,
     plus two thin loose strands, so the edge is soft and not a perfect scallop."""
@@ -368,42 +406,42 @@ def side_locks(H, long=False):
             H.append(obj_curve([(sx * 0.72, -0.2, HZ + 0.3), (sx * 0.86, -0.3, HZ - 0.2), (sx * 0.8, -0.38, HZ - 0.62), (sx * 0.64, -0.42, HZ - 0.72)], 0.17, [1.2, 1.0, 0.75, 0.4]))
 
 CUR[0] = 'hair_curls'
-H = [cap(), obj_sphere((0, 0.45, HZ - 0.25), (0.92, 0.5, 0.75))]
+H = [*cap(), obj_sphere((0, 0.45, HZ - 0.25), (0.92, 0.5, 0.75))]
 side_locks(H)
 for sx in (-1, 1):
     H.append(obj_sphere((sx * 0.9, 0.15, HZ + 0.42), (0.32, 0.3, 0.32)))
     H.append(obj_curve([(sx * 0.95, 0.15, HZ + 0.4), (sx * 1.38, 0.18, HZ + 0.05), (sx * 1.45, 0.12, HZ - 0.55),
                         (sx * 1.2, 0.05, HZ - 0.95), (sx * 0.95, 0.0, HZ - 0.8), (sx * 1.0, 0.0, HZ - 0.55)], 0.3, [1.0, 1.05, 0.95, 0.75, 0.5, 0.25]))
-H.append(obj_curve([(0.05, 0.1, HZ + 0.95), (0.25, 0.05, HZ + 1.15), (0.1, 0.0, HZ + 1.32), (-0.08, 0.02, HZ + 1.2)], 0.12, [1.3, 1.0, 0.6, 0.3]))
-fuse(H, W_HAIR, 0.02, 14, 'curls'); bangs_mass('curls_bangs')
+H.append(obj_curve([(0.05, 0.1, HZ + 0.95), (0.25, 0.05, HZ + 1.15), (0.1, 0.0, HZ + 1.32), (-0.08, 0.02, HZ + 1.2)], 0.16, [1.3, 1.0, 0.6, 0.3]))
+fuse(H, W_HAIR, 0.014, 12, 'curls'); bangs_mass('curls_bangs')
 
 CUR[0] = 'hair_long'
-H = [cap(), obj_sphere((0, 0.42, HZ - 0.35), (0.98, 0.48, 0.9)), obj_sphere((0, 0.4, HZ - 0.95), (0.9, 0.4, 0.55))]
+H = [*cap(), obj_sphere((0, 0.42, HZ - 0.35), (0.98, 0.48, 0.9)), obj_sphere((0, 0.4, HZ - 0.95), (0.9, 0.4, 0.55))]
 side_locks(H, long=True)
 for sx in (-1, 1):
     H.append(obj_curve([(sx * 0.6, 0.35, HZ - 0.6), (sx * 0.8, 0.3, HZ - 1.15), (sx * 0.62, 0.25, HZ - 1.45)], 0.25, [1.0, 0.8, 0.3]))
-H.append(obj_curve([(0.05, 0.1, HZ + 0.95), (0.25, 0.05, HZ + 1.15), (0.1, 0.0, HZ + 1.32), (-0.08, 0.02, HZ + 1.2)], 0.12, [1.3, 1.0, 0.6, 0.3]))
-fuse(H, W_HAIR, 0.02, 14, 'long'); bangs_mass('long_bangs')
+H.append(obj_curve([(0.05, 0.1, HZ + 0.95), (0.25, 0.05, HZ + 1.15), (0.1, 0.0, HZ + 1.32), (-0.08, 0.02, HZ + 1.2)], 0.16, [1.3, 1.0, 0.6, 0.3]))
+fuse(H, W_HAIR, 0.014, 12, 'long'); bangs_mass('long_bangs')
 
 CUR[0] = 'hair_buns'
-H = [cap(), obj_sphere((0, 0.42, HZ - 0.15), (0.9, 0.48, 0.62))]
+H = [*cap(), obj_sphere((0, 0.42, HZ - 0.15), (0.9, 0.48, 0.62))]
 side_locks(H)
 for sx in (-1, 1):
     H.append(obj_sphere((sx * 0.66, 0.12, HZ + 0.78), (0.36, 0.34, 0.36), seg=48))
     H.append(obj_curve([(sx * 0.75, 0.1, HZ + 0.6), (sx * 1.05, 0.1, HZ + 0.2), (sx * 1.1, 0.05, HZ - 0.25)], 0.12, [1.0, 0.8, 0.3]))
-fuse(H, W_HAIR, 0.02, 14, 'buns'); bangs_mass('buns_bangs')
+fuse(H, W_HAIR, 0.014, 12, 'buns'); bangs_mass('buns_bangs')
 
 CUR[0] = 'hair_pony'
-H = [cap(), obj_sphere((0, 0.42, HZ - 0.12), (0.9, 0.48, 0.6))]
+H = [*cap(), obj_sphere((0, 0.42, HZ - 0.12), (0.9, 0.48, 0.6))]
 side_locks(H)
 H.append(torus(0.17, 0.08, (0.35, 0.78, HZ + 0.62), W_HAIR, sy=1.0, rot=(math.radians(70), math.radians(40), 0)))
 H.append(obj_curve([(0.3, 0.8, HZ + 0.66), (0.95, 0.75, HZ + 0.95), (1.45, 0.45, HZ + 0.6), (1.62, 0.25, HZ - 0.05),
                     (1.5, 0.15, HZ - 0.55), (1.3, 0.1, HZ - 0.7)], 0.28, [0.75, 1.05, 1.1, 0.9, 0.55, 0.2]))
 H.append(obj_curve([(1.5, 0.3, HZ - 0.1), (1.72, 0.2, HZ - 0.45), (1.66, 0.15, HZ - 0.7)], 0.12, [1.0, 0.6, 0.2]))
-fuse(H, W_HAIR, 0.02, 14, 'pony'); bangs_mass('pony_bangs')
+fuse(H, W_HAIR, 0.014, 12, 'pony'); bangs_mass('pony_bangs')
 
 CUR[0] = 'hair_braids'
-H = [cap(), obj_sphere((0, 0.42, HZ - 0.15), (0.9, 0.48, 0.6))]
+H = [*cap(), obj_sphere((0, 0.42, HZ - 0.15), (0.9, 0.48, 0.6))]
 for sx in (-1, 1):
     H.append(obj_curve([(sx * 0.72, -0.15, HZ + 0.3), (sx * 0.88, -0.2, HZ - 0.15), (sx * 0.82, -0.3, HZ - 0.45)], 0.18, [1.1, 1.0, 0.85]))
     # braid: chain of plump beads that wiggle left/right
@@ -415,7 +453,7 @@ for sx in (-1, 1):
         H.append(obj_sphere((p.x + (0.03 if i % 2 else -0.03), p.y, p.z), (r, r * 0.85, r * 0.8), (0, math.radians(25 if i % 2 else -25), 0), seg=24))
     H.append(obj_sphere((b.x, b.y, b.z - 0.08), (0.07, 0.07, 0.06), seg=24))
     H.append(obj_curve([(b.x, b.y, b.z - 0.1), (b.x + sx * 0.03, b.y - 0.02, b.z - 0.22), (b.x - sx * 0.01, b.y, b.z - 0.32)], 0.08, [1.0, 1.1, 0.3]))
-fuse(H, W_HAIR, 0.016, 10, 'braids'); bangs_mass('braids_bangs')
+fuse(H, W_HAIR, 0.014, 12, 'braids'); bangs_mass('braids_bangs')
 
 # holdout proxy shared by hats (the cap shape)
 CUR[0] = 'capproxy'
@@ -757,31 +795,7 @@ cam = bpy.context.object; sc.camera = cam; cam.data.lens = 75
 cam.location = (-2.2, -9.4, 2.15)
 cam.rotation_euler = (Vector((0, 0, 1.7)) - cam.location).to_track_quat('-Z', 'Y').to_euler()
 
-# ---------------- hair shine (untinted "halo" glints, one layer per style) ----------------
-bpy.context.view_layer.update()
-dg = bpy.context.evaluated_depsgraph_get()
-def hit(group, target):
-    """First point on the visible hair surface along the camera ray through `target`."""
-    org = cam.matrix_world.translation; d = (Vector(target) - org).normalized(); best = None
-    for o in COLL[group].objects:
-        ev = o.evaluated_get(dg); inv = ev.matrix_world.inverted()
-        lo = inv @ org; ld = (inv.to_3x3() @ d).normalized()
-        ok, loc, nrm, _ = ev.ray_cast(lo, ld)
-        if ok:
-            w = ev.matrix_world @ loc
-            if best is None or (w - org).length < (best - org).length: best = w
-    return best
-for g in HAIRS:
-    CUR[0] = g + '_shine'
-    for (a0, a1) in ((-0.84, -0.4), (-0.32, 0.12), (0.2, 0.62)):
-        pts = []
-        for k in range(7):
-            xx = a0 + (a1 - a0) * k / 6
-            zz = HZ + 0.36 + 0.1 * (1 - (xx / 0.95) ** 2) - 0.05 * xx
-            p = hit(g, (xx, -1.0, zz))
-            if p is not None: pts.append(p + (cam.matrix_world.translation - p).normalized() * 0.03)
-        if len(pts) >= 3:
-            obj_curve([tuple(p) for p in pts], 0.022, [0.2, 0.7, 1.0, 1.0, 1.0, 0.7, 0.2][:len(pts)], m=SHINE)
+# (the old white glint bars per hairstyle are retired: the ring band in the gloss pass replaces them)
 
 sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = SAMPLES; sc.cycles.use_denoising = True
 sc.render.film_transparent = True
@@ -795,7 +809,6 @@ HOLD = {  # layer -> groups used as holdout (must sit in front of it)
     'under': ['skin'], 'dress_aline': ['skin'], 'dress_tutu': ['skin'], 'dress_gown': ['skin'], 'dress_puff': ['skin'],
     'shoes_mary': ['skin'], 'shoes_boots': ['skin'],
     'hair_curls': ['skin'], 'hair_long': ['skin'], 'hair_buns': ['skin'], 'hair_pony': ['skin'], 'hair_braids': ['skin'],
-    **{g + '_shine': [g, 'skin'] for g in ['hair_curls', 'hair_long', 'hair_buns', 'hair_pony', 'hair_braids']},
     'dress_pjs': ['skin'], 'dress_swim': ['skin'], 'dress_skirt': ['skin'], 'dress_overalls': ['skin'], 'dress_mermaid': ['skin'],
     'shoes_slippers': ['skin'], 'shoes_sandals': ['skin'],
     'hat_cat': ['skin', 'capproxy'], 'hat_sunhat': ['skin', 'capproxy'], 'hat_hearts': ['skin'],
@@ -856,6 +869,7 @@ def materials(mode):
         b.inputs['Coat Weight'].default_value = 0 if (mode == 'base' and t) or (g and not t) else coat
     for o in BACK_LIGHTS: o.visible_glossy = mode != 'gloss'    # no bright outline round every item
     sc.world.cycles_visibility.glossy = mode != 'gloss'         # no pink sheen from the sky
+    RING.inputs['Strength'].default_value = RING_STRENGTH if mode == 'gloss' else 0.0
 
 def tinted(layer):
     return any(m in TINTED for o in COLL[layer].objects for m in getattr(o.data, 'materials', []) if m)
@@ -875,7 +889,7 @@ if WANT == ['ALL']: WANT = ALL + ['capproxy']
 for L in WANT:
     if L == 'preview':
         materials('full'); lighting(False)
-        vis = set(os.environ.get('VIS', 'skin,under,eyes,eyeshine,face,hair_curls,hair_curls_shine,dress_aline,shoes_mary,hat_star').split(','))
+        vis = set(os.environ.get('VIS', 'skin,under,eyes,eyeshine,face,hair_curls,dress_aline,shoes_mary,hat_star').split(','))
         for g, c in COLL.items():
             for o in c.objects:
                 o.hide_render = g not in vis; o.is_holdout = False
