@@ -78,7 +78,7 @@ struct ColoringStudioView: View {
             let fit = fitted(geo.size)
             ZStack {
                 if studio.ready {
-                    ColoringCanvas(studio: studio)
+                    ColoringCanvas(studio: studio, tool: studio.tool)
                 } else {
                     Color.white
                     ProgressView().scaleEffect(2).tint(Theme.pink)
