@@ -378,6 +378,9 @@ extension ColoringPaper {
             (cr * 0.86, cg * 0.86, cb * 0.86), (cb * 0.5 + 128, cr * 0.5 + 128, cg * 0.5 + 128),
         ]
         let seed = strokeSeed
+        // Going over it again in a new stroke presses wax and pencil into some of the valleys the
+        // last stroke skipped: the grain is shifted a few pixels per stroke so new gaps fill in.
+        let sx = Int(seed &* 37 % 9), sy = Int(seed &* 53 % 9)
         for y in box.minY...box.maxY {
             let row = y * w
             for x in box.minX...box.maxX {
@@ -431,13 +434,13 @@ extension ColoringPaper {
                     og = bg * (1 - a + a * cg / 255)
                     ob = bb * (1 - a + a * cb / 255)
                 case .crayon:
-                    let cov = clamp01((PaperTooth.at(fine, x, y) - (1 - A)) / 0.12)
+                    let cov = clamp01((PaperTooth.at(fine, x + sx, y + sy) - (1 - A)) / 0.12)
                     let a = 0.92 * cov
                     or = br * (1 - a) + cr * a
                     og = bg * (1 - a) + cg * a
                     ob = bb * (1 - a) + cb * a
                 case .pencil:
-                    let cov = clamp01((PaperTooth.at(fine, x + 57, y + 101) - (1 - A)) / 0.3)
+                    let cov = clamp01((PaperTooth.at(fine, x + 57 + sx, y + 101 + sy) - (1 - A)) / 0.3)
                     let a = 0.8 * cov
                     or = br * (1 - a + a * cr / 255)
                     og = bg * (1 - a + a * cg / 255)
