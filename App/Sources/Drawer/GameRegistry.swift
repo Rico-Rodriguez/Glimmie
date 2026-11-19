@@ -28,6 +28,7 @@ enum GameRegistry {
     static let all: [GameEntry] = [
         DressUpGame.entry,
         ColoringGame.entry,
+        PetVetGame.entry,
         BakeryGame.entry,
     ]
 }

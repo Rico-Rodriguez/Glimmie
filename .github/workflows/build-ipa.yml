@@ -150,6 +150,8 @@ jobs:
           shot 9-battle-theme 6 -game dressup -demoBattle
           shot 10-battle-runway 10 -game dressup -randomLook -demoRunway
           shot 6-coloring 6 -game coloring
+          shot petvet-1-lobby 6 -game petvet
+          shot petvet-2-exam 6 -game petvet -vetPatient kitty
           shot bakery-1-shop 6 -game bakery -bakeryServe
           shot bakery-2-decorate 6 -game bakery -bakeryDecorate cake
           shot bakery-3-mix 6 -game bakery -bakeryStep cupcake 0

@@ -15,6 +15,7 @@ App/Sources/Shared/      Theme, DesignCanvas, HomeButton, Sound (effects only), 
 App/Sources/Games/<X>/   one folder per game
 App/Resources/Games/<X>/ that game's files (bundled as a folder; load with GameFiles.url)
 tools/dressup/           Python that draws the Dress Up art and writes dressup.json
+tools/petvet/            Python that draws the Pet Vet art (petvet.json) and makes its sounds
 ```
 
 Saves: each game writes only to `Application Support/Games/<game id>/`.
@@ -30,3 +31,10 @@ history before the game-drawer PR.
   one highlight per color. Shade math is in `tools/dressup/colors.py` and mirrored in `DressUpArt.swift`.
 - Items are colored by role, so every clothing item works in all 24 colors and 7 patterns.
 - A dress replaces a top and bottom; picking a top or bottom takes the dress off.
+
+## Pet Vet decisions
+- Same flat chibi look as Dress Up: color-derived outlines, one shade and one light per color (math in tools/petvet/base.py).
+- All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
+- Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
+- Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
+- Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.

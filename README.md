@@ -15,12 +15,20 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 |---|---|
 | **Dress Up** | A chibi doll to dress: 8 skin tones, 5 face shapes, 6 noses, makeup, earrings, 18 back hairstyles × 16 fringes in 18 colors, 12 eyes in 12 colors, brows, mouths, cheeks, 16 dresses, 16 tops, 10 bottoms, 4 coats, 7 socks, 10 shoes, 22 hats and hair pieces, glasses, necklaces, wings, pets and things to hold, in 24 colors and 7 fabric patterns, on 16 scenes. Dice for a surprise look, camera to save it, gallery to bring it back or save it to Photos. A pet corner to name, feed, bathe, brush, play with and tuck in six pets. Fashion battles: a theme, a rival doll and three animal judges. Tap her and she cheers. |
 | Coloring | In progress in its own branch. |
+| **Pet Vet** | 16 animal patients (puppy, kitty, bunny, piglet, panda, fox, hamster, lamb, bear, duckling, frog, mouse, koala, penguin, unicorn, fawn) wait with silly problems: mud, thorns, scrapes, a cold, a toothache, bugs, an itchy rash, a tummy ache, a sore foot, leaves in their fur. Drag 20 tools onto them (sponge, shower, tweezers, bandages, thermometer, medicine, toothbrush, ice pack, stethoscope...) and their faces react. Treats, bows, sparkle spray and a tickle feather for pampering. |
 | **Bakery** | A sweet shop with 8 animal customers who dream of a treat. Bake cakes (1 to 3 tiers) and cupcakes: drop in the ingredients, pick one of 12 flavors, stir, pour, bake in the oven, then spread the frosting with a finger or pipe it in 3 styles, in 12 colors and 10 cupcake liners. Or build ice cream: 5 cones and cups, 12 flavors, up to 4 scoops, 6 sauces. Decorate with 37 toppings and 5 kinds of sprinkles in 12 candy colors, then serve it: the customer gobbles it up, hearts fill the jar, and the treat case keeps the last 60. |
 
 ## Adding a game to the drawer
 
 See `App/Sources/Drawer/GameRegistry.swift`: code in `App/Sources/Games/<Name>/`, files in
 `App/Resources/Games/<Name>/`, one `GameEntry`, one line in `GameRegistry.all`.
+
+## Pet Vet art
+
+```
+python3 tools/petvet/build.py         # -> App/Resources/Games/PetVet/petvet.json
+python3 tools/petvet/make_sounds.py   # -> App/Resources/Games/PetVet/*.wav
+```
 
 ## Dress Up art
 
