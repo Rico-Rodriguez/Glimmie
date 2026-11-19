@@ -13,7 +13,7 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 
 | Game | What it is |
 |---|---|
-| **Dress Up** | A chibi doll to dress: 8 skin tones, 12 back hairstyles × 10 fringes in 18 colors, 12 eyes in 12 colors, brows, mouths, cheeks, 11 dresses, 12 tops, 10 bottoms, 4 coats, 7 socks, 10 shoes, 16 hats and hair pieces, glasses, necklaces, wings, pets and things to hold, in 24 colors and 7 fabric patterns, on 12 scenes. Dice for a surprise look, camera to save it, gallery to bring it back. Tap her and she cheers. |
+| **Dress Up** | A chibi doll to dress: 8 skin tones, 18 back hairstyles × 16 fringes in 18 colors, 12 eyes in 12 colors, brows, mouths, cheeks, 16 dresses, 16 tops, 10 bottoms, 4 coats, 7 socks, 10 shoes, 22 hats and hair pieces, glasses, necklaces, wings, pets and things to hold, in 24 colors and 7 fabric patterns, on 16 scenes. Dice for a surprise look, camera to save it, gallery to bring it back. Tap her and she cheers. |
 | Coloring | In progress in its own branch. |
 
 ## Adding a game to the drawer
@@ -35,3 +35,7 @@ python3 tools/make_icon.py              # app icon
 ## Screenshots
 
 Run **Build iPad app** manually (Actions → Run workflow) with "Commit simulator screenshots" ticked.
+
+| Drawer | Dress Up | Clothes | Gallery |
+|---|---|---|---|
+| ![](docs/screenshots/1-drawer.jpg) | ![](docs/screenshots/2-dressup.jpg) | ![](docs/screenshots/4-dressup-clothes.jpg) | ![](docs/screenshots/5-dressup-gallery.jpg) |

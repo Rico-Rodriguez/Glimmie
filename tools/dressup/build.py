@@ -2,7 +2,7 @@
 Run from the repo root:  python3 tools/dressup/build.py  [--sheet DIR]"""
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
-import body, face, hair, clothes, extras, backgrounds, patterns
+import body, face, hair, clothes, extras, backgrounds, patterns, more
 from colors import SKIN, HAIR, EYES, CLOTH
 
 def eye_styles():
@@ -84,10 +84,10 @@ def main():
     items = [body.body_item(), body.underwear_item(), face.closed_eyes_item(), happy_eyes()]
     items += [face.eyes_item(i, st) for i, st in eye_styles()]
     items += face.mouths() + face.blushes() + face.brows()
-    items += hair.fronts() + hair.backs()
-    items += clothes.tops() + clothes.bottoms() + clothes.dresses() + clothes.outers() + clothes.socks() + clothes.shoes()
-    items += extras.hats() + extras.glasses() + extras.necks() + extras.backs() + extras.held()
-    bgs = backgrounds.all_bgs()
+    items += hair.fronts() + more.fronts() + hair.backs() + more.backs()
+    items += clothes.tops() + more.tops() + clothes.bottoms() + clothes.dresses() + more.dresses() + clothes.outers() + clothes.socks() + clothes.shoes()
+    items += extras.hats() + more.hats() + extras.glasses() + extras.necks() + extras.backs() + extras.held() + more.held()
+    bgs = backgrounds.all_bgs() + more.bgs()
     ids = [i['id'] for i in items + bgs]
     assert len(ids) == len(set(ids)), [x for x in ids if ids.count(x) > 1]
     head = {'d': body.sym(body.HEAD_PTS), 'f': 'skin', 's': 'skin.o', 'w': body.LW}
