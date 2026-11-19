@@ -25,18 +25,19 @@ struct BakeryGameView: View {
     @State private var making: Treat?
     @State private var ready: Treat?
     @State private var startStep = 0
+    @State private var order = BakeryOrder.random(customer: Int.random(in: 0..<BakeryPalette.customers.count))
 
     var body: some View {
         ZStack {
             if let t = making {
-                KitchenView(treat: Binding(get: { making ?? t }, set: { making = $0 }), startStep: startStep,
+                KitchenView(treat: Binding(get: { making ?? t }, set: { making = $0 }), order: order, startStep: startStep,
                             onDone: { finished in
                                 withAnimation(.easeInOut(duration: 0.35)) { ready = finished; making = nil }
                             },
                             onShop: { withAnimation(.easeInOut(duration: 0.35)) { making = nil } })
                     .transition(.opacity)
             } else {
-                ShopView(store: store, ready: $ready, exit: exit) { kind in
+                ShopView(store: store, ready: $ready, order: $order, exit: exit) { kind in
                     BakerySound.shared.play(.plop)
                     Sound.shared.tap()
                     startStep = 0
@@ -52,6 +53,7 @@ struct BakeryGameView: View {
     /// Simulator screenshot hooks: -bakeryDecorate <cake|cupcake|iceCream>, -bakeryServe, -bakeryStep <n>.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
+        if args.contains(where: { $0.hasPrefix("-bakery") }) { order = BakeryOrder.random(customer: 2, seed: 11) }
         if let i = args.firstIndex(of: "-bakeryDecorate"), i + 1 < args.count, let k = TreatKind(rawValue: args[i + 1]) {
             startStep = 3
             making = Treat.sample(k, seed: 5)
@@ -63,6 +65,11 @@ struct BakeryGameView: View {
             making = t
         }
         if args.contains("-bakeryServe") { ready = Treat.sample(.cake, seed: 9) }
+        if args.contains("-bakeryRated") {
+            // the exact order, served: three stars
+            ready = order.picture
+            ShopView.demoServe = true
+        }
     }
 }
 
@@ -71,14 +78,19 @@ struct BakeryGameView: View {
 struct ShopView: View {
     @ObservedObject var store: BakeryStore
     @Binding var ready: Treat?
+    @Binding var order: BakeryOrder
     let exit: () -> Void
     let make: (TreatKind) -> Void
 
     private enum Phase { case arriving, waiting, eating, happy, leaving }
     @State private var phase: Phase = .arriving
-    @State private var customer = Int.random(in: 0..<BakeryPalette.customers.count)
-    @State private var wish = TreatKind.allCases.randomElement() ?? .cake
-    @State private var wishSeed = Int.random(in: 0..<1000)
+    /// The treat just served and its stars (shown while the customer is happy).
+    @State private var rated: (treat: Treat, stars: Int)?
+    /// Screenshot hook (-bakeryRated): serve the ready treat right away and stay.
+    static var demoServe = false
+
+    private var customer: Int { order.customer }
+    private var wish: TreatKind { order.kind }
     @State private var custX: CGFloat = 900
     @State private var eyes = "open"
     @State private var mouth = "smile"
@@ -113,7 +125,10 @@ struct ShopView: View {
                 .zIndex(3)
             }
         }
-        .onAppear { if phase == .arriving { arrive() } }
+        .onAppear {
+            if phase == .arriving { arrive() }
+            if ShopView.demoServe { DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { serve() } }
+        }
         .task { await blinkLoop() }
     }
 
@@ -121,19 +136,32 @@ struct ShopView: View {
 
     private var customerLayer: some View {
         ZStack {
-            // wish bubble
-            if phase == .waiting && ready == nil {
+            // the wish bubble: the exact treat they want, and under it the four parts of the order
+            if phase == .waiting || phase == .happy {
                 ZStack {
                     Sprite("thought", box: Box.thought)
-                    TreatView(treat: Treat.sample(wish, seed: wishSeed), plate: false)
-                        .frame(width: 170, height: 170)
-                        .offset(x: 24, y: -28)
+                    if phase == .happy, let r = rated {
+                        StarRating(filled: r.stars, size: 62)
+                            .offset(x: 22, y: -30)
+                            .transition(.scale.combined(with: .opacity))
+                    } else {
+                        TreatView(treat: order.picture, plate: false)
+                            .frame(width: 180, height: 180)
+                            .offset(x: 24, y: -28)
+                    }
                 }
                 .frame(width: 300, height: 270)
                 .scaleEffect(bob ? 1.04 : 0.97)
                 .position(x: 720, y: 230)
                 .transition(.scale(scale: 0.3).combined(with: .opacity))
-                .onTapGesture { make(wish) }
+                .onTapGesture { if ready == nil && phase == .waiting { make(wish) } }
+                OrderParts(order: order, treat: phase == .happy ? rated?.treat : ready, item: 60)
+                    .padding(10)
+                    .background(Capsule().fill(.white.opacity(0.92)))
+                    .overlay(Capsule().stroke(Theme.blush, lineWidth: 4))
+                    .position(x: 790, y: 404)
+                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                    .allowsHitTesting(false)
             }
             ZStack {
                 Sprite("cust_\(BakeryPalette.customers[customer])", box: Box.customer)
@@ -245,34 +273,38 @@ struct ShopView: View {
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
-            let matched = t.kind == wish
-            phase = .happy
+            let stars = order.stars(for: t)
+            let matched = stars == 3
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                rated = (t, stars)
+                phase = .happy
+            }
             eyes = matched ? "star" : "happy"
             mouth = "open"
-            store.serve(t)
+            store.serve(t, hearts: stars)
             withAnimation(.easeOut(duration: 0.25)) { ready = nil }
             BakerySound.shared.play(.yay)
             Sound.shared.play(matched ? .fanfare : .cheer, volume: 0.7)
-            hearts = matched ? 7 : 4
+            hearts = 2 + stars * 2
             withAnimation(.spring(response: 0.25, dampingFraction: 0.4)) { jarBounce = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { jarBounce = false }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.4) { leave() }
+        if ShopView.demoServe { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.6) { leave() }
     }
 
     private func leave() {
-        phase = .leaving
+        withAnimation(.easeOut(duration: 0.25)) { phase = .leaving }
         hearts = 0
         Sound.shared.play(.whoosh, volume: 0.5)
         withAnimation(.easeIn(duration: 0.6)) { custX = -1000 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             var next = Int.random(in: 0..<BakeryPalette.customers.count)
             if next == customer { next = (next + 1) % BakeryPalette.customers.count }
-            customer = next
-            wish = TreatKind.allCases.randomElement() ?? .cake
-            wishSeed = Int.random(in: 0..<1000)
+            order = BakeryOrder.random(customer: next)
+            rated = nil
             phase = .arriving
             arrive()
         }
