@@ -15,6 +15,7 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 |---|---|
 | **Dress Up** | A chibi doll to dress: 8 skin tones, 5 face shapes, 6 noses, makeup, earrings, 18 back hairstyles × 16 fringes in 18 colors, 12 eyes in 12 colors, brows, mouths, cheeks, 16 dresses, 16 tops, 10 bottoms, 4 coats, 7 socks, 10 shoes, 22 hats and hair pieces, glasses, necklaces, wings, pets and things to hold, in 24 colors and 7 fabric patterns, on 16 scenes. Dice for a surprise look, camera to save it, gallery to bring it back or save it to Photos. A pet corner to name, feed, bathe, brush, play with and tuck in six pets. Fashion battles: a theme, a rival doll and three animal judges. Tap her and she cheers. |
 | Coloring | In progress in its own branch. |
+| **Bakery** | A sweet shop with 8 animal customers who dream of a treat. Bake cakes (1 to 3 tiers) and cupcakes: drop in the ingredients, pick one of 12 flavors, stir, pour, bake in the oven, then spread the frosting with a finger or pipe it in 3 styles, in 12 colors and 10 cupcake liners. Or build ice cream: 5 cones and cups, 12 flavors, up to 4 scoops, 6 sauces. Decorate with 37 toppings and 5 kinds of sprinkles in 12 candy colors, then serve it: the customer gobbles it up, hearts fill the jar, and the treat case keeps the last 60. |
 
 ## Adding a game to the drawer
 
@@ -31,6 +32,14 @@ python3 tools/dressup/build.py          # -> App/Resources/Games/DressUp/dressup
 python3 tools/dressup/sheet_hair.py /tmp   # contact sheets of the art (also sheet_clothes.py, sheet_extras.py, sheet_bg.py)
 python3 tools/make_icon.py              # app icon
 ```
+
+## Bakery art and sounds
+
+```bash
+python3 tools/bakery/build.py    # -> App/Resources/Games/Bakery/bakery.json (pure Python)
+python3 tools/bakery/sounds.py   # -> App/Resources/Games/Bakery/*.wav
+```
+Preview helpers for contact sheets are in `tools/bakery/draw_preview.py` (needs cairosvg).
 
 ## Screenshots
 
