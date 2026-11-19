@@ -6,6 +6,7 @@ struct GalleryView: View {
     let close: () -> Void
     let open: (Look) -> Void
     @State private var confirming: UUID?
+    @State private var savedToPhotos: Set<UUID> = []
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 22), count: 4)
 
@@ -93,6 +94,24 @@ struct GalleryView: View {
             }
             .buttonStyle(Squish())
             .offset(x: 8, y: -8)
+        }
+        .overlay(alignment: .bottomLeading) {
+            // save to Photos, for a wallpaper
+            Button {
+                if PhotoSaver.save(look) {
+                    Sound.shared.play(.sparkle)
+                    withAnimation(.spring(response: 0.3)) { _ = savedToPhotos.insert(look.id) }
+                }
+            } label: {
+                Image(systemName: savedToPhotos.contains(look.id) ? "checkmark" : "square.and.arrow.down.fill")
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 50, height: 50)
+                    .background(Circle().fill(savedToPhotos.contains(look.id) ? Color(hex: 0x6CCB8B) : Color(hex: 0x46B7B0)))
+                    .overlay(Circle().stroke(.white, lineWidth: 3))
+            }
+            .buttonStyle(Squish())
+            .offset(x: -6, y: 8)
         }
     }
 }

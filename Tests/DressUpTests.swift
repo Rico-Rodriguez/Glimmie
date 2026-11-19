@@ -70,4 +70,28 @@ final class DressUpTests: XCTestCase {
             XCTAssertFalse(l.picks["dress"] != nil && l.picks["top"] != nil)
         }
     }
+
+    func testPetSaveDefaultsAndLenientDecoding() throws {
+        let s = try JSONDecoder().decode(PetSave.self, from: Data(#"{"names": {"p_kitty": "Luna"}, "odd": true}"#.utf8))
+        XCTAssertEqual(s.name("p_kitty"), "Luna")
+        XCTAssertEqual(s.name("p_puppy"), "Biscuit")
+        XCTAssertEqual(s.current, "p_kitty")
+        for p in PetSave.pets { XCTAssertEqual(art.items[p]?.category, "hold", p) }
+    }
+
+    func testOldLooksGainAFaceAndNose() throws {
+        let l = try JSONDecoder().decode(Look.self, from: Data(#"{"picks": {"eyes": "e_star"}}"#.utf8)).sanitized()
+        XCTAssertEqual(l.picks["face"], "face_round")
+        XCTAssertNotNil(l.picks["nose"])
+    }
+
+    func testBattleThemesUseRealItems() {
+        for t in BattleTheme.all {
+            XCTAssertEqual(art.items[t.scene]?.category, "bg", t.id)
+            for id in t.items.union(t.hints) { XCTAssertNotNil(art.items[id], "\(t.id): \(id)") }
+            let stars = t.stars(t.rival(), luck: [0, 0, 0])
+            XCTAssertEqual(stars.count, 3)
+            XCTAssertTrue(stars.allSatisfy { (1...5).contains($0) })
+        }
+    }
 }
