@@ -39,7 +39,8 @@ struct Look: Codable, Equatable, Identifiable {
 
     static var starter: Look {
         var l = Look()
-        l.picks = ["hairBack": "hb_long", "hairFront": "hf_classic", "eyes": "e_sparkle", "brows": "br_soft",
+        l.picks = ["hairBack": "hb_long", "hairFront": "hf_classic", "face": "face_round", "nose": "n_dot",
+                   "eyes": "e_sparkle", "brows": "br_soft",
                    "mouth": "m_smile", "cheeks": "b_soft", "dress": "d_princess", "shoes": "sh_maryjane",
                    "socks": "s_frilly", "hat": "h_twobows"]
         l.bg = "bg_bedroom"
@@ -106,16 +107,17 @@ struct Look: Codable, Equatable, Identifiable {
         l.skin = Int.random(in: 0..<max(1, art.skin.count))
         l.hair = Int.random(in: 0..<max(1, art.hair.count))
         l.eye = Int.random(in: 0..<max(1, art.eye.count))
-        for c in ["hairBack", "hairFront", "eyes", "brows", "mouth", "cheeks"] { l.picks[c] = pick(c) }
+        for c in ["hairBack", "hairFront", "face", "nose", "eyes", "brows", "mouth", "cheeks"] { l.picks[c] = pick(c) }
         if Bool.random() {
             l.picks["dress"] = pick("dress")
         } else {
             l.picks["top"] = pick("top"); l.picks["bottom"] = pick("bottom")
         }
         let chances: [(String, Double)] = [("shoes", 0.95), ("socks", 0.6), ("hat", 0.6), ("glasses", 0.15),
-                                            ("neck", 0.3), ("back", 0.25), ("hold", 0.35), ("outer", 0.15)]
+                                            ("neck", 0.3), ("back", 0.25), ("hold", 0.35), ("outer", 0.15),
+                                            ("makeup", 0.25), ("earrings", 0.3)]
         for (c, p) in chances where Double.random(in: 0..<1) < p { l.picks[c] = pick(c) }
-        for c in ["dress", "top", "bottom", "outer", "socks", "shoes", "hat", "glasses", "neck", "back", "hold"] {
+        for c in ["dress", "top", "bottom", "outer", "socks", "shoes", "hat", "glasses", "neck", "back", "hold", "makeup", "earrings"] {
             l.colors[c] = Int.random(in: 0..<max(1, art.cloth.count))
             if Double.random(in: 0..<1) < 0.3 { l.patterns[c] = art.patternNames.randomElement() }
         }

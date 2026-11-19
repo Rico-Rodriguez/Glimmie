@@ -44,10 +44,7 @@ def body_item():
     S += [{'d': sym(TORSO_PTS), 'f': 'skin', 's': 'skin.o', 'w': LW}]
     # neck shadow
     S += [{'d': rrect(284, 404, 32, 36, 12), 'f': 'skin.s'}]
-    # ears
-    S += [{'d': both(ellipse(163, 318, 15, 22, -8)), 'f': 'skin', 's': 'skin.o', 'w': LW}]
-    # head
-    S += [{'d': sym(HEAD_PTS), 'f': 'skin', 's': 'skin.o', 'w': LW}]
+    # the head and ears are the 'face' category (round2.py)
     # soft chin shade under the jaw is left out; the face reads cleaner without it.
     return {'id': 'body', 'cat': 'body', 'color': 'skin', 'layers': [{'z': 20, 'shapes': S}]}
 

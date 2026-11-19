@@ -2,7 +2,7 @@
 Run from the repo root:  python3 tools/dressup/build.py  [--sheet DIR]"""
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
-import body, face, hair, clothes, extras, backgrounds, patterns, more
+import body, face, hair, clothes, extras, backgrounds, patterns, more, round2
 from colors import SKIN, HAIR, EYES, CLOTH
 
 def eye_styles():
@@ -27,10 +27,14 @@ CATS = [
     ('skin', 'me', True, 'skin', None),
     ('hairBack', 'me', True, 'hair', 'hb_twintails'),
     ('hairFront', 'me', True, 'hair', 'hf_classic'),
+    ('face', 'me', True, None, 'face_round'),
     ('eyes', 'me', True, 'eye', 'e_sparkle'),
     ('brows', 'me', True, None, 'br_happy'),
     ('mouth', 'me', True, None, 'm_open'),
+    ('nose', 'me', True, None, 'n_button'),
     ('cheeks', 'me', True, None, 'b_hearts'),
+    ('makeup', 'me', False, 'cloth', 'mk_glitter'),
+    ('earrings', 'extras', False, 'cloth', 'er_star'),
     ('dress', 'clothes', False, 'cloth', 'd_princess'),
     ('top', 'clothes', False, 'cloth', 't_puff'),
     ('bottom', 'clothes', False, 'cloth', 'b_tutu'),
@@ -63,9 +67,9 @@ def bbox(item):
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     return [round(cx - side / 2, 1), round(cy - side / 2, 1), round(side, 1), round(side, 1)]
 
-FIXED_THUMB = {'eyes': [175, 250, 250, 150], 'brows': [190, 220, 220, 120], 'mouth': [240, 336, 120, 100],
+FIXED_THUMB = {'nose': [255, 320, 90, 90], 'makeup': [150, 240, 300, 180], 'earrings': [130, 300, 340, 120], 'face': [130, 130, 340, 320], 'eyes': [175, 250, 250, 150], 'brows': [190, 220, 220, 120], 'mouth': [240, 336, 120, 100],
                'cheeks': [160, 300, 280, 140], 'hairFront': [120, 60, 360, 420], 'glasses': [160, 240, 280, 170]}
-HEAD_BASE = {'eyes', 'brows', 'mouth', 'cheeks', 'hairFront', 'glasses'}
+HEAD_BASE = {'nose', 'makeup', 'earrings', 'eyes', 'brows', 'mouth', 'cheeks', 'hairFront', 'glasses'}
 
 ROLE = re.compile(r'^(#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?|(c|a|skin)(\.(s|l|d|o))?)$')
 PATH = re.compile(r'^[MLCZ0-9 .\-]*$')
@@ -83,7 +87,7 @@ def main():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     items = [body.body_item(), body.underwear_item(), face.closed_eyes_item(), happy_eyes()]
     items += [face.eyes_item(i, st) for i, st in eye_styles()]
-    items += face.mouths() + face.blushes() + face.brows()
+    items += round2.faces() + round2.noses() + face.mouths() + face.blushes() + face.brows() + round2.makeup() + round2.earrings()
     items += hair.fronts() + more.fronts() + hair.backs() + more.backs()
     items += clothes.tops() + more.tops() + clothes.bottoms() + clothes.dresses() + more.dresses() + clothes.outers() + clothes.socks() + clothes.shoes()
     items += extras.hats() + more.hats() + extras.glasses() + extras.necks() + extras.backs() + extras.held() + more.held()

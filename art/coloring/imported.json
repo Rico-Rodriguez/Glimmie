@@ -1,0 +1,1564 @@
+{
+ "categories": [
+  {
+   "id": "pets",
+   "icon": "pawprint.fill",
+   "color": [
+    1.0,
+    0.62,
+    0.45
+   ],
+   "pages": [
+    {
+     "id": "cat",
+     "src": "openclipart:12882",
+     "title": "cat"
+    },
+    {
+     "id": "cat_2",
+     "src": "openclipart:296210",
+     "title": "cat"
+    },
+    {
+     "id": "cat_3",
+     "src": "openclipart:302706",
+     "title": "cat 5 outline"
+    },
+    {
+     "id": "smiley_cat",
+     "src": "openclipart:337558",
+     "title": "cat by linnaea mallette vectorized line art"
+    },
+    {
+     "id": "cat_walking",
+     "src": "openclipart:7740",
+     "title": "cartoon cat walking"
+    },
+    {
+     "id": "cat_in_a_cup",
+     "src": "openclipart:331648",
+     "title": "cat in a cup by claudette gallant line art"
+    },
+    {
+     "id": "cat_4",
+     "src": "openclipart:75877",
+     "title": "cat line art"
+    },
+    {
+     "id": "dog_head",
+     "src": "openclipart:14504",
+     "title": "dog head"
+    },
+    {
+     "id": "dog",
+     "src": "openclipart:213981",
+     "title": "dog lineart"
+    },
+    {
+     "id": "dog_2",
+     "src": "openclipart:8512",
+     "title": "dog simple drawing"
+    },
+    {
+     "id": "cat_sleeping",
+     "src": "openclipart:7736",
+     "title": "g cartoon cat sleeping 2"
+    },
+    {
+     "id": "kawaii_kitty",
+     "src": "openclipart:312543",
+     "title": "kawaii kitty line art"
+    },
+    {
+     "id": "saint_bernard",
+     "src": "openclipart:212978",
+     "title": "saint bernards dog outline"
+    },
+    {
+     "id": "cat_5",
+     "src": "openclipart:170398",
+     "title": "cat"
+    },
+    {
+     "id": "cat_with_yarn",
+     "src": "openclipart:339781",
+     "title": "cat with yarn"
+    },
+    {
+     "id": "cat_sitting",
+     "src": "openclipart:7738",
+     "title": "g cartoon cat sitting 1"
+    },
+    {
+     "id": "puppy",
+     "src": "openclipart:324883",
+     "title": "puppy"
+    },
+    {
+     "id": "sleeping_kitty",
+     "src": "openclipart:233801",
+     "title": "sleeping kitty"
+    },
+    {
+     "id": "cute_cat_sitting",
+     "src": "openclipart:330236",
+     "title": "cute simple cat sitting"
+    },
+    {
+     "id": "cute_cat_laying",
+     "src": "openclipart:330240",
+     "title": "cute cat laying"
+    },
+    {
+     "id": "cute_cat",
+     "src": "openclipart:330214",
+     "title": "cute cat line art"
+    },
+    {
+     "id": "cute_cat_2",
+     "src": "openclipart:201866",
+     "title": "cute cat 1"
+    },
+    {
+     "id": "grooming_cat",
+     "src": "openclipart:265742",
+     "title": "grooming cat line art"
+    },
+    {
+     "id": "dog_face",
+     "src": "openclipart:330265",
+     "title": "dog face in square corgi"
+    },
+    {
+     "id": "dog_face_2",
+     "src": "openclipart:330263",
+     "title": "dog face in square g shep"
+    },
+    {
+     "id": "dog_face_3",
+     "src": "openclipart:330264",
+     "title": "dog face in square husky"
+    },
+    {
+     "id": "dog_face_4",
+     "src": "openclipart:330262",
+     "title": "dog face in square retriever"
+    },
+    {
+     "id": "cat_face",
+     "src": "openclipart:330266",
+     "title": "cat face in square"
+    },
+    {
+     "id": "puppy_2",
+     "src": "openclipart:40345",
+     "title": "puppy"
+    }
+   ]
+  },
+  {
+   "id": "animals",
+   "icon": "tortoise.fill",
+   "color": [
+    0.95,
+    0.72,
+    0.35
+   ],
+   "pages": [
+    {
+     "id": "beaver",
+     "src": "openclipart:303701",
+     "title": "beaver outline"
+    },
+    {
+     "id": "bunny",
+     "src": "openclipart:213606",
+     "title": "bunny outline"
+    },
+    {
+     "id": "camel",
+     "src": "openclipart:215615",
+     "title": "camel lineart"
+    },
+    {
+     "id": "hippo",
+     "src": "openclipart:75277",
+     "title": "hippo line art"
+    },
+    {
+     "id": "cute_jackalope",
+     "src": "openclipart:330212",
+     "title": "cute jackalope"
+    },
+    {
+     "id": "cute_snake",
+     "src": "openclipart:330218",
+     "title": "cute snake line art"
+    },
+    {
+     "id": "elephant",
+     "src": "openclipart:26289",
+     "title": "elephant"
+    },
+    {
+     "id": "fawn",
+     "src": "openclipart:3541",
+     "title": "fawn outline"
+    },
+    {
+     "id": "flamingo",
+     "src": "openclipart:16989",
+     "title": "flamandbw"
+    },
+    {
+     "id": "gerbil",
+     "src": "openclipart:330562",
+     "title": "gerbil"
+    },
+    {
+     "id": "lion",
+     "src": "openclipart:74749",
+     "title": "lion line art"
+    },
+    {
+     "id": "rabbit",
+     "src": "openclipart:2690",
+     "title": "rabbit"
+    },
+    {
+     "id": "mouse_face",
+     "src": "openclipart:333796",
+     "title": "simple cartoon mouse version vor coloring"
+    },
+    {
+     "id": "rabbit_2",
+     "src": "openclipart:350812",
+     "title": "simple rabbit optimized outline"
+    },
+    {
+     "id": "squirrel",
+     "src": "openclipart:297147",
+     "title": "squirrel"
+    },
+    {
+     "id": "turtle",
+     "src": "openclipart:325116",
+     "title": "turtle crawling line art"
+    },
+    {
+     "id": "elephant_2",
+     "src": "openclipart:325251",
+     "title": "cartoon elephant"
+    },
+    {
+     "id": "elephant_3",
+     "src": "openclipart:9177",
+     "title": "certain elephant"
+    },
+    {
+     "id": "cute_bunny",
+     "src": "openclipart:250876",
+     "title": "cute cartoon bunny"
+    },
+    {
+     "id": "frog",
+     "src": "openclipart:342784",
+     "title": "frog"
+    },
+    {
+     "id": "frog_2",
+     "src": "openclipart:76111",
+     "title": "frog line art"
+    },
+    {
+     "id": "raccoon",
+     "src": "openclipart:109699",
+     "title": "raccoon"
+    },
+    {
+     "id": "giraffe",
+     "src": "openclipart:342105",
+     "title": "cartoon giraffe"
+    },
+    {
+     "id": "mouse",
+     "src": "openclipart:346296",
+     "title": "cartoon mouse"
+    },
+    {
+     "id": "tiger",
+     "src": "openclipart:219757",
+     "title": "tiger lineart"
+    },
+    {
+     "id": "zebra",
+     "src": "openclipart:314473",
+     "title": "zebra"
+    },
+    {
+     "id": "tortoise",
+     "src": "openclipart:283809",
+     "title": "tortoise"
+    },
+    {
+     "id": "turtle_side",
+     "src": "openclipart:325114",
+     "title": "turtle side outline"
+    },
+    {
+     "id": "cute_llama",
+     "src": "openclipart:330208",
+     "title": "cute llama side view"
+    },
+    {
+     "id": "cute_mouse",
+     "src": "openclipart:330215",
+     "title": "cute mouse line art"
+    },
+    {
+     "id": "cute_fox",
+     "src": "openclipart:330213",
+     "title": "cute fox line art"
+    },
+    {
+     "id": "cute_hamster",
+     "src": "openclipart:330217",
+     "title": "cute hamster line art"
+    },
+    {
+     "id": "cute_bear_sitting",
+     "src": "openclipart:330237",
+     "title": "cute bear sitting"
+    },
+    {
+     "id": "bunny_2",
+     "src": "openclipart:340436",
+     "title": "bunny"
+    },
+    {
+     "id": "hippo_2",
+     "src": "openclipart:342106",
+     "title": "cartoon hippo"
+    },
+    {
+     "id": "cute_bear",
+     "src": "openclipart:325105",
+     "title": "cute bear outline"
+    },
+    {
+     "id": "panda_doodle",
+     "src": "openclipart:325164",
+     "title": "panda doodle"
+    },
+    {
+     "id": "sleepy_fox",
+     "src": "openclipart:348601",
+     "title": "sleeping kitten cat outline"
+    },
+    {
+     "id": "round_panda",
+     "src": "openclipart:171604",
+     "title": "the circle panda"
+    },
+    {
+     "id": "cute_happy_rabbit",
+     "src": "openclipart:330239",
+     "title": "cute happy rabbit"
+    },
+    {
+     "id": "peeking_mouse",
+     "src": "openclipart:330241",
+     "title": "cute rat peeking"
+    },
+    {
+     "id": "rat_face",
+     "src": "openclipart:330259",
+     "title": "dumbo rat face in square"
+    },
+    {
+     "id": "hedgehog_face",
+     "src": "openclipart:330261",
+     "title": "hedgehog face in square"
+    },
+    {
+     "id": "panda_face",
+     "src": "openclipart:330260",
+     "title": "panda face in square"
+    },
+    {
+     "id": "sloth_face",
+     "src": "openclipart:330267",
+     "title": "sloth face in square"
+    },
+    {
+     "id": "mouse_face_2",
+     "src": "openclipart:330258",
+     "title": "ratmouse face in square"
+    },
+    {
+     "id": "cute_panda",
+     "src": "openclipart:279984",
+     "title": "cute cartoon panda"
+    },
+    {
+     "id": "hippo_3",
+     "src": "openclipart:315314",
+     "title": "hippo"
+    },
+    {
+     "id": "panda_head",
+     "src": "openclipart:3327",
+     "title": "panda head"
+    }
+   ]
+  },
+  {
+   "id": "farm",
+   "icon": "carrot.fill",
+   "color": [
+    0.98,
+    0.55,
+    0.3
+   ],
+   "pages": [
+    {
+     "id": "cow",
+     "src": "openclipart:10211",
+     "title": "cow outline"
+    },
+    {
+     "id": "goat",
+     "src": "openclipart:306421",
+     "title": "goat"
+    },
+    {
+     "id": "cow_calf",
+     "src": "openclipart:320428",
+     "title": "cow and calf"
+    },
+    {
+     "id": "donkey",
+     "src": "openclipart:301609",
+     "title": "donkey 2 outline"
+    },
+    {
+     "id": "sheep",
+     "src": "openclipart:171862",
+     "title": "eid sheep"
+    },
+    {
+     "id": "goose",
+     "src": "openclipart:248177",
+     "title": "goose lineart"
+    },
+    {
+     "id": "smiling_pig",
+     "src": "openclipart:1900",
+     "title": "smiling pig"
+    },
+    {
+     "id": "cow_2",
+     "src": "openclipart:221153",
+     "title": "cartoon cow"
+    },
+    {
+     "id": "pig",
+     "src": "openclipart:216214",
+     "title": "pig stamp"
+    },
+    {
+     "id": "running_pig",
+     "src": "openclipart:1901",
+     "title": "running pig"
+    },
+    {
+     "id": "funny_lamb",
+     "src": "openclipart:134971",
+     "title": "funny white lamb cartoon"
+    },
+    {
+     "id": "spotty_cow",
+     "src": "openclipart:325057",
+     "title": "cute cow or bull"
+    },
+    {
+     "id": "llama",
+     "src": "openclipart:330207",
+     "title": "llama"
+    }
+   ]
+  },
+  {
+   "id": "birds",
+   "icon": "bird.fill",
+   "color": [
+    0.45,
+    0.75,
+    0.95
+   ],
+   "pages": [
+    {
+     "id": "little_bird",
+     "src": "openclipart:335539",
+     "title": "little bird lineart"
+    },
+    {
+     "id": "parrot",
+     "src": "openclipart:281158",
+     "title": "parrot 4 outline"
+    },
+    {
+     "id": "penguin",
+     "src": "openclipart:75247",
+     "title": "penguin line art"
+    },
+    {
+     "id": "penguin_with_shirt",
+     "src": "openclipart:11730",
+     "title": "penguin with a shirt 1"
+    },
+    {
+     "id": "duck_with_sign",
+     "src": "openclipart:346357",
+     "title": "cartoon duck holding blank sign"
+    },
+    {
+     "id": "curious_owl",
+     "src": "openclipart:318838",
+     "title": "curious owl"
+    },
+    {
+     "id": "spring_bird",
+     "src": "openclipart:316551",
+     "title": "hello spring by arousaland thin"
+    },
+    {
+     "id": "cute_little_chick",
+     "src": "openclipart:316317",
+     "title": "cute little chick line art"
+    },
+    {
+     "id": "duck",
+     "src": "openclipart:75889",
+     "title": "duck outline"
+    },
+    {
+     "id": "bird_in_flight",
+     "src": "openclipart:300717",
+     "title": "bird in flight 3 outline"
+    },
+    {
+     "id": "penguin_2",
+     "src": "openclipart:204219",
+     "title": "penguin"
+    },
+    {
+     "id": "dove",
+     "src": "openclipart:345103",
+     "title": "white peace dove"
+    },
+    {
+     "id": "cute_bird",
+     "src": "openclipart:330210",
+     "title": "cute bird line art"
+    }
+   ]
+  },
+  {
+   "id": "ocean",
+   "icon": "fish.fill",
+   "color": [
+    0.38,
+    0.72,
+    1.0
+   ],
+   "pages": [
+    {
+     "id": "octopus",
+     "src": "openclipart:325250",
+     "title": "cartoon octopus"
+    },
+    {
+     "id": "fish",
+     "src": "openclipart:194261",
+     "title": "fish"
+    },
+    {
+     "id": "sand_castle",
+     "src": "openclipart:67015",
+     "title": "sand castle"
+    },
+    {
+     "id": "dolphin",
+     "src": "openclipart:170167",
+     "title": "delphin"
+    },
+    {
+     "id": "green_sea_turtle",
+     "src": "openclipart:74233",
+     "title": "green sea turtle line art"
+    },
+    {
+     "id": "octopus_2",
+     "src": "openclipart:204074",
+     "title": "octopus remixed"
+    },
+    {
+     "id": "shell",
+     "src": "openclipart:174565",
+     "title": "shell"
+    },
+    {
+     "id": "starfish",
+     "src": "openclipart:174579",
+     "title": "starfish"
+    },
+    {
+     "id": "angelfish",
+     "src": "openclipart:354709",
+     "title": "angelfish"
+    },
+    {
+     "id": "goldfish",
+     "src": "openclipart:332212",
+     "title": "cartoon goldfish"
+    },
+    {
+     "id": "whale_2",
+     "src": "openclipart:3192",
+     "title": "comic whale"
+    },
+    {
+     "id": "crab",
+     "src": "openclipart:290484",
+     "title": "crab 02"
+    },
+    {
+     "id": "fish_2",
+     "src": "openclipart:338923",
+     "title": "fish line art"
+    },
+    {
+     "id": "jellyfish",
+     "src": "openclipart:181732",
+     "title": "jellyfish coloring book"
+    },
+    {
+     "id": "baby_octopus",
+     "src": "openclipart:245072",
+     "title": "baby octopus coloring page"
+    },
+    {
+     "id": "shark",
+     "src": "openclipart:330219",
+     "title": "great white shark line art"
+    },
+    {
+     "id": "whale",
+     "src": "openclipart:11722",
+     "title": "whale 1"
+    },
+    {
+     "id": "whale_heart",
+     "src": "openclipart:46279",
+     "title": "whale love"
+    }
+   ]
+  },
+  {
+   "id": "bugs",
+   "icon": "ladybug.fill",
+   "color": [
+    0.95,
+    0.4,
+    0.4
+   ],
+   "pages": [
+    {
+     "id": "ant",
+     "src": "openclipart:75535",
+     "title": "ant line art"
+    },
+    {
+     "id": "butterfly",
+     "src": "openclipart:26339",
+     "title": "butterfly 2"
+    },
+    {
+     "id": "detailed_butterfly",
+     "src": "openclipart:352671",
+     "title": "simple detailed butterfly lineart"
+    },
+    {
+     "id": "firefly",
+     "src": "openclipart:308882",
+     "title": "firefly"
+    },
+    {
+     "id": "butterfly_2",
+     "src": "openclipart:352670",
+     "title": "simple butterfly outline"
+    },
+    {
+     "id": "snail",
+     "src": "openclipart:352533",
+     "title": "snail escargot decroissance"
+    },
+    {
+     "id": "ladybug",
+     "src": "openclipart:214657",
+     "title": "lady beetle"
+    }
+   ]
+  },
+  {
+   "id": "garden",
+   "icon": "camera.macro",
+   "color": [
+    0.45,
+    0.82,
+    0.45
+   ],
+   "pages": [
+    {
+     "id": "anemone",
+     "src": "openclipart:7787",
+     "title": "anemone canadensis flower outline"
+    },
+    {
+     "id": "lotus_flower",
+     "src": "openclipart:16864",
+     "title": "white lotus flower"
+    },
+    {
+     "id": "flower",
+     "src": "openclipart:11725",
+     "title": "flower 2"
+    },
+    {
+     "id": "flower_with_roots",
+     "src": "openclipart:321623",
+     "title": "parts of plants"
+    },
+    {
+     "id": "leaf",
+     "src": "openclipart:285338",
+     "title": "plain single leaf"
+    },
+    {
+     "id": "flower_2",
+     "src": "openclipart:302895",
+     "title": "flower 198"
+    },
+    {
+     "id": "flower_3",
+     "src": "openclipart:302894",
+     "title": "flower 197"
+    },
+    {
+     "id": "flower_4",
+     "src": "openclipart:302896",
+     "title": "flower 199"
+    },
+    {
+     "id": "daisy",
+     "src": "openclipart:352740",
+     "title": "imaginary flower head"
+    },
+    {
+     "id": "acorn",
+     "src": "openclipart:75529",
+     "title": "nut line art"
+    },
+    {
+     "id": "star_flower",
+     "src": "openclipart:7765",
+     "title": "cornus canadensis"
+    },
+    {
+     "id": "star_flower_2",
+     "src": "openclipart:57265",
+     "title": "gg cornus canadensis"
+    }
+   ]
+  },
+  {
+   "id": "food",
+   "icon": "birthday.cake.fill",
+   "color": [
+    1.0,
+    0.7,
+    0.3
+   ],
+   "pages": [
+    {
+     "id": "banana_bunch",
+     "src": "openclipart:177813",
+     "title": "banana bunch line art"
+    },
+    {
+     "id": "burger",
+     "src": "openclipart:9096",
+     "title": "fast food lunchdinner hamburger"
+    },
+    {
+     "id": "juice_box",
+     "src": "openclipart:9156",
+     "title": "fast food drinks juice orange"
+    },
+    {
+     "id": "muffin",
+     "src": "openclipart:9129",
+     "title": "fast food breakfast muffin"
+    },
+    {
+     "id": "muffin_2",
+     "src": "openclipart:9131",
+     "title": "fast food breakfast muffin blueberry"
+    },
+    {
+     "id": "ice_cream",
+     "src": "openclipart:8326",
+     "title": "fast food desserts ice cream cone single"
+    },
+    {
+     "id": "pie",
+     "src": "openclipart:9163",
+     "title": "fast food desserts pies"
+    },
+    {
+     "id": "mug",
+     "src": "openclipart:9154",
+     "title": "fast food drinks coffee"
+    },
+    {
+     "id": "apple_juice",
+     "src": "openclipart:9152",
+     "title": "fast food drinks juice apple"
+    },
+    {
+     "id": "milk",
+     "src": "openclipart:9155",
+     "title": "fast food drinks milk"
+    },
+    {
+     "id": "hot_dog",
+     "src": "openclipart:9097",
+     "title": "fast food lunchdinner hot dog"
+    },
+    {
+     "id": "pizza",
+     "src": "openclipart:9102",
+     "title": "fast food snack pizza cheese"
+    },
+    {
+     "id": "pizza_2",
+     "src": "openclipart:9103",
+     "title": "fast food snack pizza pepperoni mushroom"
+    },
+    {
+     "id": "french_fries",
+     "src": "openclipart:71617",
+     "title": "french fries line art"
+    },
+    {
+     "id": "ice_pop",
+     "src": "openclipart:17002",
+     "title": "glace4bw"
+    },
+    {
+     "id": "jelly",
+     "src": "openclipart:71707",
+     "title": "jelly line art"
+    },
+    {
+     "id": "cherries",
+     "src": "openclipart:353959",
+     "title": "lutz cherries outline"
+    },
+    {
+     "id": "apple",
+     "src": "openclipart:8546",
+     "title": "simple fruit apple"
+    },
+    {
+     "id": "grapes",
+     "src": "openclipart:8539",
+     "title": "simple fruit grapes"
+    },
+    {
+     "id": "watermelon",
+     "src": "openclipart:8541",
+     "title": "simple fruit watermelon"
+    },
+    {
+     "id": "carrot",
+     "src": "openclipart:215798",
+     "title": "carrot lineart"
+    },
+    {
+     "id": "owl_cupcake",
+     "src": "openclipart:330247",
+     "title": "cute owl cupcake"
+    },
+    {
+     "id": "burger_2",
+     "src": "openclipart:9091",
+     "title": "fast food lunchdinner chicken burger"
+    },
+    {
+     "id": "peas",
+     "src": "openclipart:213644",
+     "title": "peas lineart"
+    },
+    {
+     "id": "green_pepper",
+     "src": "openclipart:71665",
+     "title": "green pepper line art"
+    },
+    {
+     "id": "apple_2",
+     "src": "openclipart:8540",
+     "title": "simple fruit ff menu"
+    },
+    {
+     "id": "lemon",
+     "src": "openclipart:8544",
+     "title": "simple fruit lemon"
+    },
+    {
+     "id": "orange",
+     "src": "openclipart:8545",
+     "title": "simple fruit orange"
+    },
+    {
+     "id": "tomato",
+     "src": "openclipart:72037",
+     "title": "tomato line art"
+    },
+    {
+     "id": "pear",
+     "src": "openclipart:8543",
+     "title": "simple fruit pear"
+    },
+    {
+     "id": "strawberry",
+     "src": "openclipart:8542",
+     "title": "simple fruit strawberry"
+    }
+   ]
+  },
+  {
+   "id": "magic",
+   "icon": "wand.and.stars",
+   "color": [
+    0.78,
+    0.55,
+    1.0
+   ],
+   "pages": [
+    {
+     "id": "angel",
+     "src": "openclipart:302459",
+     "title": "angel 10 outline"
+    },
+    {
+     "id": "little_alien",
+     "src": "openclipart:334381",
+     "title": "strange four legged humanoid stick figure creature"
+    },
+    {
+     "id": "cute_dragon",
+     "src": "openclipart:330220",
+     "title": "cute dragon line art"
+    },
+    {
+     "id": "rawr_monster",
+     "src": "openclipart:234370",
+     "title": "rawr dinosaur outline"
+    },
+    {
+     "id": "castle",
+     "src": "openclipart:304714",
+     "title": "castle 13"
+    },
+    {
+     "id": "unicorn",
+     "src": "openclipart:304715",
+     "title": "unicorn 5"
+    },
+    {
+     "id": "dragon",
+     "src": "openclipart:319575",
+     "title": "cartoon dragon"
+    },
+    {
+     "id": "dinosaur",
+     "src": "openclipart:1378",
+     "title": "dinosaur with sever underbite"
+    },
+    {
+     "id": "crown",
+     "src": "openclipart:304712",
+     "title": "crown 23"
+    }
+   ]
+  },
+  {
+   "id": "holidays",
+   "icon": "gift.fill",
+   "color": [
+    0.95,
+    0.4,
+    0.5
+   ],
+   "pages": [
+    {
+     "id": "christmas_tree",
+     "src": "openclipart:292295",
+     "title": "christmas tree"
+    },
+    {
+     "id": "christmas_tree_2",
+     "src": "openclipart:187781",
+     "title": "christmas tree coloring page"
+    },
+    {
+     "id": "ghost",
+     "src": "openclipart:229920",
+     "title": "ghost"
+    },
+    {
+     "id": "easter_egg",
+     "src": "openclipart:15733",
+     "title": "easter egg"
+    },
+    {
+     "id": "gift",
+     "src": "openclipart:187786",
+     "title": "gift coloring page"
+    },
+    {
+     "id": "pumpkin",
+     "src": "openclipart:187791",
+     "title": "pumpkin coloring page"
+    },
+    {
+     "id": "santa_panda",
+     "src": "openclipart:187796",
+     "title": "santa panda coloring page"
+    },
+    {
+     "id": "christmas_tree_4",
+     "src": "openclipart:28557",
+     "title": "sapin01bw"
+    },
+    {
+     "id": "christmas_tree_5",
+     "src": "openclipart:28567",
+     "title": "sapin01xmasbw"
+    },
+    {
+     "id": "pine_tree",
+     "src": "openclipart:28571",
+     "title": "sapin02bw"
+    },
+    {
+     "id": "skating_panda",
+     "src": "openclipart:187797",
+     "title": "skating panda coloring page"
+    },
+    {
+     "id": "christmas_tree_3",
+     "src": "openclipart:304732",
+     "title": "christmas tree 6 outline"
+    },
+    {
+     "id": "jack_o_lantern",
+     "src": "openclipart:303073",
+     "title": "jack o lantern"
+    },
+    {
+     "id": "easter_bunny",
+     "src": "openclipart:351308",
+     "title": "easter bunny"
+    },
+    {
+     "id": "waving_santa",
+     "src": "openclipart:325507",
+     "title": "waving santa"
+    },
+    {
+     "id": "snowman",
+     "src": "openclipart:325425",
+     "title": "snowman"
+    },
+    {
+     "id": "cute_bat",
+     "src": "openclipart:334259",
+     "title": "cute bat"
+    },
+    {
+     "id": "heart",
+     "src": "openclipart:259089",
+     "title": "heart"
+    },
+    {
+     "id": "shamrock",
+     "src": "openclipart:191896",
+     "title": "shamrock outline cartoon face"
+    },
+    {
+     "id": "spring_bunny",
+     "src": "openclipart:190720",
+     "title": "spring bunny 6"
+    }
+   ]
+  },
+  {
+   "id": "home",
+   "icon": "house.fill",
+   "color": [
+    0.6,
+    0.65,
+    0.95
+   ],
+   "pages": [
+    {
+     "id": "teacup",
+     "src": "openclipart:306432",
+     "title": "a cup with flower"
+    },
+    {
+     "id": "house_2",
+     "src": "openclipart:283872",
+     "title": "blank detached house"
+    },
+    {
+     "id": "house_3",
+     "src": "openclipart:190339",
+     "title": "casa house"
+    },
+    {
+     "id": "doll",
+     "src": "openclipart:213596",
+     "title": "doll lineart"
+    },
+    {
+     "id": "teapot",
+     "src": "openclipart:9143",
+     "title": "fast food drinks tea pot"
+    },
+    {
+     "id": "house",
+     "src": "openclipart:77047",
+     "title": "house line art"
+    },
+    {
+     "id": "house_4",
+     "src": "openclipart:34147",
+     "title": "maison house"
+    },
+    {
+     "id": "flower_mug",
+     "src": "openclipart:306434",
+     "title": "mug with flowers"
+    },
+    {
+     "id": "teddy_bear",
+     "src": "openclipart:300722",
+     "title": "teddy bear outline"
+    },
+    {
+     "id": "stool",
+     "src": "openclipart:31807",
+     "title": "three legged stool outline"
+    },
+    {
+     "id": "book",
+     "src": "openclipart:355258",
+     "title": "white open book being read"
+    },
+    {
+     "id": "volleyball",
+     "src": "openclipart:256746",
+     "title": "volleyball"
+    },
+    {
+     "id": "yarn",
+     "src": "openclipart:76687",
+     "title": "yarn line art"
+    },
+    {
+     "id": "bench",
+     "src": "openclipart:213696",
+     "title": "bench lineart"
+    },
+    {
+     "id": "teacup_2",
+     "src": "openclipart:343087",
+     "title": "cup of tea"
+    },
+    {
+     "id": "teddy_bear_2",
+     "src": "openclipart:335561",
+     "title": "everlyn leon"
+    },
+    {
+     "id": "house_5",
+     "src": "openclipart:304713",
+     "title": "house 22"
+    },
+    {
+     "id": "coffee_pot",
+     "src": "openclipart:215725",
+     "title": "pot lineart"
+    },
+    {
+     "id": "sofa",
+     "src": "openclipart:245462",
+     "title": "sofa lineart"
+    },
+    {
+     "id": "baseball",
+     "src": "openclipart:8297",
+     "title": "baseball"
+    },
+    {
+     "id": "alarm_clock",
+     "src": "openclipart:303623",
+     "title": "alarm clock"
+    }
+   ]
+  },
+  {
+   "id": "go",
+   "icon": "car.fill",
+   "color": [
+    1.0,
+    0.45,
+    0.45
+   ],
+   "pages": [
+    {
+     "id": "airplane",
+     "src": "openclipart:228075",
+     "title": "airplane with propeller outline"
+    },
+    {
+     "id": "bus",
+     "src": "openclipart:2349",
+     "title": "bus"
+    },
+    {
+     "id": "ship",
+     "src": "openclipart:176287",
+     "title": "ship"
+    },
+    {
+     "id": "car",
+     "src": "openclipart:137995",
+     "title": "auto car"
+    },
+    {
+     "id": "airplane_2",
+     "src": "openclipart:303469",
+     "title": "sketched plane"
+    },
+    {
+     "id": "ark",
+     "src": "openclipart:14335",
+     "title": "noahs ark"
+    }
+   ]
+  },
+  {
+   "id": "sky",
+   "icon": "moon.stars.fill",
+   "color": [
+    0.45,
+    0.5,
+    0.95
+   ],
+   "pages": [
+    {
+     "id": "earth",
+     "src": "openclipart:10468",
+     "title": "aussie earth outline"
+    },
+    {
+     "id": "cloudy",
+     "src": "openclipart:69661",
+     "title": "cloudy outline"
+    },
+    {
+     "id": "rain",
+     "src": "openclipart:76621",
+     "title": "rain line art"
+    },
+    {
+     "id": "sun",
+     "src": "openclipart:75523",
+     "title": "sun line art"
+    },
+    {
+     "id": "sun_2",
+     "src": "openclipart:69637",
+     "title": "sun outline"
+    },
+    {
+     "id": "sun_3",
+     "src": "openclipart:288373",
+     "title": "sun outline with 12 beams"
+    },
+    {
+     "id": "ufo",
+     "src": "openclipart:213750",
+     "title": "ufo lineart"
+    },
+    {
+     "id": "waving_astronaut",
+     "src": "openclipart:304181",
+     "title": "waving astronaut outline"
+    },
+    {
+     "id": "raindrop",
+     "src": "openclipart:129505",
+     "title": "cartoon monster"
+    },
+    {
+     "id": "sun_4",
+     "src": "openclipart:214398",
+     "title": "sun lineart"
+    },
+    {
+     "id": "cute_cloud",
+     "src": "openclipart:185353",
+     "title": "cute cloud coloring book"
+    },
+    {
+     "id": "star",
+     "src": "openclipart:2842",
+     "title": "marian star"
+    },
+    {
+     "id": "moon",
+     "src": "openclipart:214403",
+     "title": "moon lineart"
+    },
+    {
+     "id": "umbrella",
+     "src": "openclipart:539",
+     "title": "umbrella outline"
+    },
+    {
+     "id": "windy_cloud",
+     "src": "openclipart:214443",
+     "title": "wind lineart"
+    }
+   ]
+  },
+  {
+   "id": "people",
+   "icon": "figure.2.and.child.holdinghands",
+   "color": [
+    1.0,
+    0.55,
+    0.78
+   ],
+   "pages": [
+    {
+     "id": "umbrella_friends",
+     "src": "openclipart:276800",
+     "title": "chess coloring book dibujo ajedrez para colorear 12"
+    },
+    {
+     "id": "baby",
+     "src": "openclipart:300548",
+     "title": "child 19 line drawing"
+    },
+    {
+     "id": "postman",
+     "src": "openclipart:306425",
+     "title": "postman"
+    },
+    {
+     "id": "student",
+     "src": "openclipart:50299",
+     "title": "eleve lisant student reading"
+    },
+    {
+     "id": "grandma_and_me",
+     "src": "openclipart:69991",
+     "title": "mom holding childs hand outline"
+    },
+    {
+     "id": "postman_2",
+     "src": "openclipart:306426",
+     "title": "postman"
+    },
+    {
+     "id": "little_boy",
+     "src": "openclipart:352877",
+     "title": "little kid 3"
+    },
+    {
+     "id": "little_girl",
+     "src": "openclipart:352878",
+     "title": "little kid 4"
+    },
+    {
+     "id": "little_boy_2",
+     "src": "openclipart:352880",
+     "title": "little kid 6"
+    },
+    {
+     "id": "little_boy_3",
+     "src": "openclipart:352882",
+     "title": "little kid 8"
+    }
+   ]
+  },
+  {
+   "id": "abc",
+   "icon": "textformat.abc",
+   "color": [
+    0.4,
+    0.78,
+    0.6
+   ],
+   "pages": [
+    {
+     "id": "a_apple",
+     "src": "openclipart:84631",
+     "title": "a is for apple"
+    },
+    {
+     "id": "b_butterfly",
+     "src": "openclipart:87049",
+     "title": "b is for butterfly"
+    },
+    {
+     "id": "c_car",
+     "src": "openclipart:87055",
+     "title": "c is for car"
+    },
+    {
+     "id": "d_dog",
+     "src": "openclipart:87061",
+     "title": "d is for dog"
+    },
+    {
+     "id": "e_egg",
+     "src": "openclipart:87067",
+     "title": "e is for egg"
+    },
+    {
+     "id": "f_flower",
+     "src": "openclipart:87073",
+     "title": "f is for flower"
+    },
+    {
+     "id": "g_goat",
+     "src": "openclipart:87079",
+     "title": "g is for goat"
+    },
+    {
+     "id": "h_house",
+     "src": "openclipart:88621",
+     "title": "h is for house"
+    },
+    {
+     "id": "i_ice",
+     "src": "openclipart:88627",
+     "title": "i is for ice"
+    },
+    {
+     "id": "j_jar",
+     "src": "openclipart:88633",
+     "title": "j is for jar"
+    },
+    {
+     "id": "k_kangaroo",
+     "src": "openclipart:88639",
+     "title": "k is for kangaroo"
+    },
+    {
+     "id": "l_leg",
+     "src": "openclipart:88645",
+     "title": "l is for leg"
+    },
+    {
+     "id": "m_mug",
+     "src": "openclipart:88651",
+     "title": "m is for mug"
+    },
+    {
+     "id": "n_notebook",
+     "src": "openclipart:88789",
+     "title": "n is for notebook"
+    },
+    {
+     "id": "o_owl",
+     "src": "openclipart:88795",
+     "title": "o is for owl"
+    },
+    {
+     "id": "p_pick",
+     "src": "openclipart:88801",
+     "title": "p is for pick"
+    },
+    {
+     "id": "q_queen",
+     "src": "openclipart:88807",
+     "title": "q is for queen"
+    },
+    {
+     "id": "r_rainbow",
+     "src": "openclipart:88813",
+     "title": "r is for rainbow"
+    },
+    {
+     "id": "s_stool",
+     "src": "openclipart:88819",
+     "title": "s is for stool"
+    },
+    {
+     "id": "t_teapot",
+     "src": "openclipart:88999",
+     "title": "t is for teapot"
+    },
+    {
+     "id": "u_umbrella",
+     "src": "openclipart:89005",
+     "title": "u is for umbrella"
+    },
+    {
+     "id": "v_vest",
+     "src": "openclipart:89011",
+     "title": "v is for vest"
+    },
+    {
+     "id": "w_wagon",
+     "src": "openclipart:89017",
+     "title": "w is for wagon"
+    },
+    {
+     "id": "x_xylophone",
+     "src": "openclipart:89023",
+     "title": "x is for xylophone"
+    },
+    {
+     "id": "y_yarn",
+     "src": "openclipart:89029",
+     "title": "y is for yarn"
+    },
+    {
+     "id": "z_zeppelin",
+     "src": "openclipart:89335",
+     "title": "z is for zeppelin"
+    }
+   ]
+  }
+ ]
+}

@@ -6,4 +6,4 @@ build/
 App/Info.plist
 art/coloring/preview/
 __pycache__/
-__pycache__/
+art/coloring/svg-cache/

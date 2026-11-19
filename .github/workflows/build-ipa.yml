@@ -145,9 +145,18 @@ jobs:
           shot 3-dressup-random 6 -game dressup -randomLook
           shot 4-dressup-clothes 6 -game dressup -randomLook -tab clothes
           shot 5-dressup-gallery 6 -game dressup -demoGallery
+          shot 7-dressup-pets 6 -game dressup -demoPets
+          shot 8-dressup-face 6 -game dressup -randomLook -tab me
+          shot 9-battle-theme 6 -game dressup -demoBattle
+          shot 10-battle-runway 10 -game dressup -randomLook -demoRunway
           shot 6-coloring 6 -game coloring
-          shot 7-petvet-lobby 6 -game petvet
-          shot 8-petvet-exam 6 -game petvet -vetPatient kitty
+          shot petvet-1-lobby 6 -game petvet
+          shot petvet-2-exam 6 -game petvet -vetPatient kitty
+          shot bakery-1-shop 6 -game bakery -bakeryServe
+          shot bakery-2-decorate 6 -game bakery -bakeryDecorate cake
+          shot bakery-3-mix 6 -game bakery -bakeryStep cupcake 0
+          shot bakery-4-frost 6 -game bakery -bakeryStep cupcake 2
+          shot bakery-5-icecream 6 -game bakery -bakeryDecorate iceCream
           xcrun simctl shutdown "$UDID"
           PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$PHONE"

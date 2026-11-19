@@ -97,16 +97,16 @@ final class ColoringTests: XCTestCase {
     }
 
     func testGallerySaveLoadDelete() {
-        let paper = ColoringPaper(lineArt: ColoringCatalog.lineArt("kitty"))
+        let paper = ColoringPaper(lineArt: ColoringCatalog.lineArt("cat_4"))
         paper.fill(at: CGPoint(x: 800, y: 560), style: .solid, color: PaintColor.hex(0xFF8A3D))
         let id = "test-\(UUID().uuidString)"
         let gallery = ColoringGallery.shared
-        gallery.save(id: id, page: "kitty", paper: paper, stickers: [ColorSticker(emoji: "🦄", x: 300, y: 300)])
+        gallery.save(id: id, page: "cat_4", paper: paper, stickers: [ColorSticker(emoji: "🦄", x: 300, y: 300)])
         defer { if let a = gallery.items.first(where: { $0.id == id }) { gallery.delete(a) } }
         XCTAssertEqual(gallery.items.first?.id, id)
         XCTAssertNotNil(gallery.thumbnail(id))
         XCTAssertEqual(gallery.stickers(id).first?.emoji, "🦄")
-        let reloaded = ColoringPaper(lineArt: ColoringCatalog.lineArt("kitty"))
+        let reloaded = ColoringPaper(lineArt: ColoringCatalog.lineArt("cat_4"))
         reloaded.load(gallery.colorLayer(id)!)
         XCTAssertEqual(reloaded.pixel(800, 560), paper.pixel(800, 560))
         XCTAssertNotNil(gallery.fullPicture(gallery.items.first!))

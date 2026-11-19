@@ -1,7 +1,7 @@
 {
  "categories": [
   {
-   "id": "animals",
+   "id": "pets",
    "icon": "pawprint.fill",
    "color": [
     1.0,
@@ -9,47 +9,143 @@
     0.45
    ],
    "pages": [
-    "kitty",
+    "cat",
+    "cat_2",
+    "cat_3",
+    "smiley_cat",
+    "cat_walking",
+    "cat_in_a_cup",
+    "cat_4",
+    "dog_head",
+    "dog",
+    "dog_2",
+    "cat_sleeping",
+    "kawaii_kitty",
+    "saint_bernard",
+    "cat_5",
+    "cat_with_yarn",
+    "cat_sitting",
     "puppy",
+    "sleeping_kitty",
+    "cute_cat_sitting",
+    "cute_cat_laying",
+    "cute_cat",
+    "cute_cat_2",
+    "grooming_cat",
+    "dog_face",
+    "dog_face_2",
+    "dog_face_3",
+    "dog_face_4",
+    "cat_face",
+    "puppy_2"
+   ]
+  },
+  {
+   "id": "animals",
+   "icon": "tortoise.fill",
+   "color": [
+    0.95,
+    0.72,
+    0.35
+   ],
+   "pages": [
+    "beaver",
     "bunny",
-    "piggy",
-    "owl",
-    "panda",
-    "ducks"
+    "camel",
+    "hippo",
+    "cute_jackalope",
+    "cute_snake",
+    "elephant",
+    "fawn",
+    "flamingo",
+    "gerbil",
+    "lion",
+    "rabbit",
+    "mouse_face",
+    "rabbit_2",
+    "squirrel",
+    "turtle",
+    "elephant_2",
+    "elephant_3",
+    "cute_bunny",
+    "frog",
+    "frog_2",
+    "raccoon",
+    "giraffe",
+    "mouse",
+    "tiger",
+    "zebra",
+    "tortoise",
+    "turtle_side",
+    "cute_llama",
+    "cute_mouse",
+    "cute_fox",
+    "cute_hamster",
+    "cute_bear_sitting",
+    "bunny_2",
+    "hippo_2",
+    "cute_bear",
+    "panda_doodle",
+    "sleepy_fox",
+    "round_panda",
+    "cute_happy_rabbit",
+    "peeking_mouse",
+    "rat_face",
+    "hedgehog_face",
+    "panda_face",
+    "sloth_face",
+    "mouse_face_2",
+    "cute_panda",
+    "hippo_3",
+    "panda_head"
    ]
   },
   {
-   "id": "magic",
-   "icon": "wand.and.stars",
+   "id": "farm",
+   "icon": "carrot.fill",
    "color": [
-    0.78,
+    0.98,
     0.55,
-    1.0
+    0.3
    ],
    "pages": [
-    "unicorn",
-    "castle",
-    "fairy_house",
-    "dragon",
-    "rainbow",
-    "wand_crown"
+    "cow",
+    "goat",
+    "cow_calf",
+    "donkey",
+    "sheep",
+    "goose",
+    "smiling_pig",
+    "cow_2",
+    "pig",
+    "running_pig",
+    "funny_lamb",
+    "spotty_cow",
+    "llama"
    ]
   },
   {
-   "id": "princess",
-   "icon": "crown.fill",
+   "id": "birds",
+   "icon": "bird.fill",
    "color": [
-    1.0,
-    0.55,
-    0.78
+    0.45,
+    0.75,
+    0.95
    ],
    "pages": [
-    "princess",
-    "ballerina",
-    "closet",
-    "tea_party",
-    "fairy",
-    "jewels"
+    "little_bird",
+    "parrot",
+    "penguin",
+    "penguin_with_shirt",
+    "duck_with_sign",
+    "curious_owl",
+    "spring_bird",
+    "cute_little_chick",
+    "duck",
+    "bird_in_flight",
+    "penguin_2",
+    "dove",
+    "cute_bird"
    ]
   },
   {
@@ -61,29 +157,42 @@
     1.0
    ],
    "pages": [
-    "fishies",
-    "whale",
     "octopus",
-    "turtle",
-    "mermaid",
-    "crab"
+    "fish",
+    "sand_castle",
+    "dolphin",
+    "green_sea_turtle",
+    "octopus_2",
+    "shell",
+    "starfish",
+    "angelfish",
+    "goldfish",
+    "whale_2",
+    "crab",
+    "fish_2",
+    "jellyfish",
+    "baby_octopus",
+    "shark",
+    "whale",
+    "whale_heart"
    ]
   },
   {
-   "id": "treats",
-   "icon": "birthday.cake.fill",
+   "id": "bugs",
+   "icon": "ladybug.fill",
    "color": [
-    1.0,
-    0.7,
-    0.3
+    0.95,
+    0.4,
+    0.4
    ],
    "pages": [
-    "cupcake",
-    "ice_cream",
-    "birthday_cake",
-    "donuts",
-    "candy",
-    "fruit"
+    "ant",
+    "butterfly",
+    "detailed_butterfly",
+    "firefly",
+    "butterfly_2",
+    "snail",
+    "ladybug"
    ]
   },
   {
@@ -95,28 +204,143 @@
     0.45
    ],
    "pages": [
-    "butterfly",
-    "ladybug",
-    "snail",
-    "bee",
-    "house",
-    "flowers"
+    "anemone",
+    "lotus_flower",
+    "flower",
+    "flower_with_roots",
+    "leaf",
+    "flower_2",
+    "flower_3",
+    "flower_4",
+    "daisy",
+    "acorn",
+    "star_flower",
+    "star_flower_2"
    ]
   },
   {
-   "id": "dinos",
-   "icon": "lizard.fill",
+   "id": "food",
+   "icon": "birthday.cake.fill",
    "color": [
-    0.4,
-    0.78,
-    0.6
+    1.0,
+    0.7,
+    0.3
    ],
    "pages": [
-    "trex",
-    "longneck",
-    "stego",
-    "trike",
-    "dino_egg"
+    "banana_bunch",
+    "burger",
+    "juice_box",
+    "muffin",
+    "muffin_2",
+    "ice_cream",
+    "pie",
+    "mug",
+    "apple_juice",
+    "milk",
+    "hot_dog",
+    "pizza",
+    "pizza_2",
+    "french_fries",
+    "ice_pop",
+    "jelly",
+    "cherries",
+    "apple",
+    "grapes",
+    "watermelon",
+    "carrot",
+    "owl_cupcake",
+    "burger_2",
+    "peas",
+    "green_pepper",
+    "apple_2",
+    "lemon",
+    "orange",
+    "tomato",
+    "pear",
+    "strawberry"
+   ]
+  },
+  {
+   "id": "magic",
+   "icon": "wand.and.stars",
+   "color": [
+    0.78,
+    0.55,
+    1.0
+   ],
+   "pages": [
+    "angel",
+    "little_alien",
+    "cute_dragon",
+    "rawr_monster",
+    "castle",
+    "unicorn",
+    "dragon",
+    "dinosaur",
+    "crown"
+   ]
+  },
+  {
+   "id": "holidays",
+   "icon": "gift.fill",
+   "color": [
+    0.95,
+    0.4,
+    0.5
+   ],
+   "pages": [
+    "christmas_tree",
+    "christmas_tree_2",
+    "ghost",
+    "easter_egg",
+    "gift",
+    "pumpkin",
+    "santa_panda",
+    "christmas_tree_4",
+    "christmas_tree_5",
+    "pine_tree",
+    "skating_panda",
+    "christmas_tree_3",
+    "jack_o_lantern",
+    "easter_bunny",
+    "waving_santa",
+    "snowman",
+    "cute_bat",
+    "heart",
+    "shamrock",
+    "spring_bunny"
+   ]
+  },
+  {
+   "id": "home",
+   "icon": "house.fill",
+   "color": [
+    0.6,
+    0.65,
+    0.95
+   ],
+   "pages": [
+    "teacup",
+    "house_2",
+    "house_3",
+    "doll",
+    "teapot",
+    "house",
+    "house_4",
+    "flower_mug",
+    "teddy_bear",
+    "stool",
+    "book",
+    "volleyball",
+    "yarn",
+    "bench",
+    "teacup_2",
+    "teddy_bear_2",
+    "house_5",
+    "coffee_pot",
+    "sofa",
+    "baseball",
+    "alarm_clock"
    ]
   },
   {
@@ -128,16 +352,16 @@
     0.45
    ],
    "pages": [
+    "airplane",
+    "bus",
+    "ship",
     "car",
-    "train",
-    "hot_air_balloon",
-    "boat",
-    "plane",
-    "bus"
+    "airplane_2",
+    "ark"
    ]
   },
   {
-   "id": "space",
+   "id": "sky",
    "icon": "moon.stars.fill",
    "color": [
     0.45,
@@ -145,28 +369,79 @@
     0.95
    ],
    "pages": [
-    "space_rocket",
-    "planets",
-    "astronaut",
-    "alien",
-    "moon"
+    "earth",
+    "cloudy",
+    "rain",
+    "sun",
+    "sun_2",
+    "sun_3",
+    "ufo",
+    "waving_astronaut",
+    "raindrop",
+    "sun_4",
+    "cute_cloud",
+    "star",
+    "moon",
+    "umbrella",
+    "windy_cloud"
    ]
   },
   {
-   "id": "holiday",
-   "icon": "gift.fill",
+   "id": "people",
+   "icon": "figure.2.and.child.holdinghands",
    "color": [
-    0.95,
-    0.4,
-    0.5
+    1.0,
+    0.55,
+    0.78
    ],
    "pages": [
-    "xmas_tree",
-    "snowman",
-    "pumpkin",
-    "easter",
-    "gifts",
-    "party"
+    "umbrella_friends",
+    "baby",
+    "postman",
+    "student",
+    "grandma_and_me",
+    "postman_2",
+    "little_boy",
+    "little_girl",
+    "little_boy_2",
+    "little_boy_3"
+   ]
+  },
+  {
+   "id": "abc",
+   "icon": "textformat.abc",
+   "color": [
+    0.4,
+    0.78,
+    0.6
+   ],
+   "pages": [
+    "a_apple",
+    "b_butterfly",
+    "c_car",
+    "d_dog",
+    "e_egg",
+    "f_flower",
+    "g_goat",
+    "h_house",
+    "i_ice",
+    "j_jar",
+    "k_kangaroo",
+    "l_leg",
+    "m_mug",
+    "n_notebook",
+    "o_owl",
+    "p_pick",
+    "q_queen",
+    "r_rainbow",
+    "s_stool",
+    "t_teapot",
+    "u_umbrella",
+    "v_vest",
+    "w_wagon",
+    "x_xylophone",
+    "y_yarn",
+    "z_zeppelin"
    ]
   }
  ]

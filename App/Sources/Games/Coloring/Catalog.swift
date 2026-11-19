@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// The coloring book: categories and pages from App/Resources/Games/Coloring/pages.json
-/// (written by tools/make_coloring.py).
+/// (written by tools/import_coloring.py).
 struct ColoringCategory: Identifiable, Decodable {
     let id: String
     let icon: String
