@@ -37,6 +37,7 @@ struct ColoringStudioView: View {
             }
             .disabled(!studio.canUndo)
             ColoringButton(icon: "trash.fill", tint: Theme.peach) { askClear = true }
+            ColoringZoomResetButton(zoom: studio.zoom)
             Spacer()
             ColoringButton(icon: "checkmark", tint: Theme.mint, size: 80) {
                 studio.saveIfNeeded(force: true)
@@ -82,9 +83,11 @@ struct ColoringStudioView: View {
                     Color.white
                     ProgressView().scaleEffect(2).tint(Theme.pink)
                 }
-                ColoringStickerLayer(studio: studio, scale: fit.width / CGFloat(ColoringPaper.width))
-                if let b = studio.burst {
-                    ColoringFillPop(burst: b, scale: fit.width / CGFloat(ColoringPaper.width)).id(b.id).allowsHitTesting(false)
+                ColoringStickerLayer(studio: studio, zoom: studio.zoom, scale: fit.width / CGFloat(ColoringPaper.width))
+                ColoringZoomed(zoom: studio.zoom) {
+                    if let b = studio.burst {
+                        ColoringFillPop(burst: b, scale: fit.width / CGFloat(ColoringPaper.width)).id(b.id).allowsHitTesting(false)
+                    }
                 }
             }
             .frame(width: fit.width, height: fit.height)
@@ -350,14 +353,17 @@ struct ColoringTwinkles: View {
 }
 
 /// Stickers sit on top of the page. With the sticker tool she can drag, pinch and twist them.
+/// The layer itself is never scaled (so it can't cover the buttons beside the page); each sticker is placed through the zoom.
 private struct ColoringStickerLayer: View {
     @ObservedObject var studio: ColoringStudio
+    @ObservedObject var zoom: ColoringZoom
     let scale: CGFloat
 
     var body: some View {
+        let z = zoom.zoom
         ZStack {
             ForEach(studio.stickers) { s in
-                ColoringStickerItem(sticker: s, scale: scale, editable: studio.tool == .stickers,
+                ColoringStickerItem(sticker: s, scale: scale, zoom: z, editable: studio.tool == .stickers,
                             selected: studio.selected == s.id, studio: studio)
             }
         }
@@ -370,6 +376,7 @@ private struct ColoringStickerLayer: View {
 private struct ColoringStickerItem: View {
     let sticker: ColorSticker
     let scale: CGFloat
+    let zoom: PageZoom
     let editable: Bool
     let selected: Bool
     let studio: ColoringStudio
@@ -378,7 +385,11 @@ private struct ColoringStickerItem: View {
     @GestureState private var twist: Angle = .zero
 
     var body: some View {
-        let size = CGFloat(ColorSticker.baseSize * sticker.scale) * scale
+        let k = scale * zoom.scale   // paper pixels to screen points
+        let size = CGFloat(ColorSticker.baseSize * sticker.scale) * k
+        let x = zoom.offset.x + CGFloat(sticker.x) * k, y = zoom.offset.y + CGFloat(sticker.y) * k
+        // Zoomed far out of view: don't catch taps meant for the buttons around the page.
+        let inView = x >= 0 && y >= 0 && x <= CGFloat(ColoringPaper.width) * scale && y <= CGFloat(ColoringPaper.height) * scale
         Text(sticker.emoji)
             .font(.system(size: size))
             .padding(size * 0.08)
@@ -389,7 +400,8 @@ private struct ColoringStickerItem: View {
             )
             .scaleEffect(pinch)
             .rotationEffect(.radians(sticker.angle + twist.radians))
-            .position(x: CGFloat(sticker.x) * scale + drag.width, y: CGFloat(sticker.y) * scale + drag.height)
+            .position(x: x + drag.width, y: y + drag.height)
+            .allowsHitTesting(inView)
             .gesture(gestures, including: editable ? .all : .subviews)
             .onTapGesture { if editable { studio.selected = sticker.id } }
     }
@@ -401,11 +413,12 @@ private struct ColoringStickerItem: View {
             .onEnded { v in
                 studio.beginStickerChange()
                 var s = sticker
-                s.x = min(Double(ColoringPaper.width), max(0, s.x + Double(v.translation.width / scale)))
-                s.y = min(Double(ColoringPaper.height), max(0, s.y + Double(v.translation.height / scale)))
+                let k = scale * zoom.scale
+                s.x = min(Double(ColoringPaper.width), max(0, s.x + Double(v.translation.width / k)))
+                s.y = min(Double(ColoringPaper.height), max(0, s.y + Double(v.translation.height / k)))
                 studio.update(s)
             }
-        let zoom = MagnificationGesture()
+        let grow = MagnificationGesture()
             .updating($pinch) { v, s, _ in s = v }
             .onEnded { v in
                 studio.beginStickerChange()
@@ -421,7 +434,7 @@ private struct ColoringStickerItem: View {
                 s.angle += v.radians
                 studio.update(s)
             }
-        return move.simultaneously(with: zoom.simultaneously(with: turn))
+        return move.simultaneously(with: grow.simultaneously(with: turn))
     }
 }
 

@@ -57,3 +57,8 @@ history before the game-drawer PR.
 - Glitter (brush and glitter fill) leaves flakes that twinkle live on a layer above the page, and shimmer when the
   iPad tilts. Flakes are saved next to the color layer as `<id>.glitter`; the eraser and any fill over them remove them.
 - Apple Pencil pressure and tilt are used (tilted pencil shades wide and soft); a finger draws at a steady medium pressure.
+- Two fingers pinch to zoom (up to 4x) and drag the zoomed page (`Zoom.swift`, touch handling in `ColoringCanvasView`).
+  A stroke the first finger started less than half a second earlier is taken back when the second finger lands, and the
+  fill tool fills when the finger lifts, so a pinch never leaves a mark. A quick two-finger tap, or the pink button that
+  appears in the top bar while zoomed, shows the whole page again. Brush sizes stay in paper pixels, so zooming in makes
+  the brush finer on the page. Apple Pencil strokes ignore extra fingers (resting hand).
