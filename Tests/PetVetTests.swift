@@ -81,6 +81,13 @@ final class PetVetTests: XCTestCase {
         let d = try JSONEncoder().encode(s)
         XCTAssertEqual(try JSONDecoder().decode(VetClinicSave.self, from: d), s)
     }
+
+    func testEveryProblemSpotCountsAsOnThePatient() {
+        // the magnifier, the see-through tool and the tip ring show only over the patient,
+        // so every place a tool is needed must count as "on the patient"
+        for (k, p) in VetAnchors.all { XCTAssertTrue(VetExamView.onPatient(p), k) }
+        XCTAssertFalse(VetExamView.onPatient(CGPoint(x: -100, y: 300)))
+    }
 }
 
 /// A tiny deterministic generator for tests.

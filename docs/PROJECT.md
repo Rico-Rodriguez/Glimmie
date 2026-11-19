@@ -52,6 +52,9 @@ history before the game-drawer PR.
 - All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
+- So her finger never hides the work: the tool tip works 80 pt above her finger, the tool turns see-through (and a
+  bit smaller) over the patient with a small pink ring at its tip, and a round magnifier near the top shows the spot
+  under the tip at 2x on the side away from it. Screenshot hook: `-vetHold <tool>` holds a tool over its spot.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.
 
 ## Bakery realism
