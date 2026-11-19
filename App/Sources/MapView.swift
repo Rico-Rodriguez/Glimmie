@@ -131,7 +131,7 @@ struct MapView: View {
     }
 
     private func decor(_ world: World, size: CGSize) -> some View {
-        let spots: [(CGFloat, CGFloat)] = [(0.04, 0.3), (0.96, 0.4), (0.62, 0.38), (0.24, 0.7), (0.86, 0.95), (0.4, 0.97)]
+        let spots: [(CGFloat, CGFloat)] = [(0.04, 0.3), (0.96, 0.4), (0.97, 0.74), (0.24, 0.7), (0.86, 0.95), (0.4, 0.97)]
         return ZStack {
             ForEach(0..<min(spots.count, world.decor.count), id: \.self) { i in
                 Text(world.decor[i])
