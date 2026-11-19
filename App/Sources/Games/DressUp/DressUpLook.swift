@@ -18,10 +18,12 @@ struct Look: Codable, Equatable, Identifiable {
     var patterns: [String: String] = [:]
     var bg = "bg_bedroom"
     var saved = Date()
+    /// The pet sitting at her feet, in its outfit (from the pet corner).
+    var pet: PetLook?
 
     init() {}
 
-    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved }
+    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved, pet }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -35,6 +37,7 @@ struct Look: Codable, Equatable, Identifiable {
         patterns = (try? c.decodeIfPresent([String: String].self, forKey: .patterns)) ?? [:]
         bg = (try? c.decodeIfPresent(String.self, forKey: .bg)) ?? d.bg
         saved = (try? c.decodeIfPresent(Date.self, forKey: .saved)) ?? Date()
+        pet = try? c.decodeIfPresent(PetLook.self, forKey: .pet)
     }
 
     static var starter: Look {
@@ -54,6 +57,12 @@ struct Look: Codable, Equatable, Identifiable {
         l.skin = clamp(l.skin, art.skin.count)
         l.hair = clamp(l.hair, art.hair.count)
         l.eye = clamp(l.eye, art.eye.count)
+        // the little pets she used to hold now come from the pet corner
+        if let h = l.picks["hold"], let kind = PetSave.legacy[h], art.items[h] == nil {
+            l.picks["hold"] = nil
+            if l.pet == nil { l.pet = PetLook(kind: kind) }
+        }
+        l.pet = l.pet?.sanitized(.shared, art)
         for (cat, item) in l.picks where art.items[item]?.category != cat { l.picks[cat] = nil }
         for c in art.categories where c.required && c.id != "skin" && c.id != "bg" && l.picks[c.id] == nil {
             l.picks[c.id] = Look.starter.picks[c.id] ?? c.items.first
@@ -122,6 +131,9 @@ struct Look: Codable, Equatable, Identifiable {
             if Double.random(in: 0..<1) < 0.3 { l.patterns[c] = art.patternNames.randomElement() }
         }
         l.bg = pick("bg") ?? l.bg
+        if Double.random(in: 0..<1) < 0.3, let kind = PetArt.shared.order.randomElement() {
+            l.pet = PetLook.random(kind: kind, .shared, art)
+        }
         return l
     }
 }
@@ -215,6 +227,7 @@ enum DollPainter {
         for (layer, p, _) in layers(look, expression, art: art) {
             ArtPainter.draw(layer.shapes, p, in: ctx)
         }
+        if let pet = look.pet { PetPainter.drawCompanion(pet, in: ctx) }
     }
 
     static func paintScene(_ id: String, in ctx: inout GraphicsContext, size: CGSize) {

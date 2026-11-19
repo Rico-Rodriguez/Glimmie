@@ -32,6 +32,21 @@ history before the game-drawer PR.
 - Items are colored by role, so every clothing item works in all 24 colors and 7 patterns.
 - A dress replaces a top and bottom; picking a top or bottom takes the dress off.
 
+## Dress Up pet corner
+- The pets share the Pet Vet animals' body plan and drawing code (`tools/petvet/animals.py`, which now keeps each animal's
+  torso, limbs and head apart), plus four of their own in `tools/dressup/pets.py` (dragon, red panda, owl, axolotl).
+  They are written into `dressup.json` under `pets` and drawn by `PetArt.swift`.
+- Outfits are drawn once on the shared body and placed with per-pet anchors (hat on the head top, glasses on the eyes,
+  garments scaled to body width). Layer order: back wear, tail/ears, torso, body wear, paws, head, collar, front, face,
+  glasses, hat. Outfit colors use the Dress Up color roles, so every piece works in all 24 colors.
+- `PetLife.swift` is the living stage (one class, drawn every frame like `DollMotion`): idle breathing, blinking, eyes that
+  follow the finger or toy, hops with squash and stretch, and every care tool. Every tool also works with a single tap.
+- Each pet has a favorite snack (`PetSave.favorites`); after 3 hearts the shelf marks it with a little heart.
+- The thought bubble only ever asks to play; doing what it shows gives extra hearts. Nothing gets hungry or sad.
+- Taking a pet along stores a copy of it in the look (`Look.pet`); it sits at her feet and counts in fashion battles.
+  Old looks that held p_kitty/p_puppy/p_bunny/p_duck/p_unicorn move that pet to her feet; p_teddy stays a held plush.
+- Screenshot hooks: `-petDemo dressed | closet | pets | foam | sleep | feed`, `-demoCompanion`.
+
 ## Pet Vet decisions
 - Same flat chibi look as Dress Up: color-derived outlines, one shade and one light per color (math in tools/petvet/base.py).
 - All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
