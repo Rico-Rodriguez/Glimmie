@@ -64,7 +64,20 @@ history before the game-drawer PR.
 - Pouring into the pan is press-and-hold (`BakeStep.swift`, `PourFlow`): 2.4 s of pouring fills it; a quick tap still pours 0.8 s.
 - Cake frosting keeps its spatula strokes in `Treat.swoosh` (flat x, y pairs, optional so older saves load), and
   TreatPainter draws the ridges on every cake afterwards. Cupcake rings are piped with an angular sweep (`Piping`).
-- Screenshot hooks: `-bakeryDemo pour | stir | pourpan | bake | spread | pipe | sauce` freeze a step mid-action.
+- Ingredients go in by hand (`HandsOn.swift`, `HandsOnBowl`): drag flour, sugar or milk over the bowl and it tips and
+  pours while held (shaking the flour pours faster, like sifting); a ring around the plate fills and a tick appears when
+  there's enough. Eggs can't pass through the rim: pushing one down onto the rim knocks it (first knock cracks it, second
+  breaks it open), or let it go on the rim and tap it. Butter drops in when let go over the bowl. A tap on a plate shows
+  a ghost gliding to the bowl. Everything feeds `BowlSim` the same blobs and pool growth a scripted pour does.
+- Screenshot hooks: `-bakeryDemo pour | crack | stir | pourpan | bake | spread | pipe | sauce` freeze a step mid-action.
+
+## Bakery orders
+- Each customer orders one exact treat (`BakeryOrder`): kind, flavor, frosting color (cone for ice cream) and one topping.
+  The wish bubble shows that treat, with its four parts under it; the kitchen pins the same card (`OrderCard`) top left.
+- A part gets a green tick once the treat matches it; the matching choice in each picker wears a heart badge
+  (`.wanted`, fed through the `bakeryOrder` environment value). Ice cream's flavor matches if any scoop has it.
+- Serving gives gentle stars: 3 for all four parts, 2 for two or three, 1 otherwise. Every treat is still eaten happily.
+  The stars go into the heart jar. `-bakeryRated` serves the exact order for a screenshot.
 
 ## Coloring brush decisions
 - Every brush copies the physical tool on paper (code and notes in `App/Sources/Games/Coloring/Brushes.swift`).

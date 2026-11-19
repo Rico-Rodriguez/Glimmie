@@ -154,8 +154,9 @@ final class BakeryStore: ObservableObject {
         served = s.served
     }
 
-    func serve(_ t: Treat) {
-        hearts += 1
+    /// Serves a treat; the customer's stars go into the heart jar.
+    func serve(_ t: Treat, hearts earned: Int = 1) {
+        hearts += max(1, earned)
         served.insert(t, at: 0)
         if served.count > BakeryStore.maxServed { served.removeLast(served.count - BakeryStore.maxServed) }
         save()
