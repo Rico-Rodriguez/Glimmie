@@ -321,36 +321,70 @@ struct PaintRegionMask {
 // MARK: - ColoringPaper
 
 enum PaintBrush: String, CaseIterable, Codable {
-    case marker, crayon, glitter, rainbow, stamps, eraser
+    case marker, crayon, pencil, paint, glitter, rainbow, stamps, eraser
 }
 
 /// The color layer under a page's line art: a 1600x1200 bitmap she paints on.
 /// Coordinates are pixels with the origin at the top left. Use it from the main thread.
+/// The brushes themselves live in Brushes.swift.
 final class ColoringPaper {
     static let width = 1600, height = 1200
     let w = ColoringPaper.width, h = ColoringPaper.height
     let regions: PaintRegions
-    private let ctx: CGContext
-    private let px: UnsafeMutablePointer<UInt32>
+    let ctx: CGContext
+    let px: UnsafeMutablePointer<UInt32>
     private var masks: [Int32: PaintRegionMask] = [:]
     private var maskOrder: [Int32] = []
 
-    // stroke state
-    private var brush: PaintBrush = .marker
-    private var brushColor = PaintColor.white
-    private var brushSize: CGFloat = 20
-    private var clip: PaintRegionMask?
-    private var last: CGPoint = .zero
-    private var travelled: CGFloat = 0
-    private var nextStamp: CGFloat = 0
-    private var rng = PaintRandom(seed: 42)
+    // Stroke state. A stroke is painted from `base` (the paper as it was when the stroke began)
+    // plus `acc`, how much of the stroke each pixel has received, so a stroke never piles up on itself
+    // the wrong way: a marker stays even inside one stroke and only darkens where a new stroke crosses.
+    let base: UnsafeMutablePointer<UInt32>
+    let acc: UnsafeMutablePointer<Float>
+    var tint: UnsafeMutablePointer<UInt32>?   // per-pixel color, for the rainbow brush
+    var strokeBox: PixelBox?
+    var brush: PaintBrush = .marker
+    var brushColor = PaintColor.white
+    var brushSize: CGFloat = 20
+    var radius: Float = 10
+    var pressure: Float = 0.6
+    var tilt: Float = 0
+    var clip: PaintRegionMask?
+    var last: CGPoint = .zero
+    var travelled: CGFloat = 0
+    var nextStamp: CGFloat = 0
+    var rng = PaintRandom(seed: 42)
+    var strokeSeed: UInt32 = 1
+    var inStroke = false
+    var lastMoveTime: CFTimeInterval = 0
+    var lastTick: CFTimeInterval = 0
+    var holdGrow: Float = 0
+    // Watercolor drying after the stroke ends (0 = wet, 1 = dry).
+    var drying = false
+    var dryStart: CFTimeInterval = 0
+    var dryT: Float = 0
+    var dryDrawn: Float = 0
+
+    /// Glitter flakes that catch the light. The canvas makes them twinkle.
+    var flakes: [GlitterFlake] = []
+    static let maxFlakes = 9000
 
     /// `lineArt` nil = a blank page (one big area).
     init(lineArt: CGImage?) {
         ctx = ColoringPaper.makeContext(width: ColoringPaper.width, height: ColoringPaper.height)!
-        px = ctx.data!.bindMemory(to: UInt32.self, capacity: ColoringPaper.width * ColoringPaper.height)
+        let n = ColoringPaper.width * ColoringPaper.height
+        px = ctx.data!.bindMemory(to: UInt32.self, capacity: n)
+        base = .allocate(capacity: n)
+        acc = .allocate(capacity: n)
+        acc.initialize(repeating: 0, count: n)
         regions = PaintRegions(lineAlpha: ColoringPaper.coverage(of: lineArt, ColoringPaper.width, ColoringPaper.height), width: ColoringPaper.width, height: ColoringPaper.height)
         clear()
+    }
+
+    deinit {
+        base.deallocate()
+        acc.deallocate()
+        tint?.deallocate()
     }
 
     // MARK: Pixels
@@ -385,14 +419,21 @@ final class ColoringPaper {
     func makeImage() -> CGImage? { ctx.makeImage() }
 
     func clear() {
+        drying = false
         let white = PaintColor.white.packed
         for i in 0..<(w * h) { px[i] = white }
+        flakes = []
     }
 
-    func snapshot() -> Data { Data(bytes: px, count: w * h * 4) }
+    /// The pixels, with any wet paint dried first (for undo).
+    func snapshot() -> Data {
+        settle()
+        return Data(bytes: px, count: w * h * 4)
+    }
 
     func restore(_ data: Data) {
         guard data.count == w * h * 4 else { return }
+        drying = false
         data.withUnsafeBytes { raw in
             if let base = raw.baseAddress { memcpy(px, base, w * h * 4) }
         }
@@ -408,13 +449,14 @@ final class ColoringPaper {
     }
 
     func pngData() -> Data? {
+        settle()
         guard let img = makeImage() else { return nil }
         return UIImage(cgImage: img).pngData()
     }
 
     func pixel(_ x: Int, _ y: Int) -> UInt32 { px[y * w + x] }
 
-    private func mask(_ label: Int32) -> PaintRegionMask {
+    func mask(_ label: Int32) -> PaintRegionMask {
         if let m = masks[label] { return m }
         let m = PaintRegionMask(regions: regions, label: label)
         masks[label] = m
@@ -429,6 +471,7 @@ final class ColoringPaper {
     /// nothing to fill there or the area already has exactly this color.
     @discardableResult
     func fill(at p: CGPoint, style: ColoringFill, color: PaintColor) -> Bool {
+        settle()
         guard let label = regions.region(near: Int(p.x), Int(p.y)) else { return false }
         let m = mask(label)
         let painter = FillPainter(style: style, base: color)
@@ -441,7 +484,7 @@ final class ColoringPaper {
             for y in 0..<b.height where same {
                 for x in 0..<bw where m.bits[y * bw + x] != 0 && px[(y + b.minY) * w + x + b.minX] != c { same = false; break }
             }
-            if same { return false }
+            if same && !flakes.contains(where: { m.contains(Int($0.x), Int($0.y)) }) { return false }
         }
         m.bits.withUnsafeBufferPointer { bits in
             for y in 0..<b.height {
@@ -458,133 +501,12 @@ final class ColoringPaper {
                 }
             }
         }
+        // New paint covers the old glitter; a glitter fill brings its own.
+        flakes.removeAll { m.contains(Int($0.x), Int($0.y)) }
+        if style == .glitter { sprinkleFlakes(in: m) }
         return true
     }
 
-    // MARK: Brushes
-
     /// PaintBrush widths in paper pixels for the three sizes.
     static let sizes: [CGFloat] = [12, 26, 48]
-
-    func beginStroke(at p: CGPoint, brush: PaintBrush, color: PaintColor, size: CGFloat, stayInLines: Bool) {
-        self.brush = brush
-        brushColor = brush == .eraser ? .white : color
-        brushSize = size
-        travelled = 0
-        nextStamp = 0
-        last = p
-        clip = nil
-        if stayInLines, let label = regions.region(near: Int(p.x), Int(p.y), radius: 6) {
-            clip = mask(label)
-        }
-        segment(from: p, to: p)
-    }
-
-    func continueStroke(to p: CGPoint) {
-        let d = hypot(p.x - last.x, p.y - last.y)
-        guard d >= 1 else { return }
-        segment(from: last, to: p)
-        last = p
-    }
-
-    func endStroke() { clip = nil }
-
-    /// Top-left pixel coordinates -> Core Graphics coordinates (origin bottom left).
-    private func cg(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x, y: CGFloat(h) - p.y) }
-
-    private func segment(from a: CGPoint, to b: CGPoint) {
-        ctx.saveGState()
-        defer { ctx.restoreGState() }
-        if let clip, let img = clip.image {
-            let r = CGRect(x: clip.box.minX, y: h - clip.box.maxY - 1, width: clip.box.width, height: clip.box.height)
-            ctx.clip(to: r, mask: img)
-        }
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-        let len = hypot(b.x - a.x, b.y - a.y)
-        switch brush {
-        case .marker, .eraser:
-            line(a, b, brushColor.cg, brushSize)
-        case .crayon:
-            if let grain = ColoringPaper.grain {
-                ctx.clip(to: CGRect(x: 0, y: 0, width: w, height: h), mask: grain)
-            }
-            line(a, b, brushColor.cg, brushSize * 1.1)
-        case .glitter:
-            line(a, b, brushColor.cg, brushSize)
-            let light = brushColor.mix(.white, 0.7).cg
-            let n = max(1, Int(len * brushSize / 140))
-            for _ in 0..<n {
-                let t = CGFloat(rng.next())
-                let ox = CGFloat(rng.next() - 0.5) * brushSize, oy = CGFloat(rng.next() - 0.5) * brushSize
-                let c = cg(CGPoint(x: a.x + (b.x - a.x) * t + ox, y: a.y + (b.y - a.y) * t + oy))
-                if rng.next() < 0.12 {
-                    ctx.setFillColor(CGColor(gray: 1, alpha: 0.95))
-                    ctx.addPath(PaintShapes.twinkle(center: c, radius: brushSize * CGFloat(0.18 + 0.12 * rng.next())))
-                    ctx.fillPath()
-                } else {
-                    let r = CGFloat(1.2 + 2.2 * rng.next())
-                    ctx.setFillColor(rng.next() < 0.5 ? light : CGColor(gray: 1, alpha: 0.9))
-                    ctx.fillEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-                }
-            }
-        case .rainbow:
-            // Short pieces so the hue changes smoothly along the line.
-            let steps = max(1, Int(len / 4))
-            var p0 = a
-            for i in 1...steps {
-                let t = CGFloat(i) / CGFloat(steps)
-                let p1 = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-                let hue = Double((travelled + len * t) / 500)
-                line(p0, p1, PaintColor.hsb(hue, 0.62, 1).cg, brushSize)
-                p0 = p1
-            }
-        case .stamps:
-            let spacing = brushSize * 1.9
-            var s = nextStamp
-            while s <= travelled + len {
-                let t = len > 0 ? (s - travelled) / len : 0
-                let c = cg(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
-                let which = Int(s / spacing) % 3
-                ctx.setFillColor(brushColor.cg)
-                switch which {
-                case 0: ctx.addPath(PaintShapes.heart(center: c, size: brushSize * 1.6, flipY: true))
-                case 1: ctx.addPath(PaintShapes.star(center: c, radius: brushSize * 0.85, rotation: CGFloat(rng.next()) * 0.6 - 0.3))
-                default: ctx.addPath(PaintShapes.twinkle(center: c, radius: brushSize * 0.8))
-                }
-                ctx.fillPath()
-                s += spacing
-            }
-            nextStamp = s
-        }
-        travelled += len
-    }
-
-    private func line(_ a: CGPoint, _ b: CGPoint, _ color: CGColor, _ width: CGFloat) {
-        ctx.setStrokeColor(color)
-        ctx.setLineWidth(width)
-        ctx.move(to: cg(a))
-        ctx.addLine(to: cg(b))
-        ctx.strokePath()
-    }
-
-    /// ColoringPaper grain for the crayon: white where wax sticks, black where it skips.
-    static let grain: CGImage? = {
-        let w = ColoringPaper.width, h = ColoringPaper.height
-        var rng = PaintRandom(seed: 99)
-        // Coarse noise (3x3 cells) mixed with fine noise looks like wax on paper.
-        let cw = w / 3 + 1
-        let coarse = (0..<(cw * (h / 3 + 1))).map { _ in rng.next() }
-        var bits = [UInt8](repeating: 0, count: w * h)
-        for y in 0..<h {
-            for x in 0..<w {
-                let v = coarse[(y / 3) * cw + x / 3] * 0.6 + rng.next() * 0.4
-                bits[y * w + x] = v > 0.3 ? 255 : 0
-            }
-        }
-        guard let provider = CGDataProvider(data: Data(bits) as CFData) else { return nil }
-        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: w,
-                       space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-    }()
 }

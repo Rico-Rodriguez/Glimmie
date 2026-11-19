@@ -3,7 +3,8 @@ import SwiftUI
 // MARK: - Coloring (a game in the drawer)
 //
 // A coloring book: pick a page, fill areas with a tap (solid, glitter, patterns, rainbow),
-// paint with markers, crayons, glitter and rainbow pens or stamps, add stickers, undo,
+// paint with markers, crayons, colored pencils, watercolor, glitter glue, rainbow pens or stamps
+// (each behaves like the real tool on paper, see Brushes.swift), add stickers, undo,
 // and keep everything in a gallery. Every page and tool is free and open. No voice.
 //
 // Pages are public-domain line art from Openclipart, listed in art/coloring/imported.json
@@ -56,6 +57,13 @@ struct ColoringGameView: View {
         }
         .background(ColoringBackground())
         .onChange(of: phase) { p in if p != .active { studio?.saveIfNeeded() } }
+        .onAppear {
+            // For simulator screenshots: a blank page with a sample of every brush.
+            if ProcessInfo.processInfo.arguments.contains("-coloringDemo") {
+                studio = ColoringStudio(page: ColoringCatalog.blank, demo: true)
+                screen = .studio
+            }
+        }
     }
 
     private func go(_ s: Screen) { withAnimation(.easeInOut(duration: 0.3)) { screen = s } }

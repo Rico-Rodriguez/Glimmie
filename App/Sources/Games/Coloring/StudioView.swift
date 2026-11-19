@@ -52,7 +52,7 @@ struct ColoringStudioView: View {
     // MARK: Tools
 
     private var toolColumn: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             ForEach(ColoringTool.allCases, id: \.self) { t in
                 ColoringToolButton(tool: t, selected: studio.tool == t, tint: toolTint(t)) {
                     studio.tool = t
@@ -250,15 +250,16 @@ private struct ColoringToolButton: View {
                 RoundedRectangle(cornerRadius: 20).fill(selected ? tint : .white.opacity(0.85))
                 if tool == .rainbow {
                     Image(systemName: "rainbow").symbolRenderingMode(.multicolor)
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.system(size: 28, weight: .bold))
                 } else {
                     Image(systemName: tool.icon)
-                        .font(.system(size: 32, weight: .bold))
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(selected ? Color.white : (tint == Color.white ? Theme.ink : tint))
                         .shadow(color: .black.opacity(selected ? 0.25 : 0), radius: 1)
                 }
+                if tool == .glitter { ColoringTwinkles(count: 4).allowsHitTesting(false) }
             }
-            .frame(width: 76, height: 76)
+            .frame(width: 64, height: 64)
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected ? Theme.ink : .white, lineWidth: selected ? 5 : 3))
             .scaleEffect(selected ? 1.06 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selected)
@@ -291,6 +292,7 @@ private struct ColoringFillSwatch: View {
         Image(uiImage: ColoringFillSwatch.image(style, color))
             .resizable()
             .frame(width: 60, height: 60)
+            .overlay { if style == .glitter { ColoringTwinkles(count: 5) } }
             .clipShape(Circle())
             .overlay(Circle().stroke(.white, lineWidth: 4))
             .overlay(Circle().stroke(selected ? Theme.ink : .clear, lineWidth: 4).padding(-5))
@@ -317,6 +319,33 @@ private struct ColoringFillSwatch: View {
         }
         cache[key] = img
         return img
+    }
+}
+
+/// Little glints that come and go, so anything glittery on the screen sparkles like the page does.
+struct ColoringTwinkles: View {
+    let count: Int
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { tl in
+            Canvas { ctx, size in
+                let t = tl.date.timeIntervalSinceReferenceDate
+                ctx.addFilter(.shadow(color: .black.opacity(0.35), radius: 1.5))
+                for i in 0..<count {
+                    var r = PaintRandom(seed: UInt64(i * 31 + 5))
+                    let x = 0.15 + 0.7 * r.next(), y = 0.15 + 0.7 * r.next()
+                    let speed = 1.6 + 2.2 * r.next(), phase = r.next() * 6.3
+                    let s = sin(t * speed + phase)
+                    guard s > 0.55 else { continue }
+                    let k = (s - 0.55) / 0.45
+                    let c = CGPoint(x: x * size.width, y: y * size.height)
+                    let rad = CGFloat(3 + 6 * k) * min(size.width, size.height) / 64
+                    ctx.fill(Path(ellipseIn: CGRect(x: c.x - rad * 0.6, y: c.y - rad * 0.6, width: rad * 1.2, height: rad * 1.2)),
+                             with: .color(.white.opacity(0.4 * k)))
+                    ctx.fill(Path(PaintShapes.twinkle(center: c, radius: rad)), with: .color(.white.opacity(0.95)))
+                }
+            }
+        }
     }
 }
 
