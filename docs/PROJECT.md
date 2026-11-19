@@ -62,3 +62,14 @@ history before the game-drawer PR.
   fill tool fills when the finger lifts, so a pinch never leaves a mark. A quick two-finger tap, or the pink button that
   appears in the top bar while zoomed, shows the whole page again. Brush sizes stay in paper pixels, so zooming in makes
   the brush finer on the page. Apple Pencil strokes ignore extra fingers (resting hand).
+
+## Tidy Up decisions
+- Levels are data (`TidyLevels.swift`): a furniture scene (760 x 500 pt, drawn in `TidyScenes.swift` as a back and a
+  front layer) plus slots. One item per slot. `strict` slots only take their color (tinted ghost); slots that share a
+  `stack` number open bottom-first, and only the top item of a stack can be lifted out.
+- Items are drawn in code (`TidyItems.swift`) with color-derived outlines, like the other games. Physics (`TidyWorld.swift`)
+  models each loose item as a chain of circles with impulse contacts and friction at 240 Hz; the held item follows the
+  finger with lag, swings, and is magnet-pulled toward a slot it fits within 120 pt; dropping snaps it with a spring.
+- Saves `progress.json` (finished level ids, music on/off). Nothing is locked; the next unfinished level glows.
+- Screenshot hooks: `-tidyLevel <n>`, `-tidyPrefill <k>` (puts k items away), `-tidyHold` (holds one item by its slot),
+  `-tidyDemoDone` (marks the first 9 levels done in the picker).
