@@ -57,6 +57,8 @@ struct VetExamView: View {
     @State private var bowColor = Int.random(in: 0..<6)
     @State private var lastFx: [String: Date] = [:]
     @State private var size = CGSize(width: 1024, height: 834)
+    /// Foam, water, fur and the rest of the physical effects (a class: it changes every frame).
+    @State private var effects: VetFX
 
     private let timer = Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()
 
@@ -67,6 +69,9 @@ struct VetExamView: View {
         self.onBack = onBack
         _visit = State(initialValue: clinic.visit(animal))
         _stickers = State(initialValue: clinic.stickers(animal))
+        let f = VetFX()
+        if let a = VetArt.shared.animals[animal] { f.setUp(a) }
+        _effects = State(initialValue: f)
     }
 
     private var layout: VetLayout { VetLayout(size: size) }
@@ -109,7 +114,10 @@ struct VetExamView: View {
                 }
             }
             .coordinateSpace(name: "exam")
-            .onAppear { size = geo.size }
+            .onAppear {
+                size = geo.size
+                if ProcessInfo.processInfo.arguments.contains("-vetFX") { effects.demo(toRoom: VetLayout(size: geo.size).toRoom) }
+            }
             .onChange(of: geo.size) { size = $0 }
         }
         .onReceive(timer) { _ in tick() }
@@ -204,6 +212,7 @@ struct VetExamView: View {
             tool = nil
             lastTip = nil
             consumed = false
+            effects.endDrag()
         }
         guard !consumed, tool == t else { return }
         finger = p
@@ -224,6 +233,7 @@ struct VetExamView: View {
 
     private func addSticker(_ s: VetSticker) {
         stickers.append(s)
+        effects.pressSticker(at: s.point)
         if stickers.count > 12 { stickers.removeFirst(stickers.count - 12) }
         clinic.setStickers(stickers, for: animal)
         VetSound.shared.play(.sticker)
@@ -248,7 +258,11 @@ struct VetExamView: View {
         guard let t = tool, !consumed else { return }
         let tip = layout.toPatient(tipRoom)
         let moved = min(40, lastTip.map { hypot(tip.x - $0.x, tip.y - $0.y) } ?? 0)
+        let step = lastTip.map { CGVector(dx: tip.x - $0.x, dy: tip.y - $0.y) } ?? .zero
         lastTip = tip
+        effects.mudSpots = visit.spots.filter { $0.ailment == .mud && !$0.healed }.map(\.point)
+        effects.emit(t, tip: tip, room: tipRoom, step: step, toRoom: layout.toRoom,
+                mouth: VetArt.shared.animals[animal]?.mouth ?? CGPoint(x: 300, y: 334), mud: effects.mudSpots)
         let events = visit.use(t, at: tip, moved: moved, dt: 1.0 / 30)
         if events.isEmpty {
             play(t, tip: tip, moved: moved, now: now)
@@ -280,10 +294,8 @@ struct VetExamView: View {
             switch t {
             case .sponge, .cream, .swab, .toothbrush:
                 VetSound.shared.play(.scrub, volume: 0.6, gap: 0.22)
-                if fx("bub", 0.12) { spawn(.prop("bubbles"), at: room, vel: CGVector(dx: .random(in: -40...40), dy: -70), life: 0.8, scale: 0.3) }
             case .shower:
                 VetSound.shared.play(.splash, volume: 0.6, gap: 0.5)
-                water(at: room)
             case .comb, .brush, .tissue:
                 VetSound.shared.play(.swish, volume: 0.6, gap: 0.28)
             case .stethoscope:
@@ -302,13 +314,17 @@ struct VetExamView: View {
                 VetSound.shared.play(.pluck)
                 spawn(.prop("thorn"), at: at, vel: CGVector(dx: s.point.x < 300 ? -160 : 160, dy: -380), life: 1.2, gravity: 700, spin: 400, scale: 0.8)
                 react(.ouch, 0.4)
-            case .bandage: VetSound.shared.play(.sticker)
+            case .bandage:
+                VetSound.shared.play(.sticker)
+                effects.pressSticker(at: s.point)
             case .thermometer: VetSound.shared.play(.beep)
             case .syrup:
                 VetSound.shared.play(.nom)
                 react(.yum, 1.0)
             case .shower: VetSound.shared.play(.splash)
-            case .wrap: VetSound.shared.play(.zip)
+            case .wrap:
+                VetSound.shared.play(.zip)
+                effects.wrap(id)
             case .stethoscope: VetSound.shared.play(.heartbeat)
             case .comb:
                 VetSound.shared.play(.bugjump)
@@ -357,6 +373,7 @@ struct VetExamView: View {
                 consumed = true
                 tool = nil
                 VetSound.shared.play(.nom)
+                if t == .treat { effects.crumbs(at: layout.toRoom(mouth)) }
                 react(.yum, 1.3)
                 bounce(0.07)
                 for i in 0..<4 {
@@ -380,12 +397,10 @@ struct VetExamView: View {
             if rubbing {
                 react(.giggle, 0.4)
                 VetSound.shared.play(.scrub, volume: 0.5, gap: 0.25)
-                if fx("bub", 0.12) { spawn(.prop("bubbles"), at: room, vel: CGVector(dx: .random(in: -40...40), dy: -70), life: 0.8, scale: 0.3) }
             }
         case .shower:
             react(.giggle, 0.4)
             VetSound.shared.play(.splash, volume: 0.5, gap: 0.5)
-            water(at: room)
         case .spray:
             react(.wow, 0.6)
             VetSound.shared.play(.spray, volume: 0.5, gap: 0.45)
@@ -453,14 +468,6 @@ struct VetExamView: View {
         }
     }
 
-    private func water(at p: CGPoint) {
-        guard fx("water", 0.05) else { return }
-        for _ in 0..<2 {
-            spawn(.drop, at: CGPoint(x: p.x + .random(in: -20...20), y: p.y), vel: CGVector(dx: .random(in: -50...50), dy: .random(in: 60...160)),
-                  life: 0.6, gravity: 600, scale: .random(in: 0.7...1.1))
-        }
-    }
-
     private func confetti() {
         let colors = [Theme.pink, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac, Theme.peach]
         for i in 0..<46 {
@@ -503,6 +510,7 @@ struct VetExamView: View {
         guard let a = art.animals[animal] else { return }
         let L = layout
         let t = now.timeIntervalSinceReferenceDate
+        effects.step(to: t, toPatient: L.toPatient, toRoom: L.toRoom, floorY: L.toRoom(CGPoint(x: 300, y: 648)).y)
 
         // body motion: breathing, squash-bounce, shivers, and a happy hop when healed
         var sy: CGFloat = 1 + 0.012 * CGFloat(sin(t * 2.4))
@@ -526,9 +534,11 @@ struct VetExamView: View {
         g.scaleBy(x: VetLayout.k, y: VetLayout.k)
         g.fill(Path(ellipseIn: CGRect(x: 300 - 190 * (1 - dy / 160), y: 622, width: 380 * (1 - dy / 160), height: 40)),
                with: .color(Theme.ink.opacity(0.12)))
+        effects.drawPuddle(g, floor: CGPoint(x: 300, y: 642), t: t)
 
         var p = g
         p.translateBy(x: 300 + dx, y: 640 + dy)
+        if abs(effects.lean) > 0.01 { p.rotate(by: .degrees(effects.lean)) }
         p.scaleBy(x: sx, y: sy)
         p.translateBy(x: -300, y: -640)
 
@@ -541,8 +551,11 @@ struct VetExamView: View {
         }
 
         VetPatientPainter.draw(a, face: face(now), look: look, in: p, overlay: { c in
-            for s in stickers { VetDraw.prop(s.prop, at: s.point, scale: s.scale, rotation: s.rotation, in: c) }
+            for s in stickers {
+                VetDraw.prop(s.prop, at: s.point, scale: CGFloat(s.scale) * effects.pressScale(at: s.point, t: t), rotation: s.rotation, in: c)
+            }
             drawSpots(c, t: t, now: now)
+            effects.drawOnFur(c, t: t)
         }, top: { c in
             drawFaceTop(c, a: a, t: t)
         })
@@ -567,6 +580,7 @@ struct VetExamView: View {
         }
 
         drawParticles(ctx, now: now)
+        effects.drawInRoom(ctx, t: t)
     }
 
     private func drawSpots(_ c: GraphicsContext, t: Double, now: Date) {
@@ -579,9 +593,9 @@ struct VetExamView: View {
             case .mud:
                 if s.stage == 0 {
                     VetDraw.prop("mud", at: p, scale: 0.85, opacity: Double(1 - pr * 0.6), in: c)
-                    VetDraw.prop("bubbles", at: p, scale: 0.5 + pr * 0.3, opacity: Double(pr), in: c)
+                    VetFX.drawLather(c, at: p, amount: pr * 0.9, mud: Double(1 - pr) * 0.8, t: t)
                 } else if s.stage == 1 {
-                    VetDraw.prop("bubbles", at: p, scale: 0.8 + jig * 0.02, opacity: Double(1 - pr * 0.8), in: c)
+                    VetFX.drawLather(c, at: CGPoint(x: p.x, y: p.y + pr * 30), amount: (1 - pr) * (1 + jig * 0.02), mud: 0.12 * Double(1 - pr), t: t)
                 }
             case .thorns:
                 if !s.healed {
@@ -590,7 +604,7 @@ struct VetExamView: View {
                 }
             case .scrape:
                 if s.healed {
-                    VetDraw.prop("bandage", at: p, scale: 0.68, rotation: Double((s.id * 37) % 50 - 25), in: c)
+                    VetDraw.prop("bandage", at: p, scale: 0.68 * effects.pressScale(at: p, t: now.timeIntervalSinceReferenceDate), rotation: Double((s.id * 37) % 50 - 25), in: c)
                 } else {
                     VetDraw.prop("scrapeClean", at: p, scale: 0.8, in: c)
                     if s.stage == 0 { VetDraw.prop("scrape", at: p, scale: 0.8, opacity: Double(1 - pr * 0.9), in: c) }
@@ -619,7 +633,7 @@ struct VetExamView: View {
                 }
             case .sprain:
                 if s.healed {
-                    VetDraw.prop("cast", at: p, scale: 0.72, in: c)
+                    VetFX.drawWrap(c, at: p, started: effects.wraps[s.id], t: t)
                 } else {
                     VetDraw.prop("bump", at: p, scale: (s.stage == 0 ? 0.8 : 0.5) + 0.06 * CGFloat(sin(t * 6)), in: c)
                 }
@@ -661,8 +675,16 @@ struct VetExamView: View {
             case .prop(let name):
                 VetDraw.prop(name, at: .zero, scale: q.scale, in: g)
             case .sparkle(let col):
-                let r = 13 * q.scale * (1 - tt * 0.4)
+                // a real twinkle: it flares and dims and turns as it flies
+                let seed = Double(abs(q.id.hashValue % 997)) / 97
+                let flicker = CGFloat(0.55 + 0.45 * abs(sin(age * 15 + seed)))
+                let r = 13 * q.scale * (1 - tt * 0.4) * flicker
+                let glow = r * 1.9
+                g.fill(Path(ellipseIn: CGRect(x: -glow, y: -glow, width: glow * 2, height: glow * 2)),
+                       with: .radialGradient(Gradient(colors: [col.opacity(0.45), col.opacity(0)]), center: .zero, startRadius: 0, endRadius: glow))
+                g.rotate(by: .degrees(age * 140 + seed * 30))
                 g.fill(Twinkle().path(in: CGRect(x: -r, y: -r, width: r * 2, height: r * 2)), with: .color(col))
+                g.fill(Path(ellipseIn: CGRect(x: -r * 0.22, y: -r * 0.22, width: r * 0.44, height: r * 0.44)), with: .color(.white))
             case .heart(let col):
                 let r = 16 * q.scale * (0.6 + min(0.4, tt))
                 let hp = VetExamView.heart(r)

@@ -21,13 +21,17 @@ enum ColoringCatalog {
     /// Page id for a blank sheet with no line art.
     static let blank = "blank"
 
-    static let categories: [ColoringCategory] = {
+    /// Rico's own pages (art/coloring/mine, built into mypages.json by tools/build_my_pages.py) first,
+    /// then the built-in book.
+    static let categories: [ColoringCategory] = load("mypages") + load("pages")
+
+    private static func load(_ name: String) -> [ColoringCategory] {
         struct File: Decodable { let categories: [ColoringCategory] }
-        guard let url = GameFiles.url("pages", "json", game: game),
+        guard let url = GameFiles.url(name, "json", game: game),
               let data = try? Data(contentsOf: url),
               let file = try? JSONDecoder().decode(File.self, from: data) else { return [] }
         return file.categories
-    }()
+    }
 
     private static let thumbs = NSCache<NSString, UIImage>()
 

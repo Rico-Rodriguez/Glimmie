@@ -48,3 +48,12 @@ history before the game-drawer PR.
   TreatPainter draws the ridges on every cake afterwards. Cupcake rings are piped with an angular sweep (`Piping`).
 - Screenshot hooks: `-bakeryDemo pour | stir | pourpan | bake | spread | pipe | sauce` freeze a step mid-action.
 
+## Coloring brush decisions
+- Every brush copies the physical tool on paper (code and notes in `App/Sources/Games/Coloring/Brushes.swift`).
+  A shared paper "tooth" texture (`PaperTooth`) is what crayon, pencil and eraser catch on.
+- A stroke is repainted from the paper as it was when the stroke began plus how much of the stroke each pixel got,
+  so markers stay even inside one stroke and only darken (and mix colors) where a new stroke crosses.
+- Watercolor dries for about a second after each stroke: lighter middle, darker edges, pigment in the grain.
+- Glitter (brush and glitter fill) leaves flakes that twinkle live on a layer above the page, and shimmer when the
+  iPad tilts. Flakes are saved next to the color layer as `<id>.glitter`; the eraser and any fill over them remove them.
+- Apple Pencil pressure and tilt are used (tilted pencil shades wide and soft); a finger draws at a steady medium pressure.

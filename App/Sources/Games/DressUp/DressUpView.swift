@@ -13,6 +13,8 @@ struct DressUpView: View {
     @State private var galleryBounce = false
     @State private var showPets = false
     @State private var battle: BattleState?
+    /// Her skirt and hair swing (a class: it changes every frame).
+    @State private var motion = DollMotion()
 
     private let art = DressUpArt.shared
     /// The part of the 600x900 art canvas shown on the stage: hat tips at the top, soles at the bottom.
@@ -25,6 +27,9 @@ struct DressUpView: View {
                 .ignoresSafeArea()
                 .id(store.current.bg)
                 .transition(.opacity)
+            SceneLife(bg: store.current.bg)
+                .ignoresSafeArea()
+                .id("life." + store.current.bg)
             DesignCanvas {
                 HStack(spacing: 0) {
                     stage
@@ -95,12 +100,18 @@ struct DressUpView: View {
                     .frame(width: 250, height: 40)
                     .offset(y: -6)
                 // Frame her from hat tip to shoe soles so she fills the stage and stands on the floor.
-                DollView(look: store.current, expression: expression, box: Self.stageBox)
+                LiveDollView(look: store.current, expression: expression, box: Self.stageBox, motion: motion,
+                             windy: ["bg_park", "bg_beach", "bg_garden", "bg_snow", "bg_sunset", "bg_forest", "bg_rainbow"].contains(store.current.bg))
                     .frame(width: Self.stageBox.width * Self.stageScale, height: Self.stageBox.height * Self.stageScale)
                     .offset(y: hop ? -26 : 0)
                     .contentShape(Rectangle())
                     .onTapGesture { cheer() }
-                SparkleBurst()
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 6)
+                            .onChanged { motion.drag($0.location) }
+                            .onEnded { _ in motion.endDrag() }
+                    )
+                TwinkleBurst()
                     .id(burst)
                     .offset(y: -420)
             }
@@ -174,6 +185,7 @@ struct DressUpView: View {
 
     private func celebrate() {
         burst += 1
+        motion.hop()
         withAnimation(.spring(response: 0.22, dampingFraction: 0.5)) { hop = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { hop = false }

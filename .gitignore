@@ -7,3 +7,8 @@ App/Info.plist
 art/coloring/preview/
 __pycache__/
 art/coloring/svg-cache/
+
+# Built from art/coloring/mine by tools/build_my_pages.py during the build
+App/Resources/Games/Coloring/my_*.png
+App/Resources/Games/Coloring/mypages.json
+tools/__pycache__/
