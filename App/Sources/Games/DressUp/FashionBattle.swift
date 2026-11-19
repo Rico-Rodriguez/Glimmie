@@ -228,20 +228,20 @@ struct RunwayView: View {
                             .offset(x: walkIn ? 0 : 700)
                     }
                     .frame(maxHeight: .infinity, alignment: .bottom)
-                    judgesRow
-                        .padding(.vertical, 16)
-                }
-            }
-            if finished {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 30) {
-                        RoundButton(symbol: "arrow.clockwise", tint: Color(hex: 0x9B79E0), size: 90) { again() }
-                        RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B), size: 90) { done() }
+                    HStack(spacing: 28) {
+                        judgesRow
+                        // Kept in the layout from the start so nothing shifts when they appear,
+                        // and beside the judges so they never cover one.
+                        HStack(spacing: 18) {
+                            RoundButton(symbol: "arrow.clockwise", tint: Color(hex: 0x9B79E0), size: 84) { again() }
+                            RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B), size: 84) { done() }
+                        }
+                        .opacity(finished ? 1 : 0)
+                        .scaleEffect(finished ? 1 : 0.6)
+                        .allowsHitTesting(finished)
                     }
-                    .padding(.bottom, 30)
+                    .padding(.vertical, 16)
                 }
-                .transition(.scale.combined(with: .opacity))
             }
         }
         .onAppear(perform: run)
