@@ -73,10 +73,103 @@ final class ColoringTests: XCTestCase {
             paper.continueStroke(to: CGPoint(x: 1400, y: 600))
             paper.endStroke()
             XCTAssertEqual(paper.pixel(1350, 600), PaintColor.white.packed, "\(brush) went outside the lines")
-            if brush != .stamps && brush != .crayon {
-                XCTAssertNotEqual(paper.pixel(900, 600), PaintColor.white.packed, "\(brush) painted nothing")
+            if brush != .stamps {
+                XCTAssertGreaterThan(colored(paper, 860...940, 590...610), 0.3, "\(brush) painted nothing")
             }
         }
+    }
+
+    /// Share of pixels in the box that aren't white paper.
+    private func colored(_ paper: ColoringPaper, _ xs: ClosedRange<Int>, _ ys: ClosedRange<Int>) -> Double {
+        var n = 0, total = 0
+        for y in ys { for x in xs { total += 1; if paper.pixel(x, y) != PaintColor.white.packed { n += 1 } } }
+        return Double(n) / Double(total)
+    }
+
+    private func rgb(_ v: UInt32) -> (Int, Int, Int) { (Int(v & 0xFF), Int((v >> 8) & 0xFF), Int((v >> 16) & 0xFF)) }
+
+    private func stroke(_ paper: ColoringPaper, _ brush: PaintBrush, _ color: UInt32, _ pts: [CGPoint], size: CGFloat = 26, pressure: CGFloat = 0.6) {
+        paper.beginStroke(at: pts[0], brush: brush, color: PaintColor.hex(color), size: size, stayInLines: false, pressure: pressure)
+        for p in pts.dropFirst() { paper.continueStroke(to: p, pressure: pressure) }
+        paper.endStroke()
+    }
+
+    func testMarkerIsEvenInOneStrokeAndDarkensWhereStrokesCross() {
+        let paper = ColoringPaper(lineArt: nil)
+        stroke(paper, .marker, 0x3C8DFF, [CGPoint(x: 200, y: 300), CGPoint(x: 600, y: 300)])
+        let once = paper.pixel(300, 300)
+        paper.clear()
+        // Back and forth in one stroke: still one coat.
+        stroke(paper, .marker, 0x3C8DFF, [CGPoint(x: 200, y: 300), CGPoint(x: 600, y: 300), CGPoint(x: 200, y: 300)])
+        XCTAssertEqual(paper.pixel(300, 300), once)
+        // A second stroke over it: two coats, darker.
+        stroke(paper, .marker, 0x3C8DFF, [CGPoint(x: 300, y: 100), CGPoint(x: 300, y: 500)])
+        let (r1, g1, b1) = rgb(once), (r2, g2, b2) = rgb(paper.pixel(300, 300))
+        XCTAssertLessThan(r2 + g2 + b2, r1 + g1 + b1)
+    }
+
+    func testMarkerInksMixLikeRealInk() {
+        let paper = ColoringPaper(lineArt: nil)
+        stroke(paper, .marker, 0xFFC93D, [CGPoint(x: 200, y: 300), CGPoint(x: 600, y: 300)])
+        stroke(paper, .marker, 0x3C8DFF, [CGPoint(x: 400, y: 100), CGPoint(x: 400, y: 500)])
+        let (r, g, b) = rgb(paper.pixel(400, 300))
+        XCTAssertGreaterThan(g, r, "yellow under blue turns green")
+        XCTAssertGreaterThan(g, b)
+    }
+
+    func testCrayonPressureFillsThePaperGrain() {
+        let paper = ColoringPaper(lineArt: nil)
+        stroke(paper, .crayon, 0xFF4D4D, [CGPoint(x: 200, y: 300), CGPoint(x: 700, y: 300)], size: 48, pressure: 0.05)
+        let light = colored(paper, 300...600, 295...305)
+        stroke(paper, .crayon, 0xFF4D4D, [CGPoint(x: 200, y: 700), CGPoint(x: 700, y: 700)], size: 48, pressure: 1)
+        let heavy = colored(paper, 300...600, 695...705)
+        XCTAssertLessThan(light, 0.97, "a light crayon skips the paper's valleys")
+        XCTAssertGreaterThan(heavy, light)
+        // Going over it again fills in more.
+        stroke(paper, .crayon, 0xFF4D4D, [CGPoint(x: 200, y: 300), CGPoint(x: 700, y: 300)], size: 48, pressure: 0.05)
+        XCTAssertGreaterThan(colored(paper, 300...600, 295...305), light)
+    }
+
+    func testWatercolorDriesLighterWithDarkerEdges() {
+        let paper = ColoringPaper(lineArt: nil)
+        stroke(paper, .paint, 0x3C8DFF, [CGPoint(x: 200, y: 400), CGPoint(x: 800, y: 400)], size: 48)
+        let wet = paper.pixel(500, 400)
+        paper.settle()
+        let dry = paper.pixel(500, 400)
+        XCTAssertNotEqual(wet, dry)
+        func lum(_ v: UInt32) -> Int { let (r, g, b) = rgb(v); return r + g + b }
+        XCTAssertGreaterThan(lum(dry), lum(wet), "watercolor dries lighter")
+        let darkest = (340...460).map { lum(paper.pixel(500, $0)) }.min()!
+        XCTAssertLessThan(darkest, lum(dry), "pigment gathers at the edge")
+        XCTAssertNotEqual(paper.pixel(500, 400), PaintColor.white.packed)
+    }
+
+    func testGlitterTwinklesAndTheEraserLiftsIt() {
+        let paper = ColoringPaper(lineArt: nil)
+        stroke(paper, .glitter, 0xA66BFF, [CGPoint(x: 200, y: 400), CGPoint(x: 800, y: 400)], size: 48)
+        XCTAssertGreaterThan(paper.flakes.count, 50)
+        // Over a few seconds, flakes glint and go dark again.
+        var seen = Set<Int>()
+        for step in 0..<200 {
+            let t = Double(step) * 0.03
+            for (i, f) in paper.flakes.enumerated() where f.glint(time: t, roll: 0, pitch: 0) > 0 { seen.insert(i) }
+        }
+        XCTAssertGreaterThan(seen.count, paper.flakes.count / 2)
+        let lit = paper.flakes.filter { $0.glint(time: 1, roll: 0, pitch: 0) > 0 }.count
+        XCTAssertLessThan(lit, paper.flakes.count / 4, "only a few glint at any moment")
+        XCTAssertEqual(GlitterFlake.decode(GlitterFlake.encode(paper.flakes)), paper.flakes)
+        stroke(paper, .eraser, 0, [CGPoint(x: 200, y: 400), CGPoint(x: 800, y: 400)], size: 48)
+        XCTAssertEqual(paper.flakes.count, 0)
+    }
+
+    func testGlitterFillSparklesUntilPaintedOver() {
+        let paper = ColoringPaper(lineArt: squareArt())
+        paper.fill(at: CGPoint(x: 800, y: 600), style: .glitter, color: PaintColor.hex(0xFF6FB5))
+        XCTAssertGreaterThan(paper.flakes.count, 100)
+        XCTAssertTrue(paper.flakes.allSatisfy { $0.x > 390 && $0.x < 1210 && $0.y > 290 && $0.y < 910 })
+        paper.fill(at: CGPoint(x: 800, y: 600), style: .solid, color: PaintColor.hex(0xFF6FB5))
+        XCTAssertEqual(paper.flakes.count, 0)
+        XCTAssertEqual(paper.pixel(800, 600), PaintColor.hex(0xFF6FB5).packed)
     }
 
     func testBrushAnywhereWhenNotStayingInLines() {

@@ -38,3 +38,13 @@ history before the game-drawer PR.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.
+
+## Coloring brush decisions
+- Every brush copies the physical tool on paper (code and notes in `App/Sources/Games/Coloring/Brushes.swift`).
+  A shared paper "tooth" texture (`PaperTooth`) is what crayon, pencil and eraser catch on.
+- A stroke is repainted from the paper as it was when the stroke began plus how much of the stroke each pixel got,
+  so markers stay even inside one stroke and only darken (and mix colors) where a new stroke crosses.
+- Watercolor dries for about a second after each stroke: lighter middle, darker edges, pigment in the grain.
+- Glitter (brush and glitter fill) leaves flakes that twinkle live on a layer above the page, and shimmer when the
+  iPad tilts. Flakes are saved next to the color layer as `<id>.glitter`; the eraser and any fill over them remove them.
+- Apple Pencil pressure and tilt are used (tilted pencil shades wide and soft); a finger draws at a steady medium pressure.

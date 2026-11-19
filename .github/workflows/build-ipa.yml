@@ -16,12 +16,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  my-pages:
+    name: My coloring pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      # Pages already built from unchanged files come back from the cache.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            App/Resources/Games/Coloring/my_*.png
+            App/Resources/Games/Coloring/mypages.json
+          key: mypages-${{ hashFiles('art/coloring/mine/**', 'tools/build_my_pages.py', 'tools/import_coloring.py') }}
+          restore-keys: mypages-
+      - run: pip install cairosvg pillow numpy scipy
+      - name: Build pages from art/coloring/mine
+        run: python3 tools/build_my_pages.py
+      - uses: actions/upload-artifact@v5
+        with:
+          name: my-pages
+          path: |
+            App/Resources/Games/Coloring/my_*.png
+            App/Resources/Games/Coloring/mypages.json
+          if-no-files-found: error
+          retention-days: 3
+
   ipa:
     name: Unsigned .ipa
+    needs: my-pages
     runs-on: macos-15
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: my-pages
+          path: App/Resources/Games/Coloring
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -117,12 +148,17 @@ jobs:
 
   screenshots:
     name: Simulator screenshots
+    needs: my-pages
     runs-on: macos-15
     permissions:
       contents: write
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: my-pages
+          path: App/Resources/Games/Coloring
       - run: brew install xcodegen && xcodegen generate
       - name: Build for simulator
         run: |
@@ -150,6 +186,7 @@ jobs:
           shot 9-battle-theme 6 -game dressup -demoBattle
           shot 10-battle-runway 10 -game dressup -randomLook -demoRunway
           shot 6-coloring 6 -game coloring
+          shot coloring-tools 8 -game coloring -coloringDemo
           shot petvet-1-lobby 6 -game petvet
           shot petvet-2-exam 6 -game petvet -vetPatient kitty
           shot bakery-1-shop 6 -game bakery -bakeryServe

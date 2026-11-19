@@ -7,6 +7,7 @@ import UIKit
 //   gallery.json        [ColoringArtwork], newest first
 //   <id>.png            the color layer (1600x1200), so she can keep coloring later
 //   <id>.stickers.json  [ColorSticker]
+//   <id>.glitter        the glitter flakes that twinkle (GlitterFlake.encode), if any
 //   <id>.jpg            a small picture of the finished page for the gallery
 // New fields must be optional or have defaults so older saves still load.
 
@@ -48,6 +49,11 @@ final class ColoringGallery: ObservableObject {
         guard let png = paper.pngData() else { return }
         try? png.write(to: url(id, "png"), options: .atomic)
         if let data = try? JSONEncoder().encode(stickers) { try? data.write(to: url(id, "stickers.json"), options: .atomic) }
+        if paper.flakes.isEmpty {
+            try? FileManager.default.removeItem(at: url(id, "glitter"))
+        } else {
+            try? GlitterFlake.encode(paper.flakes).write(to: url(id, "glitter"), options: .atomic)
+        }
         if let img = paper.makeImage(),
            let thumb = ColoringRender.picture(color: img, page: page, stickers: stickers, width: 480).jpegData(compressionQuality: 0.85) {
             try? thumb.write(to: url(id, "jpg"), options: .atomic)
@@ -59,7 +65,7 @@ final class ColoringGallery: ObservableObject {
     }
 
     func delete(_ art: ColoringArtwork) {
-        for ext in ["png", "stickers.json", "jpg"] { try? FileManager.default.removeItem(at: url(art.id, ext)) }
+        for ext in ["png", "stickers.json", "jpg", "glitter"] { try? FileManager.default.removeItem(at: url(art.id, ext)) }
         items.removeAll { $0.id == art.id }
         thumbs.removeObject(forKey: art.id as NSString)
         persist()
@@ -72,6 +78,11 @@ final class ColoringGallery: ObservableObject {
     func stickers(_ id: String) -> [ColorSticker] {
         guard let d = try? Data(contentsOf: url(id, "stickers.json")) else { return [] }
         return (try? JSONDecoder().decode([ColorSticker].self, from: d)) ?? []
+    }
+
+    func glitter(_ id: String) -> [GlitterFlake] {
+        guard let d = try? Data(contentsOf: url(id, "glitter")) else { return [] }
+        return GlitterFlake.decode(d)
     }
 
     private let thumbs = NSCache<NSString, UIImage>()
