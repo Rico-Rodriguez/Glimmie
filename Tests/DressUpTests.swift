@@ -70,4 +70,18 @@ final class DressUpTests: XCTestCase {
             XCTAssertFalse(l.picks["dress"] != nil && l.picks["top"] != nil)
         }
     }
+
+    func testPetSaveDefaultsAndLenientDecoding() throws {
+        let s = try JSONDecoder().decode(PetSave.self, from: Data(#"{"names": {"p_kitty": "Luna"}, "odd": true}"#.utf8))
+        XCTAssertEqual(s.name("p_kitty"), "Luna")
+        XCTAssertEqual(s.name("p_puppy"), "Biscuit")
+        XCTAssertEqual(s.current, "p_kitty")
+        for p in PetSave.pets { XCTAssertEqual(art.items[p]?.category, "hold", p) }
+    }
+
+    func testOldLooksGainAFaceAndNose() throws {
+        let l = try JSONDecoder().decode(Look.self, from: Data(#"{"picks": {"eyes": "e_star"}}"#.utf8)).sanitized()
+        XCTAssertEqual(l.picks["face"], "face_round")
+        XCTAssertNotNil(l.picks["nose"])
+    }
 }
