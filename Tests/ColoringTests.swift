@@ -277,4 +277,35 @@ final class ColoringTests: XCTestCase {
         XCTAssertTrue(store.tabs.isEmpty)
         XCTAssertTrue(ColoringCustom(folder: dir).tabs.isEmpty)
     }
+
+    // MARK: Pinch zoom
+
+    func testPinchKeepsThePageUnderTheFingers() {
+        let size = CGSize(width: 800, height: 600)
+        let c = CGPoint(x: 300, y: 200)
+        // Fingers spread to twice their distance around (300, 200): that spot stays put.
+        let z = PageZoom.pinch(from: PageZoom(), startCenter: c, startDistance: 100, center: c, distance: 200, in: size)
+        XCTAssertEqual(z.scale, 2, accuracy: 0.0001)
+        let under = z.toPage(c)
+        XCTAssertEqual(under.x, 300, accuracy: 0.0001)
+        XCTAssertEqual(under.y, 200, accuracy: 0.0001)
+        // Then both fingers slide 50 points left: the page moves with them.
+        let moved = PageZoom.pinch(from: z, startCenter: c, startDistance: 100, center: CGPoint(x: 250, y: 200), distance: 100, in: size)
+        XCTAssertEqual(moved.scale, 2, accuracy: 0.0001)
+        XCTAssertEqual(moved.toPage(CGPoint(x: 250, y: 200)).x, 300, accuracy: 0.0001)
+    }
+
+    func testZoomStaysBetweenTheWholePageAndFourTimes() {
+        let size = CGSize(width: 800, height: 600)
+        let c = CGPoint(x: 400, y: 300)
+        let tooFar = PageZoom.pinch(from: PageZoom(), startCenter: c, startDistance: 10, center: c, distance: 500, in: size)
+        XCTAssertEqual(tooFar.scale, PageZoom.maxScale)
+        let tooSmall = PageZoom.pinch(from: PageZoom(), startCenter: c, startDistance: 300, center: c, distance: 30, in: size)
+        XCTAssertEqual(tooSmall, PageZoom())
+        XCTAssertFalse(tooSmall.isZoomed)
+        // Dragged past the edge, the page still covers the whole canvas.
+        let edge = PageZoom(scale: 2, offset: CGPoint(x: 120, y: -2000)).clamped(to: size)
+        XCTAssertEqual(edge.offset.x, 0)
+        XCTAssertEqual(edge.offset.y, -600)
+    }
 }

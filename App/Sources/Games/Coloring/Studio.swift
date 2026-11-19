@@ -69,6 +69,9 @@ final class ColoringStudio: ObservableObject {
     /// Set by the canvas view: shows the paper's latest pixels.
     var redraw: () -> Void = {}
 
+    /// Two-finger pinch zoom of the page.
+    let zoom = ColoringZoom()
+
     private struct Step { var pixels: Data?; var flakes: [GlitterFlake]?; var stickers: [ColorSticker] }
     private var undo: [Step] = [] { didSet { canUndo = !undo.isEmpty } }
     private static let maxUndo = 12
@@ -165,6 +168,18 @@ final class ColoringStudio: ObservableObject {
         redraw()
     }
 
+    /// Takes back the stroke in progress as if it never happened (a second finger came down to pinch).
+    func cancelStroke() {
+        guard stroking, let paper else { return }
+        stroking = false
+        paper.endStroke()
+        if let step = undo.popLast() {
+            if let px = step.pixels { paper.restore(px) }
+            if let f = step.flakes { paper.flakes = f }
+        }
+        redraw()
+    }
+
     /// A sample of every brush, for screenshots.
     static func paintDemo(on paper: ColoringPaper) {
         func wave(_ x0: CGFloat, _ x1: CGFloat, _ y: CGFloat, amp: CGFloat = 26) -> [CGPoint] {
@@ -249,6 +264,7 @@ struct ColoringCanvas: UIViewRepresentable {
         let v = ColoringCanvasView()
         v.studio = studio
         studio.redraw = { [weak v] in v?.setNeedsShow() }
+        studio.zoom.apply = { [weak v] z, animated in v?.applyZoom(z, animated: animated) }
         v.lineLayer.contents = studio.lineArt
         v.setNeedsShow()
         return v
@@ -261,6 +277,8 @@ struct ColoringCanvas: UIViewRepresentable {
 
 final class ColoringCanvasView: UIView {
     weak var studio: ColoringStudio?
+    /// Holds the page's layers; pinch zoom scales and moves it.
+    let content = CALayer()
     let colorLayer = CALayer()
     let lineLayer = CALayer()
     /// Glitter catching the light: a soft halo and a bright four-point glint per twinkling flake.
@@ -269,17 +287,28 @@ final class ColoringCanvasView: UIView {
     private var link: CADisplayLink?
     private var pending = false
     private var activeTouch: UITouch?
+    private var activeStart: CFTimeInterval = 0
+    /// A fill waits until the finger lifts, so the first finger of a pinch never fills.
+    private var pendingFill: CGPoint?
+    /// Fingers (not the Apple Pencil) on the page right now, oldest first.
+    private var fingers: [UITouch] = []
+    private struct Pinch { var start: PageZoom; var center: CGPoint; var distance: CGFloat; var began: CFTimeInterval; var travel: CGFloat }
+    private var pinch: Pinch?
+    /// After a pinch nothing draws until every finger is up.
+    private var waitForLift = false
     private let motion = CMMotionManager()
     private var hadGlints = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .white
-        isMultipleTouchEnabled = false
+        isMultipleTouchEnabled = true
+        content.anchorPoint = .zero
+        layer.addSublayer(content)
         for l in [colorLayer, lineLayer, haloLayer, glintLayer] {
             l.contentsGravity = .resize
             l.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "path": NSNull(), "shadowPath": NSNull()]
-            layer.addSublayer(l)
+            content.addSublayer(l)
         }
         colorLayer.magnificationFilter = .linear
         lineLayer.magnificationFilter = .trilinear
@@ -296,7 +325,30 @@ final class ColoringCanvasView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        for l in [colorLayer, lineLayer, haloLayer, glintLayer] { l.frame = bounds }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        content.bounds = CGRect(origin: .zero, size: bounds.size)
+        for l in [colorLayer, lineLayer, haloLayer, glintLayer] { l.frame = content.bounds }
+        CATransaction.commit()
+        if let zoom = studio?.zoom {
+            // The canvas changed size: keep the zoomed page covering it.
+            let z = zoom.zoom.clamped(to: bounds.size)
+            applyZoom(z, animated: false)
+            if z != zoom.zoom { DispatchQueue.main.async { zoom.set(z) } }
+        }
+    }
+
+    func applyZoom(_ z: PageZoom, animated: Bool) {
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(ColoringZoom.glide)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        content.position = z.offset
+        content.setAffineTransform(CGAffineTransform(scaleX: z.scale, y: z.scale))
+        CATransaction.commit()
     }
 
     override func didMoveToWindow() {
@@ -351,7 +403,9 @@ final class ColoringCanvasView: UIView {
         hadGlints = true
     }
 
-    private func paperPoint(_ p: CGPoint) -> CGPoint {
+    /// A point on the screen in paper pixels, through the zoom.
+    private func paperPoint(_ v: CGPoint) -> CGPoint {
+        let p = studio?.zoom.zoom.toPage(v) ?? v
         let k = CGFloat(ColoringPaper.width) / max(1, bounds.width)
         return CGPoint(x: p.x * k, y: p.y * k)
     }
@@ -366,26 +420,95 @@ final class ColoringCanvasView: UIView {
         return StrokeSample(point: p, pressure: max(0.08, min(1, force)), tilt: tilt)
     }
 
+    // MARK: Touches
+    // One finger (or the Apple Pencil) draws. Two fingers pinch to zoom and drag the page around; a stroke the
+    // first finger had only just started is taken back, so a pinch leaves no marks. A quick two-finger tap
+    // shows the whole page again.
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard activeTouch == nil, let t = touches.first else { return }
+        fingers.removeAll { $0.phase == .ended || $0.phase == .cancelled }
+        fingers += touches.filter { $0.type != .pencil }.sorted { $0.timestamp < $1.timestamp }
+        if pinch == nil, fingers.count >= 2, activeTouch?.type != .pencil {
+            startPinch()
+            return
+        }
+        guard pinch == nil, !waitForLift, activeTouch == nil, let t = touches.first else { return }
         activeTouch = t
+        activeStart = t.timestamp
         let s = sample(t)
-        studio?.touchBegan(s.point, pressure: s.pressure, tilt: s.tilt)
+        if studio?.tool == .fill {
+            pendingFill = s.point
+        } else {
+            studio?.touchBegan(s.point, pressure: s.pressure, tilt: s.tilt)
+        }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let t = activeTouch, touches.contains(t) else { return }
+        if pinch != nil {
+            updatePinch()
+            return
+        }
+        guard let t = activeTouch, touches.contains(t), pendingFill == nil else { return }
         let all = event?.coalescedTouches(for: t) ?? [t]
         studio?.touchMoved(all.map(sample))
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let t = activeTouch, touches.contains(t) else { return }
-        activeTouch = nil
-        studio?.touchEnded()
+        lifted(touches, cancelled: false)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        touchesEnded(touches, with: event)
+        lifted(touches, cancelled: true)
+    }
+
+    private func lifted(_ touches: Set<UITouch>, cancelled: Bool) {
+        fingers.removeAll { touches.contains($0) }
+        if let p = pinch {
+            if fingers.count >= 2 {
+                startPinch()   // one of three fingers lifted: carry on with the other two
+            } else {
+                pinch = nil
+                waitForLift = true
+                let quickTap = CACurrentMediaTime() - p.began < 0.3 && p.travel < 14
+                if let zoom = studio?.zoom, quickTap || zoom.zoom.scale < 1.08 { zoom.reset() }
+            }
+        }
+        if let t = activeTouch, touches.contains(t) {
+            activeTouch = nil
+            if let p = pendingFill {
+                pendingFill = nil
+                if !cancelled { studio?.touchBegan(p) }
+            } else {
+                studio?.touchEnded()
+            }
+        }
+        if fingers.isEmpty && activeTouch == nil { waitForLift = false }
+    }
+
+    private func startPinch() {
+        if let t = activeTouch, t.type != .pencil {
+            // A stroke only just begun was the first finger of the pinch: take it back. A longer one stays.
+            if CACurrentMediaTime() - activeStart < 0.5 { studio?.cancelStroke() } else { studio?.touchEnded() }
+            activeTouch = nil
+            pendingFill = nil
+        }
+        guard let zoom = studio?.zoom, fingers.count >= 2 else { return }
+        let (c, d) = pinchPoints()
+        pinch = Pinch(start: zoom.zoom, center: c, distance: d, began: pinch?.began ?? CACurrentMediaTime(), travel: pinch?.travel ?? 0)
+    }
+
+    private func updatePinch() {
+        guard var p = pinch, let zoom = studio?.zoom, fingers.count >= 2 else { return }
+        let (c, d) = pinchPoints()
+        p.travel = max(p.travel, hypot(c.x - p.center.x, c.y - p.center.y) + abs(d - p.distance))
+        pinch = p
+        zoom.set(PageZoom.pinch(from: p.start, startCenter: p.center, startDistance: p.distance,
+                                center: c, distance: d, in: bounds.size))
+    }
+
+    /// The middle of the first two fingers and how far apart they are, in this view's (unzoomed) points.
+    private func pinchPoints() -> (CGPoint, CGFloat) {
+        let a = fingers[0].location(in: self), b = fingers[1].location(in: self)
+        return (CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), hypot(a.x - b.x, a.y - b.y))
     }
 }
