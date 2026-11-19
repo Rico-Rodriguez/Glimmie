@@ -684,3 +684,27 @@ extension VetFX {
         }
     }
 }
+
+extension VetFX {
+    /// `-vetFX`: a patient mid-bath, for simulator screenshots.
+    func demo(toRoom: (CGPoint) -> CGPoint) {
+        let t = VetFX.now()
+        for i in 0..<26 {
+            let a = Double(i) * 0.7
+            let p = CGPoint(x: 220 + CGFloat(cos(a)) * 34 + CGFloat(i % 5) * 4, y: 440 + CGFloat(sin(a)) * 26 + CGFloat(i / 5) * 6)
+            foam.append(Foam(p: p, r: .random(in: 9...17), born: t - 1, life: 60, mud: i % 4 == 0 ? 0.5 : 0, rinsed: nil, vy: 0, seed: .random(in: 0...100)))
+        }
+        wet = [Wet(p: CGPoint(x: 380, y: 450), amount: 0.9, r: 52), Wet(p: CGPoint(x: 360, y: 520), amount: 0.8, r: 44)]
+        for i in 0..<7 {
+            beads.append(Bead(p: CGPoint(x: 350 + CGFloat(i * 9), y: 430 + CGFloat((i * 23) % 70)), r: .random(in: 3...5), born: t, vy: 0, life: 60))
+        }
+        let s = CGPoint(x: 392, y: 470)
+        streams.append(Stream(p: s, trail: (0..<12).map { CGPoint(x: s.x - CGFloat($0) * 0.5, y: s.y - CGFloat($0) * 4) }, born: t, life: 60, mud: false, vy: 0, seed: 1))
+        for i in 0..<7 {
+            let p = toRoom(CGPoint(x: 160 + CGFloat(i * 22), y: 380 - CGFloat(i % 3) * 40))
+            bubbles.append(Bubble(p: p, v: .zero, r: CGFloat(8 + (i * 5) % 11), born: t - 1, life: 60, seed: Double(i)))
+        }
+        ruffles.append(Ruffle(p: CGPoint(x: 300, y: 300), dir: CGVector(dx: 1, dy: 0), born: t + 0.5, seed: 3))
+        puddle = 0.7
+    }
+}

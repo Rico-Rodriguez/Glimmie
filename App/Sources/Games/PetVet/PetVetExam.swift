@@ -114,7 +114,10 @@ struct VetExamView: View {
                 }
             }
             .coordinateSpace(name: "exam")
-            .onAppear { size = geo.size }
+            .onAppear {
+                size = geo.size
+                if ProcessInfo.processInfo.arguments.contains("-vetFX") { effects.demo(toRoom: VetLayout(size: geo.size).toRoom) }
+            }
             .onChange(of: geo.size) { size = $0 }
         }
         .onReceive(timer) { _ in tick() }

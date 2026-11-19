@@ -152,6 +152,7 @@ jobs:
           shot 6-coloring 6 -game coloring
           shot petvet-1-lobby 6 -game petvet
           shot petvet-2-exam 6 -game petvet -vetPatient kitty
+          shot petvet-3-bath 4 -game petvet -vetPatient puppy -vetFX
           shot bakery-1-shop 6 -game bakery -bakeryServe
           shot bakery-2-decorate 6 -game bakery -bakeryDecorate cake
           shot bakery-3-mix 6 -game bakery -bakeryStep cupcake 0
