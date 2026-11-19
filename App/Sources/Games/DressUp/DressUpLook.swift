@@ -187,7 +187,7 @@ enum Expression { case normal, blink, happy }
 
 enum DollPainter {
     /// Every layer of the look, back to front.
-    static func layers(_ look: Look, _ expression: Expression, art: DressUpArt = .shared) -> [(ArtLayer, PaintSet)] {
+    static func layers(_ look: Look, _ expression: Expression, art: DressUpArt = .shared) -> [(ArtLayer, PaintSet, ArtItem)] {
         var ids = ["body", "under"]
         for (cat, id) in look.picks where cat != "bg" {
             if cat == "eyes" && expression != .normal { continue }
@@ -199,20 +199,20 @@ enum DollPainter {
         case .blink: ids.append("eyes_closed")
         case .happy: ids.append("eyes_happy"); ids.append("m_open")
         }
-        var out: [(Int, Int, ArtLayer, PaintSet)] = []
+        var out: [(Int, Int, ArtLayer, PaintSet, ArtItem)] = []
         for (n, id) in ids.sorted().enumerated() {
             guard let item = art.items[id] else { continue }
             let p = look.paints(for: item, art)
-            for L in item.layers { out.append((L.z, n, L, p)) }
+            for L in item.layers { out.append((L.z, n, L, p, item)) }
         }
         out.sort { ($0.0, $0.1) < ($1.0, $1.1) }
-        return out.map { ($0.2, $0.3) }
+        return out.map { ($0.2, $0.3, $0.4) }
     }
 
     static func paintDoll(_ look: Look, _ expression: Expression, box: CGRect? = nil, in ctx: inout GraphicsContext, size: CGSize) {
         let art = DressUpArt.shared
         ArtPainter.fit(&ctx, box: box ?? CGRect(origin: .zero, size: art.dollSize), into: size)
-        for (layer, p) in layers(look, expression, art: art) {
+        for (layer, p, _) in layers(look, expression, art: art) {
             ArtPainter.draw(layer.shapes, p, in: ctx)
         }
     }
