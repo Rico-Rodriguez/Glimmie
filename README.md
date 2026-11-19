@@ -25,8 +25,12 @@ python3 tools/process_art.py
 
 ## Screenshots (iPad simulator)
 
-| Avatar maker | Boutique + wish | Magic egg |
+| Sparkle Path map | Star Catch | Match Cards |
 |---|---|---|
-| ![](docs/screenshots/1-avatar-maker.jpg) | ![](docs/screenshots/3-boutique-wish.jpg) | ![](docs/screenshots/4-egg.jpg) |
+| ![](docs/screenshots/2-map.jpg) | ![](docs/screenshots/7-star-catch.jpg) | ![](docs/screenshots/8-match-cards.jpg) |
+| **Bubble Pop** | **Glimmie Dance** | **Fashion Show** |
+| ![](docs/screenshots/9-bubble-pop.jpg) | ![](docs/screenshots/10-glimmie-dance.jpg) | ![](docs/screenshots/11-fashion-show-wish.jpg) |
+| **Treasure chest** | **Magic egg** | **Avatar maker** |
+| ![](docs/screenshots/12-treasure-chest.jpg) | ![](docs/screenshots/4-egg.jpg) | ![](docs/screenshots/1-avatar-maker.jpg) |
 
 Refresh them by running **Build iPad app** manually (Actions → Run workflow) with "Commit simulator screenshots" ticked.
