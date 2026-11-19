@@ -119,11 +119,13 @@ struct TreatView: View {
     var plate = true
     /// 0...3 bites taken out of it.
     var bites = 0
+    /// The part of the 600 x 600 stage to show.
+    var box = Box.stage
 
     var body: some View {
         Canvas { ctx, size in
             var g = ctx
-            BakeryArt.fit(&g, box: Box.stage, into: size)
+            BakeryArt.fit(&g, box: box, into: size)
             if bites == 0 {
                 TreatPainter.draw(treat, in: g, plate: plate)
             } else {

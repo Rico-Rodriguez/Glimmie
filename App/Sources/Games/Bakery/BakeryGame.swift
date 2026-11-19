@@ -14,7 +14,7 @@ enum BakeryGame {
         id: "bakery",
         title: "Bakery",
         tint: Color(hex: 0xFFC09F),
-        icon: { AnyView(TreatView(treat: .tile, plate: false).padding(-6)) },
+        icon: { AnyView(TreatView(treat: .tile, plate: false, box: CGRect(x: 150, y: 150, width: 300, height: 395))) },
         play: { exit in AnyView(BakeryGameView(exit: exit)) }
     )
 }

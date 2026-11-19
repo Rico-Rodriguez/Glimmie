@@ -48,3 +48,7 @@ Run **Build iPad app** manually (Actions → Run workflow) with "Commit simulato
 | Drawer | Dress Up | Clothes | Gallery |
 |---|---|---|---|
 | ![](docs/screenshots/1-drawer.jpg) | ![](docs/screenshots/2-dressup.jpg) | ![](docs/screenshots/4-dressup-clothes.jpg) | ![](docs/screenshots/5-dressup-gallery.jpg) |
+
+| Bakery shop | Decorate | Mix | Frost | Ice cream |
+|---|---|---|---|---|
+| ![](docs/screenshots/bakery-1-shop.jpg) | ![](docs/screenshots/bakery-2-decorate.jpg) | ![](docs/screenshots/bakery-3-mix.jpg) | ![](docs/screenshots/bakery-4-frost.jpg) | ![](docs/screenshots/bakery-5-icecream.jpg) |
