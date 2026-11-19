@@ -10,35 +10,37 @@ struct BattleTheme: Identifiable, Equatable {
     let items: Set<String>
     /// Three items shown on the theme card as hints.
     let hints: [String]
+    /// Pets that fit the theme when they sit at her feet (empty: any pet does).
+    var pets: Set<String> = []
 
     static let all: [BattleTheme] = [
         BattleTheme(id: "beach", scene: "bg_beach",
                     items: ["sh_sandals", "h_sunhat", "g_sun", "d_sun", "b_shorts", "t_tank", "p_icecream", "h_shell", "d_mermaid", "t_crop", "p_umbrella", "g_heart"],
-                    hints: ["h_sunhat", "d_sun", "sh_sandals"]),
+                    hints: ["h_sunhat", "d_sun", "sh_sandals"], pets: ["axolotl", "duckling", "penguin", "frog"]),
         BattleTheme(id: "princess", scene: "bg_castle",
                     items: ["h_crown", "h_tiara", "d_princess", "d_gown", "d_magic", "n_pearls", "p_wand", "sh_glitter", "w_fairy", "d_frilly", "h_starcrown", "er_pearl", "sh_ballet"],
-                    hints: ["h_crown", "d_gown", "p_wand"]),
+                    hints: ["h_crown", "d_gown", "p_wand"], pets: ["unicorn", "kitty", "bunny", "dragon"]),
         BattleTheme(id: "snow", scene: "bg_snow",
                     items: ["h_beanie", "n_scarf", "o_jacket", "o_cardigan", "t_sweater", "t_turtle", "b_pants", "sh_boots", "s_tights", "t_hoodie", "b_leggings", "t_long", "s_knee"],
-                    hints: ["h_beanie", "n_scarf", "sh_boots"]),
+                    hints: ["h_beanie", "n_scarf", "sh_boots"], pets: ["penguin", "lamb", "redpanda", "fox", "owl"]),
         BattleTheme(id: "party", scene: "bg_stage",
                     items: ["d_party", "d_hearts", "d_star", "h_boppers", "p_balloon", "p_cupcake", "sh_glitter", "h_bigbow", "mk_glitter", "d_rainbow", "t_star", "b_tutu", "g_star"],
-                    hints: ["h_boppers", "d_party", "p_balloon"]),
+                    hints: ["h_boppers", "d_party", "p_balloon"], pets: ["puppy", "kitty", "piglet", "hamster", "unicorn"]),
         BattleTheme(id: "garden", scene: "bg_garden",
-                    items: ["h_flowers", "h_sunflower", "p_bouquet", "p_flower", "w_butterfly", "d_tulip", "er_flower", "b_tiered", "d_aline", "p_duck", "sh_sandals"],
-                    hints: ["h_flowers", "w_butterfly", "p_bouquet"]),
+                    items: ["h_flowers", "h_sunflower", "p_bouquet", "p_flower", "w_butterfly", "d_tulip", "er_flower", "b_tiered", "d_aline", "sh_sandals"],
+                    hints: ["h_flowers", "w_butterfly", "p_bouquet"], pets: ["bunny", "duckling", "fawn", "mouse", "frog"]),
         BattleTheme(id: "magic", scene: "bg_space",
                     items: ["h_witch", "d_magic", "w_bat", "mk_moon", "g_star", "e_star", "h_starcrown", "o_cape", "w_cape", "h_halo", "p_wand", "w_angel", "n_star", "er_star"],
-                    hints: ["h_witch", "o_cape", "p_wand"]),
+                    hints: ["h_witch", "o_cape", "p_wand"], pets: ["dragon", "unicorn", "owl", "kitty"]),
         BattleTheme(id: "rain", scene: "bg_park",
-                    items: ["o_raincoat", "sh_rain", "p_umbrella", "h_cap", "b_overalls", "sh_sneakers", "p_puppy", "t_hoodie", "b_pants"],
-                    hints: ["o_raincoat", "p_umbrella", "sh_rain"]),
+                    items: ["o_raincoat", "sh_rain", "p_umbrella", "h_cap", "b_overalls", "sh_sneakers", "t_hoodie", "b_pants"],
+                    hints: ["o_raincoat", "p_umbrella", "sh_rain"], pets: ["duckling", "frog", "puppy", "axolotl"]),
         BattleTheme(id: "animals", scene: "bg_forest",
-                    items: ["h_cat", "h_bunny", "h_bear", "h_fox", "d_bunnypj", "sh_bunny", "p_kitty", "p_bunny", "p_puppy", "p_teddy", "m_cat", "n_cat", "p_duck", "p_unicorn"],
-                    hints: ["h_cat", "d_bunnypj", "p_kitty"]),
+                    items: ["h_cat", "h_bunny", "h_bear", "h_fox", "d_bunnypj", "sh_bunny", "p_teddy", "m_cat", "n_cat"],
+                    hints: ["h_cat", "d_bunnypj", "sh_bunny"]),
         BattleTheme(id: "sweets", scene: "bg_candy",
                     items: ["p_cupcake", "p_lolly", "p_icecream", "d_frilly", "h_bigbow", "d_hearts", "b_bubble", "mk_heart", "b_hearts", "er_cherry", "s_stripes"],
-                    hints: ["p_lolly", "p_cupcake", "d_frilly"]),
+                    hints: ["p_lolly", "p_cupcake", "d_frilly"], pets: ["bear", "piglet", "mouse", "hamster", "unicorn"]),
     ]
 
     /// How well a look fits: matching items, the matching scene, and a complete outfit.
@@ -49,6 +51,11 @@ struct BattleTheme: Identifiable, Equatable {
         if dressed { p += 1 }
         if look.picks["shoes"] != nil { p += 1 }
         if ["hat", "neck", "hold", "earrings", "glasses", "back"].contains(where: { look.picks[$0] != nil }) { p += 1 }
+        if let pet = look.pet {
+            // a pet always helps; one that fits the theme (or any pet at the animal show) helps more
+            p += pets.isEmpty || pets.contains(pet.kind) ? 3 : 1
+            if !pet.wear.isEmpty { p += 1 }
+        }
         return p
     }
 
@@ -66,6 +73,11 @@ struct BattleTheme: Identifiable, Equatable {
             if let it = art.items[id] { l.wear(id, in: it.category) }
         }
         l.bg = scene
+        l.pet = nil
+        if Double.random(in: 0..<1) < 0.5 {
+            let kinds = pets.isEmpty ? PetArt.shared.order : Array(pets)
+            if let k = kinds.randomElement() { l.pet = PetLook.random(kind: k) }
+        }
         return l
     }
 }
@@ -210,7 +222,7 @@ struct RunwayView: View {
     @State private var rivalStars: [Int] = []
     @State private var walkIn = false
 
-    private static let judges = ["p_kitty", "p_puppy", "p_bunny"]
+    private static let judges = ["kitty", "puppy", "bunny"]
 
     private var myTotal: Int { myStars.prefix(shown).reduce(0, +) }
     private var rivalTotal: Int { rivalStars.prefix(shown).reduce(0, +) }
@@ -286,14 +298,22 @@ struct RunwayView: View {
                         card(i < shown ? myStars[safe: i] : nil, tint: Color(hex: 0xF45C9A))
                         card(i < shown ? rivalStars[safe: i] : nil, tint: Color(hex: 0x5C9BEB))
                     }
-                    ItemThumb(item: Self.judges[i], look: Look.starter)
-                        .frame(width: 90, height: 90)
+                    PetThumb(pet: PetLook(kind: Self.judges[i]), box: CGRect(x: 60, y: 0, width: 480, height: 480),
+                             pose: judgeFace(i))
+                        .frame(width: 96, height: 96)
                         .offset(y: i == shown - 1 ? -10 : 0)
                 }
             }
         }
         .padding(.horizontal, 30).padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.85)))
+    }
+
+    /// Judges smile, and beam once they've shown a high score.
+    private func judgeFace(_ i: Int) -> PetPose {
+        var p = PetPose()
+        if i < shown, (myStars[safe: i] ?? 0) >= 4 { p.eyes = "happy"; p.mouth = "grin" }
+        return p
     }
 
     private func card(_ n: Int?, tint: Color) -> some View {

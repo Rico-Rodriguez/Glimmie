@@ -327,7 +327,7 @@ def make_all():
     head = head_set(c) + [flat(wobble_circle(362, 262, 42, 9, 0.12, 2), e, 0.85),
                           flat(ellipse(300, 326, 58, 40), '#FFF4E6')] + nose_dog()
     tail = [blob(tube([(400, 560), (446, 540), (470, 500), (466, 470)], 30, 20), c)]
-    A['puppy'] = dict(back=tail, body=body + paws(c) + feet(c) + head, front=ears_floppy(e),
+    A['puppy'] = dict(back=tail, torso=body, limbs=paws(c) + feet(c), head=head, front=ears_floppy(e),
                       eye=(238, 270), mouth=(300, 334), style='y', col=outline(c), fur=c)
 
     # Kitty: orange tabby with a curly tail
@@ -342,7 +342,7 @@ def make_all():
     head = head_set(c) + stripes + [flat(ellipse(270, 330, 34, 26), '#FFF1E4'), flat(ellipse(330, 330, 34, 26), '#FFF1E4')] + nose_small('#FF8FA8', 306)
     whisk = [line(smooth_open([(214, 318), (170, 310)]), outline(c), 3.5), line(smooth_open([(216, 334), (172, 340)]), outline(c), 3.5)]
     head += whisk + mirror(whisk)
-    A['kitty'] = dict(back=ears_pointy(c, '#FFC6D6') + tail, body=body_set(c, '#FFF1E4') + side + paws(c) + feet(c) + head,
+    A['kitty'] = dict(back=ears_pointy(c, '#FFC6D6') + tail, torso=body_set(c, '#FFF1E4') + side, limbs=paws(c) + feet(c), head=head,
                       front=[], eye=(238, 270), mouth=(300, 330), style='w', col=outline(c), fur=c)
 
     # Bunny: snow white with pink inner ears and a cotton tail
@@ -350,7 +350,7 @@ def make_all():
     tail = [blob(scallop(430, 560, 38, 34, 8, 0.14), '#FFFFFF')]
     head = head_set(c) + nose_small('#FF9FBA', 304)
     teeth = [S(rrect(290, 338, 20, 14, 4), '#FFFFFF', '#E6D3DC', 3)]
-    A['bunny'] = dict(back=ears_long(c, '#FFC2D6') + tail, body=body_set(c, '#FFFFFF') + paws(c) + feet(c) + head,
+    A['bunny'] = dict(back=ears_long(c, '#FFC2D6') + tail, torso=body_set(c, '#FFFFFF'), limbs=paws(c) + feet(c), head=head,
                       front=[], eye=(238, 272), mouth=(300, 326), style='w', col=outline('#F3D2DE'), fur=c, lash=True)
 
     # Piglet: pink with a big snout and a curly tail
@@ -363,7 +363,7 @@ def make_all():
              flat(ellipse(315, 308, 7, 11), outline('#FFA7BD')), flat(ellipse(290, 294, 12, 5), '#FFFFFF', 0.6)]
     tail = [line(smooth_open([(410, 540), (446, 528), (452, 498), (430, 490), (424, 512), (448, 520), (470, 506)]), outline(c), 13),
             line(smooth_open([(410, 540), (446, 528), (452, 498), (430, 490), (424, 512), (448, 520), (470, 506)]), c, 7)]
-    A['piglet'] = dict(back=tail, body=body_set(c, '#FFE1E8') + paws(c, 'hoof', '#E88FA6') + feet(c, 'hoof', '#E88FA6') + head_set(c) + snout,
+    A['piglet'] = dict(back=tail, torso=body_set(c, '#FFE1E8'), limbs=paws(c, 'hoof', '#E88FA6') + feet(c, 'hoof', '#E88FA6'), head=head_set(c) + snout,
                        front=ears, eye=(236, 262), mouth=(300, 350), style='u', col=outline(c), fur=c)
 
     # Panda: black ears, eye patches, arms and legs
@@ -371,7 +371,7 @@ def make_all():
     patches = [flat(ellipse(236, 274, 38, 46, 30), k)]
     patches += mirror(patches)
     head = head_set(c) + patches + nose_dog('#4A4250', 20, 14, 310)
-    A['panda'] = dict(back=ears_round(k, '#6B6070', 184, 152, 46, 0.5), body=body_set(c) + paws(k) + feet(k) + head,
+    A['panda'] = dict(back=ears_round(k, '#6B6070', 184, 152, 46, 0.5), torso=body_set(c), limbs=paws(k) + feet(k), head=head,
                       front=[], eye=(238, 272), mouth=(300, 334), style='y', col='#6B6070', fur=c, eyecolor='#2A1E28', eyeshine=True)
 
     # Fox: orange with white cheeks and a big fluffy tail
@@ -380,13 +380,13 @@ def make_all():
     tail = [blob(smooth_closed([(396, 590), (470, 580), (520, 520), (526, 446), (500, 400), (470, 430), (440, 500), (400, 540)], 1.0), c),
             blob(smooth_closed([(500, 400), (526, 446), (520, 470), (492, 458), (478, 424)], 1.0), '#FFF6EE')]
     head = head_set(c) + [flat(cheeks, '#FFF6EE')] + nose_dog('#5B3A48', 18, 13, 308)
-    A['fox'] = dict(back=ears_pointy(c, '#FFF6EE', 6, 1.1, '#6B4A50') + tail, body=body_set(c, '#FFF6EE') + paws('#6B4A50') + feet(c) + head,
+    A['fox'] = dict(back=ears_pointy(c, '#FFF6EE', 6, 1.1, '#6B4A50') + tail, torso=body_set(c, '#FFF6EE'), limbs=paws('#6B4A50') + feet(c), head=head,
                     front=[], eye=(238, 268), mouth=(300, 334), style='y', col=outline(c), fur=c, lash=True)
 
     # Hamster: golden with white chubby cheeks
     c = '#F7C27E'
     head = head_set(c, 160, 126, 1.12) + [flat(sym([(300, 262), (250, 270), (175, 290), (160, 330), (200, 372), (300, 388)], 1.0), '#FFF5E6')] + nose_small('#FF9FBA', 304)
-    A['hamster'] = dict(back=ears_round(c, '#FFC2D2', 196, 156, 34, 0.55), body=body_set(c, '#FFF5E6', 1.06) + paws('#FFD9B8') + feet('#FFD9B8') + head,
+    A['hamster'] = dict(back=ears_round(c, '#FFC2D2', 196, 156, 34, 0.55), torso=body_set(c, '#FFF5E6', 1.06), limbs=paws('#FFD9B8') + feet('#FFD9B8'), head=head,
                         front=[], eye=(236, 266), mouth=(300, 326), style='w', col=outline(c), fur=c)
 
     # Lamb: fluffy wool body, cream face, wool tuft
@@ -394,19 +394,19 @@ def make_all():
     body = [blob(scallop(300, 482, 128, 124, 12, 0.1), wool), flat(smooth_closed([(220, 372), (300, 396), (380, 372), (360, 398), (300, 414), (240, 398)], 1.0), shade(wool), 0.6)]
     head = head_set(c, 140, 124) + nose_small('#D88B9E', 306)
     tuft = [blob(scallop(300, 156, 92, 46, 9, 0.22), wool)]
-    A['lamb'] = dict(back=ears_side(c, '#FFC6D2'), body=body + paws(c, 'hoof', '#9C7A72') + feet(c, 'hoof', '#9C7A72') + head,
+    A['lamb'] = dict(back=ears_side(c, '#FFC6D2'), torso=body, limbs=paws(c, 'hoof', '#9C7A72') + feet(c, 'hoof', '#9C7A72'), head=head,
                      front=tuft, eye=(240, 272), mouth=(300, 326), style='w', col=outline(c), fur=c, lash=True)
 
     # Bear cub: brown with a light muzzle
     c = '#C08A66'
     head = head_set(c) + [flat(ellipse(300, 322, 56, 42), '#F0D3B5')] + nose_dog('#5B3A48', 22, 15, 304)
-    A['bear'] = dict(back=ears_round(c, '#F0D3B5', 182, 156, 46), body=body_set(c, '#F0D3B5') + paws(c) + feet(c) + head,
+    A['bear'] = dict(back=ears_round(c, '#F0D3B5', 182, 156, 46), torso=body_set(c, '#F0D3B5'), limbs=paws(c) + feet(c), head=head,
                      front=[], eye=(238, 268), mouth=(300, 334), style='y', col=outline(c), fur=c)
 
     # Duckling: yellow with a beak, wings and webbed feet
     c, beak = '#FFE27A', '#FFA24C'
     tuft = [blob(smooth_closed([(296, 140), (282, 100), (300, 108), (306, 92), (318, 112), (312, 140)], 0.9), c)]
-    A['duckling'] = dict(back=[], body=body_set(c, '#FFF3C2') + paws(c, 'wing') + feet(beak, 'webbed') + head_set(c) + tuft,
+    A['duckling'] = dict(back=[], torso=body_set(c, '#FFF3C2'), limbs=paws(c, 'wing') + feet(beak, 'webbed'), head=head_set(c) + tuft,
                          front=[], eye=(236, 262), mouth=(300, 320), style='beak', beak=beak, col=outline(c), fur=c)
 
     # Frog: green with eye bumps on top
@@ -415,7 +415,7 @@ def make_all():
     bumps += mirror(bumps)
     head = [blob(head_path(160, 114, cy=276), c)] + bumps + [flat(ellipse(300, 290, 150, 100), c), flat(ellipse(214, 150, 20, 10, -24), light(c), 0.7)]
     spots = [flat(circle(196, 456, 12), shade(c)), flat(circle(410, 470, 9), shade(c)), flat(circle(386, 432, 6), shade(c))]
-    A['frog'] = dict(back=[], body=body_set(c, '#E9F8C9', 1.04) + spots + paws(c) + feet(c) + head,
+    A['frog'] = dict(back=[], torso=body_set(c, '#E9F8C9', 1.04) + spots, limbs=paws(c) + feet(c), head=head,
                      front=[], eye=(226, 176), mouth=(300, 322), style='u', col=outline(c), fur=c, eyescale=1.05, cheeky=(0, 110))
 
     # Mouse: lilac-gray with huge round ears and a long tail
@@ -425,7 +425,7 @@ def make_all():
     head = head_set(c, 146, 124) + nose_small('#FF8FA8', 304)
     whisk = [line(smooth_open([(214, 318), (168, 306)]), outline(c), 3.5), line(smooth_open([(216, 334), (170, 340)]), outline(c), 3.5)]
     head += whisk + mirror(whisk)
-    A['mouse'] = dict(back=ears_round(c, '#FFC6D6', 170, 150, 68, 0.62) + tail, body=body_set(c, '#F1ECF6') + paws(c) + feet(c) + head,
+    A['mouse'] = dict(back=ears_round(c, '#FFC6D6', 170, 150, 68, 0.62) + tail, torso=body_set(c, '#F1ECF6'), limbs=paws(c) + feet(c), head=head,
                       front=[], eye=(240, 268), mouth=(300, 326), style='w', col=outline(c), fur=c, lash=True)
 
     # Koala: gray with fluffy ears and a big nose
@@ -433,13 +433,13 @@ def make_all():
     ears = [blob(scallop(176, 176, 64, 60, 8, 0.12), c), flat(scallop(184, 182, 40, 38, 7, 0.1), '#FFFFFF')]
     ears += mirror(ears)
     nose = [blob(ellipse(300, 304, 24, 34), '#5E5468', 4), flat(ellipse(292, 286, 7, 11), '#FFFFFF', 0.6)]
-    A['koala'] = dict(back=ears, body=body_set(c, '#EDECF4') + paws(c) + feet(c) + head_set(c, 150, 126) + nose,
+    A['koala'] = dict(back=ears, torso=body_set(c, '#EDECF4'), limbs=paws(c) + feet(c), head=head_set(c, 150, 126) + nose,
                       front=[], eye=(232, 268), mouth=(300, 352), style='u', col=outline(c), fur=c)
 
     # Penguin: navy with a white face and belly
     c, beak = '#4F5E86', '#FFB04C'
     mask = sym([(300, 196), (262, 176), (210, 196), (186, 260), (206, 340), (250, 382), (300, 392)], 1.0)
-    A['penguin'] = dict(back=[], body=body_set(c, '#FFFFFF', 1.02) + paws(c, 'wing') + feet(beak, 'webbed') + head_set(c) + [flat(mask, '#FFFFFF')],
+    A['penguin'] = dict(back=[], torso=body_set(c, '#FFFFFF', 1.02), limbs=paws(c, 'wing') + feet(beak, 'webbed'), head=head_set(c) + [flat(mask, '#FFFFFF')],
                         front=[], eye=(244, 272), mouth=(300, 324), style='beak', beak=beak, beaksize=0.75, col=outline(c), fur=c)
 
     # Unicorn foal: lilac-white with a rainbow mane, gold horn and hooves
@@ -455,7 +455,7 @@ def make_all():
         mane.append(blob(circle(x, y, 34 - i * 1.5), col))
     tail = [blob(tube([(398, 580), (452, 572), (492, 530), (500, 470)], 40, 30), '#D2C0FF'),
             blob(tube([(404, 578), (450, 560), (476, 518)], 22, 16), '#FF9EC0')]
-    A['unicorn'] = dict(back=ears_pointy(c, '#FFC6E0', -6, 0.9) + tail, body=body_set(c, '#FFFFFF') + paws(c, 'hoof', '#C9AEF5') + feet(c, 'hoof', '#C9AEF5') + head_set(c) + nose_small('#FFB3C7', 312),
+    A['unicorn'] = dict(back=ears_pointy(c, '#FFC6E0', -6, 0.9) + tail, torso=body_set(c, '#FFFFFF'), limbs=paws(c, 'hoof', '#C9AEF5') + feet(c, 'hoof', '#C9AEF5'), head=head_set(c) + nose_small('#FFB3C7', 312),
                         front=mane + horn, eye=(238, 274), mouth=(300, 334), style='u', col=outline('#E6D6F5'), fur=c, lash=True, eyecolor='#5E3A8A')
 
     # Fawn: caramel with white spots and big sideways ears
@@ -463,9 +463,14 @@ def make_all():
     spots = [flat(circle(x, y, r), '#FFF4E8') for x, y, r in [(250, 160, 9), (290, 146, 7), (338, 156, 8), (196, 420, 9), (404, 424, 8), (182, 470, 6), (416, 474, 7)]]
     head = head_set(c) + spots[:3] + [flat(ellipse(300, 322, 52, 40), '#FFF4E8')] + nose_dog('#5B3A48', 18, 13, 306)
     A['fawn'] = dict(back=ears_side(c, '#FFD3DE', False) + [blob(ellipse(430, 548, 24, 32, 30), '#FFF4E8')],
-                     body=body_set(c, '#FFF4E8') + spots[3:] + paws(c, 'hoof', '#8E5B4A') + feet(c, 'hoof', '#8E5B4A') + head,
+                     torso=body_set(c, '#FFF4E8') + spots[3:], limbs=paws(c, 'hoof', '#8E5B4A') + feet(c, 'hoof', '#8E5B4A'), head=head,
                      front=[], eye=(238, 270), mouth=(300, 334), style='y', col=outline(c), fur=c, lash=True)
 
+    return finish(A)
+
+
+def finish(A):
+    """Adds each animal's faces (eyes, mouths, brows, blush) to its spec."""
     out = {}
     for k, a in A.items():
         ex, ey = a['eye']
@@ -480,7 +485,8 @@ def make_all():
         cheek = a.get('cheeky')
         bl = blush(ex, ey) if not cheek else blush(ex + cheek[0], ey + cheek[1] - 40)
         out[k] = {
-            'back': a['back'], 'body': a['body'], 'front': a['front'],
+            'back': a['back'], 'body': a['torso'] + a['limbs'] + a['head'], 'front': a['front'],
+            'torso': a['torso'], 'limbs': a['limbs'], 'head': a['head'],
             'eyes': eyes, 'mouths': mouths, 'brows': brows(ex, ey, a['col'], sc), 'blush': bl,
             'eye': [ex, ey], 'mouth': [mx, my], 'fur': a['fur'],
         }

@@ -2,7 +2,7 @@
 Run from the repo root:  python3 tools/dressup/build.py  [--sheet DIR]"""
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
-import body, face, hair, clothes, extras, backgrounds, patterns, more, round2
+import body, face, hair, clothes, extras, backgrounds, patterns, more, round2, pets
 from colors import SKIN, HAIR, EYES, CLOTH
 
 def eye_styles():
@@ -45,9 +45,35 @@ CATS = [
     ('glasses', 'extras', False, 'cloth', 'g_heart'),
     ('neck', 'extras', False, 'cloth', 'n_heart'),
     ('back', 'extras', False, 'cloth', 'w_butterfly'),
-    ('hold', 'extras', False, 'cloth', 'p_kitty'),
+    ('hold', 'extras', False, 'cloth', 'p_teddy'),
     ('bg', 'scene', True, None, None),
 ]
+
+OLD_PETS = {'p_kitty', 'p_puppy', 'p_bunny', 'p_duck', 'p_unicorn'}
+
+def tidy(shapes, roles=False):
+    out = []
+    for s in shapes:
+        assert PATH.match(s['d']), s['d'][:60]
+        for k in ('f', 's'):
+            if s.get(k): assert ROLE.match(s[k]) if roles else s[k].startswith('#'), s[k]
+        s = dict(s)
+        for k in ('w', 'o'):
+            if k in s: s[k] = round(float(s[k]), 2)
+        out.append(s)
+    return out
+
+def pet_data():
+    P = pets.build()
+    for a in P['animals'].values():
+        for k in ('back', 'torso', 'limbs', 'head', 'front', 'blush', 'brows'):
+            a[k] = tidy(a[k])
+        a['eyes'] = {e: tidy(v) for e, v in a['eyes'].items()}
+        a['mouths'] = {m: tidy(v) for m, v in a['mouths'].items()}
+    for w in P['wear'].values():
+        w['shapes'] = tidy(w['shapes'], roles=True)
+    P['props'] = {k: tidy(v) for k, v in P['props'].items()}
+    return P
 
 NUM = re.compile(r'-?\d+(?:\.\d+)?')
 
@@ -91,6 +117,8 @@ def main():
     items += hair.fronts() + more.fronts() + hair.backs() + more.backs()
     items += clothes.tops() + more.tops() + clothes.bottoms() + clothes.dresses() + more.dresses() + clothes.outers() + clothes.socks() + clothes.shoes()
     items += extras.hats() + more.hats() + extras.glasses() + extras.necks() + extras.backs() + extras.held() + more.held()
+    # the old little pets she held now live in the pet corner (pets.py), drawn at her feet from there
+    items = [i for i in items if i['id'] not in OLD_PETS]
     bgs = backgrounds.all_bgs() + more.bgs()
     ids = [i['id'] for i in items + bgs]
     assert len(ids) == len(set(ids)), [x for x in ids if ids.count(x) > 1]
@@ -115,7 +143,7 @@ def main():
         'doll': [600, 900], 'scene': [1200, 900], 'head': head,
         'palettes': {'skin': SKIN, 'hair': HAIR, 'eye': EYES, 'cloth': CLOTH},
         'patterns': {p: ' '.join(patterns.pattern_shapes(p)) for p in patterns.PATTERNS if p != 'none'},
-        'categories': cats, 'items': out_items,
+        'categories': cats, 'items': out_items, 'pets': pet_data(),
     }
     path = os.path.join(root, 'App/Resources/Games/DressUp/dressup.json')
     with open(path, 'w') as fh:
