@@ -4,3 +4,5 @@
 build/
 *.xcodeproj/
 App/Info.plist
+art/coloring/preview/
+__pycache__/

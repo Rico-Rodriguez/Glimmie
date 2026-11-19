@@ -41,6 +41,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UIRequiresFullScreen: true
         UIStatusBarHidden: true
+        NSPhotoLibraryAddUsageDescription: "Save her coloring pictures to Photos."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight

@@ -1,0 +1,173 @@
+{
+ "categories": [
+  {
+   "id": "animals",
+   "icon": "pawprint.fill",
+   "color": [
+    1.0,
+    0.62,
+    0.45
+   ],
+   "pages": [
+    "kitty",
+    "puppy",
+    "bunny",
+    "piggy",
+    "owl",
+    "panda",
+    "ducks"
+   ]
+  },
+  {
+   "id": "magic",
+   "icon": "wand.and.stars",
+   "color": [
+    0.78,
+    0.55,
+    1.0
+   ],
+   "pages": [
+    "unicorn",
+    "castle",
+    "fairy_house",
+    "dragon",
+    "rainbow",
+    "wand_crown"
+   ]
+  },
+  {
+   "id": "princess",
+   "icon": "crown.fill",
+   "color": [
+    1.0,
+    0.55,
+    0.78
+   ],
+   "pages": [
+    "princess",
+    "ballerina",
+    "closet",
+    "tea_party",
+    "fairy",
+    "jewels"
+   ]
+  },
+  {
+   "id": "ocean",
+   "icon": "fish.fill",
+   "color": [
+    0.38,
+    0.72,
+    1.0
+   ],
+   "pages": [
+    "fishies",
+    "whale",
+    "octopus",
+    "turtle",
+    "mermaid",
+    "crab"
+   ]
+  },
+  {
+   "id": "treats",
+   "icon": "birthday.cake.fill",
+   "color": [
+    1.0,
+    0.7,
+    0.3
+   ],
+   "pages": [
+    "cupcake",
+    "ice_cream",
+    "birthday_cake",
+    "donuts",
+    "candy",
+    "fruit"
+   ]
+  },
+  {
+   "id": "garden",
+   "icon": "camera.macro",
+   "color": [
+    0.45,
+    0.82,
+    0.45
+   ],
+   "pages": [
+    "butterfly",
+    "ladybug",
+    "snail",
+    "bee",
+    "house",
+    "flowers"
+   ]
+  },
+  {
+   "id": "dinos",
+   "icon": "lizard.fill",
+   "color": [
+    0.4,
+    0.78,
+    0.6
+   ],
+   "pages": [
+    "trex",
+    "longneck",
+    "stego",
+    "trike",
+    "dino_egg"
+   ]
+  },
+  {
+   "id": "go",
+   "icon": "car.fill",
+   "color": [
+    1.0,
+    0.45,
+    0.45
+   ],
+   "pages": [
+    "car",
+    "train",
+    "hot_air_balloon",
+    "boat",
+    "plane",
+    "bus"
+   ]
+  },
+  {
+   "id": "space",
+   "icon": "moon.stars.fill",
+   "color": [
+    0.45,
+    0.5,
+    0.95
+   ],
+   "pages": [
+    "space_rocket",
+    "planets",
+    "astronaut",
+    "alien",
+    "moon"
+   ]
+  },
+  {
+   "id": "holiday",
+   "icon": "gift.fill",
+   "color": [
+    0.95,
+    0.4,
+    0.5
+   ],
+   "pages": [
+    "xmas_tree",
+    "snowman",
+    "pumpkin",
+    "easter",
+    "gifts",
+    "party"
+   ]
+  }
+ ]
+}
