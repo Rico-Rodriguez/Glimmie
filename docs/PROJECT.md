@@ -38,3 +38,13 @@ history before the game-drawer PR.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.
+
+## Bakery realism
+- The mixing bowl is a small simulation (`MixBowl.swift`): ingredients pour as particles or liquid streams and land as
+  blobs on the batter surface; the spoon drags, stretches and splits blobs so colors marble, and each blob blends toward
+  the flavor color as it's worked. Mixing is done at 96% blended (or after a safety amount of stirring).
+- Pouring into the pan is press-and-hold (`BakeStep.swift`, `PourFlow`): 2.4 s of pouring fills it; a quick tap still pours 0.8 s.
+- Cake frosting keeps its spatula strokes in `Treat.swoosh` (flat x, y pairs, optional so older saves load), and
+  TreatPainter draws the ridges on every cake afterwards. Cupcake rings are piped with an angular sweep (`Piping`).
+- Screenshot hooks: `-bakeryDemo pour | stir | pourpan | bake | spread | pipe | sauce` freeze a step mid-action.
+
