@@ -209,7 +209,6 @@ struct DollView: View {
             let hair = Catalog.hairStyles[min(max(avatar.hairStyle, 0), Catalog.hairStyles.count - 1)]
             Layer(name: hair, swatch: Palette.hair[min(max(avatar.hairColor, 0), Palette.hair.count - 1)],
                   gloss: Gloss.hair, shadow: true)
-            Layer(name: hair + "_shine")
             item(.hat)
             item(.hold)
             if let w = outfit[.hold], !Self.notGripped.contains(w.item) {
