@@ -149,6 +149,7 @@ jobs:
           shot 8-dressup-face 6 -game dressup -randomLook -tab me
           shot 9-battle-theme 6 -game dressup -demoBattle
           shot 10-battle-runway 10 -game dressup -randomLook -demoRunway
+          shot 6-coloring 6 -game coloring
           xcrun simctl shutdown "$UDID"
           PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$PHONE"

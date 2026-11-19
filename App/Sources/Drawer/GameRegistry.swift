@@ -27,5 +27,6 @@ struct GameEntry: Identifiable {
 enum GameRegistry {
     static let all: [GameEntry] = [
         DressUpGame.entry,
+        ColoringGame.entry,
     ]
 }
