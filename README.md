@@ -35,3 +35,7 @@ python3 tools/make_icon.py              # app icon
 ## Screenshots
 
 Run **Build iPad app** manually (Actions → Run workflow) with "Commit simulator screenshots" ticked.
+
+| Drawer | Dress Up | Clothes | Gallery |
+|---|---|---|---|
+| ![](docs/screenshots/1-drawer.jpg) | ![](docs/screenshots/2-dressup.jpg) | ![](docs/screenshots/4-dressup-clothes.jpg) | ![](docs/screenshots/5-dressup-gallery.jpg) |

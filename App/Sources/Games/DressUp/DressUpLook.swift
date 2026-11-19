@@ -234,6 +234,10 @@ enum DollPainter {
             ArtPainter.draw([art.head], p, in: ctx)
         }
         for L in item.layers.sorted(by: { $0.z < $1.z }) { ArtPainter.draw(L.shapes, p, in: ctx) }
+        if item.category == "hairBack" {
+            // the back hair sits behind her head; show the head so the thumbnail reads as a hairstyle
+            ArtPainter.draw([art.head], p, in: ctx)
+        }
     }
 }
 
