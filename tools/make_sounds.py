@@ -75,4 +75,21 @@ fan = [(523, 0), (659, 0.0), (784, 0.0), (659, 0.16), (784, 0.16), (1047, 0.16),
 tracks = [(tone(lambda t, f=f: f * (1 + 0.004 * math.sin(t * 30)), 0.9 if off > 0.3 else 0.22, 0.01, 0.35 if off > 0.3 else 0.08,
                 ((1, 1), (2, 0.5), (3, 0.25), (4, 0.12))), off) for f, off in fan]
 write('fanfare', pad(mix(*tracks), 1.3), 0.7)
+# --- Mini-game sounds (appended so the effects above stay byte-identical) ---
+# note1-4: four happy marimba-ish notes for Glimmie Dance (C, E, G, high C)
+for i, f in enumerate([523.25, 659.25, 783.99, 1046.5]):
+    write(f'note{i + 1}', tone(lambda t, f=f: f, 0.55, 0.003, 0.2, ((1, 1), (4, 0.18), (2, 0.25))), 0.75)
+# catch: bright two-note blip
+write('catch', mix((tone(lambda t: 1760, 0.12, 0.002, 0.04, ((1, 1), (2, 0.2))), 0),
+                   (tone(lambda t: 2349, 0.18, 0.002, 0.06, ((1, 1), (2, 0.2))), 0.05)), 0.55)
+# bubble: watery bloop
+write('bubble', tone(lambda t: 300 + 1400 * (t / 0.09) ** 1.5 if t < 0.09 else 1700, 0.12, 0.002, 0.035, ((1, 1),)), 0.6)
+# flip: papery card flick
+fl = []; lp = 0
+for i in range(int(SR * 0.09)):
+    t = i / SR; lp += 0.35 * (random.uniform(-1, 1) - lp); fl.append(lp * math.exp(-t * 45))
+write('flip', fl, 0.5)
+# cheer: rising "yay" chord sweep
+write('cheer', mix(*[(tone(lambda t, f=f: f * (1 + 0.25 * min(1, t / 0.25)), 0.7, 0.02, 0.3, ((1, 1), (2, 0.4), (3, 0.2))), 0)
+                     for f in (392, 494, 587)]), 0.6)
 print('sounds:', sorted(os.listdir(OUT)))

@@ -22,7 +22,7 @@ struct RootView: View {
         DesignCanvas {
             ZStack {
                 if game.madeAvatar {
-                    BoutiqueView { editing = true }
+                    MapView { editing = true }
                         .transition(.opacity)
                 } else {
                     AvatarMakerView { }

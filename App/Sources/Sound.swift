@@ -3,6 +3,7 @@ import UIKit
 
 enum SFX: String, CaseIterable {
     case pop, ding, sparkle, crack, fanfare, whoosh, tap, boing, hatch
+    case note1, note2, note3, note4, catchIt = "catch", bubble, flip, cheer
 }
 
 /// Short synthesized sound effects (App/Resources/Sounds) + a friendly voice.
