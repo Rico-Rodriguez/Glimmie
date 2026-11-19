@@ -84,4 +84,14 @@ final class DressUpTests: XCTestCase {
         XCTAssertEqual(l.picks["face"], "face_round")
         XCTAssertNotNil(l.picks["nose"])
     }
+
+    func testBattleThemesUseRealItems() {
+        for t in BattleTheme.all {
+            XCTAssertEqual(art.items[t.scene]?.category, "bg", t.id)
+            for id in t.items.union(t.hints) { XCTAssertNotNil(art.items[id], "\(t.id): \(id)") }
+            let stars = t.stars(t.rival(), luck: [0, 0, 0])
+            XCTAssertEqual(stars.count, 3)
+            XCTAssertTrue(stars.allSatisfy { (1...5).contains($0) })
+        }
+    }
 }

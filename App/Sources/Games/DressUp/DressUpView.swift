@@ -12,6 +12,7 @@ struct DressUpView: View {
     @State private var showGallery = false
     @State private var galleryBounce = false
     @State private var showPets = false
+    @State private var battle: BattleState?
 
     private let art = DressUpArt.shared
     /// The part of the 600x900 art canvas shown on the stage: hat tips at the top, soles at the bottom.
@@ -45,6 +46,28 @@ struct DressUpView: View {
                             })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(2)
+            }
+            if let b = battle, b.phase == .intro {
+                BattleIntroView(state: b,
+                                start: {
+                                    Sound.shared.play(.sparkle)
+                                    store.current.bg = b.theme.scene
+                                    withAnimation(.spring(response: 0.4)) { battle?.phase = .dressing }
+                                },
+                                cancel: { withAnimation(.spring(response: 0.4)) { battle = nil } },
+                                reroll: {
+                                    Sound.shared.play(.ding)
+                                    withAnimation(.spring(response: 0.4)) { battle = .new() }
+                                })
+                    .transition(.opacity)
+                    .zIndex(4)
+            }
+            if let b = battle, b.phase == .runway {
+                RunwayView(state: b, mine: store.current,
+                           again: { withAnimation(.spring(response: 0.4)) { battle = .new() } },
+                           done: { withAnimation(.spring(response: 0.4)) { battle = nil } })
+                    .transition(.opacity)
+                    .zIndex(4)
             }
             if showPets {
                 PetCornerView(look: store.current,
@@ -91,6 +114,10 @@ struct DressUpView: View {
                     Sound.shared.play(.whoosh)
                     withAnimation(.spring(response: 0.4)) { showPets = true }
                 }
+                RoundButton(symbol: "trophy.fill", tint: Color(hex: 0xF2B83E)) {
+                    Sound.shared.play(.whoosh)
+                    withAnimation(.spring(response: 0.4)) { battle = .new() }
+                }
                 RoundButton(symbol: "dice.fill", tint: Color(hex: 0x9B79E0)) { surprise() }
                 RoundButton(symbol: "camera.fill", tint: Color(hex: 0xF45C9A)) { snap() }
                 RoundButton(symbol: "photo.on.rectangle.angled", tint: Color(hex: 0x46B7B0)) {
@@ -111,6 +138,16 @@ struct DressUpView: View {
             }
             .padding(.horizontal, 26)
             .padding(.top, 22)
+
+            if let b = battle, b.phase == .dressing {
+                BattleBanner(state: b) {
+                    Sound.shared.play(.fanfare, volume: 0.7)
+                    store.flush()
+                    withAnimation(.spring(response: 0.5)) { battle?.phase = .runway }
+                }
+                .padding(.top, 112)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
     }
 
@@ -123,6 +160,8 @@ struct DressUpView: View {
             cat = art.categories.first { $0.group == group }?.id ?? cat
         }
         if args.contains("-demoPets") { showPets = true }
+        if args.contains("-demoBattle") { battle = .new() }
+        if args.contains("-demoRunway") { var b = BattleState.new(); b.phase = .runway; battle = b }
         if args.contains("-demoGallery") {
             let keep = store.current
             for _ in 0..<8 { store.current = Look.random().sanitized(); store.saveToGallery() }
