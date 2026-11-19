@@ -14,6 +14,11 @@ An original coloring book for a pre-reader. No ads, no purchases, nothing locked
 - **Gallery:** every page she works on is saved automatically. ✓ in the studio saves with confetti and
   opens the gallery. From the gallery she can keep coloring a picture; a grown-up can save it to
   Photos or delete it (asks first).
+- **Grown-up pages:** hold the gear in the book's header for 1.5 s. A grown-up can make their own tabs
+  (shown first in the rail, with the tab's first page as its icon), rename, reorder and delete them, and fill
+  them from Photos, Files (images or PDFs, up to 40 pages each) or a built-in browser: search, tap
+  "Tap a picture", then tap any coloring page to add it. Any printable page works: it's cropped, fit to 4:3,
+  cleaned to black lines (grey shading and paper texture dropped) and thickened so fills don't leak.
 
 ## How it works
 - Pages are public-domain line art from [Openclipart](https://openclipart.org) (everything there is CC0),
@@ -27,6 +32,11 @@ An original coloring book for a pre-reader. No ads, no purchases, nothing locked
 - In the app (`App/Sources/Games/Coloring/`) the line art is drawn over a 1600x1200 color layer.
   `PaintRegions` labels every closed area once when a page opens; a fill writes into one area's mask,
   grown 2 px under the ink so no white shows at the edges. Brushes clip to the area the stroke started in.
+- Grown-up pages are made on the iPad (`CustomPages.swift`: `ColoringConvert` turns a picture into line art
+  with an adaptive threshold, `ColoringCustom` stores them) and live in
+  `Application Support/Games/coloring/custom/` (`tabs.json`, `custom-<id>.png`, `custom-<id>_t.png`).
+  They are never in the repo or the build. Deleting a page whose picture is in the gallery leaves that
+  picture's colors on a blank sheet.
 - Saves live in `Application Support/Games/coloring/` (`gallery.json`, `<id>.png`, `<id>.stickers.json`, `<id>.jpg`).
 
 ## Adding pages

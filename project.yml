@@ -41,6 +41,8 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UIRequiresFullScreen: true
         NSPhotoLibraryAddUsageDescription: "Save your pictures to Photos."
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         UIStatusBarHidden: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationLandscapeLeft

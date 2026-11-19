@@ -111,4 +111,77 @@ final class ColoringTests: XCTestCase {
         XCTAssertEqual(reloaded.pixel(800, 560), paper.pixel(800, 560))
         XCTAssertNotNil(gallery.fullPicture(gallery.items.first!))
     }
+
+    // MARK: Grown-up pages
+
+    /// A "printable page" as it comes off the web: opaque white paper, a grey shadow, a black square outline.
+    private func printablePage() -> CGImage {
+        let w = 1000, h = 800
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.setFillColor(CGColor(gray: 0.85, alpha: 1))
+        ctx.fill(CGRect(x: 300, y: 300, width: 200, height: 150))
+        ctx.setStrokeColor(CGColor(gray: 0, alpha: 1))
+        ctx.setLineWidth(6)
+        ctx.stroke(CGRect(x: 200, y: 200, width: 600, height: 400))
+        return ctx.makeImage()!
+    }
+
+    func testConvertedPageHasAnInsideAndAnOutside() {
+        let page = ColoringConvert.page(from: printablePage())
+        XCTAssertNotNil(page)
+        XCTAssertEqual(page?.art.width, 2048)
+        XCTAssertEqual(page?.art.height, 1536)
+        let paper = ColoringPaper(lineArt: page!.art)
+        XCTAssertGreaterThanOrEqual(paper.regions.count, 2)
+        let inside = paper.regions.label(800, 600), outside = paper.regions.label(10, 10)
+        XCTAssertGreaterThan(inside, 0, "the light grey shadow is not a line")
+        XCTAssertGreaterThan(outside, 0)
+        XCTAssertNotEqual(inside, outside)
+    }
+
+    func testBlankPictureIsNotAPage() {
+        let ctx = CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 300, height: 200))
+        XCTAssertNil(ColoringConvert.page(from: ctx.makeImage()!))
+    }
+
+    func testCustomTabsAndPages() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ColoringCustom(folder: dir)
+        XCTAssertTrue(store.tabs.isEmpty)
+        let tab = store.addTab(name: "  Princesses ")
+        XCTAssertTrue(ColoringCustom.isCustom(tab))
+        XCTAssertEqual(store.tabs.first?.name, "Princesses")
+
+        let added = expectation(description: "page added")
+        var pageID: String?
+        store.addPage(printablePage(), to: tab) { pageID = $0; added.fulfill() }
+        wait(for: [added], timeout: 30)
+        let id = try! XCTUnwrap(pageID)
+        XCTAssertTrue(ColoringCustom.isCustom(id))
+        XCTAssertEqual(store.tabs.first?.pages, [id])
+        XCTAssertNotNil(store.lineArt(id))
+        XCTAssertNotNil(store.thumbnail(id))
+        XCTAssertEqual(store.categories.first?.pages, [id])
+
+        // Tabs and pages survive a relaunch.
+        let reopened = ColoringCustom(folder: dir)
+        XCTAssertEqual(reopened.tabs, store.tabs)
+        XCTAssertNotNil(reopened.lineArt(id))
+
+        store.rename(tab: tab, to: "Bluey")
+        XCTAssertEqual(store.tabs.first?.name, "Bluey")
+        store.deletePage(id)
+        XCTAssertEqual(store.tabs.first?.pages, [])
+        XCTAssertNil(store.lineArt(id), "a deleted page opens as a blank page")
+        store.deleteTab(tab)
+        XCTAssertTrue(store.tabs.isEmpty)
+        XCTAssertTrue(ColoringCustom(folder: dir).tabs.isEmpty)
+    }
 }
