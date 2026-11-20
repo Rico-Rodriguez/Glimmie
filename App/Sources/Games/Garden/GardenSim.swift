@@ -376,7 +376,7 @@ final class GardenSim {
         let weights: [CGFloat] = [0.15, 0.25, 0.3, 0.2, 0.1]
         var wsum: CGFloat = 0
         for i in lo...hi { wsum += weights[i - c + 2] }
-        for i in lo...hi { h[i] -= mass * weights[i - c + 2] / wsum }
+        for i in lo...hi { h[i] -= mass / GGeo.col * weights[i - c + 2] / wsum }
     }
 
     // MARK: Frame
@@ -965,7 +965,7 @@ final class GardenSim {
         if GGeo.inBed(q.p.x) {
             let s = surface(q.p.x)
             if q.p.y >= s {
-                water(at: q.p.x, amount: q.kind == .rain ? 0.006 : 0.011)
+                water(at: q.p.x, amount: q.kind == .rain ? 0.03 : 0.011)
                 let c = GGeo.column(q.p.x)
                 let puddle = wet[c] > 0.85
                 if puddle && Int.random(in: 0..<(q.kind == .rain ? 6 : 3)) == 0 {

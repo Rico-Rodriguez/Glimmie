@@ -202,6 +202,13 @@ jobs:
           shot bakery-10-spread 6 -game bakery -bakeryStep cake 2 -bakeryDemo spread
           shot bakery-11-pipe 6 -game bakery -bakeryStep cupcake 2 -bakeryDemo pipe
           shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
+          shot garden-1-new 6 -game garden
+          shot garden-2-full 8 -game garden -gardenDemo
+          shot garden-3-water 6 -game garden -gardenDemo -gardenTool can
+          shot garden-4-dig 6 -game garden -gardenDemo -gardenTool shovel
+          shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
+          shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
+          shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
           xcrun simctl shutdown "$UDID"
           PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$PHONE"

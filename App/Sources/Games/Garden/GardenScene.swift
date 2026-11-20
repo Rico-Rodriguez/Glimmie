@@ -1182,7 +1182,7 @@ enum GardenDecorPainter {
         if peek >= 0 && peek < 2.6 {
             let k = min(gdEase(peek / 0.25), gdEase((2.6 - peek) / 0.3))
             var b = h
-            b.clip(to: Path(ellipseIn: CGRect(x: -10, y: -8, width: 20, height: 20)).union(Path(CGRect(x: -30, y: -60, width: 60, height: 52))))
+            b.clip(to: Path(CGRect(x: -30, y: -60, width: 60, height: 72)))
             let y = 10 - 16 * k
             b.fill(Path(ellipseIn: CGRect(x: -9, y: y - 9, width: 18, height: 18)), with: .color(Color(hex: 0xFFC94A)))
             b.fill(Path(ellipseIn: CGRect(x: -4.5, y: y - 4, width: 3, height: 3.4)), with: .color(Color(hex: 0x2A2020)))
