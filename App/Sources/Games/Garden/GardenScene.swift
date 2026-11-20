@@ -489,7 +489,7 @@ enum GardenPainter {
             case .water where !front:
                 var p = Path()
                 p.move(to: q.p)
-                p.addLine(to: CGPoint(x: q.p.x - q.v.dx * 0.014, y: q.p.y - q.v.dy * 0.014))
+                p.addLine(to: CGPoint(x: q.p.x - q.v.dx * 0.022, y: q.p.y - q.v.dy * 0.022))
                 water.addPath(p.strokedPath(StrokeStyle(lineWidth: q.size, lineCap: .round)))
                 waterCore.addPath(p.strokedPath(StrokeStyle(lineWidth: q.size * 0.35, lineCap: .round)))
             case .rain where front:

@@ -296,7 +296,6 @@ struct GardenView: View {
                     g.translateBy(x: size.width / 2, y: size.height / 2)
                     switch slot {
                     case .shovel:
-                        g.translateBy(x: 0, y: 40)
                         g.rotate(by: .radians(0.5))
                         g.scaleBy(x: 0.42, y: 0.42)
                         g.translateBy(x: 0, y: 96)
@@ -470,6 +469,7 @@ extension GardenSim {
     /// Fills the garden for screenshots: something at every stage, decorations, bugs.
     func showcase() {
         demo = true
+        for i in h.indices { h[i] = GGeo.soilY + sin(CGFloat(i) * 0.21) * 1.2 }
         let kinds: [(PlantKind, Double, Int)] = [(.sunflower, 1, 1), (.tulip, 1, 1), (.tomato, 1, 4), (.carrot, 0.7, 0), (.strawberry, 1, 3), (.pumpkin, 1, 1)]
         for (i, k) in kinds.enumerated() {
             plots[i].plant = Plant(kind: k.0, growth: k.1, left: k.2, variant: i)
