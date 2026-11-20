@@ -185,6 +185,8 @@ jobs:
           shot 5-dressup-gallery 6 -game dressup -demoGallery
           shot 5b-dressup-stickers 6 -game dressup -randomLook -demoCompanion -demoStudio
           shot 5c-dressup-story 6 -game dressup -randomLook -demoCompanion -demoStory
+          shot 5d-dressup-makeup 6 -game dressup -demoMakeup
+          shot 5e-dressup-nails 6 -game dressup -demoNails
           shot 7-dressup-pets 6 -game dressup -petDemo dressed
           shot 7b-pets-closet 6 -game dressup -petDemo closet
           shot 7c-pets-picker 6 -game dressup -petDemo pets
@@ -228,6 +230,13 @@ jobs:
           shot pizza-9-baked 8 -game pizza -pizzaDemo baked
           shot pizza-10-slice 8 -game pizza -pizzaDemo slice
           shot pizza-11-serve 8 -game pizza -pizzaDemo serve
+          shot icecream-1-shop 7 -game icecream
+          shot icecream-2-scoop 7 -game icecream -iceDemo scoop
+          shot icecream-3-soft 8 -game icecream -iceDemo soft
+          shot icecream-4-blend 8 -game icecream -iceDemo blend
+          shot icecream-5-pour 10 -game icecream -iceDemo pour
+          shot icecream-6-sundae 10 -game icecream -iceDemo sundae
+          shot icecream-7-serve 8 -game icecream -iceDemo serve
           shot garden-1-new 6 -game garden
           shot garden-2-full 8 -game garden -gardenDemo
           shot garden-3-water 6 -game garden -gardenDemo -gardenTool can
@@ -235,6 +244,14 @@ jobs:
           shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
           shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
           shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
+          shot aquarium-1-tank 7 -game aquarium
+          shot aquarium-2-busy 8 -game aquarium -aquaDemo
+          shot aquarium-3-feed 6 -game aquarium -aquaDemo -aquaTool food
+          shot aquarium-4-sponge 6 -game aquarium -aquaDemo -aquaTool sponge
+          shot aquarium-5-net 6 -game aquarium -aquaDemo -aquaTool net
+          shot aquarium-6-night 8 -game aquarium -aquaDemo -aquaNight
+          shot aquarium-7-fish-tray 6 -game aquarium -aquaTray fish
+          shot aquarium-8-decor-tray 6 -game aquarium -aquaTray decor
           shot salon-1-chair 7 -game salon
           shot salon-2-wash 7 -game salon -salonDemo wash
           shot salon-3-cut 7 -game salon -salonDemo cut

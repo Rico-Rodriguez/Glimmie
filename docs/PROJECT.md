@@ -43,7 +43,8 @@ history before the game-drawer PR.
 - While a tool works it turns see-through (`seeThrough`) with a small pink ring at its tip (`drawTip`, `TipMarker`).
   Dragged things glide up to the lifted spot instead of jumping (`ease`, and Tidy Up's `grab` easing to zero).
 - Where: Pet Vet tools (plus the magnifier), pet corner care tools and snacks, Hair Salon tools and clips, Bakery
-  ingredients, frosting spatula and toppings, Garden shovel, can, seeds and decorations, Tidy Up items, Dress Up photo
+  ingredients, frosting spatula and toppings, Garden shovel, can, seeds and decorations, Aquarium food shaker, sponge, net,
+  fish bags and decorations (also decorations she drags in the tank), Tidy Up items, Dress Up photo
   stickers. Not lifted on purpose: coloring brushes (painting must land under the finger or Apple Pencil), pinch and
   turn coloring stickers, the pet salon (tap only), cupcake piping (press and hold), and her bare hand (petting, weeds).
 
@@ -164,3 +165,46 @@ history before the game-drawer PR.
   are carried above it. A single tap on any tool does a helpful amount by itself.
 - Saves `pizza.json` (hearts and pizzas served). Sounds: `python3 tools/pizza/sounds.py`.
   Screenshot hooks: `-pizzaDemo knead | stretch | toss | sauce | cheese | toppings | bake | baked | slice | serve`.
+
+## Ice Cream & Smoothie Shop decisions
+- One simulation class (`IceSim`, split over IceCreamSim/Soft/Blender) stepped every frame, drawn by `ICScene` and
+  `ICArt` in two Canvas layers (a backdrop that only changes with the station, and the shop). The customer (the
+  Bakery's animals, from bakery.json) stands between them so the window sill hides their legs.
+- A treat lives in its own space (`ICBuild`): dx across, h up from the rim, z toward her for the soft-serve rope,
+  drawn at the stand point `S`. Its top edge as she sees it (`profile`, 2 pt columns) is what sprinkles, sauce, the
+  cherry and whipped cream land on.
+- Scooping: the dipper's ball grows with the distance dragged inside a tub (240 pt for a full ball); the path is kept
+  as grooves in the tub and the tub level drops. Scoops fall onto the cone or the scoop below (`restHeight`), stay
+  within a third of its radius, squash on landing and knock the ones below into a damped wobble. Left out, they
+  start to drip after about 9 s (never in screenshots).
+- Soft serve: beads 5 pt apart chained from the nozzle, laid on the bead one turn earlier while the stand turns,
+  so the rope coils into rings that narrow over 6.4 turns; the stand slides under the nozzle and sinks as the swirl
+  grows, stops at the top, and the last bit curls up. The twist stripes and ridges turn with the stand.
+- Blender: fruit and ice are circles in jar space with walls, friction and impulse contacts. The motor drives two
+  rolling vortices; the blades cut a piece smaller or split it, and what it loses becomes juice (`ICPaint`, weighted
+  by each fruit's `strength`). The drink's level stays horizontal when the jar tips (found from the jar's polygon and
+  the volume); whatever is above the lowest corner of the rim pours out as a ballistic stream. A jar carried over the
+  glass tips by itself and drifts so the stream lands in the glass. A new color makes a new layer in the glass.
+- Every topping also works with a single tap on the dock (it goes on for her). Everything held follows `FingerLift`.
+- Saves `shop.json` (hearts, treats served). Screenshot hooks: `-iceDemo scoop | soft | blend | pour | sundae | serve`.
+
+## Aquarium decisions
+- Fish steer (`AquariumSim.stepFish`): each heads for a goal (a wander point in its favorite depth, the nearest flake,
+  a spot by her finger) with limited acceleration, keeps room from the others, and tetras and guppies school (cohesion and
+  alignment with their own kind). They swim mostly level, pitch a little when they climb or dive, and turn round through
+  a narrow side view (`facing` runs from -1 to 1). Tail beat speed and width follow speed and effort; the body outline
+  bends with the beat (`AquaBody`), so bands and stripes bend too. Depth `z` makes nearer fish a bit bigger and on top.
+- Tapping the glass startles nearby fish (they dart off for under a second) and then they come back to look at the spot.
+  A finger resting on the glass for a moment draws them in. Tapping a fish makes it wiggle; the puffer puffs up.
+  Nothing gets hungry or sad: appetite only limits how many flakes one fish eats in a row, so others get some.
+- Water physics: the surface is 64 spring nodes (waves spread and fade); bubbles rise at a speed set by their size,
+  wobble and pop into a ripple; flakes float a moment, then flutter down; decorations sink by buoyancy and drag
+  (`AquaDecorKind.density`) and land in a puff of sand. Plants are damped springs pushed by passing fish and her finger.
+- The front glass is a 40 x 24 grid of algae that grows slowly (in patches, more near the bottom, slower at night). The
+  sponge rubs it off by how far it moves; the snail grazes toward the dirtiest spots. The algae paths are rebuilt only
+  when the glass changes.
+- Drawing is two layers like the Garden (30 fps backdrop with light rays and caustics, 60 fps moving layer), with
+  bubbles, flakes, splash drops and sand grains each batched into a few paths.
+- Saves `aquarium.json` (fish kinds and colors, decorations and where they sit, the algae grid, lamp, pump).
+  Sounds: `python3 tools/aquarium/sounds.py`. Screenshot hooks: `-aquaDemo`, `-aquaNight`, `-aquaTool food|sponge|net`,
+  `-aquaTray fish|decor` (screenshot hooks never save).
