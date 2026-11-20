@@ -148,6 +148,8 @@ jobs:
 
   screenshots:
     name: Simulator screenshots
+    # Slow (~30 min), so it only runs when started by hand from the Actions tab.
+    if: github.event_name == 'workflow_dispatch'
     needs: my-pages
     runs-on: macos-15
     permissions:
