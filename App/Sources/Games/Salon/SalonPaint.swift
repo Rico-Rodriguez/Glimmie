@@ -76,7 +76,7 @@ enum HairPainter {
     }
 
     /// A ribbon around `line`: full width, narrowing at the tip (and at the root for front locks).
-    static func ribbon(_ line: [HairV], width: CGFloat, rootTaper: Bool) -> Path {
+    static func ribbon(_ line: [HairV], width: CGFloat, rootTaper: Bool, pointy: Bool = false) -> Path {
         var path = Path()
         let m = line.count
         guard m >= 2 else { return path }
@@ -90,7 +90,10 @@ enum HairPainter {
             let nrm = (b - a).unit.perp
             let u = CGFloat(k) / CGFloat(m - 1)
             var w = width * 0.5
-            if u > 0.55 { w *= max(0.22, 1 - (u - 0.55) / 0.45 * 0.78) }
+            // bangs end in soft points, longer locks in round ends
+            let t0: CGFloat = pointy ? 0.3 : 0.55
+            let tipW: CGFloat = pointy ? 0.12 : 0.22
+            if u > t0 { w *= max(tipW, 1 - (u - t0) / (1 - t0) * (1 - tipW)) }
             if rootTaper && u < 0.15 { w *= 0.55 + 0.45 * (u / 0.15) }
             left.append((line[k] + nrm * w).cg)
             right.append((line[k] - nrm * w).cg)
@@ -164,19 +167,22 @@ enum HairPainter {
         var gloss: CGFloat
         var rootTaper: Bool
         var shape: Path
+        var shade: Color
     }
 
     static func lock(nodes: [HairV], pinned: Int, colors: [RGB], curl: (Int) -> CGFloat, tangle: CGFloat,
                      jitter: [CGFloat], phase: CGFloat, width: CGFloat, wet: CGFloat, gloss: CGFloat,
-                     darker: Bool, rootTaper: Bool) -> Lock? {
+                     darker: Bool, rootTaper: Bool, pointy: Bool = false) -> Lock? {
         guard nodes.count >= 2, !colors.isEmpty else { return nil }
         let line = centerline(nodes, pinned: pinned, curl: curl, tangle: tangle, jitter: jitter, phase: phase)
         let w = width * (1 - 0.14 * wet)
+        let mid = wetColor(colors[min(colors.count - 1, max(0, pinned))], wet)
         let lightBase = colors[min(colors.count - 1, max(0, pinned))]
         return Lock(line: line, width: w, fill: shading(nodes, colors: colors, wet: wet, darker: darker),
                     outline: outlineColor(colors, wet), light: Shades.light(wetColor(lightBase, wet)).color,
                     lightAlpha: min(1, (darker ? 0.25 : 0.5) + 0.35 * Double(gloss) + 0.25 * Double(wet)),
-                    gloss: gloss, rootTaper: rootTaper, shape: ribbon(line, width: w, rootTaper: rootTaper))
+                    gloss: gloss, rootTaper: rootTaper, shape: ribbon(line, width: w, rootTaper: rootTaper, pointy: pointy),
+                    shade: Shades.deep(mid).color)
     }
 
     /// Paints locks as one head of hair: every outline first, then every fill on top, so the dark line
@@ -187,18 +193,27 @@ enum HairPainter {
         if let cap { ctx.stroke(cap.path, with: .color(cap.outline), style: edge) }
         for l in locks { ctx.stroke(l.shape, with: .color(l.outline), style: edge) }
         if let cap { ctx.fill(cap.path, with: .color(cap.color)) }
-        for l in locks { ctx.fill(l.shape, with: l.fill) }
-        var tex = ctx
-        tex.opacity = 0.28
-        let thin = StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
         for l in locks {
-            for off: CGFloat in [-0.18, 0.2] {
-                tex.stroke(offsetLine(l.line, by: l.width * off, from: 0.15, to: 0.8), with: .color(l.outline), style: thin)
-            }
-        }
-        for l in locks {
+            ctx.fill(l.shape, with: l.fill)
+            // a soft shadow down one side of each section, clipped to it, so every lock reads as a
+            // rounded clump of hair instead of a flat ribbon
             var g = ctx
-            g.opacity = l.lightAlpha
+            g.clip(to: l.shape)
+            g.opacity = 0.2
+            g.stroke(offsetLine(l.line, by: l.width * 0.4, from: 0, to: 1), with: .color(l.shade),
+                     style: StrokeStyle(lineWidth: l.width * 0.3, lineCap: .round, lineJoin: .round))
+        }
+        // one fine strand line down every other section
+        var tex = ctx
+        tex.opacity = 0.3
+        let thin = StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
+        for (i, l) in locks.enumerated() where i % 2 == 0 {
+            tex.stroke(offsetLine(l.line, by: l.width * 0.05, from: 0.3, to: 0.75), with: .color(l.outline), style: thin)
+        }
+        // shine only where hair is wet or freshly straightened (the crown has its own shine)
+        for l in locks where l.lightAlpha > 0.56 {
+            var g = ctx
+            g.opacity = min(1, (l.lightAlpha - 0.5) * 1.4)
             g.stroke(streak(l.line, width: l.width, from: l.rootTaper ? 0.12 : 0.04, to: 0.45 + 0.2 * l.gloss),
                      with: .color(l.light), style: StrokeStyle(lineWidth: 2.6 + 2 * l.gloss, lineCap: .round, lineJoin: .round))
         }
@@ -218,10 +233,20 @@ enum HairPainter {
         return path
     }
 
+    /// Locks are drawn much wider than they are simulated, so neighbours overlap into one full head of
+    /// hair: the physics moves sections, the drawing shows volume.
+    static func volume(_ kind: HairStrand.Kind) -> CGFloat {
+        switch kind {
+        case .back, .nape: return 1.75
+        case .side: return 1.6
+        case .fringe: return 1.7
+        }
+    }
+
     static func lock(_ s: HairStrand, darker: Bool) -> Lock? {
         lock(nodes: s.p, pinned: s.pinned, colors: Array(s.color.prefix(s.p.count)), curl: { s.curlNow($0) },
-             tangle: s.tangle, jitter: s.jitter, phase: s.phase, width: s.width, wet: s.wet, gloss: s.gloss,
-             darker: darker, rootTaper: s.front)
+             tangle: s.tangle, jitter: s.jitter, phase: s.phase, width: s.width * volume(s.kind), wet: s.wet,
+             gloss: s.gloss, darker: darker, rootTaper: s.front, pointy: s.kind == .fringe)
     }
 
     static func draw(_ piece: HairPiece, in ctx: GraphicsContext) {
@@ -231,7 +256,7 @@ enum HairPainter {
         let wet = piece.wet
         guard let l = lock(nodes: piece.p, pinned: 1, colors: piece.color,
                            curl: { i in i < curl.count ? curl[i] * (1 - 0.7 * wet) : 0 },
-                           tangle: piece.tangle, jitter: piece.jitter, phase: piece.phase, width: piece.width,
+                           tangle: piece.tangle, jitter: piece.jitter, phase: piece.phase, width: piece.width * 1.6,
                            wet: piece.wet, gloss: 0, darker: false, rootTaper: false) else { return }
         paint([l], in: g)
     }
