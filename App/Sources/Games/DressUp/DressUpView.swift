@@ -365,7 +365,7 @@ private struct Tray: View {
         .overlay {
             if mixing {
                 ColorMixer(palette: art.cloth, close: { withAnimation(.spring(response: 0.35)) { mixing = false } }) { hex in
-                    store.current.mixed[cat] = hex
+                    store.current.mixed[mixKey] = hex
                     store.mixes.removeAll { $0 == hex }
                     store.mixes.insert(hex, at: 0)
                     if store.mixes.count > 12 { store.mixes.removeLast(store.mixes.count - 12) }
@@ -551,11 +551,11 @@ private struct Tray: View {
         let palette = art.category(cat)?.palette
         VStack(spacing: 10) {
             switch palette ?? "" {
-            case "hair": colorRow(art.hair, selected: store.current.hair) { store.current.hair = $0 }
-            case "eye": colorRow(art.eye, selected: store.current.eye) { store.current.eye = $0 }
+            case "hair": mixRow(art.hair, selected: store.current.hair) { store.current.hair = $0 }
+            case "eye": mixRow(art.eye, selected: store.current.eye) { store.current.eye = $0 }
             case "cloth":
                 if let item = currentItem, item.colorSource == .own {
-                    clothRow(item)
+                    mixRow(art.cloth, selected: store.current.colorIndex(for: item)) { store.current.colors[cat] = $0 }
                     if item.patternable { patternRow(item) }
                 }
             default: EmptyView()
@@ -563,10 +563,20 @@ private struct Tray: View {
         }
     }
 
-    /// Cloth colors: the paint pot (mix your own), her own mixes, then the palette.
-    private func clothRow(_ item: ArtItem) -> some View {
-        let mine = store.current.mixed[cat]
-        let selected = mine == nil ? store.current.colorIndex(for: item) : -1
+    /// Where a mixed color is kept: "hair" and "eye" for her hair and eyes, else the clothing category.
+    private var mixKey: String {
+        switch art.category(cat)?.palette {
+        case "hair": return "hair"
+        case "eye": return "eye"
+        default: return cat
+        }
+    }
+
+    /// Colors for hair, eyes and clothes: the paint pot (mix your own), her own mixes, then the palette.
+    private func mixRow(_ palette: [RGB], selected index: Int, pick: @escaping (Int) -> Void) -> some View {
+        let key = mixKey
+        let mine = store.current.mixed[key]
+        let selected = mine == nil ? index : -1
         return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -587,7 +597,7 @@ private struct Tray: View {
                         let c = RGB(hex: hex)
                         Button {
                             Sound.shared.play(.ding, volume: 0.6)
-                            store.current.mixed[cat] = hex
+                            store.current.mixed[key] = hex
                         } label: {
                             swatch(c, on: mine == hex)
                                 .overlay(alignment: .bottomTrailing) {
@@ -597,13 +607,13 @@ private struct Tray: View {
                         }
                         .buttonStyle(Squish())
                     }
-                    ForEach(art.cloth.indices, id: \.self) { i in
+                    ForEach(palette.indices, id: \.self) { i in
                         Button {
                             Sound.shared.play(.ding, volume: 0.6)
-                            store.current.colors[cat] = i
-                            store.current.mixed[cat] = nil
+                            pick(i)
+                            store.current.mixed[key] = nil
                         } label: {
-                            swatch(art.cloth[i], on: selected == i)
+                            swatch(palette[i], on: selected == i)
                         }
                         .buttonStyle(Squish())
                         .id(i)
@@ -624,34 +634,6 @@ private struct Tray: View {
             .overlay(Circle().stroke(.white, lineWidth: on ? 5 : 0).padding(3))
             .overlay(Circle().stroke(Theme.pink, lineWidth: on ? 4 : 0).padding(-3))
             .padding(4)
-    }
-
-    private func colorRow(_ colors: [RGB], selected: Int, set: @escaping (Int) -> Void) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(colors.indices, id: \.self) { i in
-                        Button {
-                            Sound.shared.play(.ding, volume: 0.6)
-                            set(i)
-                        } label: {
-                            Circle()
-                                .fill(colors[i].color)
-                                .frame(width: 50, height: 50)
-                                .overlay(Circle().stroke(Shades.outline(colors[i]).color.opacity(0.5), lineWidth: 2))
-                                .overlay(Circle().stroke(.white, lineWidth: selected == i ? 5 : 0).padding(3))
-                                .overlay(Circle().stroke(Theme.pink, lineWidth: selected == i ? 4 : 0).padding(-3))
-                                .padding(4)
-                        }
-                        .buttonStyle(Squish())
-                        .id(i)
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-            .onAppear { proxy.scrollTo(selected, anchor: .center) }
-        }
-        .frame(height: 64)
     }
 
     private func patternRow(_ item: ArtItem) -> some View {

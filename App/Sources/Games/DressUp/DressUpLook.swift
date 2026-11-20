@@ -80,7 +80,7 @@ struct Look: Codable, Equatable, Identifiable {
         if art.items[l.bg]?.category != "bg" { l.bg = art.category("bg")?.items.first ?? l.bg }
         l.colors = l.colors.mapValues { clamp($0, art.cloth.count) }
         l.patterns = l.patterns.filter { art.patterns[$0.value] != nil }
-        l.mixed = l.mixed.filter { Look.isHex($0.value) && art.category($0.key) != nil }
+        l.mixed = l.mixed.filter { Look.isHex($0.value) && ($0.key == "hair" || $0.key == "eye" || art.category($0.key) != nil) }
         let unit = { (v: Double) in v.isFinite ? min(max(v, 0), 1) : 0.5 }
         l.stickers = Array(l.stickers.filter { Stickers.isKnown($0.kind) }.suffix(Look.maxStickers)).map { s in
             var s = s
@@ -123,8 +123,8 @@ struct Look: Codable, Equatable, Identifiable {
         let skinRGB = art.skin[safe: skin] ?? RGB(1, 0.86, 0.8)
         let main: RGB
         switch item.colorSource {
-        case .hair: main = art.hair[safe: hair] ?? skinRGB
-        case .eye: main = art.eye[safe: eye] ?? skinRGB
+        case .hair: main = mixed["hair"].map(RGB.init(hex:)) ?? art.hair[safe: hair] ?? skinRGB
+        case .eye: main = mixed["eye"].map(RGB.init(hex:)) ?? art.eye[safe: eye] ?? skinRGB
         case .skin: main = skinRGB
         case .own, .noColor:
             if item.colorSource == .own, let hex = mixed[item.category] {
