@@ -217,6 +217,13 @@ jobs:
           shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
           shot bakery-13-crack 6 -game bakery -bakeryStep cake 0 -bakeryDemo crack
           shot bakery-14-stars 6 -game bakery -bakeryRated
+          shot icecream-1-shop 7 -game icecream
+          shot icecream-2-scoop 7 -game icecream -iceDemo scoop
+          shot icecream-3-soft 8 -game icecream -iceDemo soft
+          shot icecream-4-blend 8 -game icecream -iceDemo blend
+          shot icecream-5-pour 10 -game icecream -iceDemo pour
+          shot icecream-6-sundae 10 -game icecream -iceDemo sundae
+          shot icecream-7-serve 8 -game icecream -iceDemo serve
           shot garden-1-new 6 -game garden
           shot garden-2-full 8 -game garden -gardenDemo
           shot garden-3-water 6 -game garden -gardenDemo -gardenTool can

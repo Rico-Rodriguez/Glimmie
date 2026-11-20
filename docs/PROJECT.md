@@ -144,3 +144,26 @@ history before the game-drawer PR.
   Every plant and weed is a damped spring pushed by wind, rain, water and her finger.
 - Saves `garden.json`. Sounds: `python3 tools/garden/sounds.py`. Screenshot hooks: `-gardenDemo`, `-gardenTool can|shovel|seeds`,
   `-gardenWeather sun|rain|wind|night` (screenshot hooks never save).
+
+## Ice Cream & Smoothie Shop decisions
+- One simulation class (`IceSim`, split over IceCreamSim/Soft/Blender) stepped every frame, drawn by `ICScene` and
+  `ICArt` in two Canvas layers (a backdrop that only changes with the station, and the shop). The customer (the
+  Bakery's animals, from bakery.json) stands between them so the window sill hides their legs.
+- A treat lives in its own space (`ICBuild`): dx across, h up from the rim, z toward her for the soft-serve rope,
+  drawn at the stand point `S`. Its top edge as she sees it (`profile`, 2 pt columns) is what sprinkles, sauce, the
+  cherry and whipped cream land on.
+- Scooping: the dipper's ball grows with the distance dragged inside a tub (240 pt for a full ball); the path is kept
+  as grooves in the tub and the tub level drops. Scoops fall onto the cone or the scoop below (`restHeight`), stay
+  within a third of its radius, squash on landing and knock the ones below into a damped wobble. Left out, they
+  start to drip after about 9 s (never in screenshots).
+- Soft serve: beads 5 pt apart chained from the nozzle, laid on the bead one turn earlier while the stand turns,
+  so the rope coils into rings that narrow over 6.4 turns; the stand slides under the nozzle and sinks as the swirl
+  grows, stops at the top, and the last bit curls up. The twist stripes and ridges turn with the stand.
+- Blender: fruit and ice are circles in jar space with walls, friction and impulse contacts. The motor drives two
+  rolling vortices; the blades cut a piece smaller or split it, and what it loses becomes juice (`ICPaint`, weighted
+  by each fruit's `strength`). The drink's level stays horizontal when the jar tips (found from the jar's polygon and
+  the volume); whatever is above the lowest corner of the rim pours out as a ballistic stream. A jar carried over the
+  glass tips by itself and drifts so the stream lands in the glass. A new color makes a new layer in the glass.
+- Every topping also works with a single tap on the dock (it goes on for her). Everything held follows `FingerLift`.
+- Saves `shop.json` (hearts, treats served). Screenshot hooks: `-iceDemo scoop | soft | blend | pour | sundae | serve`.
+
