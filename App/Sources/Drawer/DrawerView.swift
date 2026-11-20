@@ -1,34 +1,90 @@
 import SwiftUI
 
-/// The home screen: a toy drawer with one big tile per game.
+/// The home screen: a toy drawer with one big tile per game, laid out in rows and columns.
 struct DrawerView: View {
     let open: (String) -> Void
 
     var body: some View {
         ZStack {
             DrawerBackground()
-            DesignCanvas {
-                VStack(spacing: 0) {
-                    Title()
-                        .padding(.top, 54)
-                    Spacer(minLength: 20)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 44) {
+            VStack(spacing: 0) {
+                Title()
+                    .padding(.top, 28)
+                    .padding(.bottom, 8)
+                GeometryReader { geo in
+                    let layout = DrawerLayout.best(count: GameRegistry.all.count, in: geo.size)
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(layout.tile), spacing: DrawerLayout.columnSpacing),
+                                                 count: layout.columns),
+                                  spacing: DrawerLayout.rowSpacing) {
                             ForEach(GameRegistry.all) { game in
-                                GameTile(game: game) {
+                                GameTile(game: game, size: layout.tile) {
                                     Sound.shared.play(.pop)
                                     Sound.shared.tap()
                                     open(game.id)
                                 }
                             }
                         }
-                        .padding(.horizontal, 70)
-                        .padding(.vertical, 30)
-                        .frame(minWidth: 1024)
+                        .padding(.vertical, DrawerLayout.verticalPadding)
+                        .frame(width: geo.size.width)
+                        .frame(minHeight: geo.size.height)
                     }
-                    Spacer(minLength: 60)
+                    .bounceOnlyWhenScrolling()
                 }
             }
+        }
+    }
+}
+
+/// Picks how many columns the drawer grid uses and how big each tile is.
+/// Prefers the biggest tiles that still show every game without scrolling; when there are
+/// too many games for that, it keeps tiles big and lets the grid scroll up and down.
+struct DrawerLayout: Equatable {
+    let columns: Int
+    let tile: CGFloat
+
+    static let columnSpacing: CGFloat = 32
+    static let rowSpacing: CGFloat = 26
+    static let sidePadding: CGFloat = 48
+    static let verticalPadding: CGFloat = 18
+    /// Room under each tile for its name.
+    static let labelHeight: CGFloat = 58
+    static let maxTile: CGFloat = 260
+    /// Smallest tile we accept to fit everything on one screen.
+    static let minFitTile: CGFloat = 190
+    /// Tile size to aim for once the grid has to scroll.
+    static let scrollTile: CGFloat = 210
+
+    static func tileWidth(columns: Int, width: CGFloat) -> CGFloat {
+        (width - sidePadding * 2 - columnSpacing * CGFloat(columns - 1)) / CGFloat(columns)
+    }
+
+    static func best(count: Int, in size: CGSize) -> DrawerLayout {
+        let n = max(1, count)
+        var bestFit: DrawerLayout?
+        for cols in 1...n {
+            let rows = (n + cols - 1) / cols
+            let byHeight = (size.height - verticalPadding * 2 - rowSpacing * CGFloat(rows - 1)) / CGFloat(rows) - labelHeight
+            let tile = min(tileWidth(columns: cols, width: size.width), byHeight, maxTile)
+            if tile >= minFitTile, tile > (bestFit?.tile ?? 0) {
+                bestFit = DrawerLayout(columns: cols, tile: tile)
+            }
+        }
+        if let bestFit { return bestFit }
+        // Too many to fit: the most columns that keep tiles at least `scrollTile` wide.
+        var cols = 1
+        while cols < n, tileWidth(columns: cols + 1, width: size.width) >= scrollTile { cols += 1 }
+        let tile = max(120, min(tileWidth(columns: cols, width: size.width), maxTile))
+        return DrawerLayout(columns: cols, tile: tile)
+    }
+}
+
+private extension View {
+    @ViewBuilder func bounceOnlyWhenScrolling() -> some View {
+        if #available(iOS 16.4, *) {
+            scrollBounceBehavior(.basedOnSize)
+        } else {
+            self
         }
     }
 }
@@ -41,34 +97,44 @@ private struct Title: View {
                 .foregroundStyle(Theme.ink)
             Image(systemName: "sparkles").foregroundStyle(Theme.lemon)
         }
-        .font(.system(size: 64, weight: .heavy, design: .rounded))
+        .font(.system(size: 56, weight: .heavy, design: .rounded))
         .shadow(color: .white, radius: 0, x: 0, y: 3)
     }
 }
 
 private struct GameTile: View {
     let game: GameEntry
+    /// Width and height of the square picture, in points.
+    let size: CGFloat
     let tap: () -> Void
     @State private var bob = false
 
+    /// Game icons are drawn for a 300 pt tile, so the picture is built at that size and scaled.
+    private static let designSize: CGFloat = 300
+
     var body: some View {
         Button(action: tap) {
-            VStack(spacing: 16) {
+            VStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 56, style: .continuous)
                         .fill(game.tint.gradient)
                     game.icon()
                         .padding(26)
                 }
-                .frame(width: 300, height: 300)
+                .frame(width: Self.designSize, height: Self.designSize)
                 .clipShape(RoundedRectangle(cornerRadius: 56, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 56, style: .continuous).stroke(.white, lineWidth: 10))
-                .shadow(color: Theme.ink.opacity(0.22), radius: 14, y: 10)
-                .offset(y: bob ? -6 : 4)
+                .scaleEffect(size / Self.designSize)
+                .frame(width: size, height: size)
+                .shadow(color: Theme.ink.opacity(0.22), radius: 12, y: 8)
+                .offset(y: bob ? -5 : 3)
 
                 Text(game.title)
-                    .font(.system(size: 34, weight: .heavy, design: .rounded))
+                    .font(.system(size: min(32, max(24, size * 0.12)), weight: .heavy, design: .rounded))
                     .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(width: size + DrawerLayout.columnSpacing - 4)
             }
         }
         .buttonStyle(Squish())

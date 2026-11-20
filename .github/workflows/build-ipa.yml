@@ -219,6 +219,17 @@ jobs:
           shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
           shot bakery-13-crack 6 -game bakery -bakeryStep cake 0 -bakeryDemo crack
           shot bakery-14-stars 6 -game bakery -bakeryRated
+          shot pizza-1-start 6 -game pizza
+          shot pizza-2-knead 6 -game pizza -pizzaDemo knead
+          shot pizza-3-stretch 6 -game pizza -pizzaDemo stretch
+          shot pizza-4-toss 6 -game pizza -pizzaDemo toss
+          shot pizza-5-sauce 6 -game pizza -pizzaDemo sauce
+          shot pizza-6-cheese 6 -game pizza -pizzaDemo cheese
+          shot pizza-7-toppings 6 -game pizza -pizzaDemo toppings
+          shot pizza-8-bake 7 -game pizza -pizzaDemo bake
+          shot pizza-9-baked 8 -game pizza -pizzaDemo baked
+          shot pizza-10-slice 8 -game pizza -pizzaDemo slice
+          shot pizza-11-serve 8 -game pizza -pizzaDemo serve
           shot icecream-1-shop 7 -game icecream
           shot icecream-2-scoop 7 -game icecream -iceDemo scoop
           shot icecream-3-soft 8 -game icecream -iceDemo soft
@@ -233,6 +244,12 @@ jobs:
           shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
           shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
           shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
+          shot spa-1-new 6 -game spa
+          shot spa-2-filling 8 -game spa -spaDemo full
+          shot spa-3-bomb 8 -game spa -spaDemo bomb
+          shot spa-4-mask 8 -game spa -spaDemo mask
+          shot spa-5-wand 8 -game spa -spaDemo wand
+          shot spa-6-towel 8 -game spa -spaDemo towel
           shot aquarium-1-tank 7 -game aquarium
           shot aquarium-2-busy 8 -game aquarium -aquaDemo
           shot aquarium-3-feed 6 -game aquarium -aquaDemo -aquaTool food
@@ -241,23 +258,6 @@ jobs:
           shot aquarium-6-night 8 -game aquarium -aquaDemo -aquaNight
           shot aquarium-7-fish-tray 6 -game aquarium -aquaTray fish
           shot aquarium-8-decor-tray 6 -game aquarium -aquaTray decor
-          shot salon-1-chair 7 -game salon
-          shot salon-2-wash 7 -game salon -salonDemo wash
-          shot salon-3-cut 7 -game salon -salonDemo cut
-          shot salon-4-dry 7 -game salon -salonDemo dry
-          shot salon-5-curl 7 -game salon -salonDemo curl
-          shot salon-6-style 7 -game salon -salonDemo style
-          shot salon-8-back 7 -game salon -salonDemo back
-          shot salon-9-side 7 -game salon -salonDemo side
-          shot salon-7-photos 9 -game salon -salonDemo photos
-          shot tidy-1-levels 6 -game tidy -tidyDemoDone
-          shot tidy-2-fridge 7 -game tidy -tidyLevel 12 -tidyPrefill 7
-          shot tidy-3-bookshelf 7 -game tidy -tidyLevel 13 -tidyPrefill 6 -tidyHold
-          shot tidy-4-closet 7 -game tidy -tidyLevel 18 -tidyPrefill 4
-          shot tidy-5-pencil 7 -game tidy -tidyLevel 17 -tidyPrefill 7 -tidyHold
-          shot tidy-6-toys 7 -game tidy -tidyLevel 3
-          shot tidy-7-cupboard 7 -game tidy -tidyLevel 21 -tidyPrefill 8
-          shot tidy-8-backpack 7 -game tidy -tidyLevel 20 -tidyPrefill 4
           xcrun simctl shutdown "$UDID"
           PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
           xcrun simctl boot "$PHONE"
