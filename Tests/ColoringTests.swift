@@ -364,9 +364,15 @@ final class ColoringTests: XCTestCase {
 
     func testThePageTakesTouchesAgainAfterTheStickerTool() {
         let studio = readyStudio()
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1194, height: 834))
+        // A window only draws when it belongs to the app's scene.
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            return XCTFail("no window scene in the test host")
+        }
+        let window = UIWindow(windowScene: scene)
+        window.frame = scene.coordinateSpace.bounds
         window.rootViewController = UIHostingController(rootView: ColoringStudioView(studio: studio, onBack: {}, onDone: {}))
         window.makeKeyAndVisible()
+        window.layoutIfNeeded()
         defer { window.isHidden = true }
         func canvas(in v: UIView) -> ColoringCanvasView? {
             if let c = v as? ColoringCanvasView { return c }
