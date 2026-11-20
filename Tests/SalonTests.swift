@@ -30,12 +30,16 @@ final class SalonTests: XCTestCase {
                 let before = s.strands.map(\.p)
                 s.settle(seconds: 1)
                 var most: CGFloat = 0
+                var where_ = ""
                 for (i, st) in s.strands.enumerated() {
-                    for k in st.p.indices where k < before[i].count { most = max(most, st.p[k].dist(before[i][k])) }
+                    for k in st.p.indices where k < before[i].count {
+                        let d = st.p[k].dist(before[i][k])
+                        if d > most { most = d; where_ = "\(st.kind) lock, point \(k - st.pinned) at \(Int(st.p[k].x)),\(Int(st.p[k].y))" }
+                    }
                     // bangs stop above her eyebrows
                     if st.kind == .fringe { XCTAssertLessThan(st.tip.y, 300) }
                 }
-                XCTAssertLessThan(most, 2, "seed \(seed) length \(length)")
+                XCTAssertLessThan(most, 2, "seed \(seed) length \(length): \(where_)")
             }
         }
     }

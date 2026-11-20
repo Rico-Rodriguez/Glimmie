@@ -497,8 +497,11 @@ final class HairSim {
             var v = (cur - s.o[i]) * damp
             let vl = v.len
             if vl > 26 { v = v * (26 / vl) }
-            if let top = SalonBody.capeTop(cur.x), s.front, cur.y > top - 2 { v = v * 0.86 }
-            if cur.y > SalonBody.floorY - 1 { v = v * 0.6 }
+            // hair resting on the cape or the floor grips it: slow creeping stops dead
+            var resting = false
+            if let top = SalonBody.capeTop(cur.x), s.front, cur.y > top - 2 { v = v * 0.86; resting = true }
+            if cur.y > SalonBody.floorY - 1 { v = v * 0.6; resting = true }
+            if resting, v.len < 0.35 { v = .zero }
             s.o[i] = cur
             var a = g
             if let w { a += windAccel(cur, w) * (h * h) }
