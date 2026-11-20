@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import Glimmie
 
 final class ColoringTests: XCTestCase {
@@ -307,5 +308,124 @@ final class ColoringTests: XCTestCase {
         let edge = PageZoom(scale: 2, offset: CGPoint(x: 120, y: -2000)).clamped(to: size)
         XCTAssertEqual(edge.offset.x, 0)
         XCTAssertEqual(edge.offset.y, -600)
+    }
+
+    // MARK: Stickers, then coloring
+
+    /// Waits (running the main loop) until `done` is true or the time runs out.
+    private func waitUntil(_ seconds: Double = 15, _ done: () -> Bool) {
+        let end = Date().addingTimeInterval(seconds)
+        while !done(), Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+
+    private func readyStudio() -> ColoringStudio {
+        let studio = ColoringStudio(page: ColoringCatalog.blank)
+        waitUntil { studio.ready }
+        XCTAssertTrue(studio.ready)
+        return studio
+    }
+
+    func testPlacingAStickerThenColoringStillPaints() {
+        let studio = readyStudio()
+        studio.tool = .stickers
+        studio.addSticker("🦄")
+        XCTAssertEqual(studio.stickers.count, 1)
+        studio.tool = .marker
+        studio.color = PaintColor.hex(0x3C8DFF)
+        let white = PaintColor.white.packed
+        let p = CGPoint(x: 300, y: 300)
+        studio.touchBegan(p)
+        studio.touchMoved([StrokeSample(point: CGPoint(x: 420, y: 320), pressure: 0.6, tilt: 0)])
+        studio.touchEnded()
+        XCTAssertNotEqual(studio.paper?.pixel(360, 310), white, "the marker should paint after a sticker")
+        // And the fill bucket still fills.
+        studio.tool = .fill
+        studio.color = PaintColor.hex(0xFF4D4D)
+        studio.touchBegan(CGPoint(x: 1200, y: 900))
+        XCTAssertEqual(studio.paper?.pixel(1300, 1000), PaintColor.hex(0xFF4D4D).packed)
+    }
+
+    func testOnlyTheCanvasHandlesItsTouchesUnlessStickersAreOn() {
+        let studio = readyStudio()
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let canvas = ColoringCanvasView(frame: host.bounds)
+        canvas.studio = studio
+        host.addSubview(canvas)
+        // A recognizer on a view above the canvas, like the ones SwiftUI adds for sticker gestures.
+        let theirs = UIPanGestureRecognizer()
+        host.addGestureRecognizer(theirs)
+        studio.tool = .marker
+        XCTAssertFalse(canvas.gestureRecognizerShouldBegin(theirs))
+        XCTAssertNotNil(canvas.hitTest(CGPoint(x: 400, y: 300), with: nil))
+        studio.tool = .stickers
+        XCTAssertTrue(canvas.gestureRecognizerShouldBegin(theirs))
+        XCTAssertNil(canvas.hitTest(CGPoint(x: 400, y: 300), with: nil))
+    }
+
+    func testThePageTakesTouchesAgainAfterTheStickerTool() {
+        let studio = readyStudio()
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 1194, height: 834))
+        window.rootViewController = UIHostingController(rootView: ColoringStudioView(studio: studio, onBack: {}, onDone: {}))
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        func canvas(in v: UIView) -> ColoringCanvasView? {
+            if let c = v as? ColoringCanvasView { return c }
+            for s in v.subviews { if let c = canvas(in: s) { return c } }
+            return nil
+        }
+        waitUntil { canvas(in: window) != nil }
+        studio.tool = .stickers
+        waitUntil(1) { false }
+        studio.addSticker("🦄")
+        waitUntil(1) { false }
+        studio.tool = .marker
+        waitUntil(1) { false }
+        guard let c = canvas(in: window) else { return XCTFail("no canvas on screen") }
+        // A spot on the page away from the sticker (which sits in the middle).
+        let spot = c.convert(CGPoint(x: c.bounds.width * 0.2, y: c.bounds.height * 0.25), to: window)
+        let hit = window.hitTest(spot, with: nil)
+        XCTAssertTrue(hit === c || hit?.isDescendant(of: c) == true, "the page should get her touches, got \(String(describing: hit))")
+        XCTAssertTrue(c.isUserInteractionEnabled)
+        // No recognizer above the canvas may take over a stroke.
+        var v: UIView? = c.superview
+        while let view = v {
+            for g in view.gestureRecognizers ?? [] { XCTAssertFalse(c.gestureRecognizerShouldBegin(g)) }
+            v = view.superview
+        }
+    }
+
+    // MARK: Hue slider and paint palette
+
+    func testHueSliderColorsGoRoundTheRainbow() {
+        for h in stride(from: 0.0, to: 1.0, by: 0.1) {
+            XCTAssertEqual(PaintColor.slider(h).hue ?? -1, h, accuracy: 0.01)
+        }
+        XCTAssertNil(PaintColor.white.hue)
+        XCTAssertNil(PaintColor.hex(0x7A7A86).hue)
+    }
+
+    func testPalettePaintMixesLikeRealPaint() {
+        let well = PaintWell()
+        XCTAssertTrue(well.isEmpty)
+        XCTAssertNil(well.color(at: CGPoint(x: 36, y: 24)))
+        well.drop(PaintColor.hex(0x3C8DFF), at: CGPoint(x: 28, y: 24))
+        well.drop(PaintColor.hex(0xFFF06B), at: CGPoint(x: 44, y: 24))
+        XCTAssertFalse(well.isEmpty)
+        let blue = well.color(at: CGPoint(x: 28, y: 24))!
+        XCTAssertGreaterThan(blue.b, blue.g)
+        // Swirl round and round over both blobs.
+        var last = CGPoint(x: 42, y: 24)
+        for t in 0..<600 {
+            let a = Double(t) * 0.25, r = 6 + 4 * sin(Double(t) * 0.05)
+            let p = CGPoint(x: 36 + cos(a) * r, y: 24 + sin(a) * r)
+            well.smear(from: last, to: p)
+            last = p
+        }
+        let mixed = well.color(at: CGPoint(x: 36, y: 24))!
+        XCTAssertGreaterThan(mixed.g, mixed.r, "blue and yellow paint make green")
+        XCTAssertGreaterThan(mixed.g, mixed.b, "blue and yellow paint make green")
+        XCTAssertNotNil(well.image())
+        well.wipe()
+        XCTAssertTrue(well.isEmpty)
     }
 }
