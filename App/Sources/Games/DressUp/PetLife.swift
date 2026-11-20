@@ -225,7 +225,7 @@ final class PetLife {
     private func pick(_ id: String, at p: CGPoint) {
         held = id
         heldAt = p; heldLast = p; heldMoved = 0; stepDist = 0
-        drawAt = lifted(p)
+        drawAt = drawn(p)
         play("pop", 0.05)
         Sound.shared.tap()
         if id == "ball" || id == "yarn" { ball = nil }
@@ -236,7 +236,7 @@ final class PetLife {
         let d = hypot(p.x - heldAt.x, p.y - heldAt.y)
         heldLast = heldAt
         heldAt = p
-        drawAt = playing ? p : lifted(p)
+        drawAt = playing ? p : drawn(p)
         heldMoved += d
         stepDist += d
         let tip = tipPoint()
@@ -338,7 +338,7 @@ final class PetLife {
             dur = 0.7
         }
         pick(id, at: p)
-        auto = [lifted(p)] + path   // these are where the tool itself goes
+        auto = [drawn(p)] + path   // these are where the tool itself goes
         autoStart = t
         autoDur = dur
     }
@@ -485,8 +485,16 @@ final class PetLife {
                                                   "feather": CGPoint(x: 110, y: 26)]
 
     /// Where a tool goes for her finger at p: well above it, so her finger doesn't hide what she's doing.
+    /// A tool's tip goes the shared tool lift above her finger; a snack floats the item lift above it.
     private func lifted(_ p: CGPoint) -> CGPoint {
-        FingerLift.point(p, lift: foods.contains(held ?? "") ? FingerLift.item : FingerLift.tool, width: leftW)
+        FingerLift.point(p, lift: foods.contains(held ?? "") ? FingerLift.item : FingerLift.tool, bottom: size.height, width: leftW)
+    }
+
+    /// Where the held thing is drawn for her finger at p, so that its tip lands on `lifted(p)`.
+    private func drawn(_ p: CGPoint) -> CGPoint {
+        let at = lifted(p)
+        guard let id = held, let tip = Self.tips[id] else { return at }
+        return CGPoint(x: at.x - (tip.x - 70) * Self.toolScale, y: at.y - (tip.y - 70) * Self.toolScale)
     }
 
     private func tipPoint() -> CGPoint {

@@ -361,7 +361,7 @@ struct GardenView: View {
                         sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
                     }
                     // the tool glides up and works well above her finger (see `FingerLift`)
-                    sim.carry(to: FingerLift.point(p, lift: slot == .shovel ? FingerLift.tool : FingerLift.item, width: 1024))
+                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
                 }
             }
             .onEnded { _ in
@@ -376,6 +376,19 @@ struct GardenView: View {
                     finishCarry(slot.rawValue)
                 }
             }
+    }
+
+    /// Where a carried tool goes for her finger at p (design space). Each tool is drawn around a
+    /// different point, so each is lifted until the part that hangs lowest still clears her finger.
+    static func lifted(_ p: CGPoint, _ tool: GardenTool) -> CGPoint {
+        let lift: CGFloat
+        switch tool {
+        case .shovel: lift = FingerLift.tool                                   // the blade tip digs here
+        case .can: lift = FingerLift.carry(below: 106)                         // the can hangs below its handle
+        case .seeds: lift = FingerLift.carry(below: 45)
+        case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
+        }
+        return FingerLift.point(p, lift: lift, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
     }
 
     private func finishCarry(_ key: String) {
@@ -434,7 +447,7 @@ struct GardenView: View {
                         let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
                         sim.pickUp(tool, at: p)
                     }
-                    sim.carry(to: FingerLift.point(p, lift: FingerLift.item, width: 1024))
+                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
                 }
                 .onEnded { _ in
                     sim.release(home: t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot)

@@ -361,16 +361,16 @@ final class TidyWorld: ObservableObject {
 
     /// How far above her finger a held item's middle floats, so neither her finger nor her hand hides
     /// it or the spot it's going to (bigger things float higher so their bottom edge clears her finger).
-    func lift(for b: TidyBody) -> CGFloat { max(FingerLift.item, b.size.height * 0.5 + 40) }
+    func lift(for b: TidyBody) -> CGFloat { FingerLift.carry(below: b.size.height * 0.5) }
 
     /// Where the held item goes for her finger at f.
     private func carried(_ b: TidyBody, finger f: TVec) -> TVec {
-        TVec(FingerLift.point(f.pt, lift: lift(for: b), top: 0, width: size.width))
+        TVec(FingerLift.point(f.pt, lift: lift(for: b), top: 0, bottom: size.height, width: size.width))
     }
 
     /// The finger point that holds item b with its middle at p (screenshot hooks and tests).
     func finger(toHold b: TidyBody, at p: CGPoint) -> CGPoint {
-        FingerLift.finger(for: p, lift: lift(for: b), top: 0, width: size.width)
+        FingerLift.finger(for: p, lift: lift(for: b), top: 0, bottom: size.height, width: size.width)
     }
 
     private func integrateHeld(_ b: TidyBody, _ dt: CGFloat) {

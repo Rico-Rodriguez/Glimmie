@@ -31,7 +31,14 @@ history before the game-drawer PR.
   works `FingerLift.tool` (120 pt) above her finger, and a dragged thing's middle floats `FingerLift.item` (100 pt) above
   it (Tidy Up: more for tall things, so their bottom clears her finger). Tune those two numbers there, not per game.
 - Near the top edge the lift shrinks smoothly to about a third and leans toward the middle (`FingerLift.point`), so the
-  tip never leaves the screen and still moves the same way as her finger. `FingerLift.finger(for:)` is the inverse,
+  tip never leaves the screen and still moves the same way as her finger. Near the bottom (pass `bottom:`) it turns
+  sideways, to the left of her finger (to the right near the left edge), so low spots like a patient's feet, the pet's
+  paws or the bottom of the flower bed can still be reached.
+- A held tool points from her finger to its tip, handle toward her finger (`FingerLift.turn`), so the tool bridges the
+  gap. Pet Vet tools drawn tip-down (tweezers, thermometer, comb...) turn over; the Bakery spatula turns too; Salon tools
+  lean as the lift tilts. Not turned: showers (they rain down), the Garden shovel (it digs down) and round tools.
+- Things drawn around a point they hang below (the watering can, the flour bag, decorations) lift by
+  `FingerLift.carry(below:)`, so their bottom edge clears her finger, not just their middle. `FingerLift.finger(for:)` is the inverse,
   for screenshot hooks and tests that "hold" a tool over an exact spot.
 - While a tool works it turns see-through (`seeThrough`) with a small pink ring at its tip (`drawTip`, `TipMarker`).
   Dragged things glide up to the lifted spot instead of jumping (`ease`, and Tidy Up's `grab` easing to zero).

@@ -143,10 +143,16 @@ final class HandsOnBowl {
     /// How far above her finger a held thing sits, in bowl units (the mix step draws the bowl at 1.4x):
     /// the shared `FingerLift.item`, so her finger doesn't hide the jar, the egg or the rim.
     static let lift: CGFloat = FingerLift.item / 1.4
+    /// The flour bag, sugar jar and milk carton are drawn 58 units either side of the point that holds
+    /// them, so they go higher, until their bottom clears her finger too.
+    static let jarLift: CGFloat = FingerLift.carry(below: 58 * 1.4) / 1.4
 
     /// Where the container sits for a finger at p (she holds it from below, so the finger doesn't hide it).
     private func held(_ p: CGPoint, _ w: Ingredient) -> CGPoint {
-        CGPoint(x: p.x, y: p.y - HandsOnBowl.lift)
+        switch w {
+        case .flour, .sugar, .milk: return CGPoint(x: p.x, y: p.y - HandsOnBowl.jarLift)
+        default: return CGPoint(x: p.x, y: p.y - HandsOnBowl.lift)
+        }
     }
 
     /// Moves the held thing. An egg can't go through the rim: pushing it down onto the rim knocks it.
