@@ -217,6 +217,17 @@ jobs:
           shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
           shot bakery-13-crack 6 -game bakery -bakeryStep cake 0 -bakeryDemo crack
           shot bakery-14-stars 6 -game bakery -bakeryRated
+          shot pizza-1-start 6 -game pizza
+          shot pizza-2-knead 6 -game pizza -pizzaDemo knead
+          shot pizza-3-stretch 6 -game pizza -pizzaDemo stretch
+          shot pizza-4-toss 6 -game pizza -pizzaDemo toss
+          shot pizza-5-sauce 6 -game pizza -pizzaDemo sauce
+          shot pizza-6-cheese 6 -game pizza -pizzaDemo cheese
+          shot pizza-7-toppings 6 -game pizza -pizzaDemo toppings
+          shot pizza-8-bake 7 -game pizza -pizzaDemo bake
+          shot pizza-9-baked 8 -game pizza -pizzaDemo baked
+          shot pizza-10-slice 8 -game pizza -pizzaDemo slice
+          shot pizza-11-serve 8 -game pizza -pizzaDemo serve
           shot garden-1-new 6 -game garden
           shot garden-2-full 8 -game garden -gardenDemo
           shot garden-3-water 6 -game garden -gardenDemo -gardenTool can
