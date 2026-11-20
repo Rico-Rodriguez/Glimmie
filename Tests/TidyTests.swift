@@ -88,7 +88,8 @@ final class TidyTests: XCTestCase {
                 guard let h = w.held else { w.simulate(seconds: 0.2); continue }
                 let held = w.bodies[h]
                 guard let s = w.eligible(for: held).first else { w.touchUp(held.pos.pt); continue }
-                let target = w.slotPos(s).pt
+                // her finger goes below the slot: the item floats above her finger
+                let target = w.finger(toHold: held, at: w.slotPos(s).pt)
                 w.touchMoved(target)
                 w.simulate(seconds: 0.4)
                 w.touchUp(target)

@@ -359,7 +359,7 @@ final class GardenSim {
             var wsum: CGFloat = 0
             var ws = [CGFloat](repeating: 0, count: GGeo.columns)
             for i in 0..<GGeo.columns {
-                let d = (GGeo.colX(i) - mx) / 14
+                let d = (GGeo.colX(i) - mx) / 26
                 ws[i] = exp(-d * d)
                 wsum += ws[i]
             }
@@ -542,7 +542,7 @@ final class GardenSim {
         flow = gdClamp((tilt - 0.35) / 0.45)
         guard flow > 0 else { return }
         let (spout, dir) = canSpout()
-        waterAcc += flow * 190 * dt
+        waterAcc += flow * 300 * dt
         let perp = CGVector(dx: -dir.dy, dy: dir.dx)
         while waterAcc >= 1 {
             waterAcc -= 1
@@ -552,7 +552,7 @@ final class GardenSim {
             let v = CGVector(dx: dir.dx * speed + perp.dx * spread * 70 + toolV.dx * 0.3,
                              dy: dir.dy * speed + perp.dy * spread * 70 + toolV.dy * 0.3)
             let drop = GParticle(kind: .water, p: CGPoint(x: spout.x + perp.dx * j, y: spout.y + perp.dy * j), v: v,
-                                 life: 3, size: CGFloat.random(in: 2.2...3.8), color: GRGB(0xBFE3FF))
+                                 life: 3, size: CGFloat.random(in: 3...5), color: GRGB(0xBFE3FF))
             particles.append(drop)
         }
     }

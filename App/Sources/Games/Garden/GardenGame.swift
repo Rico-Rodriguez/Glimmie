@@ -139,6 +139,12 @@ private enum DockSlot: String {
     }
 }
 
+final class GardenHandState {
+    var lastAt = Date()
+    var startAt = Date()
+    var active = false
+}
+
 struct GardenView: View {
     let exit: () -> Void
 
@@ -147,16 +153,23 @@ struct GardenView: View {
     @State private var weather: Weather = .sun
     @State private var carrying: String?
     @State private var hidden: String?
-    @State private var handLastAt = Date()
-    @State private var handStartAt = Date()
-    @State private var handActive = false
+    /// Touch bookkeeping lives outside SwiftUI state so a drag does not rebuild the view on every move.
+    @State private var hand = GardenHandState()
     @State private var started = false
 
     var body: some View {
         GeometryReader { geo in
             let map = GMap(size: geo.size)
             ZStack {
-                TimelineView(.animation) { tl in
+                // The sky, hills, fence and lawns change slowly, so they redraw at 30 fps in their own layer.
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                    Canvas(opaque: true) { ctx, _ in
+                        GardenPainter.drawBackdrop(ctx, map: map, sim: sim)
+                    }
+                }
+                .allowsHitTesting(false)
+                // Everything that moves, capped at 60 fps so 120 Hz screens do not double the work.
+                TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
                     Canvas { ctx, _ in
                         sim.step(tl.date)
                         GardenPainter.draw(ctx, map: map, sim: sim)
@@ -195,23 +208,23 @@ struct GardenView: View {
             .onChanged { v in
                 let p = map.design(v.location)
                 let now = Date()
-                if !handActive {
-                    handActive = true
-                    handStartAt = now
-                    handLastAt = now
+                if !hand.active {
+                    hand.active = true
+                    hand.startAt = now
+                    hand.lastAt = now
                     sim.handBegan(p)
                 } else {
-                    let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(handLastAt)))
-                    handLastAt = now
+                    let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(hand.lastAt)))
+                    hand.lastAt = now
                     sim.handMoved(p, dt: dt)
                 }
             }
             .onEnded { v in
                 let p = map.design(v.location)
                 let moved = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y) / map.s
-                let tap = moved < 14 && Date().timeIntervalSince(handStartAt) < 0.45
+                let tap = moved < 14 && Date().timeIntervalSince(hand.startAt) < 0.45
                 sim.handEnded(p, tap: tap)
-                handActive = false
+                hand.active = false
             }
     }
 
@@ -296,7 +309,6 @@ struct GardenView: View {
                     g.translateBy(x: size.width / 2, y: size.height / 2)
                     switch slot {
                     case .shovel:
-                        g.translateBy(x: 0, y: 40)
                         g.rotate(by: .radians(0.5))
                         g.scaleBy(x: 0.42, y: 0.42)
                         g.translateBy(x: 0, y: 96)
@@ -347,9 +359,9 @@ struct GardenView: View {
                         tray = nil
                         Sound.shared.tap()
                         sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
-                    } else {
-                        sim.carry(to: p)
                     }
+                    // the tool glides up and works well above her finger (see `FingerLift`)
+                    sim.carry(to: FingerLift.point(p, lift: slot == .shovel ? FingerLift.tool : FingerLift.item, width: 1024))
                 }
             }
             .onEnded { _ in
@@ -421,9 +433,8 @@ struct GardenView: View {
                         Sound.shared.tap()
                         let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
                         sim.pickUp(tool, at: p)
-                    } else {
-                        sim.carry(to: p)
                     }
+                    sim.carry(to: FingerLift.point(p, lift: FingerLift.item, width: 1024))
                 }
                 .onEnded { _ in
                     sim.release(home: t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot)
@@ -470,6 +481,7 @@ extension GardenSim {
     /// Fills the garden for screenshots: something at every stage, decorations, bugs.
     func showcase() {
         demo = true
+        for i in h.indices { h[i] = GGeo.soilY + sin(CGFloat(i) * 0.21) * 1.2 }
         let kinds: [(PlantKind, Double, Int)] = [(.sunflower, 1, 1), (.tulip, 1, 1), (.tomato, 1, 4), (.carrot, 0.7, 0), (.strawberry, 1, 3), (.pumpkin, 1, 1)]
         for (i, k) in kinds.enumerated() {
             plots[i].plant = Plant(kind: k.0, growth: k.1, left: k.2, variant: i)

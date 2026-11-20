@@ -121,7 +121,8 @@ extension SalonWorld {
     private func drawHeld(in ctx: GraphicsContext, art: GraphicsContext) {
         if let c = carry, let p = carryPoint {
             var g = ctx
-            g.translateBy(x: p.x, y: p.y - SalonWorld.carryLift)
+            let up = SalonWorld.carried(p)
+            g.translateBy(x: up.x, y: up.y)
             g.scaleBy(x: SalonWorld.k * 1.15, y: SalonWorld.k * 1.15)
             g.addFilter(.shadow(color: Theme.ink.opacity(0.25), radius: 6, x: 0, y: 6))
             switch c {
@@ -131,13 +132,14 @@ extension SalonWorld {
         }
         if let m = moving, let f = finger {
             var g = ctx
-            g.translateBy(x: f.x, y: f.y - SalonWorld.carryLift)
+            let up = SalonWorld.carried(f)
+            g.translateBy(x: up.x, y: up.y)
             g.scaleBy(x: SalonWorld.k * 1.15, y: SalonWorld.k * 1.15)
             g.addFilter(.shadow(color: Theme.ink.opacity(0.25), radius: 6, x: 0, y: 6))
             ClipPainter.draw(m.kind, color: m.color, in: g)
         }
         guard let t = tool, t != .clips, let f = finger else { return }
-        let tipD = CGPoint(x: f.x + tipOffset.x, y: f.y + tipOffset.y)
+        let tipD = tipDesign(f)
         let s: CGFloat = 1.3
         var g = ctx
         g.translateBy(x: tipD.x, y: tipD.y)
@@ -152,10 +154,17 @@ extension SalonWorld {
         }
         g.scaleBy(x: s, y: s)
         g.translateBy(x: -t.tip.x, y: -t.tip.y)
+        // over her hair the tool turns see-through, with a ring where its tip works
+        let a = toArt(tipD)
+        let working = a.x > 90 && a.x < 510 && a.y > 30 && a.y < 760
+        if working { g.opacity = FingerLift.seeThrough }
         g.addFilter(.shadow(color: Theme.ink.opacity(0.28), radius: 7, x: 0, y: 7))
-        let dye = dyeFor(dyeColor, at: toArt(tipD), strandTime: 0)
+        let dye = dyeFor(dyeColor, at: a, strandTime: 0)
         g.drawLayer { l in
             SalonToolArt.draw(t, dye: dye, open: scissorsOpen, in: l)
+        }
+        if working && t != .dryer && t != .shower {
+            FingerLift.drawTip(ctx, at: tipD, time: Date().timeIntervalSinceReferenceDate)
         }
     }
 }
@@ -238,6 +247,6 @@ enum SalonDemo {
 
     private static func hold(_ w: SalonWorld, at q: HairV) {
         let d = w.toDesign(q)
-        w.press(CGPoint(x: d.x - w.tipOffset.x, y: d.y - w.tipOffset.y))
+        w.press(w.fingerFor(tip: d))
     }
 }

@@ -26,6 +26,20 @@ Version 1.0.48 and earlier were "Glimmie Closet", a Blender-rendered sticker dre
 of mini-games and a text-to-speech voice. Rico retired it in Nov 2026 ("it all sucks"); it lives in git
 history before the game-drawer PR.
 
+## Finger lift (every hands-on game)
+- A finger covers exactly what it touches, so `App/Sources/Shared/FingerLift.swift` is shared by every game: a tool's tip
+  works `FingerLift.tool` (120 pt) above her finger, and a dragged thing's middle floats `FingerLift.item` (100 pt) above
+  it (Tidy Up: more for tall things, so their bottom clears her finger). Tune those two numbers there, not per game.
+- Near the top edge the lift shrinks smoothly to about a third and leans toward the middle (`FingerLift.point`), so the
+  tip never leaves the screen and still moves the same way as her finger. `FingerLift.finger(for:)` is the inverse,
+  for screenshot hooks and tests that "hold" a tool over an exact spot.
+- While a tool works it turns see-through (`seeThrough`) with a small pink ring at its tip (`drawTip`, `TipMarker`).
+  Dragged things glide up to the lifted spot instead of jumping (`ease`, and Tidy Up's `grab` easing to zero).
+- Where: Pet Vet tools (plus the magnifier), pet corner care tools and snacks, Hair Salon tools and clips, Bakery
+  ingredients, frosting spatula and toppings, Garden shovel, can, seeds and decorations, Tidy Up items, Dress Up photo
+  stickers. Not lifted on purpose: coloring brushes (painting must land under the finger or Apple Pencil), pinch and
+  turn coloring stickers, the pet salon (tap only), cupcake piping (press and hold), and her bare hand (petting, weeds).
+
 ## Dress Up art decisions
 - Flat cute 2D vector chibi (about 2.2 heads tall), color-derived outlines (never black), one shade and
   one highlight per color. Shade math is in `tools/dressup/colors.py` and mirrored in `DressUpArt.swift`.
@@ -52,9 +66,10 @@ history before the game-drawer PR.
 - All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
-- So her finger never hides the work: the tool tip works 80 pt above her finger, the tool turns see-through (and a
-  bit smaller) over the patient with a small pink ring at its tip, and a round magnifier near the top shows the spot
-  under the tip at 2x on the side away from it. Screenshot hook: `-vetHold <tool>` holds a tool over its spot.
+- So her finger never hides the work: the tool tip works `FingerLift.tool` above her finger (see "Finger lift" below),
+  the tool turns see-through (and a bit smaller) over the patient with a small pink ring at its tip, and a round
+  magnifier near the top shows the spot under the tip at 2x on the side away from it (`Magnifier`).
+  Screenshot hook: `-vetHold <tool>` holds a tool over its spot.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.
 
 ## Bakery realism
@@ -104,3 +119,14 @@ history before the game-drawer PR.
 - Saves `progress.json` (finished level ids, music on/off). Nothing is locked; the next unfinished level glows.
 - Screenshot hooks: `-tidyLevel <n>`, `-tidyPrefill <k>` (puts k items away), `-tidyHold` (holds one item by its slot),
   `-tidyDemoDone` (marks the first 9 levels done in the picker).
+
+## Garden decisions
+- The soil is a height field of 4 pt columns (`GardenSim.h`) with a wetness per column (`wet`). The shovel carves columns down
+  to its blade and carries the soil as a load; a flick throws it as clods that settle back where they land, so soil is never
+  made or lost (a unit test checks this). Slopes relax to an angle of repose; wet soil holds steeper walls.
+- Water and rain are particles that soak into the column they hit. Wetness spreads, dries in the sun, darkens the soil and
+  a soak line behind the glass, and pools into flat puddles above 0.85.
+- Plants grow only while their soil is damp (about 26 s from seed to ripe) and drink it. A thirsty plant shows a bobbing drop.
+  Every plant and weed is a damped spring pushed by wind, rain, water and her finger.
+- Saves `garden.json`. Sounds: `python3 tools/garden/sounds.py`. Screenshot hooks: `-gardenDemo`, `-gardenTool can|shovel|seeds`,
+  `-gardenWeather sun|rain|wind|night` (screenshot hooks never save).

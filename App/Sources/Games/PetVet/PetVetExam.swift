@@ -118,7 +118,7 @@ struct VetExamView: View {
                     let s: CGFloat = side / 140
                     VetToolPicture(tool: t)
                         .frame(width: side, height: side)
-                        .opacity(over ? 0.5 : 1)
+                        .opacity(over ? FingerLift.seeThrough : 1)
                         .shadow(color: Theme.ink.opacity(over ? 0.12 : 0.25), radius: 8, y: 8)
                         .animation(.easeOut(duration: 0.15), value: over)
                         .position(x: tip.x + (70 - art.tip.x) * s, y: tip.y + (70 - art.tip.y) * s)
@@ -191,36 +191,12 @@ struct VetExamView: View {
     // tip at twice the size, without the tool or her hand in the way. It sits on the side away from
     // the tip so it never covers the place she is working on.
 
-    static let loupeSize: CGFloat = 176
-    static let loupeZoom: CGFloat = 2
-
-    private var loupeCenter: CGPoint {
-        let left = tipRoom.x > size.width / 2
-        return CGPoint(x: size.width / 2 + (left ? -168 : 168), y: 96 + VetExamView.loupeSize / 2)
-    }
-
     private var loupe: some View {
-        let tip = tipRoom
-        let d = VetExamView.loupeSize
-        let z = VetExamView.loupeZoom
         let room = size
-        return TimelineView(.animation) { tl in
-            Canvas { ctx, s in
-                var g = ctx
-                g.translateBy(x: s.width / 2, y: s.height / 2)
-                g.scaleBy(x: z, y: z)
-                g.translateBy(x: -tip.x, y: -tip.y)
-                VetDraw.room("exam", size: room, in: g)
-                draw(g, now: tl.date)
-            }
+        return Magnifier(tip: tipRoom, area: size) { g, now in
+            VetDraw.room("exam", size: room, in: g)
+            draw(g, now: now)
         }
-        .frame(width: d, height: d)
-        .clipShape(Circle())
-        .overlay(Circle().stroke(.white, lineWidth: 7))
-        .overlay(Circle().stroke(Theme.pink.opacity(0.55), lineWidth: 2).padding(5))
-        .shadow(color: Theme.ink.opacity(0.25), radius: 8, y: 5)
-        .position(loupeCenter)
-        .allowsHitTesting(false)
     }
 
     // MARK: Shelves
@@ -245,10 +221,10 @@ struct VetExamView: View {
     // MARK: Dragging
 
     /// How far above her finger the tool tip works, so her finger and hand stay below the spot
-    /// (it was 44, which put her fingertip right on top of what she was treating).
-    static let tipLift: CGFloat = 80
+    /// (it was 44, then 80; now the shared lift every game uses, see `FingerLift`).
+    static let tipLift: CGFloat = FingerLift.tool
 
-    private var tipRoom: CGPoint { CGPoint(x: finger.x, y: finger.y - VetExamView.tipLift) }
+    private var tipRoom: CGPoint { FingerLift.point(finger, lift: VetExamView.tipLift, width: size.width) }
 
     /// True when the lifted tool's tip is over the patient (head or body).
     private var toolOverPatient: Bool { VetExamView.onPatient(layout.toPatient(tipRoom)) }
@@ -300,7 +276,8 @@ struct VetExamView: View {
         let spot = visit.spots.first { $0.step?.tool == t } ?? visit.spots.first
         let at = L.toRoom(spot?.target ?? CGPoint(x: 300, y: 420))
         tool = t
-        finger = CGPoint(x: at.x + 6, y: at.y + VetExamView.tipLift + 4)
+        let f = FingerLift.finger(for: at, lift: VetExamView.tipLift, width: L.size.width)
+        finger = CGPoint(x: f.x + 6, y: f.y + 4)
     }
 
     private func addSticker(_ s: VetSticker) {
@@ -655,11 +632,7 @@ struct VetExamView: View {
 
         // a small bright ring right where the tool tip works (it shows through the see-through tool)
         if tool != nil && toolOverPatient {
-            let c = tipRoom
-            let r: CGFloat = 11 + 1.5 * CGFloat(sin(t * 8))
-            let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-            ctx.stroke(ring, with: .color(.white.opacity(0.95)), lineWidth: 5)
-            ctx.stroke(ring, with: .color(Theme.pink), lineWidth: 2.5)
+            FingerLift.drawTip(ctx, at: tipRoom, time: t)
         }
     }
 
