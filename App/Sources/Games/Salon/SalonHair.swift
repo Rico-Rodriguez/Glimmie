@@ -760,14 +760,21 @@ final class HairSim {
             var z = s.z[i]
             let inX = xy, inZ = z
             SalonBody.pushOutOfHead(&xy, &z, k: headK * ramp)
-            if last, xy != inX || z != inZ {
-                let ox = s.o[i] + (xy - inX), oz = s.oz[i] + (z - inZ)
-                s.o[i] = ox + (xy - ox) * 0.35
-                s.oz[i] = oz + (z - oz) * 0.35
-            }
             if s.kind == .side { SalonBody.keepOffFace(&xy, &z, root: root, yaw: yaw) }
             SalonBody.pushOutOfBody(&xy, &z, squash: squash)
             xy.x = max(-300, min(900, xy.x))
+            if last, xy != inX || z != inZ {
+                // touching her: barely moving hair stays put (static friction), the rest slides with drag
+                let creep = H3(xy - s.o[i], z - s.oz[i]).len
+                if creep < 0.5 {
+                    xy = s.o[i]
+                    z = s.oz[i]
+                } else {
+                    let ox = s.o[i] + (xy - inX), oz = s.oz[i] + (z - inZ)
+                    s.o[i] = ox + (xy - ox) * 0.35
+                    s.oz[i] = oz + (z - oz) * 0.35
+                }
+            }
             s.p[i] = xy
             s.z[i] = z
         }
