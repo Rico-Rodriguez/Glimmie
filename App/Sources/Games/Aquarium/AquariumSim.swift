@@ -241,8 +241,8 @@ final class AquariumSim {
     }
 
     func makeSave() -> AquaSave {
-        AquaSave(fish: fish.map { FishSave(kind: $0.kind, variant: $0.variant) },
-                 decor: decor.filter { !$0.held }.map { DecorSave(kind: $0.kind, x: $0.x, flip: $0.flip) },
+        AquaSave(fish: fish.map { AquaFishSave(kind: $0.kind, variant: $0.variant) },
+                 decor: decor.filter { !$0.held }.map { AquaDecorSave(kind: $0.kind, x: $0.x, flip: $0.flip) },
                  algae: algae.map { Float($0) }, night: !lightsOn, pump: pump)
     }
 

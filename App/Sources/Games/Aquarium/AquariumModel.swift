@@ -212,7 +212,7 @@ enum FishKind: String, Codable, CaseIterable {
 }
 
 /// One fish, as saved.
-struct FishSave: Codable, Equatable {
+struct AquaFishSave: Codable, Equatable {
     var kind: FishKind
     var variant: Int
 }
@@ -259,15 +259,15 @@ enum AquaDecorKind: String, Codable, CaseIterable {
     var bubbles: Bool { self == .chest || self == .diver || self == .bubbler || self == .castle }
 }
 
-struct DecorSave: Codable, Equatable {
+struct AquaDecorSave: Codable, Equatable {
     var kind: AquaDecorKind
     var x: CGFloat
     var flip: Bool
 }
 
 struct AquaSave: Codable {
-    var fish: [FishSave]
-    var decor: [DecorSave]
+    var fish: [AquaFishSave]
+    var decor: [AquaDecorSave]
     var algae: [Float]
     var night: Bool
     var pump: Bool
