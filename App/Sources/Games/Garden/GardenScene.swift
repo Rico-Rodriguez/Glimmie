@@ -510,6 +510,7 @@ enum GardenPainter {
         var waterThick = Path()
         var rain = Path()
         var splash = Path()
+        var seeds: [(color: GRGB, level: Int, body: Path, stripe: Path)] = []
         for q in sim.particles {
             let life = Double(max(0, 1 - q.age / q.life))
             switch q.kind {
@@ -530,14 +531,22 @@ enum GardenPainter {
             case .clod where !front:
                 clod(g, q)
             case .seed where !front:
-                var sg = g
-                sg.translateBy(x: q.p.x, y: q.p.y)
-                sg.rotate(by: .radians(Double(q.rot)))
+                // Seeds of one color and fade share a path, so a handful of fills covers a whole sowing.
+                let a = q.resting ? min(1, life * 1.5) : 1
+                let level = min(4, Int((a * 4).rounded()))
+                guard level > 0 else { continue }
+                let m = CGAffineTransform(translationX: q.p.x, y: q.p.y).rotated(by: q.rot)
                 let r = CGRect(x: -q.size, y: -q.size * 0.6, width: q.size * 2, height: q.size * 1.2)
-                let a = q.resting ? life * 1.5 : 1
-                sg.fill(Path(ellipseIn: r), with: .color(q.color.color(min(1, a))))
+                let k: Int
+                if let found = seeds.firstIndex(where: { $0.color == q.color && $0.level == level }) {
+                    k = found
+                } else {
+                    seeds.append((q.color, level, Path(), Path()))
+                    k = seeds.count - 1
+                }
+                seeds[k].body.addPath(Path(ellipseIn: r), transform: m)
                 if q.seed == .sunflower {
-                    sg.fill(Path(CGRect(x: -q.size * 0.8, y: -0.5, width: q.size * 1.6, height: 1)), with: .color(.white.opacity(0.7 * min(1, a))))
+                    seeds[k].stripe.addPath(Path(CGRect(x: -q.size * 0.8, y: -0.5, width: q.size * 1.6, height: 1)), transform: m)
                 }
             case .dust:
                 if front { continue }
@@ -586,6 +595,11 @@ enum GardenPainter {
                 g.stroke(waterThick, with: core, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
             }
             if !splash.isEmpty { g.fill(splash, with: .color(GRGB(0xD6EEFF).color(0.85))) }
+            for sd in seeds {
+                let a = Double(sd.level) / 4
+                g.fill(sd.body, with: .color(sd.color.color(a)))
+                if !sd.stripe.isEmpty { g.fill(sd.stripe, with: .color(.white.opacity(0.7 * a))) }
+            }
         } else if !rain.isEmpty {
             g.stroke(rain, with: .color(GRGB(0xE4EEF8).color(0.55)), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
         }
