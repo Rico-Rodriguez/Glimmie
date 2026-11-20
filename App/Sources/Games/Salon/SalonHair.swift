@@ -125,6 +125,19 @@ enum SalonBody {
         return hit
     }
 
+    /// Keeps a side lock from swinging in across her face. The wall starts at the lock's own root and
+    /// eases out to the edge of her face over the first 60 points, so the lock is never shoved sideways.
+    static func keepOffFace(_ p: inout HairV, root: HairV) {
+        let side: CGFloat = root.x < center.x ? -1 : 1
+        let ey = max(-1, min(0, (p.y - center.y) / ry))
+        let edge = center.x + side * rx * (1 - ey * ey).squareRoot()
+        let u = max(0, min(1, (p.y - root.y) / 60))
+        let w = u * u * (3 - 2 * u)
+        let limit = root.x + (edge - root.x) * w
+        if side < 0, p.x > limit { p.x = limit }
+        if side > 0, p.x < limit { p.x = limit }
+    }
+
     static func onFace(_ p: HairV) -> Bool {
         let ex = (p.x - center.x) / (rx * 0.92)
         let ey = (p.y - center.y) / (ry * 0.92)
@@ -359,7 +372,9 @@ final class HairSim {
             let kind: HairStrand.Kind = fringe ? .fringe : .side
             let side: CGFloat = s < 0 ? -1 : 1
             let dir = fringe ? HairV(s * 0.45, 1).unit : HairV(side * 0.55, 1).unit
-            let free = fringe ? recipe.fringe + Int(rand(-1, 1.4)) : L + 1 + Int(rand(-1.5, 1.5))
+            // bangs stop above her eyebrows (they can still be grown longer in the salon)
+            let browRoom = max(1, Int((284 - rest[rest.count - 1].y) / HairSim.seg))
+            let free = fringe ? min(recipe.fringe + Int(rand(-1, 1.4)), browRoom) : L + 1 + Int(rand(-1.5, 1.5))
             out.append(makeStrand(kind, rest: rest, dir: dir, free: max(1, free), width: rand(20, 25), base: base,
                                   order: 2 - abs(s)))
         }
@@ -430,14 +445,29 @@ final class HairSim {
     func step(_ hd: Double) {
         let h = CGFloat(hd)
         for i in strands.indices { integrate(&strands[i], h) }
-        for _ in 0..<3 {
-            for i in strands.indices { HairSim.constrain(&strands[i]) }
+        if moved.count != strands.count { moved = Array(repeating: [], count: strands.count) }
+        for i in strands.indices {
+            moved[i].removeAll(keepingCapacity: true)
+            moved[i].append(contentsOf: repeatElement(HairV.zero, count: strands[i].p.count))
+        }
+        for _ in 0..<2 {
+            for i in strands.indices { HairSim.constrain(&strands[i], moved: &moved[i]) }
             applyTies()
+        }
+        // follow-the-leader damping: pulling a point after its parent must not throw the parent around,
+        // or the lock picks up energy every frame and never comes to rest
+        for i in strands.indices {
+            let n = strands[i].p.count
+            guard n > strands[i].pinned + 1 else { continue }
+            for k in strands[i].pinned..<(n - 1) { strands[i].o[k] += moved[i][k + 1] * 0.9 }
         }
         for i in strands.indices { boxes[i] = HairSim.box(strands[i]) }
         stepPieces(hd)
         stepFoam(h)
     }
+
+    /// Scratch space for `step`: how far the constraints moved each point this step.
+    private var moved: [[HairV]] = []
 
     private func windAccel(_ p: HairV, _ w: (at: HairV, dir: HairV)) -> HairV {
         let r = p - w.at
@@ -476,11 +506,15 @@ final class HairSim {
         }
     }
 
-    private static func constrain(_ s: inout HairStrand) {
+    /// Follow-the-leader: each point is bent toward the lock's shape, put back exactly one segment from
+    /// its parent, then kept out of her head, face and cape. Parents are never moved by their children,
+    /// so nothing fights and the hair settles to a standstill.
+    private static func constrain(_ s: inout HairStrand, moved: inout [HairV]) {
         let P = s.pinned
         let n = s.p.count
         guard n > P else { return }
         let wetLimp = 1 - 0.45 * s.wet
+        let root = s.rest[P - 1]
         for i in P..<n {
             let a = s.p[i - 1]
             let before = i >= 2 ? s.p[i - 2] : a - s.dir
@@ -494,42 +528,28 @@ final class HairSim {
             let c = s.curlNow(i)
             let bend = (0.1 + 0.24 * c + (s.kind == .fringe ? 0.12 : 0)) * wetLimp
             var q = s.p[i] + (target - s.p[i]) * bend
-            let delta = q - a
-            let len = delta.len
-            if len > 0.0001 {
-                let corr = delta * ((len - L) / len)
-                if i == P {
-                    q -= corr
-                } else {
-                    q -= corr * 0.6
-                    s.p[i - 1] = s.p[i - 1] + corr * 0.4
-                }
-            }
-            // collisions ease in over the first points, so the root of a lock that starts inside the
-            // outline (the temples, the top of her head) is never yanked out and stretched
+            // collisions ease in over the first points of a back lock, whose root is inside the outline
             let ramp = min(1, CGFloat(i - P + 1) / 5)
-            switch s.kind {
-            case .back:
-                SalonBody.pushOutOfHead(&q, k: 1.035 * ramp)
-            case .side:
-                if q.y > 285 { SalonBody.pushOutOfHead(&q, k: 0.97 * ramp) }
-                SalonBody.pushOutOfCape(&q)
-            case .fringe:
-                SalonBody.pushOutOfCape(&q)
-            case .nape:
-                break
+            for _ in 0..<2 {
+                let dq = q - a
+                let l = dq.len
+                q = l > 0.0001 ? a + dq * (L / l) : a + d * L
+                switch s.kind {
+                case .back:
+                    SalonBody.pushOutOfHead(&q, k: 1.035 * ramp)
+                case .side:
+                    SalonBody.keepOffFace(&q, root: root)
+                    SalonBody.pushOutOfCape(&q)
+                case .fringe:
+                    SalonBody.pushOutOfCape(&q)
+                case .nape:
+                    break
+                }
+                if q.y > SalonBody.floorY { q.y = SalonBody.floorY }
+                q.x = max(-300, min(900, q.x))
             }
-            if q.y > SalonBody.floorY { q.y = SalonBody.floorY }
-            q.x = max(-300, min(900, q.x))
+            if i < moved.count { moved[i] += q - s.p[i] }
             s.p[i] = q
-        }
-        // hair doesn't stretch: no segment ends longer than a little over its length
-        for i in P..<n {
-            let a = s.p[i - 1]
-            let d = s.p[i] - a
-            let len = d.len
-            let maxL = s.segLen(i) * 1.05
-            if len > maxL { s.p[i] = a + d * (maxL / len) }
         }
     }
 

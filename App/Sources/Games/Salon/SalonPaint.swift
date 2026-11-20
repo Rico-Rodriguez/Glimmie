@@ -51,7 +51,9 @@ enum HairPainter {
             let c1 = curl(i + 1)
             let j0 = jitter.indices.contains(i) ? jitter[i] : 0
             let j1 = jitter.indices.contains(i + 1) ? jitter[i + 1] : 0
-            let frizzK: CGFloat = i + 1 >= pinned ? 6.5 : 1.5
+            // frizz is a slow, uneven wave (not per-point noise), easing in past the scalp
+            let f0: CGFloat = i >= pinned ? min(1, CGFloat(i - pinned + 1) / 3) : 0
+            let f1: CGFloat = i + 1 >= pinned ? min(1, CGFloat(i + 2 - pinned) / 3) : 0
             for k in 0..<sub {
                 let t = CGFloat(k) / CGFloat(sub)
                 let b = catmull(p0, p1, p2, p3, t)
@@ -59,15 +61,17 @@ enum HairPainter {
                 last = b
                 let c = c0 + (c1 - c0) * t
                 let jit = j0 + (j1 - j0) * t
-                let wave = c * 11 * sin(phase + arc * 0.21)
-                let frizz = tangle * frizzK * jit
+                let f = f0 + (f1 - f0) * t
+                let wave = c * 10 * sin(phase + arc * 0.2)
+                let frizz = tangle * f * (2.6 * sin(phase * 3.1 + arc * 0.32) * (0.6 + 0.4 * sin(phase * 1.7 + arc * 0.09))
+                    + 0.6 * jit)
                 out.append(b + tan.perp * (wave + frizz))
             }
         }
         let tipTan = (nodes[n - 1] - nodes[n - 2]).unit
         let cEnd = curl(n - 1)
         arc += nodes[n - 1].dist(last)
-        out.append(nodes[n - 1] + tipTan.perp * (cEnd * 11 * sin(phase + arc * 0.21)))
+        out.append(nodes[n - 1] + tipTan.perp * (cEnd * 10 * sin(phase + arc * 0.2)))
         return out
     }
 
@@ -86,14 +90,15 @@ enum HairPainter {
             let nrm = (b - a).unit.perp
             let u = CGFloat(k) / CGFloat(m - 1)
             var w = width * 0.5
-            if u > 0.62 { w *= max(0.1, 1 - (u - 0.62) / 0.38 * 0.9) }
-            if rootTaper && u < 0.2 { w *= 0.3 + 0.7 * (u / 0.2) }
+            if u > 0.55 { w *= max(0.22, 1 - (u - 0.55) / 0.45 * 0.78) }
+            if rootTaper && u < 0.15 { w *= 0.55 + 0.45 * (u / 0.15) }
             left.append((line[k] + nrm * w).cg)
             right.append((line[k] - nrm * w).cg)
         }
         path.move(to: left[0])
         path.addLines(left)
-        path.addLine(to: line[m - 1].cg)
+        let tipDir = (line[m - 1] - line[m - 2]).unit
+        path.addQuadCurve(to: right[m - 1], control: (line[m - 1] + tipDir * (width * 0.12)).cg)
         path.addLines(right.reversed())
         path.closeSubpath()
         return path
@@ -148,29 +153,75 @@ enum HairPainter {
         return Shades.outline(wetColor(c, wet)).color
     }
 
-    /// One lock, fully drawn.
-    static func drawLock(nodes: [HairV], pinned: Int, colors: [RGB], curl: (Int) -> CGFloat, tangle: CGFloat,
-                         jitter: [CGFloat], phase: CGFloat, width: CGFloat, wet: CGFloat, gloss: CGFloat,
-                         darker: Bool, rootTaper: Bool, in ctx: GraphicsContext) {
-        guard nodes.count >= 2 else { return }
-        let line = centerline(nodes, pinned: pinned, curl: curl, tangle: tangle, jitter: jitter, phase: phase)
-        let w = width * (1 - 0.14 * wet)
-        let shape = ribbon(line, width: w, rootTaper: rootTaper)
-        ctx.fill(shape, with: shading(nodes, colors: colors, wet: wet, darker: darker))
-        ctx.stroke(shape, with: .color(outlineColor(colors, wet)), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
-        let lightBase = colors[min(colors.count - 1, max(0, pinned))]
-        let light = Shades.light(wetColor(lightBase, wet)).color
-        let alpha = (darker ? 0.25 : 0.5) + 0.35 * Double(gloss) + 0.25 * Double(wet)
-        var g = ctx
-        g.opacity = min(1, alpha)
-        g.stroke(streak(line, width: w, from: rootTaper ? 0.12 : 0.04, to: 0.5 + 0.2 * gloss),
-                 with: .color(light), style: StrokeStyle(lineWidth: 2.6 + 2 * gloss, lineCap: .round, lineJoin: .round))
+    /// A lock ready to paint.
+    struct Lock {
+        var line: [HairV]
+        var width: CGFloat
+        var fill: GraphicsContext.Shading
+        var outline: Color
+        var light: Color
+        var lightAlpha: Double
+        var gloss: CGFloat
+        var rootTaper: Bool
+        var shape: Path
     }
 
-    static func draw(_ s: HairStrand, darker: Bool, in ctx: GraphicsContext) {
-        drawLock(nodes: s.p, pinned: s.pinned, colors: Array(s.color.prefix(s.p.count)), curl: { s.curlNow($0) },
-                 tangle: s.tangle, jitter: s.jitter, phase: s.phase, width: s.width, wet: s.wet, gloss: s.gloss,
-                 darker: darker, rootTaper: s.front, in: ctx)
+    static func lock(nodes: [HairV], pinned: Int, colors: [RGB], curl: (Int) -> CGFloat, tangle: CGFloat,
+                     jitter: [CGFloat], phase: CGFloat, width: CGFloat, wet: CGFloat, gloss: CGFloat,
+                     darker: Bool, rootTaper: Bool) -> Lock? {
+        guard nodes.count >= 2, !colors.isEmpty else { return nil }
+        let line = centerline(nodes, pinned: pinned, curl: curl, tangle: tangle, jitter: jitter, phase: phase)
+        let w = width * (1 - 0.14 * wet)
+        let lightBase = colors[min(colors.count - 1, max(0, pinned))]
+        return Lock(line: line, width: w, fill: shading(nodes, colors: colors, wet: wet, darker: darker),
+                    outline: outlineColor(colors, wet), light: Shades.light(wetColor(lightBase, wet)).color,
+                    lightAlpha: min(1, (darker ? 0.25 : 0.5) + 0.35 * Double(gloss) + 0.25 * Double(wet)),
+                    gloss: gloss, rootTaper: rootTaper, shape: ribbon(line, width: w, rootTaper: rootTaper))
+    }
+
+    /// Paints locks as one head of hair: every outline first, then every fill on top, so the dark line
+    /// only shows around the outside of the hair and between locks, like the Dress Up hair, then a little
+    /// strand texture and the shine.
+    static func paint(_ locks: [Lock], cap: (path: Path, color: Color, outline: Color)? = nil, in ctx: GraphicsContext) {
+        let edge = StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+        if let cap { ctx.stroke(cap.path, with: .color(cap.outline), style: edge) }
+        for l in locks { ctx.stroke(l.shape, with: .color(l.outline), style: edge) }
+        if let cap { ctx.fill(cap.path, with: .color(cap.color)) }
+        for l in locks { ctx.fill(l.shape, with: l.fill) }
+        var tex = ctx
+        tex.opacity = 0.28
+        let thin = StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
+        for l in locks {
+            for off: CGFloat in [-0.18, 0.2] {
+                tex.stroke(offsetLine(l.line, by: l.width * off, from: 0.15, to: 0.8), with: .color(l.outline), style: thin)
+            }
+        }
+        for l in locks {
+            var g = ctx
+            g.opacity = l.lightAlpha
+            g.stroke(streak(l.line, width: l.width, from: l.rootTaper ? 0.12 : 0.04, to: 0.45 + 0.2 * l.gloss),
+                     with: .color(l.light), style: StrokeStyle(lineWidth: 2.6 + 2 * l.gloss, lineCap: .round, lineJoin: .round))
+        }
+    }
+
+    static func offsetLine(_ line: [HairV], by off: CGFloat, from u0: CGFloat, to u1: CGFloat) -> Path {
+        var path = Path()
+        let m = line.count
+        guard m >= 3 else { return path }
+        let a = Int(CGFloat(m - 1) * u0)
+        let b = max(a + 1, Int(CGFloat(m - 1) * u1))
+        for k in a...min(b, m - 1) {
+            let nrm = (line[min(m - 1, k + 1)] - line[max(0, k - 1)]).unit.perp
+            let q = (line[k] + nrm * off).cg
+            if k == a { path.move(to: q) } else { path.addLine(to: q) }
+        }
+        return path
+    }
+
+    static func lock(_ s: HairStrand, darker: Bool) -> Lock? {
+        lock(nodes: s.p, pinned: s.pinned, colors: Array(s.color.prefix(s.p.count)), curl: { s.curlNow($0) },
+             tangle: s.tangle, jitter: s.jitter, phase: s.phase, width: s.width, wet: s.wet, gloss: s.gloss,
+             darker: darker, rootTaper: s.front)
     }
 
     static func draw(_ piece: HairPiece, in ctx: GraphicsContext) {
@@ -178,10 +229,11 @@ enum HairPainter {
         if piece.age > 30 { g.opacity = max(0, 1 - (piece.age - 30) / 6) }
         let curl = piece.curl
         let wet = piece.wet
-        drawLock(nodes: piece.p, pinned: 1, colors: piece.color,
-                 curl: { i in i < curl.count ? curl[i] * (1 - 0.7 * wet) : 0 },
-                 tangle: piece.tangle, jitter: piece.jitter, phase: piece.phase, width: piece.width, wet: piece.wet,
-                 gloss: 0, darker: false, rootTaper: false, in: g)
+        guard let l = lock(nodes: piece.p, pinned: 1, colors: piece.color,
+                           curl: { i in i < curl.count ? curl[i] * (1 - 0.7 * wet) : 0 },
+                           tangle: piece.tangle, jitter: piece.jitter, phase: piece.phase, width: piece.width,
+                           wet: piece.wet, gloss: 0, darker: false, rootTaper: false) else { return }
+        paint([l], in: g)
     }
 
     // MARK: Layers
@@ -189,7 +241,7 @@ enum HairPainter {
     /// Back and nape locks (behind her head).
     static func drawBack(_ sim: HairSim, in ctx: GraphicsContext) {
         let back = sim.strands.filter { !$0.front }.sorted { $0.order < $1.order }
-        for s in back { draw(s, darker: true, in: ctx) }
+        paint(back.compactMap { lock($0, darker: true) }, in: ctx)
     }
 
     /// The scalp under the front locks, the front locks, and the shine.
@@ -206,10 +258,8 @@ enum HairPainter {
         }
         let k = 1.0 / Double(front.count)
         let avg = wetColor(RGB(r * k, g * k, b * k), wet / CGFloat(front.count))
-        let cap = capPath()
-        ctx.fill(cap, with: .color(avg.color))
-        ctx.stroke(cap, with: .color(Shades.outline(avg).color), style: StrokeStyle(lineWidth: 2.4, lineJoin: .round))
-        for s in front.sorted(by: { $0.order < $1.order }) { draw(s, darker: false, in: ctx) }
+        paint(front.sorted(by: { $0.order < $1.order }).compactMap { lock($0, darker: false) },
+              cap: (capPath(), avg.color, Shades.outline(avg).color), in: ctx)
         // the part
         var part = Path()
         part.move(to: CGPoint(x: 300, y: 150))

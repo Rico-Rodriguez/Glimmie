@@ -20,6 +20,26 @@ final class SalonTests: XCTestCase {
         }
     }
 
+    /// Hair left alone comes to rest (it used to flicker and fly around the head forever).
+    func testHairComesToRest() {
+        for seed: UInt64 in [3, 8, 21] {
+            for length in 0...3 {
+                let s = HairSim(recipe: HairRecipe(seed: seed, color: 2, length: length, fringe: 6, curl: seed == 8 ? 0.8 : 0,
+                                                   tangle: 0.8), palette: DressUpArt.shared.hair)
+                s.settle(seconds: 6)
+                let before = s.strands.map(\.p)
+                s.settle(seconds: 1)
+                var most: CGFloat = 0
+                for (i, st) in s.strands.enumerated() {
+                    for k in st.p.indices where k < before[i].count { most = max(most, st.p[k].dist(before[i][k])) }
+                    // bangs stop above her eyebrows
+                    if st.kind == .fringe { XCTAssertLessThan(st.tip.y, 300) }
+                }
+                XCTAssertLessThan(most, 2, "seed \(seed) length \(length)")
+            }
+        }
+    }
+
     func testScissorsCutAndPiecesFall() {
         let s = sim()
         s.settle(seconds: 1)
