@@ -407,7 +407,11 @@ final class SalonWorld {
     private func restyle(at q: HairV) -> Bool {
         guard let style = sim.restyle(near: q) else { return false }
         SalonSound.shared.play(.clip)
-        SalonSound.shared.play(style == .bun ? .boing : .comb, volume: 0.5, gap: 0.2)
+        if style == .bun {
+            SalonSound.shared.play(.boing, volume: 0.5, gap: 0.2)
+        } else {
+            SalonSound.shared.play(SalonSFX.comb, volume: 0.5, gap: 0.2)
+        }
         sparkle(at: q, count: 10)
         cheerSmall()
         changed = true
