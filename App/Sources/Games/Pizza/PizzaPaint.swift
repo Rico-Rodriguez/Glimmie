@@ -397,7 +397,7 @@ enum PizzaPainter {
         g.stroke(path, with: .color(base.mul(0.66, 0.55, 0.45).color.opacity(0.8)), lineWidth: 2)
     }
 
-    static func drawPlaced(_ g: GraphicsContext, _ tp: PlacedTopping, sim: PizzaSim) {
+    static func drawPlaced(_ g: GraphicsContext, _ tp: PizzaTopping, sim: PizzaSim) {
         let c = PGeo.center
         var x = tp.x - c.x, y = tp.y - c.y
         let age = sim.time - tp.born

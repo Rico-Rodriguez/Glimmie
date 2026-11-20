@@ -144,7 +144,7 @@ final class PizzaTests: XCTestCase {
     func testOrderStarsAreGentle() {
         let o = PizzaOrder(customer: 0, wants: [.basil])
         XCTAssertEqual(o.stars([]), 1)
-        let two = (0..<2).map { PlacedTopping(kind: .basil, x: 0, y: 0, rot: 0, scale: 1, seed: $0, born: 0, from: nil) }
+        let two = (0..<2).map { PizzaTopping(kind: .basil, x: 0, y: 0, rot: 0, scale: 1, seed: $0, born: 0, from: nil) }
         XCTAssertEqual(o.stars(two), 3)
         for seed in 0..<50 {
             let r = PizzaOrder.random(customer: 1, seed: seed)

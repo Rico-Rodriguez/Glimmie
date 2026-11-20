@@ -53,7 +53,7 @@ enum PGeo {
     static let bakeTime: Double = 9
 }
 
-struct PlacedTopping {
+struct PizzaTopping {
     var kind: ToppingKind
     var x: CGFloat
     var y: CGFloat
@@ -65,7 +65,7 @@ struct PlacedTopping {
     var from: CGPoint?
 }
 
-struct Shred {
+struct CheeseShred {
     var x: CGFloat, y: CGFloat, z: CGFloat
     var vx: CGFloat, vy: CGFloat, vz: CGFloat
     var ang: Double
@@ -74,10 +74,10 @@ struct Shred {
     var tone: CGFloat
 }
 
-enum PuffKind { case flour, steam, crumb, heart, smoke }
+enum PizzaPuffKind { case flour, steam, crumb, heart, smoke }
 
-struct Puff {
-    var kind: PuffKind
+struct PizzaPuff {
+    var kind: PizzaPuffKind
     var x: CGFloat, y: CGFloat
     var vx: CGFloat, vy: CGFloat
     var r: CGFloat
@@ -86,14 +86,14 @@ struct Puff {
     var seed: Int
 }
 
-struct Bubble {
+struct CheeseBubble {
     var x: CGFloat, y: CGFloat
     var age: Double
     var life: Double
     var size: CGFloat
 }
 
-struct Flame {
+struct OvenFlame {
     var x: CGFloat, y: CGFloat
     var vx: CGFloat, vy: CGFloat
     var age: Double
@@ -139,12 +139,12 @@ struct PizzaOrder: Equatable {
     /// Enough of one wanted topping to count (a single piece is easy to miss on a big pizza).
     static let enough = 2
 
-    func has(_ k: ToppingKind, _ toppings: [PlacedTopping]) -> Bool {
+    func has(_ k: ToppingKind, _ toppings: [PizzaTopping]) -> Bool {
         toppings.filter { $0.kind == k }.count >= PizzaOrder.enough
     }
 
     /// Gentle stars: 3 when every wanted topping is on, 2 for some, and always at least 1.
-    func stars(_ toppings: [PlacedTopping]) -> Int {
+    func stars(_ toppings: [PizzaTopping]) -> Int {
         let n = wants.filter { has($0, toppings) }.count
         return n == wants.count ? 3 : n > 0 ? 2 : 1
     }
@@ -203,7 +203,7 @@ final class PizzaSim {
     var sauceVersion = 0
     var cheeseVersion = 0
     let shredLayer = ShredLayer()
-    var falling: [Shred] = []
+    var falling: [CheeseShred] = []
     var landed = 0
     var sauceCoverage: Double = 0
     var cheeseCoverage: Double = 0
@@ -212,14 +212,14 @@ final class PizzaSim {
     private var spreadSpeed: CGFloat = 0
 
     // MARK: toppings
-    var toppings: [PlacedTopping] = []
+    var toppings: [PizzaTopping] = []
 
     // MARK: the oven
     var bake: Double = 0
     var inOven = false
     var ovenSlide: Double = 0
-    var bubbles: [Bubble] = []
-    var flames: [Flame] = []
+    var bubbles: [CheeseBubble] = []
+    var flames: [OvenFlame] = []
     var flare: Double = 0
     var outAt: Double = -100
     private var dinged = false
@@ -242,7 +242,7 @@ final class PizzaSim {
     var liftK: CGFloat = 0
     var toolLast = CGPoint.zero
 
-    var puffs: [Puff] = []
+    var puffs: [PizzaPuff] = []
     var rng = SeededRandom(Int.random(in: 0..<1_000_000))
 
     init(load: Bool = true) {
@@ -606,7 +606,7 @@ final class PizzaSim {
         if toppings.count >= 90 { toppings.removeFirst() }
         let seed = rng.int(10_000)
         let rot = rng.unit() * 360
-        toppings.append(PlacedTopping(kind: k, x: p.x, y: p.y, rot: rot, scale: 0.92 + CGFloat(rng.unit()) * 0.16,
+        toppings.append(PizzaTopping(kind: k, x: p.x, y: p.y, rot: rot, scale: 0.92 + CGFloat(rng.unit()) * 0.16,
                                       seed: seed, born: time, from: from))
         if from == nil {
             PizzaSound.shared.play(.plop, volume: 0.8)
@@ -792,7 +792,7 @@ final class PizzaSim {
         guard falling.count < 400 else { return }
         let a = rng.unit() * 2 * .pi
         let d = CGFloat(sqrt(rng.unit())) * spread
-        falling.append(Shred(x: p.x + CGFloat(cos(a)) * d, y: p.y + CGFloat(sin(a)) * d, z: z,
+        falling.append(CheeseShred(x: p.x + CGFloat(cos(a)) * d, y: p.y + CGFloat(sin(a)) * d, z: z,
                              vx: CGFloat(rng.unit() - 0.5) * 70 + push.x * 4, vy: CGFloat(rng.unit() - 0.5) * 70 + push.y * 4,
                              vz: -0.5, ang: rng.unit() * .pi, len: 13 + CGFloat(rng.unit()) * 13,
                              curl: CGFloat(rng.unit() - 0.5) * 0.9, tone: CGFloat(rng.unit())))
@@ -800,7 +800,7 @@ final class PizzaSim {
 
     private func stepShreds(_ dt: CGFloat) {
         guard !falling.isEmpty else { return }
-        var keep: [Shred] = []
+        var keep: [CheeseShred] = []
         keep.reserveCapacity(falling.count)
         var any = false
         for var s in falling {
@@ -873,7 +873,7 @@ final class PizzaSim {
             }
         }
         if !flames.isEmpty {
-            var keep: [Flame] = []
+            var keep: [OvenFlame] = []
             keep.reserveCapacity(flames.count)
             for var f in flames {
                 f.age += dt
@@ -911,7 +911,7 @@ final class PizzaSim {
         guard flames.count < 260 else { return }
         let spark = !big && rng.unit() < 0.1
         let x = 230 + CGFloat(rng.unit()) * 170
-        flames.append(Flame(x: x, y: 330 - CGFloat(rng.unit()) * 14, vx: CGFloat(rng.unit() - 0.5) * 30,
+        flames.append(OvenFlame(x: x, y: 330 - CGFloat(rng.unit()) * 14, vx: CGFloat(rng.unit() - 0.5) * 30,
                             vy: spark ? -150 - CGFloat(rng.unit()) * 120 : -70 - CGFloat(rng.unit()) * 70 - (big ? 80 : 0),
                             age: 0, life: spark ? 1.4 : 0.55 + rng.unit() * 0.5 + (big ? 0.3 : 0),
                             size: spark ? 2.5 : (24 + CGFloat(rng.unit()) * 22) * (big ? 1.4 : 1), spark: spark))
@@ -923,13 +923,13 @@ final class PizzaSim {
         let g = PGeo.grid
         let fx = Int((p.x - (PGeo.center.x - PGeo.half)) / PGeo.cell), fy = Int((p.y - (PGeo.center.y - PGeo.half)) / PGeo.cell)
         guard fx >= 0, fy >= 0, fx < g, fy < g, cheese[gridIndex(fx, fy)] > 0.25 else { return }
-        bubbles.append(Bubble(x: p.x - PGeo.center.x, y: p.y - PGeo.center.y, age: 0, life: 0.6 + rng.unit() * 0.9,
+        bubbles.append(CheeseBubble(x: p.x - PGeo.center.x, y: p.y - PGeo.center.y, age: 0, life: 0.6 + rng.unit() * 0.9,
                               size: 4 + CGFloat(rng.unit()) * 7))
     }
 
     private func stepBubbles(_ dt: Double) {
         guard !bubbles.isEmpty else { return }
-        var keep: [Bubble] = []
+        var keep: [CheeseBubble] = []
         for var b in bubbles {
             b.age += dt
             if b.age >= b.life {
@@ -990,7 +990,7 @@ final class PizzaSim {
         PizzaSound.shared.play(.crunch)
         for _ in 0..<8 {
             let d = CGFloat(rng.unit() * 2 - 1) * meanR
-            puffs.append(Puff(kind: .crumb, x: PGeo.center.x + CGFloat(cos(t)) * d, y: PGeo.center.y + CGFloat(sin(t)) * d,
+            puffs.append(PizzaPuff(kind: .crumb, x: PGeo.center.x + CGFloat(cos(t)) * d, y: PGeo.center.y + CGFloat(sin(t)) * d,
                               vx: CGFloat(rng.unit() - 0.5) * 120, vy: -40 - CGFloat(rng.unit()) * 80, r: 2 + CGFloat(rng.unit()) * 2,
                               age: 0, life: 0.5, seed: rng.int(1000)))
         }
@@ -1120,7 +1120,7 @@ final class PizzaSim {
             happyUntil = time + 2.2
             PizzaSound.shared.play(.nom)
             for k in 0..<5 {
-                puffs.append(Puff(kind: .heart, x: PGeo.customer.x + CGFloat(k - 2) * 24, y: PGeo.customer.y - 60,
+                puffs.append(PizzaPuff(kind: .heart, x: PGeo.customer.x + CGFloat(k - 2) * 24, y: PGeo.customer.y - 60,
                                   vx: CGFloat(k - 2) * 14, vy: -70 - CGFloat(rng.unit()) * 40, r: 14, age: -Double(k) * 0.08,
                                   life: 1.4, seed: k))
             }
@@ -1218,7 +1218,7 @@ final class PizzaSim {
             let a = rng.unit() * 2 * .pi
             let d = CGFloat(rng.unit()) * spread
             let x = p.x + CGFloat(cos(a)) * d, y = p.y + CGFloat(sin(a)) * d
-            puffs.append(Puff(kind: .flour, x: x, y: y, vx: CGFloat(cos(a)) * 40, vy: CGFloat(sin(a)) * 40 - 10,
+            puffs.append(PizzaPuff(kind: .flour, x: x, y: y, vx: CGFloat(cos(a)) * 40, vy: CGFloat(sin(a)) * 40 - 10,
                               r: 8 + CGFloat(rng.unit()) * 12, age: 0, life: 0.7 + rng.unit() * 0.5, seed: rng.int(1000)))
         }
     }
@@ -1230,12 +1230,12 @@ final class PizzaSim {
             let rate = 9 * (1 - hot / 14)
             if rng.unit() < rate * dt {
                 let p = randomSpot(0.8)
-                puffs.append(Puff(kind: .steam, x: p.x, y: p.y, vx: CGFloat(rng.unit() - 0.5) * 10, vy: -30 - CGFloat(rng.unit()) * 20,
+                puffs.append(PizzaPuff(kind: .steam, x: p.x, y: p.y, vx: CGFloat(rng.unit() - 0.5) * 10, vy: -30 - CGFloat(rng.unit()) * 20,
                                   r: 16 + CGFloat(rng.unit()) * 14, age: 0, life: 2 + rng.unit(), seed: rng.int(1000)))
             }
         }
         guard !puffs.isEmpty else { return }
-        var keep: [Puff] = []
+        var keep: [PizzaPuff] = []
         keep.reserveCapacity(puffs.count)
         let d = CGFloat(dt)
         for var p in puffs {
@@ -1310,7 +1310,7 @@ final class ShredLayer {
         version += 1
     }
 
-    func add(_ s: Shred, center: CGPoint, half: CGFloat) {
+    func add(_ s: CheeseShred, center: CGPoint, half: CGFloat) {
         guard let c = ctx else { return }
         let x = s.x - (center.x - half), y = s.y - (center.y - half)
         let dx = CGFloat(cos(s.ang)) * s.len / 2, dy = CGFloat(sin(s.ang)) * s.len / 2
@@ -1395,7 +1395,7 @@ extension PizzaSim {
     func demoCheese(_ count: Int) {
         for _ in 0..<count {
             let p = randomSpot(0.97)
-            let s = Shred(x: p.x, y: p.y, z: 0, vx: 0, vy: 0, vz: 0, ang: rng.unit() * .pi, len: 13 + CGFloat(rng.unit()) * 13,
+            let s = CheeseShred(x: p.x, y: p.y, z: 0, vx: 0, vy: 0, vz: 0, ang: rng.unit() * .pi, len: 13 + CGFloat(rng.unit()) * 13,
                           curl: CGFloat(rng.unit() - 0.5) * 0.9, tone: CGFloat(rng.unit()))
             shredLayer.add(s, center: PGeo.center, half: PGeo.half)
             deposit(&cheese, x: p.x, y: p.y, 0.16)
