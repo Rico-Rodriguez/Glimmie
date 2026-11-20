@@ -144,3 +144,18 @@ history before the game-drawer PR.
   Every plant and weed is a damped spring pushed by wind, rain, water and her finger.
 - Saves `garden.json`. Sounds: `python3 tools/garden/sounds.py`. Screenshot hooks: `-gardenDemo`, `-gardenTool can|shovel|seeds`,
   `-gardenWeather sun|rain|wind|night` (screenshot hooks never save).
+
+## Bubble Spa decisions
+- The tub is clear glass seen from the side, so filling, waves, bath-bomb clouds and bubbles all show. Things under the
+  water are drawn first and the water is laid over them, so the water tints them (`SpaPaint.swift`).
+- Water is a depth (`vol`) plus a 1D wave (`h`, `hv`, 148 columns of 5 pt) stepped at 120 Hz; waves are quicker in deeper
+  water, reflect off the ends, and the mean is kept at zero so waves never make or lose water. Toys, bombs, her hands, the
+  tap's stream, drops and rising air bubbles all push on it.
+- Bubble bath only foams when the water is churned (the stream, swishing, fizzing bombs, sponge), like the real thing.
+  Foam is a thickness and tint per column; thick foam slumps, drifts to the plug when draining and slowly fades.
+- Toys and bombs float by buoyancy (`density` is the part under water at rest). Bombs sink, then bob up once fizzing
+  (about 11 s), spin and scoot, dye the water and foam, and some shed glitter that settles on the bottom.
+- She is the Dress Up girl's current look with only face, hair, makeup and earrings (`SpaSim.bathLook`). The face mask is
+  a 20 x 16 grid between her face and her eyes/mouth layers; it dries in about 9 s, then cracks. Sponge, shower and towel
+  wipe it. Two cucumber slices close her eyes; a tap flips one off into the bath.
+- Nothing is saved: every bath starts fresh. Screenshot hooks: `-spaDemo full | bomb | mask | wand | towel`.

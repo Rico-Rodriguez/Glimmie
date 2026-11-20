@@ -224,6 +224,12 @@ jobs:
           shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
           shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
           shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
+          shot spa-1-new 6 -game spa
+          shot spa-2-filling 8 -game spa -spaDemo full
+          shot spa-3-bomb 8 -game spa -spaDemo bomb
+          shot spa-4-mask 8 -game spa -spaDemo mask
+          shot spa-5-wand 8 -game spa -spaDemo wand
+          shot spa-6-towel 8 -game spa -spaDemo towel
           shot salon-1-chair 7 -game salon
           shot salon-2-wash 7 -game salon -salonDemo wash
           shot salon-3-cut 7 -game salon -salonDemo cut

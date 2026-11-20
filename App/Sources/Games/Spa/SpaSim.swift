@@ -862,7 +862,7 @@ final class SpaSim {
             // onto her face or shoulders
             if dr.v.dy > 0 {
                 let dd = SGeo.toDoll(dr.p)
-                if SGeo.onHer(dd) && !SGeo.inHead(dd, pad: -6) == false || (SGeo.onHer(dd) && dd.y > 400) {
+                if SGeo.onHer(dd) {
                     if CGFloat.random(in: 0...1) < 0.35 { addBead(dd) }
                     if dr.kind == .water || dr.kind == .spray { rinse(at: dd, amount: 0.05) }
                     if CGFloat.random(in: 0...1) < 0.6 { continue }
