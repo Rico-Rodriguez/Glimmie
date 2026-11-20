@@ -181,6 +181,7 @@ jobs:
           shot 3-dressup-random 6 -game dressup -randomLook
           shot 4-dressup-clothes 6 -game dressup -randomLook -tab clothes
           shot 5-dressup-gallery 6 -game dressup -demoGallery
+          shot 5b-dressup-stickers 6 -game dressup -randomLook -demoCompanion -demoStudio
           shot 7-dressup-pets 6 -game dressup -petDemo dressed
           shot 7b-pets-closet 6 -game dressup -petDemo closet
           shot 7c-pets-picker 6 -game dressup -petDemo pets

@@ -192,4 +192,43 @@ final class DressUpTests: XCTestCase {
             for (slot, id) in set.pet { XCTAssertEqual(on.pet?.wear[slot], id, "\(set.id) pet: \(slot)") }
         }
     }
+
+    func testPhotoStickersSaveAndSanitize() throws {
+        var l = Look.starter
+        l.stickers = [PhotoSticker(kind: "heart.fill", x: 2, y: -1, size: 9, turn: 30),
+                      PhotoSticker(kind: "item:h_crown", x: 0.5, y: 0.5),
+                      PhotoSticker(kind: "pet:kitty", x: 0.4, y: 0.6),
+                      PhotoSticker(kind: "mypet", x: 0.4, y: 0.6),
+                      PhotoSticker(kind: "nope", x: 0.5, y: 0.5),
+                      PhotoSticker(kind: "item:zzz", x: 0.5, y: 0.5)]
+        l.frame = "stars"
+        let s = l.sanitized()
+        XCTAssertEqual(s.stickers.map(\.kind), ["heart.fill", "item:h_crown", "pet:kitty", "mypet"])
+        XCTAssertEqual(s.stickers[0].x, 1); XCTAssertEqual(s.stickers[0].y, 0); XCTAssertEqual(s.stickers[0].size, 0.5)
+        XCTAssertEqual(s.frame, "stars")
+        let back = try JSONDecoder().decode(Look.self, from: JSONEncoder().encode(s))
+        XCTAssertEqual(back.stickers, s.stickers)
+        XCTAssertEqual(back.frame, "stars")
+        l.frame = "zzz"
+        XCTAssertNil(l.sanitized().frame)
+        for k in Stickers.items { XCTAssertNotNil(art.items[k], k) }
+        for k in Stickers.pets { XCTAssertNotNil(PetArt.shared.animals[k], k) }
+        // old saves without stickers still load
+        let old = try JSONDecoder().decode(Look.self, from: Data(#"{"skin":2,"bg":"bg_park"}"#.utf8))
+        XCTAssertTrue(old.stickers.isEmpty)
+        XCTAssertNil(old.frame)
+    }
+
+    func testGalleryPhotosStartPlainAndUpdate() {
+        let store = LookStore()
+        store.current.stickers = [PhotoSticker(kind: "star.fill", x: 0.5, y: 0.5)]
+        var photo = store.saveToGallery()
+        XCTAssertTrue(photo.stickers.isEmpty)
+        photo.frame = "gold"
+        store.update(photo)
+        XCTAssertEqual(store.gallery.first?.frame, "gold")
+        store.open(photo)
+        XCTAssertNil(store.current.frame)
+        store.delete(photo)
+    }
 }

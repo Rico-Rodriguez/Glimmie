@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Saved looks. Tap one to dress her in it again; the little x deletes it (after a second tap to be sure).
+/// Saved looks. Tap one to dress her in it again; the little x deletes it (after a second tap to be sure);
+/// the star opens the sticker studio.
 struct GalleryView: View {
     @ObservedObject var store: LookStore
     let close: () -> Void
     let open: (Look) -> Void
     @State private var confirming: UUID?
     @State private var savedToPhotos: Set<UUID> = []
+    @State private var decorating: Look?
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 22), count: 4)
 
@@ -53,6 +55,15 @@ struct GalleryView: View {
                     }
                 }
             }
+            if let d = decorating {
+                PhotoStudio(look: d) { look in
+                    store.update(look)
+                    savedToPhotos.remove(look.id)
+                    withAnimation(.spring(response: 0.4)) { decorating = nil }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(1)
+            }
         }
     }
 
@@ -62,13 +73,9 @@ struct GalleryView: View {
                 Sound.shared.play(.pop)
                 open(look)
             } label: {
-                ZStack(alignment: .bottom) {
-                    SceneView(bg: look.bg)
-                    DollView(look: look)
-                        .padding(.top, 14)
-                }
-                .frame(height: 300)
-                .frame(maxWidth: .infinity)
+                PhotoView(look: look)
+                    .aspectRatio(PhotoBase.aspect, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
                 .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white, lineWidth: 8))
                 .shadow(color: Theme.ink.opacity(0.2), radius: 10, y: 6)
@@ -112,6 +119,22 @@ struct GalleryView: View {
             }
             .buttonStyle(Squish())
             .offset(x: -6, y: 8)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            // decorate it with stickers and a frame
+            Button {
+                Sound.shared.play(.whoosh, volume: 0.6)
+                withAnimation(.spring(response: 0.4)) { decorating = look }
+            } label: {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 50, height: 50)
+                    .background(Circle().fill(Color(hex: 0xFFB23E)))
+                    .overlay(Circle().stroke(.white, lineWidth: 3))
+            }
+            .buttonStyle(Squish())
+            .offset(x: 6, y: 8)
         }
     }
 }

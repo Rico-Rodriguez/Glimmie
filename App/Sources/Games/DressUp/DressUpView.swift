@@ -10,6 +10,8 @@ struct DressUpView: View {
     @State private var burst = 0
     @State private var flash = false
     @State private var showGallery = false
+    /// The photo she just took, open in the sticker studio.
+    @State private var studio: Look?
     @State private var galleryBounce = false
     @State private var showPets = false
     @State private var danceID = 0
@@ -52,6 +54,18 @@ struct DressUpView: View {
                             })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(2)
+            }
+            if let photo = studio {
+                PhotoStudio(look: photo) { look in
+                    store.update(look)
+                    withAnimation(.spring(response: 0.4)) { studio = nil }
+                    galleryBounce = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation(.spring(response: 0.3)) { galleryBounce = false }
+                    }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(2)
             }
             if let b = battle, b.phase == .intro {
                 BattleIntroView(state: b,
@@ -175,7 +189,7 @@ struct DressUpView: View {
         }
     }
 
-    /// Simulator screenshot hooks: -randomLook, -tab <group>, -demoGallery.
+    /// Simulator screenshot hooks: -randomLook, -tab <group>, -demoGallery, -demoStudio, -demoDance.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-randomLook") { store.current = Look.random().sanitized() }
@@ -199,9 +213,28 @@ struct DressUpView: View {
             let keep = store.current
             for _ in 0..<8 { store.current = Look.random().sanitized(); store.saveToGallery() }
             store.current = keep
+            if var first = store.gallery.first {
+                first.stickers = Self.demoStickers
+                first.frame = "hearts"
+                store.update(first)
+            }
             showGallery = true
         }
+        if args.contains("-demoStudio") {
+            var photo = store.saveToGallery()
+            photo.stickers = Self.demoStickers + [PhotoSticker(kind: "pet:bunny", x: 0.2, y: 0.62, size: 0.28, turn: -6)]
+            photo.frame = "stars"
+            store.update(photo)
+            studio = photo
+        }
     }
+
+    private static let demoStickers = [
+        PhotoSticker(kind: "heart.fill", x: 0.18, y: 0.14, size: 0.2, turn: -12),
+        PhotoSticker(kind: "star.fill", x: 0.82, y: 0.2, size: 0.28, turn: 10),
+        PhotoSticker(kind: "sparkles", x: 0.74, y: 0.5, size: 0.14, turn: 0),
+        PhotoSticker(kind: "item:h_crown", x: 0.3, y: 0.82, size: 0.2, turn: 8),
+    ]
 
     // MARK: Actions
 
@@ -256,8 +289,12 @@ struct DressUpView: View {
     private func snap() {
         Sound.shared.play(.fanfare, volume: 0.8)
         Sound.shared.tap()
-        store.saveToGallery()
+        let photo = store.saveToGallery()
         withAnimation(.easeOut(duration: 0.08)) { flash = true }
+        // then decorate it in the sticker studio
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            withAnimation(.spring(response: 0.45)) { studio = photo }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             withAnimation(.easeIn(duration: 0.35)) { flash = false }
         }
