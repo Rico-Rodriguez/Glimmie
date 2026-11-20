@@ -509,11 +509,11 @@ struct SalonView: View {
                 let taken = world.sim.clips.contains { cl in world.sim.clipPosition(cl).map { $0.dist(s) < 30 } ?? false }
                 if taken { continue }
                 world.carry = c
-                world.dropCarry(at: CGPoint(x: world.toDesign(s).x, y: world.toDesign(s).y + SalonWorld.carryLift))
+                world.dropCarry(at: SalonWorld.carrying(to: world.toDesign(s)))
                 return
             }
             world.carry = c
-            world.dropCarry(at: CGPoint(x: world.toDesign(HairV(300, 170)).x, y: world.toDesign(HairV(300, 170)).y + SalonWorld.carryLift))
+            world.dropCarry(at: SalonWorld.carrying(to: world.toDesign(HairV(300, 170))))
         case .scrunchie(let color):
             sideTie += 1
             let left = sideTie % 2 == 1

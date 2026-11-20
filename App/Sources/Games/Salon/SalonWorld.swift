@@ -89,8 +89,10 @@ final class SalonWorld {
     // layout (design space is DesignCanvas's, 834 tall)
     static let k: CGFloat = 1.02
     static let headY: CGFloat = 298
-    /// Clips ride a little above her finger so she can see where they go.
-    static let carryLift: CGFloat = 44
+    /// Clips ride well above her finger so she can see where they go (see `FingerLift`).
+    static func carried(_ finger: CGPoint) -> CGPoint { FingerLift.point(finger, lift: FingerLift.item) }
+    /// The finger point that carries a clip to design point p (away from the top edge).
+    static func carrying(to p: CGPoint) -> CGPoint { FingerLift.finger(for: p, lift: FingerLift.item) }
     var centerX: CGFloat = 487
 
     func toDesign(_ a: HairV) -> CGPoint {
@@ -254,11 +256,16 @@ final class SalonWorld {
 
     // MARK: Fingers
 
-    var tipOffset: CGPoint { CGPoint(x: 0, y: tool == nil ? 0 : -58) }
-
-    func tip(_ finger: CGPoint) -> HairV {
-        toArt(CGPoint(x: finger.x + tipOffset.x, y: finger.y + tipOffset.y))
+    /// Where a tool works for her finger at f (design space): well above it, so her hand doesn't
+    /// hide the hair (it was 58 pt; now the shared lift, see `FingerLift`). No tool: right under it.
+    func tipDesign(_ f: CGPoint) -> CGPoint {
+        tool == nil ? f : FingerLift.point(f, width: centerX * 2 + 50)
     }
+
+    /// The finger point that puts the tool tip at design point d (away from the top edge).
+    func fingerFor(tip d: CGPoint) -> CGPoint { tool == nil ? d : FingerLift.finger(for: d, width: centerX * 2 + 50) }
+
+    func tip(_ finger: CGPoint) -> HairV { toArt(tipDesign(finger)) }
 
     func press(_ p: CGPoint) {
         finger = p
@@ -285,7 +292,7 @@ final class SalonWorld {
     func release() {
         guard finger != nil else { return }
         let q = finger.map { toArt($0) } ?? HairV(300, 300)
-        let lifted = finger.map { toArt(CGPoint(x: $0.x, y: $0.y - SalonWorld.carryLift)) } ?? q
+        let lifted = finger.map { toArt(SalonWorld.carried($0)) } ?? q
         if tool == nil && movedSinceDown < 12 && Date().timeIntervalSince(downAt) < 0.35 && SalonBody.onFace(q) {
             tickle()
         }
@@ -312,7 +319,7 @@ final class SalonWorld {
         guard let c = carry else { return }
         carry = nil
         carryPoint = nil
-        let q = toArt(CGPoint(x: p.x, y: p.y - SalonWorld.carryLift))
+        let q = toArt(SalonWorld.carried(p))
         switch c {
         case .clip(let kind, let color):
             if sim.attach(kind, color: color, at: q) {

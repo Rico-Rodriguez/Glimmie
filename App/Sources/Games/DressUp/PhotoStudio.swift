@@ -236,6 +236,8 @@ struct PhotoStudio: View {
 
     @State private var tab = 0
     @State private var moving: (id: UUID, x: Double, y: Double)?
+    /// How far the moving sticker floats above her finger (glides up as she drags, see `FingerLift`).
+    @State private var stickerLift = CGSize.zero
     @State private var overBin = false
 
     private static let photoHeight: CGFloat = 760
@@ -300,11 +302,17 @@ struct PhotoStudio: View {
                             // bring it to the front
                             let st = look.stickers.remove(at: i)
                             look.stickers.append(st)
+                            stickerLift = .zero
                             Sound.shared.play(.tap, volume: 0.6)
                         }
                         guard let m = moving, let j = index(s.id) else { return }
-                        look.stickers[j].x = m.x + v.translation.width / size.width
-                        look.stickers[j].y = m.y + v.translation.height / size.height
+                        // it floats up above her finger so she can see where it goes
+                        let under = CGPoint(x: CGFloat(m.x) * size.width + v.translation.width,
+                                            y: CGFloat(m.y) * size.height + v.translation.height)
+                        let high = max(FingerLift.item, size.width * CGFloat(s.size) * 0.5 + 30)
+                        stickerLift = FingerLift.ease(stickerLift, toward: FingerLift.offset(under, lift: high, top: 0, width: size.width))
+                        look.stickers[j].x = Double((under.x + stickerLift.width) / size.width)
+                        look.stickers[j].y = Double((under.y + stickerLift.height) / size.height)
                         let bin = inBin(look.stickers[j], size)
                         if bin != overBin { withAnimation(.spring(response: 0.25)) { overBin = bin } }
                     }
