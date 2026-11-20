@@ -14,6 +14,7 @@ struct DressUpView: View {
     @State private var studio: Look?
     @State private var galleryBounce = false
     @State private var showPets = false
+    @State private var showStory = false
     @State private var danceID = 0
     @State private var battle: BattleState?
     /// Her skirt and hair swing (a class: it changes every frame).
@@ -88,6 +89,12 @@ struct DressUpView: View {
                            done: { withAnimation(.spring(response: 0.4)) { battle = nil } })
                     .transition(.opacity)
                     .zIndex(4)
+            }
+            if showStory {
+                StoryStage(me: store.current, friends: store.gallery,
+                           close: { withAnimation(.spring(response: 0.4)) { showStory = false } })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(3)
             }
             if showPets {
                 PetCornerView(look: store.current,
@@ -172,6 +179,11 @@ struct DressUpView: View {
 
             VStack(spacing: 16) {
                 RoundButton(symbol: "music.note", tint: Color(hex: 0x46B7B0)) { dance() }
+                RoundButton(symbol: "theatermasks.fill", tint: Color(hex: 0x9B79E0)) {
+                    Sound.shared.play(.whoosh)
+                    store.flush()
+                    withAnimation(.spring(response: 0.4)) { showStory = true }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 26)
@@ -189,7 +201,7 @@ struct DressUpView: View {
         }
     }
 
-    /// Simulator screenshot hooks: -randomLook, -tab <group>, -demoGallery, -demoStudio, -demoDance.
+    /// Simulator screenshot hooks: -randomLook, -tab <group>, -demoGallery, -demoStudio, -demoStory, -demoDance.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-randomLook") { store.current = Look.random().sanitized() }
@@ -219,6 +231,12 @@ struct DressUpView: View {
                 store.update(first)
             }
             showGallery = true
+        }
+        if args.contains("-demoStory") {
+            let keep = store.current
+            for _ in 0..<3 { store.current = Look.random().sanitized(); store.saveToGallery() }
+            store.current = keep
+            showStory = true
         }
         if args.contains("-demoStudio") {
             var photo = store.saveToGallery()
