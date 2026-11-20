@@ -250,37 +250,249 @@ enum HairPainter {
              gloss: s.gloss, darker: darker, rootTaper: s.front, pointy: s.kind == .fringe)
     }
 
+    // MARK: Fine strands
+    //
+    // The locks of the simulation are guides that are never drawn themselves. Between every two
+    // neighbouring guides a few fine strands are drawn, blended between the two, over a slightly darker
+    // under-layer, so the hair reads as one soft mass of real hair. Where two guides move apart (a pull,
+    // a scrunchie, wet hair) the strands between them slide to one side or the other, so the hair parts
+    // into clumps instead of stretching between them.
+
+    /// Strands drawn between two neighbouring guides.
+    static let perPair = 5
+    static let strandWidth: CGFloat = 3.1
+
+    private struct StrandSeed { let f: CGFloat; let len: CGFloat; let tone: Double; let frizz: CGFloat }
+
+    private static let seeds: [StrandSeed] = {
+        var g = SeededGenerator(seed: 77)
+        return (0..<(perPair * 80)).map { i in
+            StrandSeed(f: (CGFloat(i % perPair) + CGFloat(Double.random(in: 0..<1, using: &g))) / CGFloat(perPair),
+                       len: CGFloat(Double.random(in: 0..<1, using: &g)), tone: Double.random(in: -1...1, using: &g),
+                       frizz: CGFloat(Double.random(in: 0..<6.28, using: &g)))
+        }
+    }()
+
+    /// Paths grouped by color, so a whole head of strands is a handful of strokes.
+    private struct Buckets {
+        var paths: [UInt32: Path] = [:]
+        var colors: [UInt32: RGB] = [:]
+        mutating func add(_ p: Path, _ c: RGB) {
+            func q(_ v: Double) -> UInt32 { UInt32(max(0, min(31, (v * 31).rounded()))) }
+            let key = (q(c.r) << 10) | (q(c.g) << 5) | q(c.b)
+            paths[key, default: Path()].addPath(p)
+            if colors[key] == nil { colors[key] = c }
+        }
+        func stroke(_ ctx: GraphicsContext, width: CGFloat) {
+            let st = StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round)
+            for (k, p) in paths { ctx.stroke(p, with: .color(colors[k]!.color), style: st) }
+        }
+    }
+
+    /// How far a lock is drawn (braids and buns end at their scrunchie).
+    private static func drawnCount(_ sim: HairSim, _ i: Int) -> Int {
+        let s = sim.strands[i]
+        return min(s.p.count, (sim.drawnEnd(i) ?? s.p.count - 1) + 1)
+    }
+
+    /// Neighbouring guides, in the order they sit around her head.
+    private static func pairs(_ sim: HairSim, front: Bool) -> [(Int, Int)] {
+        var out: [(Int, Int)] = []
+        let n = sim.strands.count
+        guard n > 1 else { return out }
+        for i in 0..<(n - 1) {
+            let a = sim.strands[i], b = sim.strands[i + 1]
+            guard a.front == b.front else { continue }
+            let depth = (a.depth + b.depth) / 2
+            if (depth >= 0) == front { out.append((i, i + 1)) }
+        }
+        return out
+    }
+
+    /// The fine strands of one side of her head (behind it, or in front of it).
+    static func drawStrands(_ sim: HairSim, front: Bool, in ctx: GraphicsContext) {
+        let list = pairs(sim, front: front)
+        guard !list.isEmpty else { return }
+        var under = Path()
+        var underColor = RGB(0, 0, 0)
+        var underN = 0.0
+        var hair = Buckets()
+        var shine = Buckets()
+        var seedIndex = 0
+        for (ia, ib) in list {
+            let A = sim.strands[ia], B = sim.strands[ib]
+            let nA = drawnCount(sim, ia), nB = drawnCount(sim, ib)
+            let m = min(nA, nB)
+            guard m >= 2 else { continue }
+            // parted or wet: the strands bunch up toward the nearer guide
+            var sep: CGFloat = 0
+            for k in [max(1, m / 2), m - 1] {
+                let d = H3(A.p[k], A.z[k]) - H3(B.p[k], B.z[k])
+                sep = max(sep, d.len / max(8, (A.width + B.width) * 0.5))
+            }
+            let wet = (A.wet + B.wet) / 2
+            let clump = max(smooth(1.5, 2.7, sep), wet * 0.75)
+            if clump < 0.45 {
+                var poly = Path()
+                poly.move(to: A.p[0].cg)
+                for k in 1..<max(2, nA - 1) { poly.addLine(to: A.p[k].cg) }
+                for k in stride(from: max(1, nB - 2), through: 0, by: -1) { poly.addLine(to: B.p[k].cg) }
+                poly.closeSubpath()
+                under.addPath(poly)
+                let c = A.color[min(A.color.count - 1, max(0, m / 2))]
+                underColor = RGB(underColor.r + c.r, underColor.g + c.g, underColor.b + c.b)
+                underN += 1
+            }
+            let gloss = (A.gloss + B.gloss) / 2
+            let tangle = (A.tangle + B.tangle) / 2
+            for _ in 0..<perPair {
+                let sd = seeds[seedIndex % seeds.count]
+                seedIndex += 1
+                var f = sd.f
+                if clump > 0 {
+                    let side: CGFloat = f < 0.5 ? 0 : 1
+                    f += (side + (f - side) * 0.35 - f) * clump
+                }
+                let pts = strand(A, B, nA, nB, f: f, trim: sd.len * (A.front ? 0.8 : 1.4))
+                guard pts.count >= 2 else { continue }
+                let line = wavy(pts, A, B, f: f, tangle: tangle, seed: sd.frizz)
+                let count = line.count
+                // a strand is three short paths, so dyed ends and roots keep their own colors
+                let thirds = [0, count / 3, (count * 2) / 3, count - 1]
+                for t in 0..<3 {
+                    let lo = thirds[t], hi = max(thirds[t] + 1, thirds[t + 1])
+                    guard hi < count else { continue }
+                    let k = min(m - 1, Int(CGFloat(lo + hi) / 2 / CGFloat(count) * CGFloat(pts.count)))
+                    var c = A.color[min(A.color.count - 1, k)].mix(B.color[min(B.color.count - 1, k)], Double(f))
+                    c = wetColor(c, wet)
+                    if !front { c = c.mix(Shades.deep(c), 0.22) }
+                    c = sd.tone > 0 ? c.mix(Shades.light(c), sd.tone * 0.22) : c.mix(Shades.deep(c), -sd.tone * 0.3)
+                    hair.add(path(line, lo, hi), c)
+                }
+                // the shine: the same short stretch of every strand, so together they make one soft band
+                let u0: CGFloat = front ? 0.12 : 0.4, u1: CGFloat = front ? 0.3 - 0.04 * wet : 0.52
+                let s0 = Int(CGFloat(count - 1) * u0), s1 = Int(CGFloat(count - 1) * u1)
+                if s1 > s0 + 1 {
+                    let k = min(m - 1, s0)
+                    let base = wetColor(A.color[min(A.color.count - 1, k)].mix(B.color[min(B.color.count - 1, k)], Double(f)), wet)
+                    let amount = (front ? 0.45 : 0.25) + 0.25 * Double(gloss) + 0.2 * Double(wet) + sd.tone * 0.08
+                    shine.add(path(line, s0, s1), base.mix(Shades.white, min(0.85, amount)))
+                }
+            }
+        }
+        if underN > 0 {
+            let k = 1 / underN
+            let c = wetColor(RGB(underColor.r * k, underColor.g * k, underColor.b * k), sim.strands.map(\.wet).reduce(0, +) / CGFloat(max(1, sim.strands.count)))
+            if !front {
+                ctx.stroke(under, with: .color(Shades.outline(c).color), style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+            }
+            let fill = Shades.deep(c).mix(c, 0.45)
+            ctx.fill(under, with: .color(fill.color))
+            ctx.stroke(under, with: .color(fill.color), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+        }
+        hair.stroke(ctx, width: strandWidth)
+        shine.stroke(ctx, width: strandWidth * 0.9)
+    }
+
+    private static func smooth(_ e0: CGFloat, _ e1: CGFloat, _ x: CGFloat) -> CGFloat {
+        let t = max(0, min(1, (x - e0) / (e1 - e0)))
+        return t * t * (3 - 2 * t)
+    }
+
+    /// One fine strand f of the way from guide A to guide B, its length blended between theirs (so a
+    /// slanted cut stays slanted), `trim` points short of that so the ends feather.
+    private static func strand(_ A: HairStrand, _ B: HairStrand, _ nA: Int, _ nB: Int, f: CGFloat, trim: CGFloat) -> [HairV] {
+        let m = min(nA, nB)
+        var L = CGFloat(nA - 1) + CGFloat(nB - nA) * f - trim
+        L = max(1, L)
+        let longer = nA > nB ? A : B
+        func at(_ k: Int) -> HairV {
+            if k < m { return A.p[k].mix(B.p[k], f) }
+            let base = A.p[m - 1].mix(B.p[m - 1], f)
+            return base + (longer.p[min(k, longer.p.count - 1)] - longer.p[m - 1])
+        }
+        let whole = Int(L)
+        let top = max(nA, nB) - 1
+        var out: [HairV] = []
+        out.reserveCapacity(whole + 2)
+        for k in 0...min(whole, top) { out.append(at(k)) }
+        let fr = L - CGFloat(whole)
+        if fr > 0.05, whole + 1 <= top { out.append(at(whole).mix(at(whole + 1), fr)) }
+        return out
+    }
+
+    /// Curls and frizz on a strand: a wave along it (in step with its neighbours), and for tangled
+    /// hair a little uneven wiggle of its own.
+    private static func wavy(_ pts: [HairV], _ A: HairStrand, _ B: HairStrand, f: CGFloat, tangle: CGFloat, seed: CGFloat) -> [HairV] {
+        let n = pts.count
+        let phase = A.phase + (B.phase - A.phase) * f
+        let P = min(A.pinned, B.pinned)
+        var out: [HairV] = []
+        out.reserveCapacity(n)
+        var arc: CGFloat = 0
+        for i in 0..<n {
+            if i > 0 { arc += pts[i].dist(pts[i - 1]) }
+            let tan = (pts[min(n - 1, i + 1)] - pts[max(0, i - 1)]).unit
+            let c = i < A.p.count && i < B.p.count ? A.curlNow(i) + (B.curlNow(i) - A.curlNow(i)) * f : A.curlNow(min(i, A.p.count - 1))
+            let ease = i >= P ? min(1, CGFloat(i - P + 1) / 3) : 0
+            let wave = c * 9 * sin(phase + arc * 0.2)
+            let s1: CGFloat = sin(seed + arc * 0.33)
+            let s2: CGFloat = 0.6 + 0.4 * sin(seed * 1.7 + arc * 0.08)
+            let frizz: CGFloat = tangle * ease * 2.4 * s1 * s2
+            out.append(pts[i] + tan.perp * (wave + frizz))
+        }
+        return out
+    }
+
+    /// A smooth path through points lo...hi.
+    private static func path(_ line: [HairV], _ lo: Int, _ hi: Int) -> Path {
+        var p = Path()
+        guard hi > lo, hi < line.count else { return p }
+        p.move(to: line[lo].cg)
+        if hi - lo == 1 { p.addLine(to: line[hi].cg); return p }
+        for i in (lo + 1)..<hi {
+            let mid = line[i].mix(line[i + 1], 0.5)
+            p.addQuadCurve(to: mid.cg, control: line[i].cg)
+        }
+        p.addLine(to: line[hi].cg)
+        return p
+    }
+
+    /// Cut hair: a little bunch of fine strands.
     static func draw(_ piece: HairPiece, in ctx: GraphicsContext) {
         var g = ctx
         if piece.age > 30 { g.opacity = max(0, 1 - (piece.age - 30) / 6) }
-        let curl = piece.curl
-        let wet = piece.wet
-        guard let l = lock(nodes: piece.p, pinned: 1, colors: piece.color,
-                           curl: { i in i < curl.count ? curl[i] * (1 - 0.7 * wet) : 0 },
-                           tangle: piece.tangle, jitter: piece.jitter, phase: piece.phase, width: piece.width * 1.6,
-                           wet: piece.wet, gloss: 0, darker: false, rootTaper: false) else { return }
-        paint([l], in: g)
+        let n = piece.p.count
+        guard n >= 2 else { return }
+        let dir = (piece.p[n - 1] - piece.p[0]).unit.perp
+        var b = Buckets()
+        for j in 0..<6 {
+            let off = (CGFloat(j) / 5 - 0.5) * piece.width * 0.9
+            let keep = max(2, n - (j % 3))
+            var line: [HairV] = []
+            for k in 0..<keep {
+                let a: CGFloat = piece.phase + CGFloat(k) * 0.9 + CGFloat(j)
+                line.append(piece.p[k] + dir * (off + sin(a) * 1.2))
+            }
+            var c = wetColor(piece.color[min(piece.color.count - 1, n / 2)], piece.wet)
+            c = j % 2 == 0 ? c.mix(Shades.deep(c), 0.2) : c.mix(Shades.light(c), 0.1)
+            b.add(path(line, 0, line.count - 1), c)
+        }
+        b.stroke(g, width: strandWidth * 0.9)
     }
 
     // MARK: Layers
 
-    /// Locks in a braid or bun end at their scrunchie.
-    private static func locks(_ sim: HairSim, _ list: [Int], darker: Bool) -> [Lock] {
-        list.compactMap { lock(sim.strands[$0], darker: darker, end: sim.drawnEnd($0)) }
-    }
-
-    /// Locks whose hair is mostly behind the middle of her head (drawn before her head), farthest first.
+    /// The hair behind the middle of her head (drawn before her head).
     static func drawBack(_ sim: HairSim, in ctx: GraphicsContext) {
-        let back = sim.strands.indices.filter { sim.strands[$0].depth < 0 }.sorted { sim.strands[$0].depth < sim.strands[$1].depth }
         for t in sim.ties where t.z < 0 { drawStyle(t, sim, in: ctx) }
-        paint(locks(sim, back, darker: true), in: ctx)
+        drawStrands(sim, front: false, in: ctx)
     }
 
-    /// The scalp on the side of her head facing us, the locks in front, and the shine.
+    /// The scalp on the side of her head facing us, then the hair in front.
     static func drawFront(_ sim: HairSim, in ctx: GraphicsContext) {
-        let front = sim.strands.indices.filter { sim.strands[$0].depth >= 0 }.sorted { sim.strands[$0].depth < sim.strands[$1].depth }
         drawScalp(sim, in: ctx)
-        paint(locks(sim, front, darker: false), in: ctx)
+        drawStrands(sim, front: true, in: ctx)
         for t in sim.ties where t.z >= 0 { drawStyle(t, sim, in: ctx) }
         let avg = average(sim)
         // the part, while she faces us
@@ -289,25 +501,10 @@ enum HairPainter {
             var part = Path()
             let x = 300 + sin(sim.yaw) * 30
             part.move(to: CGPoint(x: x, y: 150))
-            part.addQuadCurve(to: CGPoint(x: x, y: 176), control: CGPoint(x: x + 2, y: 162))
+            part.addQuadCurve(to: CGPoint(x: x, y: 172), control: CGPoint(x: x + 2, y: 160))
             var g = ctx
-            g.opacity = Double((facing - 0.5) * 2)
-            g.stroke(part, with: .color(Shades.outline(avg).color.opacity(0.7)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-        }
-        // a ring of shine across the crown, in dashes like the Dress Up hair
-        var sh = ctx
-        sh.opacity = 0.6
-        let light = Shades.light(avg).color
-        var th: CGFloat = -0.78
-        while th < 0.74 {
-            var d = Path()
-            let a = SalonBody.head(th, 0.8)
-            let m = SalonBody.head(th + 0.08, 0.81)
-            let e = SalonBody.head(th + 0.16, 0.8)
-            d.move(to: a.cg)
-            d.addQuadCurve(to: e.cg, control: m.cg)
-            sh.stroke(d, with: .color(light), style: StrokeStyle(lineWidth: 6, lineCap: .round))
-            th += 0.25
+            g.opacity = Double((facing - 0.5) * 2) * 0.6
+            g.stroke(part, with: .color(Shades.deep(avg).color), style: StrokeStyle(lineWidth: 2, lineCap: .round))
         }
     }
 

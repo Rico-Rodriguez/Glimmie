@@ -207,7 +207,7 @@ enum SalonDemo {
             w.sim.yaw = .pi
             w.sim.settle(seconds: 1.5)
             _ = w.sim.tie(at: HairV(300, 380), color: 3, style: .braid)
-            w.tool = .comb
+            w.tool = .straightener
             hold(w, at: HairV(360, 300))
         case "side":
             // turned a little, with a bun

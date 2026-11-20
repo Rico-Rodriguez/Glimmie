@@ -91,6 +91,25 @@ final class SalonTests: XCTestCase {
         XCTAssertEqual(back.clips.count, 1)
     }
 
+    /// A clip holds its bit of hair where it was clipped, even when the rest swings.
+    func testClipHoldsHairInPlace() {
+        let s = sim()
+        s.settle(seconds: 1)
+        guard let si = s.strands.indices.first(where: { s.strands[$0].kind == .side && s.strands[$0].free > 6 }) else {
+            return XCTFail("no long side lock")
+        }
+        let node = s.strands[si].pinned + 4
+        let at = s.strands[si].p[node]
+        XCTAssertTrue(s.attach(.bow, color: 4, at: at))
+        XCTAssertNotNil(s.clips.last?.hx)
+        for i in s.strands[si].pinned..<s.strands[si].p.count { s.strands[si].p[i] += HairV(40, -30) }
+        s.settle(seconds: 1)
+        let c = s.clips.last!
+        XCTAssertLessThan(s.strands[c.strand].p[c.node].dist(HairV(c.hx!, c.hy!)), 1)
+        // leaves don't hold anything
+        XCTAssertFalse(HairClip(kind: .leaf, color: 0, strand: 0, node: 0, dx: 0, dy: 0).holds)
+    }
+
     func testScrunchieMakesAPonytail() {
         let s = sim()
         s.settle(seconds: 1)

@@ -480,14 +480,6 @@ final class SalonWorld {
                 sim.comb(from: a, to: b, radius: 40, detangle: 0)
                 a = b
             }
-        case .comb?:
-            var a = q0
-            for p in pts.dropFirst() {
-                let b = tip(p)
-                let caught = sim.comb(from: a, to: b, radius: 30, detangle: 0.045)
-                if caught > 0 && a.dist(b) > 2 { SalonSound.shared.play(.comb, volume: 0.5, gap: 0.22) }
-                a = b
-            }
         case .scissors?:
             var a = q0
             for p in pts.dropFirst() {
@@ -528,6 +520,13 @@ final class SalonWorld {
                 if Double.random(in: 0..<1, using: &rng) < 0.3 { steam(at: q) }
             }
         case .straightener?:
+            // the iron glides the hair along with it (and works out tangles and leaves, like a comb)
+            var a = q0
+            for p in pts.dropFirst() {
+                let b = tip(p)
+                sim.comb(from: a, to: b, radius: 30, detangle: 0.05)
+                a = b
+            }
             if sim.straighten(q, dt: h) > 0 {
                 SalonSound.shared.play(.sizzle, volume: 0.3, gap: 0.5)
                 if Double.random(in: 0..<1, using: &rng) < 0.25 { steam(at: q) }

@@ -3,13 +3,14 @@ import SwiftUI
 // MARK: - Hair Salon (a game in the drawer)
 //
 // A client sits in the salon chair with messy hair (sometimes with a leaf or a twig in it). She can
-// wash it (shampoo foam and a shower), towel it, comb it, cut it (the pieces fall and pile up on the
-// floor), blow-dry it, curl it, straighten it, dye it (14 colors, rainbow, or back to natural), add
+// wash it (shampoo foam and a shower), towel it, iron it straight, cut it (the pieces fall and pile up on the
+// floor), blow-dry it, curl it, dye it (14 colors, rainbow, or back to natural), add
 // glitter, grow it back with a magic potion, and put in bows, clips, flowers, scrunchies (which
 // gather the hair into ponytails) and the Dress Up hats and crowns. The camera puts the look on the
 // photo wall (the last 30); tapping a photo brings that client back. Everything is open; no words.
 //
-// The hair is a physics simulation (SalonHair.swift); the client's face is the Dress Up art.
+// The hair is a physics simulation (SalonHair.swift) drawn as fine strands (SalonPaint.swift); the
+// client's face is the Dress Up art.
 // Sounds: tools/salon/sounds.py -> App/Resources/Games/Salon/*.wav.
 
 enum SalonGame {
