@@ -259,6 +259,9 @@ final class ColoringStudio: ObservableObject {
 
 struct ColoringCanvas: UIViewRepresentable {
     let studio: ColoringStudio
+    /// Passed in (not only read from `studio`) so SwiftUI sees a change and calls `updateUIView` when the tool
+    /// changes. With only the studio here, the canvas stayed switched off after the sticker tool.
+    let tool: ColoringTool
 
     func makeUIView(context: Context) -> ColoringCanvasView {
         let v = ColoringCanvasView()
@@ -271,7 +274,7 @@ struct ColoringCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ v: ColoringCanvasView, context: Context) {
-        v.isUserInteractionEnabled = studio.tool != .stickers
+        v.setStickerMode(tool == .stickers)
     }
 }
 
@@ -421,12 +424,38 @@ final class ColoringCanvasView: UIView {
     }
 
     // MARK: Touches
+
+    /// With the sticker tool the stickers take the touches, and the page neither draws nor zooms.
+    func setStickerMode(_ on: Bool) {
+        guard isUserInteractionEnabled == on else { return }
+        isUserInteractionEnabled = !on
+        if on { resetTouches() }
+    }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        studio?.tool == .stickers ? nil : super.hitTest(point, with: event)
+    }
+
+    /// Forgets every finger, so a gesture cut off by a tool change can't leave the page stuck.
+    private func resetTouches() {
+        if activeTouch != nil, pendingFill == nil { studio?.touchEnded() }
+        activeTouch = nil
+        pendingFill = nil
+        fingers = []
+        pinch = nil
+        waitForLift = false
+    }
     // One finger (or the Apple Pencil) draws. Two fingers pinch to zoom and drag the page around; a stroke the
     // first finger had only just started is taken back, so a pinch leaves no marks. A quick two-finger tap
     // shows the whole page again.
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        fingers.removeAll { $0.phase == .ended || $0.phase == .cancelled }
+        // Touches that ended without telling us (the tool changed mid-gesture) must not block new ones.
+        let gone: (UITouch) -> Bool = { $0.phase == .ended || $0.phase == .cancelled }
+        fingers.removeAll(where: gone)
+        if let t = activeTouch, gone(t) { activeTouch = nil; pendingFill = nil; studio?.touchEnded() }
+        if pinch != nil, fingers.count < 2 { pinch = nil }
+        if fingers.isEmpty, activeTouch == nil { waitForLift = false }
         fingers += touches.filter { $0.type != .pencil }.sorted { $0.timestamp < $1.timestamp }
         if pinch == nil, fingers.count >= 2, activeTouch?.type != .pencil {
             startPinch()

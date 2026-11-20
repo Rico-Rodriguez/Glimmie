@@ -181,7 +181,12 @@ jobs:
           shot 3-dressup-random 6 -game dressup -randomLook
           shot 4-dressup-clothes 6 -game dressup -randomLook -tab clothes
           shot 5-dressup-gallery 6 -game dressup -demoGallery
-          shot 7-dressup-pets 6 -game dressup -demoPets
+          shot 7-dressup-pets 6 -game dressup -petDemo dressed
+          shot 7b-pets-closet 6 -game dressup -petDemo closet
+          shot 7c-pets-picker 6 -game dressup -petDemo pets
+          shot 7d-pets-bath 6 -game dressup -petDemo foam
+          shot 7e-pets-sleep 6 -game dressup -petDemo sleep
+          shot 7f-dressup-companion 6 -game dressup -randomLook -demoCompanion
           shot 8-dressup-face 6 -game dressup -randomLook -tab me
           shot 9-battle-theme 6 -game dressup -demoBattle
           shot 10-battle-runway 10 -game dressup -randomLook -demoRunway
@@ -190,6 +195,7 @@ jobs:
           shot petvet-1-lobby 6 -game petvet
           shot petvet-2-exam 6 -game petvet -vetPatient kitty
           shot petvet-3-bath 4 -game petvet -vetPatient puppy -vetFX
+          shot petvet-4-held-tool 6 -game petvet -vetPatient puppy -vetHold sponge
           shot bakery-1-shop 6 -game bakery -bakeryServe
           shot bakery-2-decorate 6 -game bakery -bakeryDecorate cake
           shot bakery-3-mix 6 -game bakery -bakeryStep cupcake 0
@@ -202,6 +208,8 @@ jobs:
           shot bakery-10-spread 6 -game bakery -bakeryStep cake 2 -bakeryDemo spread
           shot bakery-11-pipe 6 -game bakery -bakeryStep cupcake 2 -bakeryDemo pipe
           shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
+          shot bakery-13-crack 6 -game bakery -bakeryStep cake 0 -bakeryDemo crack
+          shot bakery-14-stars 6 -game bakery -bakeryRated
           shot garden-1-new 6 -game garden
           shot garden-2-full 8 -game garden -gardenDemo
           shot garden-3-water 6 -game garden -gardenDemo -gardenTool can

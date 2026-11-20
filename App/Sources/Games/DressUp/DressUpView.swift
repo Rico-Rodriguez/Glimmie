@@ -78,10 +78,12 @@ struct DressUpView: View {
                 PetCornerView(look: store.current,
                               close: { withAnimation(.spring(response: 0.4)) { showPets = false } },
                               takeAlong: { pet in
-                                  store.current.wear(pet, in: "hold")
+                                  store.current.pet = pet
+                                  guard pet != nil else { return }
                                   withAnimation(.spring(response: 0.4)) { showPets = false }
                                   celebrate()
-                              })
+                              },
+                              restyle: { pet in store.current.pet = pet })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(3)
             }
@@ -170,7 +172,13 @@ struct DressUpView: View {
             group = args[i + 1]
             cat = art.categories.first { $0.group == group }?.id ?? cat
         }
-        if args.contains("-demoPets") { showPets = true }
+        if args.contains("-demoPets") || args.contains("-petDemo") { showPets = true }
+        if args.contains("-demoCompanion") {
+            var p = PetLook(kind: "puppy")
+            p.wear = ["hat": "ph_party", "neck": "pn_bandana"]
+            p.colors = ["hat": 16, "neck": 4]
+            store.current.pet = p
+        }
         if args.contains("-demoBattle") { battle = .new() }
         if args.contains("-demoRunway") { var b = BattleState.new(); b.phase = .runway; battle = b }
         if args.contains("-demoGallery") {
@@ -472,7 +480,7 @@ private struct Tray: View {
     }
 }
 
-private struct PatternSwatch: View {
+struct PatternSwatch: View {
     let name: String
     let base: RGB
     var body: some View {

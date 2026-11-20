@@ -170,6 +170,15 @@ enum LiveDollPainter {
                 extras(g)
             }
         }
+        if let pet = look.pet {
+            // her pet breathes too, and blinks now and then
+            var pose = PetPose()
+            pose.squash = 1 + 0.012 * CGFloat(sin(t * 2.6 + 1))
+            pose.flap = CGFloat(sin(t * 5))
+            if (t + 0.7).truncatingRemainder(dividingBy: 4.3) < 0.14 { pose.eyes = "blink" }
+            if expression == .happy { pose.eyes = "happy"; pose.mouth = "grin" }
+            PetPainter.drawCompanion(pet, pose: pose, in: ctx)
+        }
     }
 
     /// Draws `shapes` bent by `s`: untouched above the pivot, in sliding bands below it.
