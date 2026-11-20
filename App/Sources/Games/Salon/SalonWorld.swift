@@ -126,6 +126,10 @@ final class SalonWorld {
     /// A clip she picked off the hair to move.
     var moving: HairClip?
     var movingTie: Int?
+    /// A scrunchie she touched: a tap switches its style, a drag picks it up.
+    private var tappedTie: Int?
+    /// Where the chair is turning to (0 facing us, steps of a sixth of a turn).
+    private(set) var turnTarget: CGFloat = 0
 
     // finger (design space)
     private(set) var finger: CGPoint?
@@ -180,6 +184,14 @@ final class SalonWorld {
             cape = SalonWorld.capeColors.randomElement() ?? 3
         }
         look.picks["hat"] = hat
+        turnTarget = sim.yaw
+    }
+
+    /// Turns the chair a sixth of the way around (negative: the other way).
+    func turn(_ step: Int) {
+        turnTarget += CGFloat(step) * .pi / 3
+        SalonSound.shared.play(.boing, volume: 0.25, gap: 0.15)
+        changed = true
     }
 
     // MARK: Clients
@@ -227,6 +239,7 @@ final class SalonWorld {
         visitID = UUID()
         bits.removeAll()
         moving = nil
+        turnTarget = 0
         changed = true
     }
 
@@ -238,6 +251,7 @@ final class SalonWorld {
         look.picks["hat"] = hat
         visitID = UUID()
         bits.removeAll()
+        turnTarget = sim.yaw
         changed = true
     }
 
@@ -291,6 +305,17 @@ final class SalonWorld {
     func move(_ p: CGPoint) {
         if let f = finger { movedSinceDown += hypot(p.x - f.x, p.y - f.y) }
         finger = p
+        if let i = tappedTie, movedSinceDown > 12 {
+            tappedTie = nil
+            if i < sim.ties.count {
+                let color = sim.ties[i].color
+                sim.ties.remove(at: i)
+                carry = .scrunchie(color)
+                carryPoint = p
+                SalonSound.shared.play(.boing, volume: 0.35, gap: 0.2)
+                changed = true
+            }
+        }
         path.append(p)
         if carry != nil { carryPoint = p }
     }
@@ -299,8 +324,12 @@ final class SalonWorld {
         guard finger != nil else { return }
         let q = finger.map { toArt($0) } ?? HairV(300, 300)
         let lifted = finger.map { toArt(SalonWorld.carried($0)) } ?? q
-        if tool == nil && movedSinceDown < 12 && Date().timeIntervalSince(downAt) < 0.35 && SalonBody.onFace(q) {
-            tickle()
+        let quick = movedSinceDown < 12 && Date().timeIntervalSince(downAt) < 0.35
+        if tappedTie != nil {
+            tappedTie = nil
+            _ = restyle(at: q)
+        } else if tool == nil && quick {
+            if !restyle(at: q) && cos(sim.yaw) > 0.5 && SalonBody.onFace(q) { tickle() }
         }
         if carry != nil, let f = finger {
             dropCarry(at: f)
@@ -369,14 +398,20 @@ final class SalonWorld {
             return
         }
         for (i, t) in sim.ties.enumerated() where t.at.dist(q) < 40 {
-            let color = t.color
-            sim.ties.remove(at: i)
-            carry = .scrunchie(color)
-            carryPoint = finger
-            SalonSound.shared.play(.boing, volume: 0.35, gap: 0.2)
-            changed = true
+            tappedTie = i
             return
         }
+    }
+
+    /// A tap on a scrunchie: ponytail, then braid, then bun, then back to a ponytail.
+    private func restyle(at q: HairV) -> Bool {
+        guard let style = sim.restyle(near: q) else { return false }
+        SalonSound.shared.play(.clip)
+        SalonSound.shared.play(style == .bun ? .boing : .comb, volume: 0.5, gap: 0.2)
+        sparkle(at: q, count: 10)
+        cheerSmall()
+        changed = true
+        return true
     }
 
     private func tickle() {
@@ -397,6 +432,13 @@ final class SalonWorld {
         time += dt
         guard dt > 0 else { return }
         if let f = finger { useTool(at: f, dt: dt, now: now) }
+        // the chair turns smoothly to where she sent it
+        let gap = turnTarget - sim.yaw
+        if abs(gap) > 0.0005 {
+            let step = gap * min(1, CGFloat(dt) * 5)
+            let fastest = CGFloat(dt) * 4.5
+            sim.yaw += max(-fastest, min(fastest, step))
+        }
         sim.advance(dt)
         collectDropped()
         stepBits(dt, now: now)

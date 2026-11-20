@@ -243,8 +243,9 @@ enum HairPainter {
         }
     }
 
-    static func lock(_ s: HairStrand, darker: Bool) -> Lock? {
-        lock(nodes: s.p, pinned: s.pinned, colors: Array(s.color.prefix(s.p.count)), curl: { s.curlNow($0) },
+    static func lock(_ s: HairStrand, darker: Bool, end: Int? = nil) -> Lock? {
+        let n = min(s.p.count, (end ?? s.p.count - 1) + 1)
+        return lock(nodes: Array(s.p.prefix(n)), pinned: s.pinned, colors: Array(s.color.prefix(n)), curl: { s.curlNow($0) },
              tangle: s.tangle, jitter: s.jitter, phase: s.phase, width: s.width * volume(s.kind), wet: s.wet,
              gloss: s.gloss, darker: darker, rootTaper: s.front, pointy: s.kind == .fringe)
     }
@@ -263,33 +264,36 @@ enum HairPainter {
 
     // MARK: Layers
 
-    /// Back and nape locks (behind her head).
-    static func drawBack(_ sim: HairSim, in ctx: GraphicsContext) {
-        let back = sim.strands.filter { !$0.front }.sorted { $0.order < $1.order }
-        paint(back.compactMap { lock($0, darker: true) }, in: ctx)
+    /// Locks in a braid or bun end at their scrunchie.
+    private static func locks(_ sim: HairSim, _ list: [Int], darker: Bool) -> [Lock] {
+        list.compactMap { lock(sim.strands[$0], darker: darker, end: sim.drawnEnd($0)) }
     }
 
-    /// The scalp under the front locks, the front locks, and the shine.
+    /// Locks whose hair is mostly behind the middle of her head (drawn before her head), farthest first.
+    static func drawBack(_ sim: HairSim, in ctx: GraphicsContext) {
+        let back = sim.strands.indices.filter { sim.strands[$0].depth < 0 }.sorted { sim.strands[$0].depth < sim.strands[$1].depth }
+        for t in sim.ties where t.z < 0 { drawStyle(t, sim, in: ctx) }
+        paint(locks(sim, back, darker: true), in: ctx)
+    }
+
+    /// The scalp on the side of her head facing us, the locks in front, and the shine.
     static func drawFront(_ sim: HairSim, in ctx: GraphicsContext) {
-        let front = sim.strands.filter { $0.front }
-        guard !front.isEmpty else { return }
-        // the cap: average of the colors near the roots
-        var r = 0.0, g = 0.0, b = 0.0
-        var wet: CGFloat = 0
-        for s in front {
-            let c = s.color[min(2, s.color.count - 1)]
-            r += c.r; g += c.g; b += c.b
-            wet += s.wet
+        let front = sim.strands.indices.filter { sim.strands[$0].depth >= 0 }.sorted { sim.strands[$0].depth < sim.strands[$1].depth }
+        drawScalp(sim, in: ctx)
+        paint(locks(sim, front, darker: false), in: ctx)
+        for t in sim.ties where t.z >= 0 { drawStyle(t, sim, in: ctx) }
+        let avg = average(sim)
+        // the part, while she faces us
+        let facing = cos(sim.yaw)
+        if facing > 0.5 {
+            var part = Path()
+            let x = 300 + sin(sim.yaw) * 30
+            part.move(to: CGPoint(x: x, y: 150))
+            part.addQuadCurve(to: CGPoint(x: x, y: 176), control: CGPoint(x: x + 2, y: 162))
+            var g = ctx
+            g.opacity = Double((facing - 0.5) * 2)
+            g.stroke(part, with: .color(Shades.outline(avg).color.opacity(0.7)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
         }
-        let k = 1.0 / Double(front.count)
-        let avg = wetColor(RGB(r * k, g * k, b * k), wet / CGFloat(front.count))
-        paint(front.sorted(by: { $0.order < $1.order }).compactMap { lock($0, darker: false) },
-              cap: (capPath(), avg.color, Shades.outline(avg).color), in: ctx)
-        // the part
-        var part = Path()
-        part.move(to: CGPoint(x: 300, y: 150))
-        part.addQuadCurve(to: CGPoint(x: 300, y: 176), control: CGPoint(x: 302, y: 162))
-        ctx.stroke(part, with: .color(Shades.outline(avg).color.opacity(0.7)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
         // a ring of shine across the crown, in dashes like the Dress Up hair
         var sh = ctx
         sh.opacity = 0.6
@@ -304,6 +308,122 @@ enum HairPainter {
             d.addQuadCurve(to: e.cg, control: m.cg)
             sh.stroke(d, with: .color(light), style: StrokeStyle(lineWidth: 6, lineCap: .round))
             th += 0.25
+        }
+    }
+
+    static func average(_ sim: HairSim) -> RGB {
+        var r = 0.0, g = 0.0, b = 0.0
+        var wet: CGFloat = 0
+        for s in sim.strands {
+            let c = s.color[min(2, s.color.count - 1)]
+            r += c.r; g += c.g; b += c.b
+            wet += s.wet
+        }
+        let k = 1.0 / Double(max(1, sim.strands.count))
+        return wetColor(RGB(r * k, g * k, b * k), wet / CGFloat(max(1, sim.strands.count)))
+    }
+
+    /// The scalp: the rooted part of every lock on the side of her head facing us, as one thick band of
+    /// its color with an outline, so her head is covered from every side and the hairline shows.
+    static func drawScalp(_ sim: HairSim, in ctx: GraphicsContext) {
+        var bands: [(Path, Color, Color)] = []
+        for s in sim.strands {
+            var path = Path()
+            var open = false
+            for i in 1..<s.pinned {
+                guard s.restZ[i - 1] + s.restZ[i] > -10 else { open = false; continue }
+                if !open { path.move(to: s.rest[i - 1].cg); open = true }
+                path.addLine(to: s.rest[i].cg)
+            }
+            guard !path.isEmpty else { continue }
+            let c = wetColor(s.color[min(2, s.color.count - 1)], s.wet)
+            bands.append((path, c.color, Shades.outline(c).color))
+        }
+        let edge = StrokeStyle(lineWidth: 40, lineCap: .round, lineJoin: .round)
+        let fill = StrokeStyle(lineWidth: 34, lineCap: .round, lineJoin: .round)
+        for b in bands { ctx.stroke(b.0, with: .color(b.2), style: edge) }
+        for b in bands { ctx.stroke(b.0, with: .color(b.1), style: fill) }
+    }
+
+    /// A braid or a bun at a scrunchie (a ponytail is just its locks).
+    static func drawStyle(_ t: HairTie, _ sim: HairSim, in ctx: GraphicsContext) {
+        guard t.style != .pony, let first = t.members.first, first.strand < sim.strands.count else { return }
+        let s = sim.strands[first.strand]
+        let base = wetColor(s.color[min(s.color.count - 1, first.node)], s.wet)
+        let col = base.color
+        let out = Shades.outline(base).color
+        let deep = Shades.deep(base).color
+        switch t.style {
+        case .bun:
+            let r = min(58, 16 + CGFloat(sim.hairBelow(t)).squareRoot() * 4.2)
+            let away = (t.at - SalonBody.center).unit
+            let c = t.at + away * (r * 0.55)
+            let rect = CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
+            ctx.stroke(Path(ellipseIn: rect), with: .color(out), lineWidth: 5)
+            ctx.fill(Path(ellipseIn: rect), with: .color(col))
+            var g = ctx
+            g.opacity = 0.35
+            for k in 0..<3 {
+                var arc = Path()
+                arc.addArc(center: c.cg, radius: r * (0.3 + CGFloat(k) * 0.22), startAngle: .radians(Double(k)),
+                           endAngle: .radians(Double(k) + 3.6), clockwise: false)
+                g.stroke(arc, with: .color(deep), lineWidth: 2.5)
+            }
+            var sh = ctx
+            sh.opacity = 0.5
+            sh.stroke(Path { p in
+                p.addArc(center: c.cg, radius: r * 0.7, startAngle: .radians(3.6), endAngle: .radians(4.5), clockwise: false)
+            }, with: .color(Shades.light(base).color), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+        case .braid:
+            let chain = sim.braidChain(t)
+            guard chain.count >= 2 else { return }
+            var line: [HairV] = []
+            for i in 0..<(chain.count - 1) {
+                for k in 0..<4 { line.append(chain[i].mix(chain[i + 1], CGFloat(k) / 4)) }
+            }
+            line.append(chain[chain.count - 1])
+            let w0 = min(48, 24 + CGFloat(t.members.count) * 1.1)
+            let lobe: CGFloat = 15
+            var stops: [Int] = []
+            var acc: CGFloat = 0
+            for k in 1..<line.count {
+                acc += line[k].dist(line[k - 1])
+                if acc >= lobe { acc = 0; stops.append(k) }
+            }
+            var shapes: [Path] = []
+            for (j, k) in stops.enumerated() {
+                let tn = (line[min(line.count - 1, k + 1)] - line[max(0, k - 3)]).unit
+                let side: CGFloat = j % 2 == 0 ? -1 : 1
+                let u = CGFloat(k) / CGFloat(line.count - 1)
+                let w = w0 * (1 - 0.5 * u)
+                let c = line[k] + tn.perp * (side * w * 0.18)
+                let e = Path(ellipseIn: CGRect(x: -lobe, y: -w * 0.45, width: lobe * 2, height: w * 0.9))
+                let a = atan2(tn.y, tn.x) + side * 0.5
+                shapes.append(e.applying(CGAffineTransform(rotationAngle: a).concatenating(CGAffineTransform(translationX: c.x, y: c.y))))
+            }
+            for p in shapes { ctx.stroke(p, with: .color(out), lineWidth: 5) }
+            for p in shapes {
+                ctx.fill(p, with: .color(col))
+                var g = ctx
+                g.opacity = 0.4
+                g.stroke(p, with: .color(deep), lineWidth: 2)
+            }
+            // a little tuft at the end
+            let end = chain[chain.count - 1]
+            let dir = (end - chain[chain.count - 2]).unit
+            var tuft = Path()
+            tuft.move(to: (end + dir.perp * 9).cg)
+            tuft.addQuadCurve(to: (end + dir * 30).cg, control: (end + dir * 14 + dir.perp * 10).cg)
+            tuft.addQuadCurve(to: (end - dir.perp * 9).cg, control: (end + dir * 14 - dir.perp * 10).cg)
+            tuft.closeSubpath()
+            ctx.stroke(tuft, with: .color(out), lineWidth: 4)
+            ctx.fill(tuft, with: .color(col))
+            var g = ctx
+            g.translateBy(x: end.x, y: end.y)
+            g.scaleBy(x: 0.6, y: 0.6)
+            ClipPainter.drawScrunchie(color: t.color, in: g)
+        case .pony:
+            break
         }
     }
 
@@ -337,7 +457,7 @@ enum HairPainter {
         var pts: [(CGPoint, CGFloat)] = []
         pts.reserveCapacity(sim.foam.count)
         for b in sim.foam {
-            guard let at = sim.position(b.strand, b.node) else { continue }
+            guard let at = sim.position(b.strand, b.node), sim.visible(b.strand, b.node) else { continue }
             pts.append(((at + b.off).cg, b.r))
         }
         var rim = Path()
@@ -360,7 +480,7 @@ enum HairPainter {
 
     static func drawFlakes(_ sim: HairSim, t: Double, in ctx: GraphicsContext) {
         for f in sim.flakes {
-            guard let at = sim.position(f.strand, f.node) else { continue }
+            guard let at = sim.position(f.strand, f.node), sim.visible(f.strand, f.node) else { continue }
             let c = (at + f.off).cg
             let tw = 0.55 + 0.45 * sin(t * 5 + Double(f.phase))
             let r = f.size * CGFloat(0.7 + 0.5 * tw)
@@ -397,12 +517,55 @@ enum ClientPainter {
             ArtPainter.draw(layer.shapes, p, in: ctx)
         }
     }
+
+    /// Her, turned by `yaw`: her head keeps its round shape, her eyes, nose, mouth and brows slide around
+    /// it and narrow (and are gone when she has her back to us), her shoulders and clothes narrow.
+    static func drawTurned(_ look: Look, _ e: Expression, z: ClosedRange<Int>, yaw: CGFloat, in ctx: GraphicsContext) {
+        let c = cos(yaw)
+        let sn = sin(yaw)
+        var face = ctx
+        face.clip(to: Path(ellipseIn: CGRect(x: 300 - SalonBody.rx - 6, y: 287 - SalonBody.ry - 6,
+                                             width: SalonBody.rx * 2 + 12, height: SalonBody.ry * 2 + 12)))
+        face.opacity = Double(max(0, min(1, (c - 0.12) / 0.25)))
+        face.translateBy(x: 300 + sn * 118, y: 0)
+        face.scaleBy(x: max(0.01, c), y: 1)
+        face.translateBy(x: -300, y: 0)
+        var body = ctx
+        let sx = SalonBody.bodyScale(yaw)
+        body.translateBy(x: 300, y: 0)
+        body.scaleBy(x: sx, y: 1)
+        body.translateBy(x: -300, y: 0)
+        var hat = ctx
+        hat.translateBy(x: 300 + sn * 20, y: 0)
+        hat.scaleBy(x: max(0.75, abs(c)), y: 1)
+        hat.translateBy(x: -300, y: 0)
+        for (layer, p, item) in layers(look, e) where z.contains(layer.z) {
+            if item.id == "body" || item.id == "under" { continue }
+            switch item.category {
+            case "face":
+                ArtPainter.draw(layer.shapes, p, in: ctx)
+            case "hat":
+                if layer.z < 10 && c < 0 { continue }
+                ArtPainter.draw(layer.shapes, p, in: hat)
+            case "eyes", "special", "mouth", "nose", "cheeks", "makeup", "glasses", "brows", "earrings":
+                if c > 0.12 { ArtPainter.draw(layer.shapes, p, in: face) }
+            default:
+                ArtPainter.draw(layer.shapes, p, in: body)
+            }
+        }
+    }
 }
 
 // MARK: - Chair and cape
 
 enum SalonFurniture {
-    static func drawChairBack(in ctx: GraphicsContext) {
+    static func drawChairBack(yaw: CGFloat = 0, in base: GraphicsContext) {
+        // the chair turns with her: its back is only in view while she faces us
+        guard cos(yaw) > 0 else { return }
+        var ctx = base
+        ctx.translateBy(x: 300, y: 0)
+        ctx.scaleBy(x: SalonBody.bodyScale(yaw), y: 1)
+        ctx.translateBy(x: -300, y: 0)
         let back = Path(roundedRect: CGRect(x: 138, y: 412, width: 324, height: 300), cornerRadius: 70, style: .continuous)
         ctx.fill(back, with: .linearGradient(Gradient(colors: [Color(hex: 0xC4A3F0), Color(hex: 0x9C7AD8)]),
                                              startPoint: CGPoint(x: 0, y: 412), endPoint: CGPoint(x: 0, y: 712)))
@@ -461,7 +624,11 @@ enum SalonFurniture {
         return p
     }
 
-    static func drawCape(color: RGB, in ctx: GraphicsContext) {
+    static func drawCape(color: RGB, yaw: CGFloat = 0, in base: GraphicsContext) {
+        var ctx = base
+        ctx.translateBy(x: 300, y: 0)
+        ctx.scaleBy(x: SalonBody.bodyScale(yaw), y: 1)
+        ctx.translateBy(x: -300, y: 0)
         let cape = capePath()
         ctx.fill(cape, with: .linearGradient(Gradient(colors: [color.color, Shades.shade(color).color]),
                                              startPoint: CGPoint(x: 0, y: 436), endPoint: CGPoint(x: 0, y: 730)))
@@ -651,13 +818,13 @@ enum ClipPainter {
     }
 
     static func drawAll(_ sim: HairSim, in ctx: GraphicsContext) {
-        for t in sim.ties {
+        for t in sim.ties where SalonBody.visible(t.at, t.z, squash: sim.squash) {
             var g = ctx
             g.translateBy(x: t.at.x, y: t.at.y)
             drawScrunchie(color: t.color, in: g)
         }
         for c in sim.clips {
-            guard let at = sim.clipPosition(c) else { continue }
+            guard let at = sim.clipPosition(c), sim.visible(c.strand, c.node) else { continue }
             var g = ctx
             g.translateBy(x: at.x, y: at.y)
             var swing: CGFloat = 0

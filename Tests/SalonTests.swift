@@ -85,6 +85,7 @@ final class SalonTests: XCTestCase {
                 XCTAssertEqual(HairSim.hex(a.color[i]), HairSim.hex(b.color[i]))
                 XCTAssertEqual(a.curl[i], b.curl[i], accuracy: 0.03)
                 XCTAssertEqual(a.p[i].x, b.p[i].x, accuracy: 1)
+                XCTAssertEqual(a.z[i], b.z[i], accuracy: 1)
             }
         }
         XCTAssertEqual(back.clips.count, 1)
@@ -97,6 +98,67 @@ final class SalonTests: XCTestCase {
         s.settle(seconds: 1)
         let t = s.ties[0]
         for m in t.members { XCTAssertLessThan(s.strands[m.strand].p[m.node].dist(t.at), 12) }
+    }
+
+    /// She can be turned all the way around; the hair follows her head, stays out of it and settles.
+    func testTurningAroundKeepsTheHairOnHerHead() {
+        let s = HairSim(recipe: HairRecipe(seed: 5, color: 2, length: 3, fringe: 4, curl: 0, tangle: 0.5), palette: DressUpArt.shared.hair)
+        s.settle(seconds: 1)
+        for k in 1...60 {
+            s.yaw = .pi * CGFloat(k) / 60
+            s.step(1.0 / 120)
+        }
+        s.settle(seconds: 6)
+        let before = s.strands.map(\.p)
+        s.settle(seconds: 1)
+        var most: CGFloat = 0
+        for (i, st) in s.strands.enumerated() {
+            for k in st.p.indices {
+                XCTAssertTrue(st.p[k].x.isFinite && st.p[k].y.isFinite && st.z[k].isFinite)
+                if k < before[i].count { most = max(most, st.p[k].dist(before[i][k])) }
+                if k >= st.pinned {
+                    // free hair is never inside her head
+                    let ex = (st.p[k].x - 300) / SalonBody.rx, ey = (st.p[k].y - 287) / SalonBody.ry, ez = st.z[k] / SalonBody.rx
+                    XCTAssertGreaterThan(ex * ex + ey * ey + ez * ez, 0.8)
+                }
+            }
+        }
+        XCTAssertLessThan(most, 2)
+        // her bangs are on the far side now, behind her head
+        for st in s.strands where st.kind == .fringe { XCTAssertLessThan(st.depth, 0) }
+    }
+
+    func testScrunchieTapsMakeABraidThenABun() {
+        let s = HairSim(recipe: HairRecipe(seed: 4, color: 2, length: 3, fringe: 4, curl: 0, tangle: 0.5), palette: DressUpArt.shared.hair)
+        s.yaw = .pi
+        s.settle(seconds: 1.5)
+        XCTAssertTrue(s.tie(at: HairV(300, 380), color: 3))
+        XCTAssertGreaterThan(s.ties[0].members.count, 12)
+        XCTAssertEqual(s.restyle(near: HairV(300, 380)), .braid)
+        s.settle(seconds: 1.5)
+        XCTAssertGreaterThan(s.braidChain(s.ties[0]).count, 5)
+        XCTAssertNotNil(s.drawnEnd(s.ties[0].members[0].strand))
+        XCTAssertEqual(s.restyle(near: HairV(300, 380)), .bun)
+        XCTAssertEqual(s.restyle(near: HairV(300, 380)), .pony)
+        XCTAssertNil(s.restyle(near: HairV(40, 40)))
+        // turning back to the front carries the scrunchie around with her head
+        s.ties[0].style = .bun
+        s.yaw = 0
+        s.settle(seconds: 1)
+        XCTAssertLessThan(s.ties[0].z, 0)
+        let save = s.save(positions: true)
+        let back = HairSim(save: try! JSONDecoder().decode(HairSim.Save.self, from: JSONEncoder().encode(save)), palette: DressUpArt.shared.hair)
+        XCTAssertEqual(back.ties.first?.style, .bun)
+        XCTAssertEqual(back.yaw, 0, accuracy: 0.001)
+    }
+
+    func testOldSavesStartFresh() {
+        var save = sim().save(positions: true)
+        save.layout = nil
+        save.strands.removeLast(10)
+        let s = HairSim(save: save, palette: DressUpArt.shared.hair)
+        XCTAssertEqual(s.strands.count, sim().strands.count)
+        for st in s.strands { XCTAssertEqual(st.z.count, st.p.count) }
     }
 
     func testSoundsAndClientsExist() {
