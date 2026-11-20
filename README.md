@@ -20,6 +20,7 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 
 | **Tidy Up** | A cozy put-things-away game in 24 levels: a fridge, bookshelf, cutlery drawer, toy cubbies, bathroom shelf, pencil case, closet, sock drawer, backpack, cupboard, pantry and fruit crate. A moving box tosses 47 kinds of things onto the floor, where they bounce, roll and pile up with real physics. Drag each one to its spot: ghost shapes show where, colored ghosts sort books, crayons, socks and jars by color, and plates, towels, blocks and cans stack from the bottom. Things swing as she carries them, get pulled in when close, and land with a squash, a material-matched click (china clinks, wood toks, plush thuds) and sparkles. Calm music loops (tap the note to turn it off). |
 | **Garden** | A glass-fronted garden bed. Dig real holes with the shovel (a flick throws the soil), shake seeds from 8 packets (sunflower, tulip, daisy, lavender, carrot, tomato, strawberry, pumpkin) into them, and water with a can that soaks the soil dark and fills puddles. Plants grow only in damp soil, sway in the wind and spring back from her finger. Tap ripe things into the basket, pull carrots and weeds up by hand. Butterflies, a bee, a ladybug, a worm behind the glass, fireflies. Sun, rain (and a rainbow), wind or night. 8 decorations for the lawn. |
+| **Aquarium** | A glass fish tank on a cabinet. 8 kinds of fish (goldfish, clownfish, angelfish, neon tetras that come as a school, a puffer that puffs up, betta, guppies, seahorse) swim like real fish: they cruise, turn round, school, flex their tails harder when they speed up, dart off when she taps the glass and come back to look, and gather round a finger resting on it. Turn the food shaker over the water and shake: flakes float, soak and flutter down while the fish race to gulp them. Rub the algae off the glass with the sponge (it grows back slowly, and a snail grazes on it). Scoop a fish with the net and let it go, or lift it out to send it home. Pour in new fish from bags with a splash, and drop in 12 decorations (castle, treasure chest that opens in a gush of bubbles, diver, air stone, shipwreck, rock arch, seaweed, coral, anemone, grass, shell, starfish) that sink at their own speed and thump into the sand. Waves on the surface when she drags through it, bubbles that rise faster the bigger they are and pop at the top, light rays and caustics on the sand, a day and night lamp (neon tetras glow at night) and an air pump. |
 
 ## Your own coloring pages
 
@@ -56,6 +57,12 @@ python3 tools/bakery/build.py    # -> App/Resources/Games/Bakery/bakery.json (pu
 python3 tools/bakery/sounds.py   # -> App/Resources/Games/Bakery/*.wav
 ```
 Preview helpers for contact sheets are in `tools/bakery/draw_preview.py` (needs cairosvg).
+
+## Aquarium sounds
+
+```bash
+python3 tools/aquarium/sounds.py   # -> App/Resources/Games/Aquarium/*.wav (stdlib only)
+```
 
 ## Tidy Up sounds and music
 
