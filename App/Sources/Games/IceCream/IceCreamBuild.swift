@@ -266,7 +266,7 @@ struct ICBuild: Equatable {
         var h = floor
         var rho: CGFloat = 30
         var i = 0
-        while h < 128 && i < 600 {
+        while h - floor < 128 && i < 600 {
             let loops = turn / (2 * .pi)
             rho = max(0, 30 * (1 - loops / 6.4))
             let step = 5 / max(rho, 6)

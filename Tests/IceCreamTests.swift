@@ -73,6 +73,15 @@ final class IceCreamTests: XCTestCase {
         XCTAssertTrue(sim.free.isEmpty)
     }
 
+    func testOrderSwirlIsTheSameHeightInACupAsInACone() {
+        for base in [ICBase.waffle, .cup] {
+            let rope = ICBuild.sampleSwirl(.vanilla, floor: base.floor)
+            let hs = rope.map { $0.h - base.floor }
+            XCTAssertLessThan(hs.max() ?? 0, 135, "\(base)")
+            XCTAssertLessThan(rope.filter { abs($0.x) < 1 && abs($0.z) < 1 }.count, 20, "\(base): no tower of beads at the tip")
+        }
+    }
+
     func testBlenderChopsFruitIntoAColoredDrink() {
         let sim = freshSim()
         sim.setStation(.smoothie)
