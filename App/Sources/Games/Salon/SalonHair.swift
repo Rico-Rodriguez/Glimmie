@@ -609,10 +609,11 @@ final class HairSim {
             held[c.strand].append(c.node)
         }
         for i in strands.indices { HairSim.shape(&strands[i]) }
-        for _ in 0..<HairSim.passes {
+        for pass in 0..<HairSim.passes {
             applyTies()
             applyClips()
-            for i in strands.indices { HairSim.constrain(&strands[i], held: held[i], yaw: yaw, squash: sq) }
+            let last = pass == HairSim.passes - 1
+            for i in strands.indices { HairSim.constrain(&strands[i], held: held[i], yaw: yaw, squash: sq, last: last) }
         }
         for i in strands.indices { boxes[i] = HairSim.box(strands[i]) }
         stepPieces(hd)
@@ -721,8 +722,10 @@ final class HairSim {
     }
 
     /// One pass over a lock: each segment back to its length (the scalp and a scrunchie's point don't
-    /// move), then each point out of her head, face and shoulders.
-    private static func constrain(_ s: inout HairStrand, held: [Int], yaw: CGFloat, squash: CGFloat) {
+    /// move), then each point out of her head, face and shoulders. On the last pass a point pushed out of
+    /// her head brings its previous position along with friction, so lying on her head never turns into
+    /// sliding or bouncing.
+    private static func constrain(_ s: inout HairStrand, held: [Int], yaw: CGFloat, squash: CGFloat, last: Bool) {
         let P = s.pinned
         let n = s.p.count
         guard n > P else { return }
@@ -755,7 +758,13 @@ final class HairSim {
             let ramp = min(1, CGFloat(i - P + 1) / 4)
             var xy = s.p[i]
             var z = s.z[i]
+            let inX = xy, inZ = z
             SalonBody.pushOutOfHead(&xy, &z, k: headK * ramp)
+            if last, xy != inX || z != inZ {
+                let ox = s.o[i] + (xy - inX), oz = s.oz[i] + (z - inZ)
+                s.o[i] = ox + (xy - ox) * 0.35
+                s.oz[i] = oz + (z - oz) * 0.35
+            }
             if s.kind == .side { SalonBody.keepOffFace(&xy, &z, root: root, yaw: yaw) }
             SalonBody.pushOutOfBody(&xy, &z, squash: squash)
             xy.x = max(-300, min(900, xy.x))
