@@ -165,6 +165,7 @@ struct HairStrand {
     var maxNodes: Int { rest.count + HairSim.maxFree }
     var free: Int { p.count - rest.count }
     var front: Bool { kind == .side || kind == .fringe }
+    var tip: HairV { p[p.count - 1] }
 
     /// How curly point i looks and behaves now (water relaxes curls until the hair dries).
     func curlNow(_ i: Int) -> CGFloat {
