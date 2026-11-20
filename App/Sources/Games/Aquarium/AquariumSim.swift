@@ -221,9 +221,9 @@ final class AquariumSim {
         // a little algae in the bottom corners, so the sponge has something to do
         for r in 0..<AGeo.algaeRows {
             for c in 0..<AGeo.algaeCols {
-                let edge = min(CGFloat(c), CGFloat(AGeo.algaeCols - 1 - c)) / 6
+                let edge = min(1, min(CGFloat(c), CGFloat(AGeo.algaeCols - 1 - c)) / 6)
                 let low = CGFloat(r) / CGFloat(AGeo.algaeRows - 1)
-                algae[r * AGeo.algaeCols + c] = aqClamp((1 - edge) * low * 0.9 + (aqRand(c * 31 + r, 5) - 0.5) * 0.3)
+                algae[r * AGeo.algaeCols + c] = edge < 1 ? aqClamp((1 - edge) * low * (0.6 + 0.5 * aqRand(c * 31 + r, 5))) : 0
             }
         }
     }
@@ -835,7 +835,8 @@ final class AquariumSim {
                     let i = r * AGeo.algaeCols + c
                     // it creeps from where there is already some, so it grows in patches
                     let seed = aqRand(i, 11)
-                    let k = rate * low * (0.25 + 0.75 * seed) * (0.5 + algae[i] * 1.5)
+                    // most of the glass stays clear for a long time; patches start where the seed is high and spread from there
+                    let k = rate * low * (seed * seed * seed * 1.6) * (0.4 + algae[i] * 2)
                     algae[i] = min(1, algae[i] + k)
                 }
             }
@@ -929,7 +930,7 @@ final class AquariumSim {
                 let b = v < 0.3 ? 0 : (v < 0.62 ? 1 : 2)
                 let q = AGeo.cellCenter(c, r)
                 let jx = (aqRand(i, 1) - 0.5) * w * 0.5, jy = (aqRand(i, 2) - 0.5) * h * 0.5
-                let rad = w * (0.45 + 0.45 * min(1, v * 1.3)) * (0.85 + 0.3 * aqRand(i, 3))
+                let rad = w * (0.6 + 0.55 * min(1, v * 1.3)) * (0.85 + 0.3 * aqRand(i, 3))
                 paths[b].addEllipse(in: CGRect(x: q.x + jx - rad, y: q.y + jy - rad * 0.9, width: rad * 2, height: rad * 1.8))
             }
         }
