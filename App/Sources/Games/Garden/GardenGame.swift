@@ -139,6 +139,12 @@ private enum DockSlot: String {
     }
 }
 
+final class GardenHandState {
+    var lastAt = Date()
+    var startAt = Date()
+    var active = false
+}
+
 struct GardenView: View {
     let exit: () -> Void
 
@@ -147,16 +153,23 @@ struct GardenView: View {
     @State private var weather: Weather = .sun
     @State private var carrying: String?
     @State private var hidden: String?
-    @State private var handLastAt = Date()
-    @State private var handStartAt = Date()
-    @State private var handActive = false
+    /// Touch bookkeeping lives outside SwiftUI state so a drag does not rebuild the view on every move.
+    @State private var hand = GardenHandState()
     @State private var started = false
 
     var body: some View {
         GeometryReader { geo in
             let map = GMap(size: geo.size)
             ZStack {
-                TimelineView(.animation) { tl in
+                // The sky, hills, fence and lawns change slowly, so they redraw at 30 fps in their own layer.
+                TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                    Canvas(opaque: true) { ctx, _ in
+                        GardenPainter.drawBackdrop(ctx, map: map, sim: sim)
+                    }
+                }
+                .allowsHitTesting(false)
+                // Everything that moves, capped at 60 fps so 120 Hz screens do not double the work.
+                TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
                     Canvas { ctx, _ in
                         sim.step(tl.date)
                         GardenPainter.draw(ctx, map: map, sim: sim)
@@ -195,23 +208,23 @@ struct GardenView: View {
             .onChanged { v in
                 let p = map.design(v.location)
                 let now = Date()
-                if !handActive {
-                    handActive = true
-                    handStartAt = now
-                    handLastAt = now
+                if !hand.active {
+                    hand.active = true
+                    hand.startAt = now
+                    hand.lastAt = now
                     sim.handBegan(p)
                 } else {
-                    let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(handLastAt)))
-                    handLastAt = now
+                    let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(hand.lastAt)))
+                    hand.lastAt = now
                     sim.handMoved(p, dt: dt)
                 }
             }
             .onEnded { v in
                 let p = map.design(v.location)
                 let moved = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y) / map.s
-                let tap = moved < 14 && Date().timeIntervalSince(handStartAt) < 0.45
+                let tap = moved < 14 && Date().timeIntervalSince(hand.startAt) < 0.45
                 sim.handEnded(p, tap: tap)
-                handActive = false
+                hand.active = false
             }
     }
 

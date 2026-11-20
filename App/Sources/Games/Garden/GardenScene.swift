@@ -29,7 +29,8 @@ struct GMap {
 }
 
 enum GardenPainter {
-    static func draw(_ ctx: GraphicsContext, map: GMap, sim: GardenSim) {
+    /// The slow layer behind everything: sky and weather, hills, fence, the back lawn and the front lawn's ground.
+    static func drawBackdrop(_ ctx: GraphicsContext, map: GMap, sim: GardenSim) {
         var g = ctx
         g.translateBy(x: map.ox, y: map.oy)
         g.scaleBy(x: map.s, y: map.s)
@@ -39,12 +40,22 @@ enum GardenPainter {
         hills(g, r, sim, t)
         fence(g, r)
         backLawn(g, r, sim, t)
+        frontLawn(g, r, sim, t)
+    }
+
+    /// The fast layer: everything that moves or that she touches, drawn over the backdrop every frame.
+    static func draw(_ ctx: GraphicsContext, map: GMap, sim: GardenSim) {
+        var g = ctx
+        g.translateBy(x: map.ox, y: map.oy)
+        g.scaleBy(x: map.s, y: map.s)
+        let r = map.visible
+        let t = CGFloat(sim.time)
         for d in sim.decor where !d.held { GardenDecorPainter.draw(g, d, time: t, night: sim.night, wind: sim.windNow) }
         soil(g, sim, t)
         worm(g, sim, t)
         plants(g, sim, t)
         glassAndFrame(g)
-        frontLawn(g, r, sim, t)
+        frontGrass(g, r, sim, t)
         particles(g, sim, front: false)
         flyers(g, sim)
         bugs(g, sim, t)
@@ -258,16 +269,17 @@ enum GardenPainter {
         }
         c.fill(light, with: .color(GRGB(0xD2AC80).color(0.45)))
         c.fill(dark, with: .color(GRGB(0x3E2414).color(0.4)))
+        var shine = Path()
         for i in 0..<16 {
             let x = GGeo.bedLeft + 20 + gdRand(i, 21) * (GGeo.bedRight - GGeo.bedLeft - 40)
             let y = GGeo.soilY + 30 + gdRand(i, 22) * (GGeo.bedBottom - GGeo.soilY - 40)
             let w = 9 + gdRand(i, 23) * 14
             let rect = CGRect(x: x, y: y, width: w, height: w * 0.66)
             let stone = GRGB(0xB2A497).mix(GRGB(0x8E8073), gdRand(i, 24))
-            c.fill(Path(ellipseIn: rect), with: .radialGradient(Gradient(colors: [stone.shade(0.3).color, stone.shade(-0.3).color]),
-                                                                center: CGPoint(x: rect.minX + w * 0.3, y: rect.minY + w * 0.2),
-                                                                startRadius: 0, endRadius: w * 0.8))
+            c.fill(Path(ellipseIn: rect), with: .color(stone.shade(-0.12).color))
+            shine.addEllipse(in: CGRect(x: rect.minX + w * 0.18, y: rect.minY + w * 0.1, width: w * 0.45, height: w * 0.26))
         }
+        c.fill(shine, with: .color(.white.opacity(0.28)))
         // Roots of everything growing.
         for i in sim.plots.indices {
             guard let p = sim.plots[i].plant else { continue }
@@ -297,7 +309,11 @@ enum GardenPainter {
         top.closeSubpath()
         c.fill(top, with: .color(GRGB(0x24140A).color(0.3)))
 
-        // The surface: dusty tan when dry, dark and shiny when wet.
+        // The surface: dusty tan when dry, dark and shiny when wet. Short runs are grouped by how wet they are,
+        // so the whole edge takes a handful of strokes.
+        let levels = 10
+        var edge = [Path](repeating: Path(), count: levels)
+        var gloss = [Path](repeating: Path(), count: 4)
         let seg = 4
         var i0 = 0
         while i0 < GGeo.columns - 1 {
@@ -305,16 +321,22 @@ enum GardenPainter {
             var avg: CGFloat = 0
             for i in i0...i1 { avg += sim.wet[i] }
             avg /= CGFloat(i1 - i0 + 1)
-            var line = Path()
-            line.move(to: CGPoint(x: GGeo.colX(i0), y: sim.h[i0]))
-            for i in (i0 + 1)...i1 { line.addLine(to: CGPoint(x: GGeo.colX(i), y: sim.h[i])) }
-            let col = GRGB(0xC09366).mix(GRGB(0x3A2416), min(1, avg * 1.3))
-            g.stroke(line, with: .color(col.color), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+            let level = min(levels - 1, Int((min(1, avg * 1.3) * CGFloat(levels - 1)).rounded()))
+            edge[level].move(to: CGPoint(x: GGeo.colX(i0), y: sim.h[i0]))
+            for i in (i0 + 1)...i1 { edge[level].addLine(to: CGPoint(x: GGeo.colX(i), y: sim.h[i])) }
             if avg > 0.45 {
-                g.stroke(line.offsetBy(dx: 0, dy: -1.6), with: .color(.white.opacity(Double(min(0.5, (avg - 0.45) * 0.9)))),
-                         style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+                let k = min(3, Int((avg - 0.45) * 0.9 / 0.5 * 4))
+                gloss[k].move(to: CGPoint(x: GGeo.colX(i0), y: sim.h[i0] - 1.6))
+                for i in (i0 + 1)...i1 { gloss[k].addLine(to: CGPoint(x: GGeo.colX(i), y: sim.h[i] - 1.6)) }
             }
             i0 = i1
+        }
+        for (k, line) in edge.enumerated() where !line.isEmpty {
+            let col = GRGB(0xC09366).mix(GRGB(0x3A2416), CGFloat(k) / CGFloat(levels - 1))
+            g.stroke(line, with: .color(col.color), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+        }
+        for (k, line) in gloss.enumerated() where !line.isEmpty {
+            g.stroke(line, with: .color(.white.opacity(0.12 + 0.12 * Double(k))), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
         }
         puddles(g, sim, t)
     }
@@ -466,7 +488,6 @@ enum GardenPainter {
         lawn.addRect(CGRect(x: 984, y: 540, width: r.maxX - 984, height: 200))
         g.fill(lawn, with: .linearGradient(Gradient(colors: [GRGB(0x7FCB5C).color, GRGB(0x5FAE45).color]),
                                            startPoint: CGPoint(x: 0, y: 540), endPoint: CGPoint(x: 0, y: 834)))
-        grass(g, from: r.minX, to: r.maxX, y: 732, depth: 12, count: Int(r.width / 6), sim: sim, t: t, color: GRGB(0x72BE52), salt: 31)
         // Clover flowers.
         for i in 0..<14 {
             let x = r.minX + gdRand(i, 41) * r.width
@@ -476,27 +497,34 @@ enum GardenPainter {
         }
     }
 
+    /// The front lawn's blades stand in front of the bed's bottom beam, so they are drawn in the fast layer.
+    private static func frontGrass(_ g: GraphicsContext, _ r: CGRect, _ sim: GardenSim, _ t: CGFloat) {
+        grass(g, from: r.minX, to: r.maxX, y: 732, depth: 12, count: Int(r.width / 6), sim: sim, t: t, color: GRGB(0x72BE52), salt: 31)
+    }
+
     // MARK: Moving things
 
     private static func particles(_ g: GraphicsContext, _ sim: GardenSim, front: Bool) {
-        var water = Path()
-        var waterCore = Path()
+        // Streaks are collected into a few shared paths and stroked once each, instead of outlining every drop.
+        var waterThin = Path()
+        var waterThick = Path()
         var rain = Path()
         var splash = Path()
         for q in sim.particles {
             let life = Double(max(0, 1 - q.age / q.life))
             switch q.kind {
             case .water where !front:
-                var p = Path()
-                p.move(to: q.p)
-                p.addLine(to: CGPoint(x: q.p.x - q.v.dx * 0.022, y: q.p.y - q.v.dy * 0.022))
-                water.addPath(p.strokedPath(StrokeStyle(lineWidth: q.size, lineCap: .round)))
-                waterCore.addPath(p.strokedPath(StrokeStyle(lineWidth: q.size * 0.35, lineCap: .round)))
+                let tail = CGPoint(x: q.p.x - q.v.dx * 0.022, y: q.p.y - q.v.dy * 0.022)
+                if q.size < 4 {
+                    waterThin.move(to: q.p)
+                    waterThin.addLine(to: tail)
+                } else {
+                    waterThick.move(to: q.p)
+                    waterThick.addLine(to: tail)
+                }
             case .rain where front:
-                var p = Path()
-                p.move(to: q.p)
-                p.addLine(to: CGPoint(x: q.p.x - q.v.dx * 0.018, y: q.p.y - q.v.dy * 0.018))
-                rain.addPath(p.strokedPath(StrokeStyle(lineWidth: q.size, lineCap: .round)))
+                rain.move(to: q.p)
+                rain.addLine(to: CGPoint(x: q.p.x - q.v.dx * 0.018, y: q.p.y - q.v.dy * 0.018))
             case .splash where !front:
                 splash.addEllipse(in: CGRect(x: q.p.x - q.size, y: q.p.y - q.size, width: q.size * 2, height: q.size * 2))
             case .clod where !front:
@@ -513,9 +541,10 @@ enum GardenPainter {
                 }
             case .dust:
                 if front { continue }
+                // A soft puff: a small dense core inside a faint wide one, cheaper than a gradient.
                 let r = CGRect(x: q.p.x - q.size, y: q.p.y - q.size, width: q.size * 2, height: q.size * 2)
-                g.fill(Path(ellipseIn: r), with: .radialGradient(Gradient(colors: [q.color.color(0.45 * life), q.color.color(0)]),
-                                                                center: q.p, startRadius: 0, endRadius: q.size))
+                g.fill(Path(ellipseIn: r), with: .color(q.color.color(0.14 * life)))
+                g.fill(Path(ellipseIn: r.insetBy(dx: q.size * 0.45, dy: q.size * 0.45)), with: .color(q.color.color(0.2 * life)))
             case .ripple where !front:
                 let r = CGRect(x: q.p.x - q.size * 2, y: q.p.y - q.size * 0.5, width: q.size * 4, height: q.size)
                 g.stroke(Path(ellipseIn: r), with: .color(.white.opacity(0.8 * life)), lineWidth: 1)
@@ -546,11 +575,19 @@ enum GardenPainter {
             }
         }
         if !front {
-            g.fill(water, with: .color(GRGB(0x9FD3FA).color(0.8)))
-            g.fill(waterCore, with: .color(.white.opacity(0.75)))
-            g.fill(splash, with: .color(GRGB(0xD6EEFF).color(0.85)))
-        } else {
-            g.fill(rain, with: .color(GRGB(0xE4EEF8).color(0.55)))
+            let body = GraphicsContext.Shading.color(GRGB(0x9FD3FA).color(0.8))
+            let core = GraphicsContext.Shading.color(.white.opacity(0.75))
+            if !waterThin.isEmpty {
+                g.stroke(waterThin, with: body, style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
+                g.stroke(waterThin, with: core, style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+            }
+            if !waterThick.isEmpty {
+                g.stroke(waterThick, with: body, style: StrokeStyle(lineWidth: 4.6, lineCap: .round))
+                g.stroke(waterThick, with: core, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
+            if !splash.isEmpty { g.fill(splash, with: .color(GRGB(0xD6EEFF).color(0.85))) }
+        } else if !rain.isEmpty {
+            g.stroke(rain, with: .color(GRGB(0xE4EEF8).color(0.55)), style: StrokeStyle(lineWidth: 1.7, lineCap: .round))
         }
     }
 
@@ -774,13 +811,15 @@ enum GardenPainter {
         g.fill(Path(r), with: .color(GRGB(0x0B1236).color(0.5 * n)))
         // Stars and the moon shine through.
         let starA = n * Double(1 - sim.cloud * 0.8)
+        var stars = [Path](repeating: Path(), count: 4)
         for i in 0..<60 {
             let x = r.minX + gdRand(i, 51) * r.width
             let y = 12 + gdRand(i, 52) * 340
             let tw = 0.5 + 0.5 * sin(t * (1.5 + gdRand(i, 53) * 2) + CGFloat(i))
             let s = 1.2 + gdRand(i, 54) * 1.8
-            g.fill(Path(ellipseIn: CGRect(x: x - s, y: y - s, width: s * 2, height: s * 2)), with: .color(.white.opacity(starA * Double(tw))))
+            stars[min(3, Int(tw * 4))].addEllipse(in: CGRect(x: x - s, y: y - s, width: s * 2, height: s * 2))
         }
+        for (k, p) in stars.enumerated() { g.fill(p, with: .color(.white.opacity(starA * (Double(k) + 0.5) / 4))) }
         let mc = CGPoint(x: 846, y: 128)
         g.fill(Path(ellipseIn: CGRect(x: mc.x - 110, y: mc.y - 110, width: 220, height: 220)),
                with: .radialGradient(Gradient(colors: [Color.white.opacity(0.25 * n), Color.white.opacity(0)]), center: mc, startRadius: 20, endRadius: 110))
