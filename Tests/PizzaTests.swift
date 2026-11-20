@@ -73,7 +73,7 @@ final class PizzaTests: XCTestCase {
         let sim = freshSim()
         sim.demoDisc(220)
         let c = PGeo.center
-        sim.pour(at: c, amount: 30)
+        sim.pour(at: c, amount: 67)
         let total = sim.totalSauce
         XCTAssertGreaterThan(total, 0)
         var p = c
@@ -81,11 +81,12 @@ final class PizzaTests: XCTestCase {
             let a = Double(k) * 0.09
             let rr = 20 + CGFloat(k) / 600 * 170
             let q = CGPoint(x: c.x + CGFloat(cos(a)) * rr, y: c.y + CGFloat(sin(a)) * rr)
+            sim.flowSauce()
             sim.spread(at: q, by: CGPoint(x: q.x - p.x, y: q.y - p.y))
             p = q
         }
         XCTAssertEqual(sim.totalSauce, total, accuracy: total * 0.01)
-        XCTAssertGreaterThan(sim.coverage(sim.sauce, above: 0.05), 0.25)
+        XCTAssertGreaterThan(sim.coverage(sim.sauce, above: 0.14), 0.45)
     }
 
     func testCheeseLandsOnTheDoughAndMeltsInTheOven() {

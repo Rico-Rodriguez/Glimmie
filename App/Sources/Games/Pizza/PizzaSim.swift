@@ -278,12 +278,13 @@ final class PizzaSim {
         stepDough(d)
         stepTool(d)
         stepShreds(d)
+        flowSauce()
         stepOven(dt)
         stepSlice(dt)
         stepPuffs(dt)
         if time - coverageAt > 0.25 {
             coverageAt = time
-            sauceCoverage = coverage(sauce, above: 0.22)
+            sauceCoverage = coverage(sauce, above: 0.14)
             cheeseCoverage = coverage(cheese, above: 0.16)
         }
         if let t = newPizzaAt, time >= t { newPizzaAt = nil; newPizza() }
@@ -563,7 +564,7 @@ final class PizzaSim {
         case .ladle:
             for _ in 0..<4 {
                 let p = randomSpot(0.55)
-                pour(at: p, amount: 2.6)
+                pour(at: p, amount: 6)
             }
             PizzaSound.shared.play(.glop)
         case .cheese:
@@ -632,7 +633,7 @@ final class PizzaSim {
             if ladleLoad > 0 && speed < 260 {
                 let pourNow = min(ladleLoad, dt * 0.9)
                 ladleLoad -= pourNow
-                pour(at: tip, amount: Float(pourNow) * 4.2)
+                pour(at: tip, amount: Float(pourNow) * 22)
                 if pourNow > 0 { PizzaSound.shared.play(.glop, volume: 0.55, gap: 0.6) }
             }
             if hypot(move.x, move.y) > 0.3 { spread(at: tip, by: move) }
@@ -703,6 +704,7 @@ final class PizzaSim {
         // a ladle pours a puddle: amount is the height in the middle, spread over the weights
         for (i, w) in weights { sauce[i] += amount * w / total * 20 }
         sauceVersion &+= 1
+        sauceFlowing = true
     }
 
     /// The back of the ladle pushing sauce along `d`.
@@ -720,24 +722,20 @@ final class PizzaSim {
         let y0 = max(0, cy - rad), y1 = min(g - 1, cy + rad)
         let x0 = max(0, cx - rad), x1 = min(g - 1, cx + rad)
         guard y0 <= y1, x0 <= x1 else { return }
-        // local average for leveling
-        var sum: Float = 0, cnt: Float = 0
-        for y in y0...y1 { for x in x0...x1 { let q = cellCenter(x, y); if hypot(q.x - p.x, q.y - p.y) < radPt * 0.7 && inSauceArea(q) { sum += sauce[gridIndex(x, y)]; cnt += 1 } } }
-        let avg = cnt > 0 ? sum / cnt : 0
         for y in y0...y1 {
             for x in x0...x1 {
                 let i = gridIndex(x, y)
                 let a = sauce[i]
-                guard a > 0.004 else { continue }
+                // the ladle leaves a thin film behind and pushes the rest along and out to its sides
+                guard a > PizzaSim.sauceFilm else { continue }
                 let q = cellCenter(x, y)
                 let dist = hypot(q.x - p.x, q.y - p.y)
                 let w = Float(max(0, 1 - dist / radPt))
                 guard w > 0 else { continue }
-                var m = a * 0.42 * w
-                // the back of the ladle levels the sauce too: high spots give more
-                if a > avg { m += (a - avg) * 0.12 * w }
-                m = min(m, a)
-                let tx = q.x + dx, ty = q.y + dy
+                let m = (a - PizzaSim.sauceFilm) * 0.5 * w
+                let ox = (q.x - p.x) / max(1, dist), oy = (q.y - p.y) / max(1, dist)
+                let push = 8 * (1 - dist / radPt) + 2
+                let tx = q.x + dx + ox * push, ty = q.y + dy + oy * push
                 guard inSauceArea(CGPoint(x: tx, y: ty)) else { continue }
                 out[i] -= m
                 deposit(&out, x: tx, y: ty, m)
@@ -747,7 +745,45 @@ final class PizzaSim {
         if moved {
             sauce = out
             sauceVersion &+= 1
+            sauceFlowing = true
         }
+    }
+
+    static let sauceFilm: Float = 0.15
+    /// Above this the sauce is thick enough to slump and flow out by itself.
+    static let sauceLevel: Float = 0.3
+    var sauceFlowing = false
+
+    /// Thick sauce slumps outward until it's level (mass is kept; it stops at the rim).
+    func flowSauce() {
+        guard sauceFlowing, !ball else { return }
+        let g = PGeo.grid
+        var mask = [Bool](repeating: false, count: g * g)
+        for y in 0..<g { for x in 0..<g { mask[gridIndex(x, y)] = inSauceArea(cellCenter(x, y)) } }
+        var out = sauce
+        var any = false
+        let lv = PizzaSim.sauceLevel
+        for y in 1..<(g - 1) {
+            for x in 1..<(g - 1) {
+                let i = gridIndex(x, y)
+                let e = sauce[i] - lv
+                guard e > 0.002 else { continue }
+                for k in 0..<4 {
+                    let j = k == 0 ? i - 1 : k == 1 ? i + 1 : k == 2 ? i - g : i + g
+                    guard mask[j] else { continue }
+                    let ej = max(0, sauce[j] - lv)
+                    if e > ej {
+                        let f = 0.7 * (e - ej) / 4
+                        out[i] -= f
+                        out[j] += f
+                        any = true
+                    }
+                }
+            }
+        }
+        sauce = out
+        sauceVersion &+= 1
+        if !any { sauceFlowing = false }
     }
 
     /// Adds `m` at a point, shared bilinearly between the four nearest cells.
@@ -1203,7 +1239,7 @@ final class PizzaSim {
     func ready(_ s: PizzaStep) -> Bool {
         switch s {
         case .dough: return !ball && meanR > 180 && tossStart == nil
-        case .sauce: return sauceCoverage > 0.62
+        case .sauce: return sauceCoverage > 0.55
         case .cheese: return cheeseCoverage > 0.5
         case .toppings: return toppings.count >= 5
         case .bake: return bake >= 1
@@ -1389,7 +1425,7 @@ extension PizzaSim {
             }
         }
         sauceVersion &+= 1
-        sauceCoverage = coverage(sauce, above: 0.22)
+        sauceCoverage = coverage(sauce, above: 0.14)
     }
 
     func demoCheese(_ count: Int) {

@@ -1122,7 +1122,7 @@ final class PizzaGrids {
             for x in 0..<S {
                 let i = y * S + x
                 let a = heights[i]
-                let alpha = PizzaGrids.smoothstep(0.1, 0.3, a)
+                let alpha = PizzaGrids.smoothstep(0.06, 0.2, a)
                 if alpha <= 0.001 { put(i, 0, 0, 0, 0); continue }
                 any = true
                 let gx = heights[y * S + min(S - 1, x + 1)] - heights[y * S + max(0, x - 1)]
