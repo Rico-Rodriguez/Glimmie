@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -35,6 +36,7 @@ enum BakeStep {
 
 struct KitchenView: View {
     @Binding var treat: Treat
+    let order: BakeryOrder
     let startStep: Int
     let onDone: (Treat) -> Void
     let onShop: () -> Void
@@ -42,6 +44,8 @@ struct KitchenView: View {
     @State private var step = 0
     @State private var canNext = false
     @State private var pulse = false
+    /// The flavor counts as chosen once she picks a bottle (the batter starts out as vanilla).
+    @State private var flavorPicked = false
 
     private var steps: [BakeStep] {
         treat.kind == .iceCream ? [.cone, .scoops, .sauce, .decorate] : [.mix, .bake, .frost, .decorate]
@@ -57,8 +61,11 @@ struct KitchenView: View {
                         .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity),
                                                 removal: .move(edge: .leading).combined(with: .opacity)))
                     topBar
+                    OrderCard(order: order, treat: treat, known: known)
+                        .position(x: 232, y: 168)
                 }
                 .frame(width: 1024, height: 834)
+                .environment(\.bakeryOrder, order)
             }
         }
         .onAppear {
@@ -67,9 +74,16 @@ struct KitchenView: View {
         }
     }
 
+    /// The parts of the order she has had a chance to choose so far.
+    private var known: Set<BakeryOrder.Part> {
+        var k: Set<BakeryOrder.Part> = [.kind, .color, .topping]
+        if treat.kind == .iceCream || flavorPicked || steps[step] != .mix { k.insert(.flavor) }
+        return k
+    }
+
     @ViewBuilder private var stepView: some View {
         switch steps[step] {
-        case .mix: MixStepView(treat: $treat, done: $canNext)
+        case .mix: MixStepView(treat: $treat, done: $canNext, onFlavor: { flavorPicked = true })
         case .bake: BakeStepView(treat: $treat, done: $canNext)
         case .frost: FrostStepView(treat: $treat, done: $canNext)
         case .cone: ConeStepView(treat: $treat, done: $canNext)
@@ -214,6 +228,8 @@ struct WoodSpoon: View {
 struct MixStepView: View {
     @Binding var treat: Treat
     @Binding var done: Bool
+    var onFlavor: () -> Void = {}
+    @Environment(\.bakeryOrder) private var order
 
     static let ingredients = ["flour", "sugar", "eggs", "milk", "butter"]
     static let slots = [CGPoint(x: 700, y: 290), CGPoint(x: 830, y: 290), CGPoint(x: 960, y: 290),
@@ -224,9 +240,8 @@ struct MixStepView: View {
     private static let k: CGFloat = 1.4
 
     @State private var sim = BowlSim()
+    @State private var hands = HandsOnBowl()
     @State private var added: [String] = []
-    @State private var queued: Set<String> = []
-    @State private var gone: Set<String> = []
     @State private var picked = false
     @State private var stirring = false
     @State private var stirDistance: CGFloat = 0
@@ -234,6 +249,15 @@ struct MixStepView: View {
     @State private var swishAcc: CGFloat = 0
     @State private var hint = false
     @State private var frozenAt: Date?
+    /// What she's holding (mirrors `hands.holding` so the plates redraw).
+    @State private var holding: String?
+    @State private var progress: [String: Double] = [:]
+    /// A plate she tapped instead of dragging: its ghost shows the way to the bowl.
+    @State private var hintFor: Int?
+    @State private var hintAt = Date.distantPast
+    @State private var touchStart: CGPoint?
+    @State private var grainAcc = 0.0
+    private let timer = Timer.publish(every: 1.0 / 60, on: .main, in: .common).autoconnect()
 
     private var allIn: Bool { added.count == MixStepView.ingredients.count }
     private var bowlOrigin: CGPoint { CGPoint(x: bowlCenter.x - bowlSize.width / 2, y: bowlCenter.y - bowlSize.height / 2) }
@@ -244,6 +268,8 @@ struct MixStepView: View {
 
     var body: some View {
         ZStack {
+            if !allIn { ingredientPlates }
+
             TimelineView(.animation) { tl in
                 let now = frozenAt ?? tl.date
                 Canvas { ctx, _ in
@@ -251,17 +277,27 @@ struct MixStepView: View {
                     g.translateBy(x: bowlOrigin.x, y: bowlOrigin.y)
                     g.scaleBy(x: MixStepView.k, y: MixStepView.k)
                     sim.draw(in: g, now: now)
+                    hands.draw(in: g, now: now)
                 }
             }
             .frame(width: 1024, height: 834)
             .position(x: 512, y: 417)
             .allowsHitTesting(false)
 
-            Color.clear
-                .frame(width: bowlSize.width, height: bowlSize.height + 80)
-                .contentShape(Rectangle())
-                .gesture(stirGesture)
-                .position(x: bowlCenter.x, y: bowlCenter.y - 40)
+            if allIn {
+                Color.clear
+                    .frame(width: bowlSize.width, height: bowlSize.height + 80)
+                    .contentShape(Rectangle())
+                    .gesture(stirGesture)
+                    .position(x: bowlCenter.x, y: bowlCenter.y - 40)
+            } else {
+                // one big touch layer: pick an ingredient up from its plate and bring it to the bowl
+                Color.clear
+                    .frame(width: 1024, height: 700)
+                    .contentShape(Rectangle())
+                    .gesture(handGesture)
+                    .position(x: 512, y: 484)
+            }
 
             if allIn && picked && !done && !stirring {
                 WoodSpoon()
@@ -274,29 +310,216 @@ struct MixStepView: View {
             }
             if burst > 0 { SparkleBurst(count: 16, radius: 260).id(burst).position(x: bowlCenter.x, y: bowlCenter.y - 80) }
 
-            if !allIn {
-                ForEach(Array(MixStepView.ingredients.enumerated()), id: \.offset) { i, name in
-                    if !gone.contains(name) {
-                        PickPlate(selected: false, size: 118, tap: { drop(name, at: i) }) {
-                            Sprite(name, box: Box.thing).padding(8)
-                        }
-                        .opacity(queued.contains(name) ? 0.55 : 1)
-                        .position(MixStepView.slots[i])
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-            } else {
+            if allIn {
                 ForEach(0..<BakeryPalette.flavors.count, id: \.self) { i in
                     PickPlate(selected: picked && treat.flavor == i, size: 96, tap: { pick(i) }) {
                         FlavorJar(sprite: "bottle", flavor: i).padding(6)
                     }
+                    .wanted(order.map { $0.kind != .iceCream && $0.flavor == i } ?? false)
                     .position(flavorSpot(i))
                     .transition(.scale.combined(with: .opacity))
                 }
             }
         }
         .onAppear(perform: demo)
+        .onReceive(timer) { now in tick(now) }
     }
+
+    // MARK: Ingredient plates (the recipe: each one gets a tick when it's in)
+
+    private var ingredientPlates: some View {
+        ZStack {
+            ForEach(Array(MixStepView.ingredients.enumerated()), id: \.offset) { i, name in
+                let isIn = added.contains(name)
+                let p = progress[name] ?? 0
+                ZStack {
+                    Circle().fill(.white)
+                    Circle().stroke(Theme.blush, lineWidth: 4)
+                    // fills up as it goes in
+                    Circle().trim(from: 0, to: CGFloat(p))
+                        .stroke(Color(hex: 0x6CCB8B), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .padding(2)
+                    if holding != name {
+                        Sprite(name, box: Box.thing)
+                            .padding(10)
+                            .opacity(isIn ? 0.45 : 1)
+                    }
+                    if name == "eggs" && !isIn && holding != name {
+                        // eggs left in the box
+                        HStack(spacing: 4) {
+                            ForEach(0..<HandsOnBowl.eggs, id: \.self) { k in
+                                Ellipse().fill(k < hands.eggsCracked ? Color(hex: 0xE8DCCF) : Color(hex: 0xFFF8EC))
+                                    .overlay(Ellipse().stroke(Color(hex: 0xD9C6B4), lineWidth: 2))
+                                    .frame(width: 16, height: 21)
+                            }
+                        }
+                        .offset(y: 50)
+                    }
+                    if isIn {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 26, weight: .black))
+                            .foregroundStyle(.white)
+                            .frame(width: 48, height: 48)
+                            .background(Circle().fill(Color(hex: 0x4FBF72)))
+                            .overlay(Circle().stroke(.white, lineWidth: 4))
+                            .offset(x: 38, y: 38)
+                            .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    }
+                }
+                .frame(width: 118, height: 118)
+                .shadow(color: Theme.ink.opacity(0.18), radius: 5, y: 4)
+                .scaleEffect(hintFor == i ? 1.1 : 1)
+                .position(MixStepView.slots[i])
+                .animation(.spring(response: 0.3, dampingFraction: 0.55), value: isIn)
+            }
+            if let i = hintFor {
+                // a ghost of the ingredient glides to the bowl: "bring me over there"
+                TimelineView(.animation) { tl in
+                    let a = tl.date.timeIntervalSince(hintAt)
+                    let k = fxEase((a.truncatingRemainder(dividingBy: 1.1)) / 0.8)
+                    let from = MixStepView.slots[i]
+                    let to = CGPoint(x: bowlCenter.x + 30, y: bowlCenter.y - 170)
+                    Sprite(MixStepView.ingredients[i], box: Box.thing)
+                        .frame(width: 110, height: 110)
+                        .opacity(a < 2.2 ? 0.55 * Double(1 - k * 0.4) : 0)
+                        .position(x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k - 60 * sin(k * .pi))
+                }
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    // MARK: Hands
+
+    private var handGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { v in
+                guard frozenAt == nil else { return }
+                let now = Date()
+                let b = toBowl(v.location)
+                if touchStart == nil {
+                    touchStart = v.location
+                    if hands.touchesParkedEgg(b) {
+                        knocked(hands.knock(now))
+                        if hands.holding == .eggs { hands.grab(.eggs, at: CGPoint(x: b.x, y: b.y + 30), now: now) }
+                        holding = hands.holding?.rawValue
+                        return
+                    }
+                    if let i = slot(at: v.location), let w = Ingredient(rawValue: MixStepView.ingredients[i]),
+                       !hands.finished.contains(w) {
+                        if hands.holding == .eggs && hands.parked && w != .eggs { hands.holding = nil }
+                        hands.grab(w, at: b, now: now)
+                        holding = w.rawValue
+                        hintFor = nil
+                        Sound.shared.play(.pop, volume: 0.6)
+                        Sound.shared.tap()
+                    }
+                    return
+                }
+                guard hands.holding != nil else { return }
+                knocked(hands.move(to: b, now: now))
+            }
+            .onEnded { v in
+                defer { touchStart = nil }
+                guard frozenAt == nil, let w = hands.holding else { return }
+                let moved = hypot(v.translation.width, v.translation.height)
+                if moved < 14, let i = slot(at: v.location), MixStepView.ingredients[i] == w.rawValue {
+                    // a tap on the plate: put it back and show the way to the bowl
+                    hands.holding = nil
+                    holding = nil
+                    hintFor = i
+                    hintAt = Date()
+                    Sound.shared.play(.boing, volume: 0.5)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { if hintFor == i { hintFor = nil } }
+                    return
+                }
+                let wentIn = hands.release(now: Date())
+                if w == .butter && wentIn {
+                    let land = PourEvent.fallTime(from: hands.butter.last?.from.y ?? 0, to: BowlGeo.center.y - 8)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + land) { BakerySound.shared.play(.plop) }
+                    Sound.shared.tap()
+                    finishIngredient(.butter, delay: land + 0.2)
+                } else if w == .eggs && wentIn {
+                    Sound.shared.play(.tap, volume: 0.6)
+                } else if !wentIn {
+                    Sound.shared.play(.whoosh, volume: 0.35)
+                }
+                holding = hands.holding?.rawValue
+            }
+    }
+
+    private func slot(at p: CGPoint) -> Int? {
+        MixStepView.slots.indices.first { hypot(MixStepView.slots[$0].x - p.x, MixStepView.slots[$0].y - p.y) < 64 }
+    }
+
+    private func knocked(_ k: HandsOnBowl.Knock) {
+        switch k {
+        case .none: return
+        case .knock:
+            Sound.shared.play(.crack, volume: 0.6)
+            Sound.shared.tap()
+        case .crack:
+            Sound.shared.play(.crack, volume: 1)
+            Sound.shared.tap()
+            let fall = 0.12 + PourEvent.fallTime(from: hands.broken.last.map { $0.center.y + 14 } ?? 0, to: BowlGeo.center.y)
+            DispatchQueue.main.asyncAfter(deadline: .now() + fall) { BakerySound.shared.play(.plop, volume: 0.8) }
+            holding = nil
+            progress["eggs"] = hands.progress(.eggs)
+            if hands.finished.contains(.eggs) { finishIngredient(.eggs, delay: fall + 0.2) }
+        }
+    }
+
+    /// Runs the pour while something is held over the bowl.
+    private func tick(_ now: Date) {
+        guard frozenAt == nil, !allIn else { return }
+        let wasPouring = hands.pouring
+        let full = hands.step(now)
+        if let w = hands.holding, hands.pouring {
+            progress[w.rawValue] = hands.progress(w)
+            if !wasPouring {
+                switch w {
+                case .milk: BakerySound.shared.play(.glug)
+                case .sugar: BakerySound.shared.play(.grains)
+                default: BakerySound.shared.play(.poof, volume: 0.8)
+                }
+            }
+            grainAcc += 1.0 / 60
+            if grainAcc > 0.45 {
+                grainAcc = 0
+                switch w {
+                case .flour:
+                    BakerySound.shared.play(.shake, volume: 0.4)
+                    BakerySound.shared.play(.poof, volume: 0.5)
+                case .sugar: BakerySound.shared.play(.grains, volume: 0.7)
+                case .milk: BakerySound.shared.play(.glug, volume: 0.6)
+                default: break
+                }
+            }
+        } else if wasPouring {
+            grainAcc = 0
+        }
+        for w in full {
+            progress[w.rawValue] = 1
+            holding = nil
+            Sound.shared.tap()
+            finishIngredient(w, delay: 0.5)
+        }
+    }
+
+    private func finishIngredient(_ w: Ingredient, delay: Double) {
+        progress[w.rawValue] = 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard !added.contains(w.rawValue) else { return }
+            Sound.shared.play(.ding, volume: 0.5)
+            withAnimation(.spring(response: 0.3)) { added.append(w.rawValue) }
+            if added.count == MixStepView.ingredients.count {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { Sound.shared.play(.sparkle, volume: 0.7) }
+            }
+        }
+    }
+
+    // MARK: Flavor and stirring
 
     private func flavorSpot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 660, y0: 250, dx: 108, dy: 150) }
 
@@ -326,53 +549,14 @@ struct MixStepView: View {
             }
     }
 
-    private func drop(_ name: String, at i: Int) {
-        guard !queued.contains(name), let what = Ingredient(rawValue: name) else { return }
-        Sound.shared.play(.pop, volume: 0.7)
-        Sound.shared.tap()
-        queued.insert(name)
-        let ev = sim.pour(what, from: toBowl(MixStepView.slots[i]))
-        let lead = max(0, ev.start.timeIntervalSinceNow)
-        DispatchQueue.main.asyncAfter(deadline: .now() + lead) {
-            withAnimation(.easeOut(duration: 0.12)) { _ = gone.insert(name) }
-        }
-        sounds(for: ev, lead: lead)
-        DispatchQueue.main.asyncAfter(deadline: .now() + lead + ev.pourEnd + 0.15) {
-            withAnimation(.spring(response: 0.3)) { added.append(name) }
-            if added.count == MixStepView.ingredients.count {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { Sound.shared.play(.sparkle, volume: 0.7) }
-            }
-        }
-    }
-
     private func sounds(for ev: PourEvent, lead: Double) {
         func at(_ t: Double, _ f: @escaping () -> Void) {
             DispatchQueue.main.asyncAfter(deadline: .now() + lead + t, execute: f)
         }
         at(0) { Sound.shared.play(.whoosh, volume: 0.35) }
         let ps = ev.pourStart
-        switch ev.what {
-        case .flour:
-            at(ps + 0.05) { BakerySound.shared.play(.shake, volume: 0.45) }
-            at(ps + 0.3) { BakerySound.shared.play(.poof, volume: 0.9) }
-            at(ps + 0.8) { BakerySound.shared.play(.poof, volume: 0.6) }
-        case .sugar:
-            at(ps + 0.1) { BakerySound.shared.play(.grains) }
-        case .milk:
-            at(ps) { BakerySound.shared.play(.glug) }
-        case .flavor:
-            at(ps) { BakerySound.shared.play(.drizzle, volume: 0.8) }
-            at(ps + 0.45) { BakerySound.shared.play(.drizzle, volume: 0.6) }
-        case .eggs:
-            let fall = PourEvent.fallTime(from: PourEvent.eggY + 14, to: BowlGeo.center.y)
-            for k in 0..<2 {
-                at(ev.crackTime(k)) { Sound.shared.play(.crack, volume: 0.9) }
-                at(ev.crackTime(k) + 0.12 + fall) { BakerySound.shared.play(.plop, volume: 0.8) }
-            }
-        case .butter:
-            let fall = PourEvent.fallTime(from: ev.hover.y, to: BowlGeo.center.y - 8)
-            at(ps + fall) { BakerySound.shared.play(.plop) }
-        }
+        at(ps) { BakerySound.shared.play(.drizzle, volume: 0.8) }
+        at(ps + 0.45) { BakerySound.shared.play(.drizzle, volume: 0.6) }
     }
 
     private func pick(_ i: Int) {
@@ -388,6 +572,7 @@ struct MixStepView: View {
             treat.flavor = i
             picked = true
         }
+        onFlavor()
         if done { burst += 1 }
     }
 
@@ -399,8 +584,9 @@ struct MixStepView: View {
         Sound.shared.play(.sparkle, volume: 0.8)
     }
 
-    /// Screenshot hooks (-bakeryDemo stir | pour).
+    /// Screenshot hooks (-bakeryDemo stir | pour | shake | crack).
     private func demo() {
+        hands.sim = sim
         switch KitchenDemo.mode {
         case "stir":
             treat.flavor = 2
@@ -408,6 +594,7 @@ struct MixStepView: View {
             sim.setTarget(BakeryPalette.flavors[treat.flavor].color)
             added = MixStepView.ingredients
             picked = true
+            onFlavor()
             stirring = true
             let t0 = Date()
             for k in 0..<60 {
@@ -415,13 +602,38 @@ struct MixStepView: View {
                 let r = 0.25 + 0.35 * abs(sin(Double(k) * 0.05))
                 sim.stir(to: CGPoint(x: cos(a) * r, y: sin(a) * r), at: t0.addingTimeInterval(Double(k) * 0.008))
             }
-        case "pour":
+        case "pour", "shake":
+            // holding the flour bag over the bowl, shaking it like a sifter
             sim.prefill([.milk, .eggs])
-            let ev = sim.pour(.flour, from: toBowl(MixStepView.slots[0]))
             added = ["milk", "eggs"]
-            gone = ["milk", "eggs", "flour"]
-            queued = gone
-            frozenAt = ev.start.addingTimeInterval(1.15)
+            progress = ["milk": 1, "eggs": 1]
+            hands.finished = [.milk, .eggs]
+            hands.eggsCracked = 2
+            let t0 = Date()
+            hands.grab(.flour, at: CGPoint(x: 300, y: -10), now: t0)
+            holding = "flour"
+            for k in 0..<50 {
+                let t = t0.addingTimeInterval(Double(k) / 60)
+                hands.move(to: CGPoint(x: 300 + CGFloat(sin(Double(k) * 0.9)) * 18, y: -10), now: t)
+                _ = hands.step(t)
+            }
+            progress["flour"] = hands.progress(.flour)
+            frozenAt = t0.addingTimeInterval(50.0 / 60)
+        case "crack":
+            // the first egg breaking open on the rim, the second egg cracked and waiting
+            sim.prefill([.milk, .flour])
+            added = ["milk", "flour"]
+            progress = ["milk": 1, "flour": 1]
+            hands.finished = [.milk, .flour]
+            let t0 = Date()
+            hands.grab(.eggs, at: CGPoint(x: 165, y: HandsOnBowl.rimY(165) + 4), now: t0)
+            hands.knock(t0)
+            hands.knock(t0.addingTimeInterval(0.1))
+            hands.grab(.eggs, at: CGPoint(x: 262, y: HandsOnBowl.rimY(262) + 4), now: t0.addingTimeInterval(0.2))
+            hands.knock(t0.addingTimeInterval(0.25))
+            holding = "eggs"
+            progress["eggs"] = hands.progress(.eggs)
+            frozenAt = t0.addingTimeInterval(0.42)
         default:
             break
         }
@@ -442,6 +654,7 @@ enum KitchenDemo {
 struct FrostStepView: View {
     @Binding var treat: Treat
     @Binding var done: Bool
+    @Environment(\.bakeryOrder) private var order
 
     /// Spatula strokes this time (stage units): only the frosting under them shows until it's spread.
     @State private var strokes: [[CGPoint]] = []
@@ -722,6 +935,7 @@ struct FrostStepView: View {
             PickPlate(selected: treat.frosting == i, size: 92, tap: { pickColor(i) }) {
                 Sprite("top_cream", color: BakeryPalette.frostings[i], box: Box.topping).padding(10)
             }
+            .wanted(order.map { $0.kind != .iceCream && $0.frosting == i } ?? false)
             .position(gridSpot(i, cols: 3, x0: 720, y0: y0, dx: 122, dy: 112))
         }
     }
@@ -827,6 +1041,7 @@ struct Spatula: View {
 struct ConeStepView: View {
     @Binding var treat: Treat
     @Binding var done: Bool
+    @Environment(\.bakeryOrder) private var order
     @State private var bounce = false
     @State private var burst = 0
 
@@ -839,6 +1054,7 @@ struct ConeStepView: View {
                     Sprite("cone_\(c)", color: TreatPainter.liner(treat.liner), box: CGRect(x: 180, y: 386, width: 240, height: 214))
                         .padding(12)
                 }
+                .wanted(order?.cone == c && order?.kind == .iceCream)
                 .position(gridSpot(i, cols: 3, x0: 710, y0: 230, dx: 138, dy: 150))
             }
             if treat.cone == "cup" {
@@ -873,6 +1089,7 @@ struct ConeStepView: View {
 struct ScoopStepView: View {
     @Binding var treat: Treat
     @Binding var done: Bool
+    @Environment(\.bakeryOrder) private var order
     @State private var flying: Int?
     @State private var flyAt = CGPoint.zero
     @State private var bounce = false
@@ -888,6 +1105,7 @@ struct ScoopStepView: View {
                 PickPlate(selected: false, size: 96, tap: { scoop(i) }) {
                     FlavorJar(sprite: "tub", flavor: i).padding(6)
                 }
+                .wanted(order?.flavor == i)
                 .opacity(treat.scoops.count >= 4 ? 0.55 : 1)
                 .position(spot(i))
             }
@@ -1073,6 +1291,7 @@ struct SauceStepView: View {
 struct DecorateStepView: View {
     @Binding var treat: Treat
     @Binding var done: Bool
+    @Environment(\.bakeryOrder) private var order
 
     @State private var tray = 0
     /// nil = a surprise color for every topping
@@ -1289,6 +1508,7 @@ struct DecorateStepView: View {
                         .overlay(Circle().stroke(tray == i ? Theme.pink : .clear, lineWidth: 4))
                     }
                     .buttonStyle(Squish())
+                    .wanted(order.map { o in t.items.contains { "top_" + $0 == o.topping } } ?? false, size: 24, out: 4)
                 }
             }
             ScrollView(.vertical, showsIndicators: false) {
@@ -1307,6 +1527,7 @@ struct DecorateStepView: View {
                                 .stroke(selected == sprite ? Theme.pink : Theme.blush, lineWidth: selected == sprite ? 5 : 3))
                         }
                         .buttonStyle(Squish())
+                        .wanted(order?.topping == sprite, size: 30, out: 0)
                     }
                 }
                 .padding(.vertical, 6)

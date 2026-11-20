@@ -12,6 +12,7 @@ struct DressUpView: View {
     @State private var showGallery = false
     @State private var galleryBounce = false
     @State private var showPets = false
+    @State private var danceID = 0
     @State private var battle: BattleState?
     /// Her skirt and hair swing (a class: it changes every frame).
     @State private var motion = DollMotion()
@@ -78,10 +79,12 @@ struct DressUpView: View {
                 PetCornerView(look: store.current,
                               close: { withAnimation(.spring(response: 0.4)) { showPets = false } },
                               takeAlong: { pet in
-                                  store.current.wear(pet, in: "hold")
+                                  store.current.pet = pet
+                                  guard pet != nil else { return }
                                   withAnimation(.spring(response: 0.4)) { showPets = false }
                                   celebrate()
-                              })
+                              },
+                              restyle: { pet in store.current.pet = pet })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(3)
             }
@@ -114,6 +117,9 @@ struct DressUpView: View {
                 TwinkleBurst()
                     .id(burst)
                     .offset(y: -420)
+                if danceID > 0 {
+                    MusicNotes().id(danceID).offset(y: -380)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 0)
@@ -150,6 +156,13 @@ struct DressUpView: View {
             .padding(.horizontal, 26)
             .padding(.top, 22)
 
+            VStack(spacing: 16) {
+                RoundButton(symbol: "music.note", tint: Color(hex: 0x46B7B0)) { dance() }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 26)
+            .padding(.top, 112)
+
             if let b = battle, b.phase == .dressing {
                 BattleBanner(state: b) {
                     Sound.shared.play(.fanfare, volume: 0.7)
@@ -170,9 +183,18 @@ struct DressUpView: View {
             group = args[i + 1]
             cat = art.categories.first { $0.group == group }?.id ?? cat
         }
-        if args.contains("-demoPets") { showPets = true }
+        if args.contains("-demoPets") || args.contains("-petDemo") { showPets = true }
+        if args.contains("-demoCompanion") {
+            var p = PetLook(kind: "puppy")
+            p.wear = ["hat": "ph_party", "neck": "pn_bandana"]
+            p.colors = ["hat": 16, "neck": 4]
+            store.current.pet = p
+        }
         if args.contains("-demoBattle") { battle = .new() }
         if args.contains("-demoRunway") { var b = BattleState.new(); b.phase = .runway; battle = b }
+        if args.contains("-demoDance") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { dance() }
+        }
         if args.contains("-demoGallery") {
             let keep = store.current
             for _ in 0..<8 { store.current = Look.random().sanitized(); store.saveToGallery() }
@@ -199,6 +221,28 @@ struct DressUpView: View {
         celebrate()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             if expression == .happy { expression = .normal }
+        }
+    }
+
+    /// A little dance with music; her pet dances along.
+    private func dance() {
+        Sound.shared.tap()
+        motion.startDance(at: Date().timeIntervalSinceReferenceDate)
+        danceID += 1
+        let id = danceID
+        let tune: [SFX] = [.note1, .note3, .note2, .note4, .note1, .note3, .note4, .note2,
+                           .note3, .note1, .note2, .note4, .note3, .note2, .note1, .ding]
+        let step = DollMotion.danceLength / Double(tune.count)
+        for (i, n) in tune.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * step) {
+                guard danceID == id else { return }
+                Sound.shared.play(n, volume: 0.7)
+                if i % 4 == 2 { expression = .happy }
+                if i % 4 == 3, expression == .happy { expression = .normal }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + DollMotion.danceLength) {
+            if danceID == id { expression = .normal }
         }
     }
 
@@ -244,15 +288,17 @@ private struct Tray: View {
     @Binding var cat: String
     let onPick: () -> Void
 
+    @State private var mixing = false
+
     private let art = DressUpArt.shared
-    private static let groups: [(id: String, first: String)] = [("me", "hairBack"), ("clothes", "dress"), ("extras", "hat"), ("scene", "bg")]
+    private static let groups: [(id: String, first: String)] = [("me", "hairBack"), ("clothes", "dress"), ("extras", "hat"), ("scene", "bg"), ("sets", "sets")]
 
     var body: some View {
         VStack(spacing: 14) {
             groupTabs
             categoryChips
             ScrollView(showsIndicators: false) {
-                if cat == "skin" { skinGrid } else { itemGrid }
+                if group == "sets" { setsGrid } else if cat == "skin" { skinGrid } else { itemGrid }
             }
             .frame(maxHeight: .infinity)
             swatches
@@ -261,6 +307,19 @@ private struct Tray: View {
         .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(.white.opacity(0.88)))
         .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 5))
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, y: 8)
+        .overlay {
+            if mixing {
+                ColorMixer(palette: art.cloth, close: { withAnimation(.spring(response: 0.35)) { mixing = false } }) { hex in
+                    store.current.mixed[cat] = hex
+                    store.mixes.removeAll { $0 == hex }
+                    store.mixes.insert(hex, at: 0)
+                    if store.mixes.count > 12 { store.mixes.removeLast(store.mixes.count - 12) }
+                    withAnimation(.spring(response: 0.35)) { mixing = false }
+                    onPick()
+                }
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+        }
     }
 
     // Big tabs: Me / Clothes / Extras / Scene
@@ -289,6 +348,7 @@ private struct Tray: View {
         case "me": DollView(look: store.current, box: CGRect(x: 120, y: 70, width: 360, height: 380))
         case "clothes": ItemThumb(item: "d_princess", look: Look.starter)
         case "extras": ItemThumb(item: "h_crown", look: Look.starter)
+        case "sets": ItemThumb(item: "d_pumpkin", look: Look.starter)
         default:
             SceneView(bg: store.current.bg)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -363,6 +423,35 @@ private struct Tray: View {
         .padding(4)
     }
 
+    /// Ready-made sets: one tap dresses her (and her pet) for Halloween, winter, a birthday...
+    private var setsGrid: some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(OutfitSet.all) { set in
+                cell(selected: isWearing(set)) {
+                    ZStack {
+                        SceneView(bg: set.bg)
+                            .opacity(0.55)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        ItemThumb(item: set.icon, look: set.apply(to: Look.starter))
+                            .padding(6)
+                    }
+                } action: {
+                    Sound.shared.play(.sparkle)
+                    Sound.shared.tap()
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                        store.current = set.apply(to: store.current).sanitized()
+                    }
+                    onPick()
+                }
+            }
+        }
+        .padding(4)
+    }
+
+    private func isWearing(_ set: OutfitSet) -> Bool {
+        store.current.bg == set.bg && set.picks.allSatisfy { store.current.picks[$0.key] == $0.value }
+    }
+
     private var skinGrid: some View {
         LazyVGrid(columns: columns, spacing: 12) {
             ForEach(art.skin.indices, id: \.self) { i in
@@ -411,12 +500,75 @@ private struct Tray: View {
             case "eye": colorRow(art.eye, selected: store.current.eye) { store.current.eye = $0 }
             case "cloth":
                 if let item = currentItem, item.colorSource == .own {
-                    colorRow(art.cloth, selected: store.current.colorIndex(for: item)) { store.current.colors[cat] = $0 }
+                    clothRow(item)
                     if item.patternable { patternRow(item) }
                 }
             default: EmptyView()
             }
         }
+    }
+
+    /// Cloth colors: the paint pot (mix your own), her own mixes, then the palette.
+    private func clothRow(_ item: ArtItem) -> some View {
+        let mine = store.current.mixed[cat]
+        let selected = mine == nil ? store.current.colorIndex(for: item) : -1
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    Button {
+                        Sound.shared.play(.whoosh, volume: 0.6)
+                        withAnimation(.spring(response: 0.35)) { mixing = true }
+                    } label: {
+                        Image(systemName: "paintpalette.fill")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 50, height: 50)
+                            .background(Circle().fill(AngularGradient(colors: [Theme.pink, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac, Theme.pink], center: .center)))
+                            .overlay(Circle().stroke(.white, lineWidth: 3))
+                            .padding(4)
+                    }
+                    .buttonStyle(Squish())
+                    ForEach(store.mixes, id: \.self) { hex in
+                        let c = RGB(hex: hex)
+                        Button {
+                            Sound.shared.play(.ding, volume: 0.6)
+                            store.current.mixed[cat] = hex
+                        } label: {
+                            swatch(c, on: mine == hex)
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: "drop.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                                        .padding(3).background(Circle().fill(Theme.ink.opacity(0.45))).offset(x: 2, y: 2)
+                                }
+                        }
+                        .buttonStyle(Squish())
+                    }
+                    ForEach(art.cloth.indices, id: \.self) { i in
+                        Button {
+                            Sound.shared.play(.ding, volume: 0.6)
+                            store.current.colors[cat] = i
+                            store.current.mixed[cat] = nil
+                        } label: {
+                            swatch(art.cloth[i], on: selected == i)
+                        }
+                        .buttonStyle(Squish())
+                        .id(i)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            .onAppear { if selected >= 0 { proxy.scrollTo(selected, anchor: .center) } }
+        }
+        .frame(height: 64)
+    }
+
+    private func swatch(_ c: RGB, on: Bool) -> some View {
+        Circle()
+            .fill(c.color)
+            .frame(width: 50, height: 50)
+            .overlay(Circle().stroke(Shades.outline(c).color.opacity(0.5), lineWidth: 2))
+            .overlay(Circle().stroke(.white, lineWidth: on ? 5 : 0).padding(3))
+            .overlay(Circle().stroke(Theme.pink, lineWidth: on ? 4 : 0).padding(-3))
+            .padding(4)
     }
 
     private func colorRow(_ colors: [RGB], selected: Int, set: @escaping (Int) -> Void) -> some View {
@@ -472,7 +624,7 @@ private struct Tray: View {
     }
 }
 
-private struct PatternSwatch: View {
+struct PatternSwatch: View {
     let name: String
     let base: RGB
     var body: some View {
@@ -488,5 +640,25 @@ private struct PatternSwatch: View {
             }
             ctx.stroke(circle, with: .color(Shades.outline(base).color.opacity(0.5)), lineWidth: 2)
         }
+    }
+}
+
+/// Music notes floating up while she dances.
+private struct MusicNotes: View {
+    @State private var go = false
+    var body: some View {
+        ZStack {
+            ForEach(0..<10, id: \.self) { i in
+                Image(systemName: i % 2 == 0 ? "music.note" : "music.quarternote.3")
+                    .font(.system(size: CGFloat(30 + (i % 3) * 10), weight: .bold))
+                    .foregroundStyle([Theme.pink, Color(hex: 0x46B7B0), Color(hex: 0x9B79E0), Color(hex: 0xF2B83E)][i % 4])
+                    .offset(x: CGFloat((i * 97) % 360 - 180) + (go ? CGFloat(i % 2 == 0 ? 30 : -30) : 0),
+                            y: go ? -200 - CGFloat(i * 14) : 120)
+                    .opacity(go ? 0 : 1)
+                    .animation(.easeOut(duration: 2.2).delay(Double(i) * 0.3), value: go)
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear { go = true }
     }
 }

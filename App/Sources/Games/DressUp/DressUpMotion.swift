@@ -62,12 +62,50 @@ final class DollMotion {
 
     func endDrag() { lastDrag = nil }
 
+    // MARK: Dancing
+
+    /// A little dance: 0 sway, 1 hop-hop, 2 twirl, 3 wiggle. Lasts `danceLength` seconds.
+    private(set) var dance: (start: Double, style: Int)?
+    static let danceLength = 4.8
+
+    func startDance(at t: Double) {
+        let style = ((dance?.style ?? -1) + 1 + Int.random(in: 0...2)) % 4
+        dance = (t, style)
+        flare.v += 2
+    }
+
+    var dancing: Bool { dance != nil }
+
+    /// Sideways shift, lift, lean (degrees) and mirror (1 ... -1) at time `t`.
+    func danceMove(_ t: Double) -> (dx: CGFloat, dy: CGFloat, lean: Double, flip: CGFloat) {
+        guard let d = dance else { return (0, 0, 0, 1) }
+        let u = t - d.start
+        if u > Self.danceLength { dance = nil; return (0, 0, 0, 1) }
+        let fade = max(0, min(1, u * 3, (Self.danceLength - u) * 3))
+        let beat = u * 2 * .pi * 1.25
+        switch d.style {
+        case 0:
+            return (CGFloat(18 * sin(beat / 2) * fade), CGFloat(-8 * abs(sin(beat)) * fade), 7 * sin(beat / 2) * fade, 1)
+        case 1:
+            return (CGFloat(10 * sin(beat / 2) * fade), CGFloat(-46 * abs(sin(beat)) * fade), 3 * sin(beat) * fade, 1)
+        case 2:
+            let spin = cos(min(1, max(0, (u - 1) / 1.6)) * 4 * .pi)
+            return (0, CGFloat(-18 * abs(sin(beat)) * fade), 0, CGFloat(spin))
+        default:
+            return (CGFloat(14 * sin(beat * 1.5) * fade), CGFloat(-6 * abs(sin(beat * 1.5)) * fade), 4 * sin(beat * 1.5) * fade, 1)
+        }
+    }
+
     func step(to t: Double) {
         let dt = min(0.05, max(0, t - (last ?? t)))
         last = t
         guard dt > 0 else { return }
         let gust = windy ? 2.2 : 1.0
-        let breeze = (0.010 * sin(t * 1.1) + 0.005 * sin(t * 2.3 + 1)) * gust
+        var breeze = (0.010 * sin(t * 1.1) + 0.005 * sin(t * 2.3 + 1)) * gust
+        if let d = dance {
+            // her skirt swings with the music
+            breeze += 0.13 * sin((t - d.start) * .pi * 1.25)
+        }
         // small steps keep the springs steady even if a frame comes late
         let n = Int(ceil(dt / 0.008))
         let h = dt / Double(n)
@@ -145,8 +183,10 @@ enum LiveDollPainter {
         // a breath: she grows a touch taller and back, from the feet
         var g = ctx
         let breath = 1 + 0.005 * CGFloat(sin(t * 2.1))
-        g.translateBy(x: 300, y: 730)
-        g.scaleBy(x: 1, y: breath)
+        let mv = m.danceMove(t)
+        g.translateBy(x: 300 + mv.dx, y: 730 + mv.dy)
+        if mv.lean != 0 { g.rotate(by: .degrees(mv.lean)) }
+        g.scaleBy(x: mv.flip, y: breath)
         g.translateBy(x: -300, y: -730)
 
         for (layer, p, item) in DollPainter.layers(look, expression, art: art) {
@@ -169,6 +209,25 @@ enum LiveDollPainter {
                 ArtPainter.draw(layer.shapes, p, in: g)
                 extras(g)
             }
+        }
+        if let pet = look.pet {
+            // her pet breathes too, and blinks now and then
+            var pose = PetPose()
+            pose.squash = 1 + 0.012 * CGFloat(sin(t * 2.6 + 1))
+            pose.flap = CGFloat(sin(t * 5))
+            pose.time = t
+            if (t + 0.7).truncatingRemainder(dividingBy: 4.3) < 0.14 { pose.eyes = "blink" }
+            if expression == .happy { pose.eyes = "happy"; pose.mouth = "grin" }
+            var pc = ctx
+            if m.dancing {
+                // her pet dances along: bouncing a beat behind her
+                let mv = m.danceMove(t - 0.18)
+                pc.translateBy(x: -mv.dx * 0.6, y: mv.dy * 0.7)
+                pose.squash = 1 + 0.08 * CGFloat(sin(t * 2 * .pi * 2.5))
+                pose.tilt = -mv.lean * 1.4
+                pose.eyes = "happy"; pose.mouth = "grin"
+            }
+            PetPainter.drawCompanion(pet, pose: pose, in: pc)
         }
     }
 

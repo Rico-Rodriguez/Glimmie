@@ -18,10 +18,14 @@ struct Look: Codable, Equatable, Identifiable {
     var patterns: [String: String] = [:]
     var bg = "bg_bedroom"
     var saved = Date()
+    /// The pet sitting at her feet, in its outfit (from the pet corner).
+    var pet: PetLook?
+    /// category id -> a color she mixed herself ("#RRGGBB"), used instead of `colors` for that item.
+    var mixed: [String: String] = [:]
 
     init() {}
 
-    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved }
+    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved, pet, mixed }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -35,6 +39,8 @@ struct Look: Codable, Equatable, Identifiable {
         patterns = (try? c.decodeIfPresent([String: String].self, forKey: .patterns)) ?? [:]
         bg = (try? c.decodeIfPresent(String.self, forKey: .bg)) ?? d.bg
         saved = (try? c.decodeIfPresent(Date.self, forKey: .saved)) ?? Date()
+        pet = try? c.decodeIfPresent(PetLook.self, forKey: .pet)
+        mixed = (try? c.decodeIfPresent([String: String].self, forKey: .mixed)) ?? [:]
     }
 
     static var starter: Look {
@@ -54,6 +60,12 @@ struct Look: Codable, Equatable, Identifiable {
         l.skin = clamp(l.skin, art.skin.count)
         l.hair = clamp(l.hair, art.hair.count)
         l.eye = clamp(l.eye, art.eye.count)
+        // the little pets she used to hold now come from the pet corner
+        if let h = l.picks["hold"], let kind = PetSave.legacy[h], art.items[h] == nil {
+            l.picks["hold"] = nil
+            if l.pet == nil { l.pet = PetLook(kind: kind) }
+        }
+        l.pet = l.pet?.sanitized(.shared, art)
         for (cat, item) in l.picks where art.items[item]?.category != cat { l.picks[cat] = nil }
         for c in art.categories where c.required && c.id != "skin" && c.id != "bg" && l.picks[c.id] == nil {
             l.picks[c.id] = Look.starter.picks[c.id] ?? c.items.first
@@ -61,6 +73,7 @@ struct Look: Codable, Equatable, Identifiable {
         if art.items[l.bg]?.category != "bg" { l.bg = art.category("bg")?.items.first ?? l.bg }
         l.colors = l.colors.mapValues { clamp($0, art.cloth.count) }
         l.patterns = l.patterns.filter { art.patterns[$0.value] != nil }
+        l.mixed = l.mixed.filter { Look.isHex($0.value) && art.category($0.key) != nil }
         return l
     }
 
@@ -75,6 +88,10 @@ struct Look: Codable, Equatable, Identifiable {
     }
 
     mutating func takeOff(_ cat: String) { picks[cat] = nil }
+
+    static func isHex(_ s: String) -> Bool {
+        s.count == 7 && s.hasPrefix("#") && UInt32(s.dropFirst(), radix: 16) != nil
+    }
 
     /// The palette index currently used for an item's main color.
     func colorIndex(for item: ArtItem) -> Int {
@@ -93,7 +110,12 @@ struct Look: Codable, Equatable, Identifiable {
         case .hair: main = art.hair[safe: hair] ?? skinRGB
         case .eye: main = art.eye[safe: eye] ?? skinRGB
         case .skin: main = skinRGB
-        case .own, .noColor: main = art.cloth[safe: colors[item.category] ?? item.defaultColor] ?? Shades.white
+        case .own, .noColor:
+            if item.colorSource == .own, let hex = mixed[item.category] {
+                main = RGB(hex: hex)
+            } else {
+                main = art.cloth[safe: colors[item.category] ?? item.defaultColor] ?? Shades.white
+            }
         }
         let pattern = item.patternable ? patterns[item.category] : nil
         return PaintSet(main: main, accent: item.accent, skin: skinRGB, pattern: pattern)
@@ -122,6 +144,9 @@ struct Look: Codable, Equatable, Identifiable {
             if Double.random(in: 0..<1) < 0.3 { l.patterns[c] = art.patternNames.randomElement() }
         }
         l.bg = pick("bg") ?? l.bg
+        if Double.random(in: 0..<1) < 0.3, let kind = PetArt.shared.order.randomElement() {
+            l.pet = PetLook.random(kind: kind, .shared, art)
+        }
         return l
     }
 }
@@ -138,6 +163,8 @@ final class LookStore: ObservableObject {
 
     @Published var current: Look { didSet { scheduleSave() } }
     @Published private(set) var gallery: [Look]
+    /// Colors she mixed, newest first (at most 12).
+    @Published var mixes: [String] { didSet { GameStorage.save(mixes, game: Self.game, file: "mixes.json") } }
 
     private var pending: DispatchWorkItem?
 
@@ -145,6 +172,7 @@ final class LookStore: ObservableObject {
         let art = DressUpArt.shared
         current = (GameStorage.load(Look.self, game: Self.game, file: "current.json") ?? .starter).sanitized(art)
         gallery = (GameStorage.load([Look].self, game: Self.game, file: "gallery.json") ?? []).map { $0.sanitized(art) }
+        mixes = (GameStorage.load([String].self, game: Self.game, file: "mixes.json") ?? []).filter(Look.isHex)
     }
 
     private func scheduleSave() {
@@ -215,6 +243,7 @@ enum DollPainter {
         for (layer, p, _) in layers(look, expression, art: art) {
             ArtPainter.draw(layer.shapes, p, in: ctx)
         }
+        if let pet = look.pet { PetPainter.drawCompanion(pet, in: ctx) }
     }
 
     static func paintScene(_ id: String, in ctx: inout GraphicsContext, size: CGSize) {

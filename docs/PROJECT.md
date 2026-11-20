@@ -32,11 +32,29 @@ history before the game-drawer PR.
 - Items are colored by role, so every clothing item works in all 24 colors and 7 patterns.
 - A dress replaces a top and bottom; picking a top or bottom takes the dress off.
 
+## Dress Up pet corner
+- The pets share the Pet Vet animals' body plan and drawing code (`tools/petvet/animals.py`, which now keeps each animal's
+  torso, limbs and head apart), plus four of their own in `tools/dressup/pets.py` (dragon, red panda, owl, axolotl).
+  They are written into `dressup.json` under `pets` and drawn by `PetArt.swift`.
+- Outfits are drawn once on the shared body and placed with per-pet anchors (hat on the head top, glasses on the eyes,
+  garments scaled to body width). Layer order: back wear, tail/ears, torso, body wear, paws, head, collar, front, face,
+  glasses, hat. Outfit colors use the Dress Up color roles, so every piece works in all 24 colors.
+- `PetLife.swift` is the living stage (one class, drawn every frame like `DollMotion`): idle breathing, blinking, eyes that
+  follow the finger or toy, hops with squash and stretch, and every care tool. Every tool also works with a single tap.
+- Each pet has a favorite snack (`PetSave.favorites`); after 3 hearts the shelf marks it with a little heart.
+- The thought bubble only ever asks to play; doing what it shows gives extra hearts. Nothing gets hungry or sad.
+- Taking a pet along stores a copy of it in the look (`Look.pet`); it sits at her feet and counts in fashion battles.
+  Old looks that held p_kitty/p_puppy/p_bunny/p_duck/p_unicorn move that pet to her feet; p_teddy stays a held plush.
+- Screenshot hooks: `-petDemo dressed | closet | pets | foam | sleep | feed`, `-demoCompanion`.
+
 ## Pet Vet decisions
 - Same flat chibi look as Dress Up: color-derived outlines, one shade and one light per color (math in tools/petvet/base.py).
 - All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
+- So her finger never hides the work: the tool tip works 80 pt above her finger, the tool turns see-through (and a
+  bit smaller) over the patient with a small pink ring at its tip, and a round magnifier near the top shows the spot
+  under the tip at 2x on the side away from it. Screenshot hook: `-vetHold <tool>` holds a tool over its spot.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.
 
 ## Bakery realism
@@ -46,7 +64,20 @@ history before the game-drawer PR.
 - Pouring into the pan is press-and-hold (`BakeStep.swift`, `PourFlow`): 2.4 s of pouring fills it; a quick tap still pours 0.8 s.
 - Cake frosting keeps its spatula strokes in `Treat.swoosh` (flat x, y pairs, optional so older saves load), and
   TreatPainter draws the ridges on every cake afterwards. Cupcake rings are piped with an angular sweep (`Piping`).
-- Screenshot hooks: `-bakeryDemo pour | stir | pourpan | bake | spread | pipe | sauce` freeze a step mid-action.
+- Ingredients go in by hand (`HandsOn.swift`, `HandsOnBowl`): drag flour, sugar or milk over the bowl and it tips and
+  pours while held (shaking the flour pours faster, like sifting); a ring around the plate fills and a tick appears when
+  there's enough. Eggs can't pass through the rim: pushing one down onto the rim knocks it (first knock cracks it, second
+  breaks it open), or let it go on the rim and tap it. Butter drops in when let go over the bowl. A tap on a plate shows
+  a ghost gliding to the bowl. Everything feeds `BowlSim` the same blobs and pool growth a scripted pour does.
+- Screenshot hooks: `-bakeryDemo pour | crack | stir | pourpan | bake | spread | pipe | sauce` freeze a step mid-action.
+
+## Bakery orders
+- Each customer orders one exact treat (`BakeryOrder`): kind, flavor, frosting color (cone for ice cream) and one topping.
+  The wish bubble shows that treat, with its four parts under it; the kitchen pins the same card (`OrderCard`) top left.
+- A part gets a green tick once the treat matches it; the matching choice in each picker wears a heart badge
+  (`.wanted`, fed through the `bakeryOrder` environment value). Ice cream's flavor matches if any scoop has it.
+- Serving gives gentle stars: 3 for all four parts, 2 for two or three, 1 otherwise. Every treat is still eaten happily.
+  The stars go into the heart jar. `-bakeryRated` serves the exact order for a screenshot.
 
 ## Coloring brush decisions
 - Every brush copies the physical tool on paper (code and notes in `App/Sources/Games/Coloring/Brushes.swift`).
