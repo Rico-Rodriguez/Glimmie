@@ -164,6 +164,62 @@ private enum DockSlot: String {
     }
 }
 
+/// One tool button in the dock. It only redraws when what it shows changes, so bouncing it is just a move.
+private struct GardenDockPlate: View, Equatable {
+    let slot: DockSlot
+    let open: Bool
+    let iconHidden: Bool
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.white.opacity(0.92))
+                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(open ? Theme.pink : Color.white, lineWidth: 5))
+                .shadow(color: Theme.ink.opacity(0.22), radius: 7, y: 5)
+            if !iconHidden {
+                Canvas { ctx, size in
+                    var g = ctx
+                    g.translateBy(x: size.width / 2, y: size.height / 2)
+                    switch slot {
+                    case .shovel:
+                        g.rotate(by: .radians(0.5))
+                        g.scaleBy(x: 0.42, y: 0.42)
+                        g.translateBy(x: 0, y: 96)
+                        GardenPainter.shovel(g, load: 0)
+                    case .can:
+                        g.scaleBy(x: 0.5, y: 0.5)
+                        g.translateBy(x: 30, y: -50)
+                        GardenPainter.can(g)
+                    case .seeds:
+                        var a = g
+                        a.translateBy(x: -12, y: 2)
+                        a.rotate(by: .radians(-0.2))
+                        a.scaleBy(x: 0.72, y: 0.72)
+                        GardenPainter.packet(a, kind: .tulip)
+                        var b = g
+                        b.translateBy(x: 14, y: 4)
+                        b.rotate(by: .radians(0.18))
+                        b.scaleBy(x: 0.72, y: 0.72)
+                        GardenPainter.packet(b, kind: .sunflower)
+                    case .decor:
+                        var a = g
+                        a.translateBy(x: -16, y: 40)
+                        a.scaleBy(x: 0.5, y: 0.5)
+                        GardenDecorPainter.draw(a, GDecor(id: 0, kind: .pinwheel, x: 0, y: 0, spin: 0.4, held: true), time: 0, night: 0, wind: 0)
+                        var b = g
+                        b.translateBy(x: 18, y: 38)
+                        b.scaleBy(x: 0.6, y: 0.6)
+                        GardenDecorPainter.draw(b, GDecor(id: 0, kind: .mushroom, x: 0, y: 0, held: true), time: 0, night: 0, wind: 0)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .frame(width: 108, height: 108)
+    }
+}
+
 final class GardenHandState {
     var lastAt = Date()
     var startAt = Date()
@@ -261,8 +317,13 @@ struct GardenView: View {
                 .position(x: 62, y: 60)
             weatherBar
                 .position(x: 812, y: 60)
-            TimelineView(.periodic(from: .now, by: 0.1)) { tl in
-                dock(map, time: tl.date.timeIntervalSinceReferenceDate)
+            // Which tool to suggest is checked a few times a second; the bounce itself runs at the display's
+            // rate and pauses when nothing is suggested.
+            TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+                let hint = sim.tool == nil && tray == nil ? suggested : nil
+                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: hint == nil)) { tl in
+                    dock(map, hint: hint, time: tl.date.timeIntervalSinceReferenceDate)
+                }
             }
             if let t = tray {
                 trayView(t, map)
@@ -306,68 +367,19 @@ struct GardenView: View {
         return empty ? .shovel : nil
     }
 
-    private func dock(_ map: GMap, time: Double) -> some View {
-        let hint = sim.tool == nil && tray == nil ? suggested : nil
-        return ZStack {
+    private func dock(_ map: GMap, hint: DockSlot?, time: Double) -> some View {
+        ZStack {
             ForEach([DockSlot.shovel, .can, .seeds, .decor], id: \.rawValue) { slot in
                 let bounce: CGFloat = hint == slot ? CGFloat(abs(sin(time * 4))) * -14 : 0
-                dockPlate(slot)
+                let open = (tray == .seeds && slot == .seeds) || (tray == .decor && slot == .decor)
+                GardenDockPlate(slot: slot, open: open, iconHidden: hidden == slot.rawValue)
+                    .equatable()
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
                     .offset(y: bounce)
                     .position(slot.spot)
                     .gesture(dockGesture(slot, map))
             }
         }
-    }
-
-    private func dockPlate(_ slot: DockSlot) -> some View {
-        let open: Bool = (tray == .seeds && slot == .seeds) || (tray == .decor && slot == .decor)
-        return ZStack {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(.white.opacity(0.92))
-                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(open ? Theme.pink : Color.white, lineWidth: 5))
-                .shadow(color: Theme.ink.opacity(0.22), radius: 7, y: 5)
-            if hidden != slot.rawValue {
-                Canvas { ctx, size in
-                    var g = ctx
-                    g.translateBy(x: size.width / 2, y: size.height / 2)
-                    switch slot {
-                    case .shovel:
-                        g.rotate(by: .radians(0.5))
-                        g.scaleBy(x: 0.42, y: 0.42)
-                        g.translateBy(x: 0, y: 96)
-                        GardenPainter.shovel(g, load: 0)
-                    case .can:
-                        g.scaleBy(x: 0.5, y: 0.5)
-                        g.translateBy(x: 30, y: -50)
-                        GardenPainter.can(g)
-                    case .seeds:
-                        var a = g
-                        a.translateBy(x: -12, y: 2)
-                        a.rotate(by: .radians(-0.2))
-                        a.scaleBy(x: 0.72, y: 0.72)
-                        GardenPainter.packet(a, kind: .tulip)
-                        var b = g
-                        b.translateBy(x: 14, y: 4)
-                        b.rotate(by: .radians(0.18))
-                        b.scaleBy(x: 0.72, y: 0.72)
-                        GardenPainter.packet(b, kind: .sunflower)
-                    case .decor:
-                        var a = g
-                        a.translateBy(x: -16, y: 40)
-                        a.scaleBy(x: 0.5, y: 0.5)
-                        GardenDecorPainter.draw(a, GDecor(id: 0, kind: .pinwheel, x: 0, y: 0, spin: 0.4, held: true), time: 0, night: 0, wind: 0)
-                        var b = g
-                        b.translateBy(x: 18, y: 38)
-                        b.scaleBy(x: 0.6, y: 0.6)
-                        GardenDecorPainter.draw(b, GDecor(id: 0, kind: .mushroom, x: 0, y: 0, held: true), time: 0, night: 0, wind: 0)
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-        }
-        .frame(width: 108, height: 108)
     }
 
     private func dockGesture(_ slot: DockSlot, _ map: GMap) -> some Gesture {
