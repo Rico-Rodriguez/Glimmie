@@ -166,6 +166,12 @@ final class DressUpTests: XCTestCase {
         XCTAssertEqual(s.mixed, ["dress": "#12AB34"])
         let dress = try XCTUnwrap(art.items["d_princess"])
         XCTAssertEqual(s.paints(for: dress).main, RGB(hex: "#12AB34"))
+        var h = Look.starter
+        h.mixed = ["hair": "#3366CC", "eye": "#22AA55"]
+        let hs = h.sanitized()
+        XCTAssertEqual(hs.mixed.count, 2)
+        let hair = try XCTUnwrap(art.items.values.first { $0.colorSource == .hair })
+        XCTAssertEqual(hs.paints(for: hair).main, RGB(hex: "#3366CC"))
         var p = PetLook(kind: "kitty")
         p.dye = 99; p.nails = -1; p.cheek = "moon"; p.glitter = true
         let q = try XCTUnwrap(p.sanitized())
