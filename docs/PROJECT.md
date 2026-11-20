@@ -43,7 +43,8 @@ history before the game-drawer PR.
 - While a tool works it turns see-through (`seeThrough`) with a small pink ring at its tip (`drawTip`, `TipMarker`).
   Dragged things glide up to the lifted spot instead of jumping (`ease`, and Tidy Up's `grab` easing to zero).
 - Where: Pet Vet tools (plus the magnifier), pet corner care tools and snacks, Hair Salon tools and clips, Bakery
-  ingredients, frosting spatula and toppings, Garden shovel, can, seeds and decorations, Tidy Up items, Dress Up photo
+  ingredients, frosting spatula and toppings, Garden shovel, can, seeds and decorations, Aquarium food shaker, sponge, net,
+  fish bags and decorations (also decorations she drags in the tank), Tidy Up items, Dress Up photo
   stickers. Not lifted on purpose: coloring brushes (painting must land under the finger or Apple Pencil), pinch and
   turn coloring stickers, the pet salon (tap only), cupcake piping (press and hold), and her bare hand (petting, weeds).
 
@@ -159,3 +160,23 @@ history before the game-drawer PR.
   a 20 x 16 grid between her face and her eyes/mouth layers; it dries in about 9 s, then cracks. Sponge, shower and towel
   wipe it. Two cucumber slices close her eyes; a tap flips one off into the bath.
 - Nothing is saved: every bath starts fresh. Screenshot hooks: `-spaDemo full | bomb | mask | wand | towel`.
+## Aquarium decisions
+- Fish steer (`AquariumSim.stepFish`): each heads for a goal (a wander point in its favorite depth, the nearest flake,
+  a spot by her finger) with limited acceleration, keeps room from the others, and tetras and guppies school (cohesion and
+  alignment with their own kind). They swim mostly level, pitch a little when they climb or dive, and turn round through
+  a narrow side view (`facing` runs from -1 to 1). Tail beat speed and width follow speed and effort; the body outline
+  bends with the beat (`AquaBody`), so bands and stripes bend too. Depth `z` makes nearer fish a bit bigger and on top.
+- Tapping the glass startles nearby fish (they dart off for under a second) and then they come back to look at the spot.
+  A finger resting on the glass for a moment draws them in. Tapping a fish makes it wiggle; the puffer puffs up.
+  Nothing gets hungry or sad: appetite only limits how many flakes one fish eats in a row, so others get some.
+- Water physics: the surface is 64 spring nodes (waves spread and fade); bubbles rise at a speed set by their size,
+  wobble and pop into a ripple; flakes float a moment, then flutter down; decorations sink by buoyancy and drag
+  (`AquaDecorKind.density`) and land in a puff of sand. Plants are damped springs pushed by passing fish and her finger.
+- The front glass is a 40 x 24 grid of algae that grows slowly (in patches, more near the bottom, slower at night). The
+  sponge rubs it off by how far it moves; the snail grazes toward the dirtiest spots. The algae paths are rebuilt only
+  when the glass changes.
+- Drawing is two layers like the Garden (30 fps backdrop with light rays and caustics, 60 fps moving layer), with
+  bubbles, flakes, splash drops and sand grains each batched into a few paths.
+- Saves `aquarium.json` (fish kinds and colors, decorations and where they sit, the algae grid, lamp, pump).
+  Sounds: `python3 tools/aquarium/sounds.py`. Screenshot hooks: `-aquaDemo`, `-aquaNight`, `-aquaTool food|sponge|net`,
+  `-aquaTray fish|decor` (screenshot hooks never save).

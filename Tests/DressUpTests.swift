@@ -237,4 +237,113 @@ final class DressUpTests: XCTestCase {
         XCTAssertNil(store.current.frame)
         store.delete(photo)
     }
+
+    func testMakeupAndNailsSaveAndSanitize() throws {
+        var l = Look.starter
+        l.makeup = [BeautyStroke(tool: "blush", color: "#FF8FA8", pts: [200, 360, 210, 362, 5]),
+                    BeautyStroke(tool: "glitter", color: "rainbow", pts: [300, 300]),
+                    BeautyStroke(tool: "tattoo", color: "#FF8FA8", pts: [1, 2]),
+                    BeautyStroke(tool: "lip", color: "red", pts: [300, 388]),
+                    BeautyStroke(tool: "shadow", color: "#B48BE8", pts: [])]
+        var n = NailPaint()
+        n.color = "#F45C9A"
+        n.mask = NailGrid.encode(NailGrid.inside)
+        n.coats = 9
+        n.gems = [NailGem(kind: "g_heart", color: "#FFFFFF", u: 4, v: -2), NailGem(kind: "nope", color: "#FFFFFF", u: 0, v: 0)]
+        var bad = NailPaint()
+        bad.color = "pink"
+        bad.mask = "zz"
+        l.nails = [n, bad, NailPaint(), NailPaint(), NailPaint(), NailPaint()]
+        let s = l.sanitized()
+        XCTAssertEqual(s.makeup.map(\.tool), ["blush", "glitter"])
+        XCTAssertEqual(s.makeup[0].pts.count, 4)
+        XCTAssertEqual(s.nails.count, 5)
+        XCTAssertEqual(s.nails[0].coats, 3)
+        XCTAssertEqual(s.nails[0].gems.count, 1)
+        XCTAssertEqual(s.nails[0].gems[0].u, 1)
+        XCTAssertEqual(s.nails[0].gems[0].v, 0)
+        XCTAssertNil(s.nails[1].color)
+        XCTAssertTrue(s.nails[0].painted)
+        let back = try JSONDecoder().decode(Look.self, from: JSONEncoder().encode(s))
+        XCTAssertEqual(back.makeup, s.makeup)
+        XCTAssertEqual(back.nails, s.nails)
+        // bare nails are not kept
+        var plain = Look.starter
+        plain.nails = [NailPaint(), NailPaint()]
+        XCTAssertTrue(plain.sanitized().nails.isEmpty)
+    }
+
+    func testNailGridRoundTripsAndShape() {
+        let bits = (0..<NailGrid.count).map { $0 % 3 == 0 }
+        XCTAssertEqual(NailGrid.decode(NailGrid.encode(bits)), bits)
+        XCTAssertTrue(NailGrid.isMask(NailGrid.encode(bits)))
+        let inside = NailGrid.inside.filter { $0 }.count
+        XCTAssertGreaterThan(inside, NailGrid.count / 2)
+        XCTAssertLessThan(inside, NailGrid.count)
+        // every nail sits on its finger, and points map back and forth
+        for i in CloseHand.fingers.indices {
+            let p = CloseHand.fromNail(i, u: 0.3, v: 0.6)
+            let (u, v) = CloseHand.toNail(i, p)
+            XCTAssertEqual(u, 0.3, accuracy: 1e-6)
+            XCTAssertEqual(v, 0.6, accuracy: 1e-6)
+            XCTAssertEqual(CloseHand.nail(at: p), i)
+            XCTAssertTrue(CloseHand.onSkin(CloseHand.fromNail(i, u: 0, v: -0.3)))
+        }
+    }
+
+    func testPolishPaintsSpreadsAndDries() {
+        let world = BeautyWorld(look: Look.starter, mode: .nails)
+        world.size = CGSize(width: 600, height: 790)
+        world.color = "#7FB8F0"
+        world.dip()
+        // brush up and down the middle nail, the tool tip above the finger
+        let k = min(600 / BeautyWorld.handBox.width, 790 / BeautyWorld.handBox.height)
+        let ox = (600 - BeautyWorld.handBox.width * k) / 2, oy = (790 - BeautyWorld.handBox.height * k) / 2
+        func stage(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: (p.x - BeautyWorld.handBox.minX) * k + ox, y: (p.y - BeautyWorld.handBox.minY) * k + oy + BeautyWorld.lift)
+        }
+        var t = 100.0
+        world.step(to: t)
+        world.press(stage(CloseHand.fromNail(2, u: 0, v: 0.1)))
+        for j in 0..<30 {
+            for u in [-0.5, 0.0, 0.5] { world.move(stage(CloseHand.fromNail(2, u: u, v: 0.1 + 0.8 * Double(j % 10) / 10))) }
+            t += 0.03; world.step(to: t)
+        }
+        world.release()
+        XCTAssertGreaterThan(world.wet[2], 0)
+        XCTAssertLessThan(world.load, 1)
+        for _ in 0..<400 { t += 0.05; world.step(to: t) }
+        XCTAssertEqual(world.wet[2], 0)
+        let done = world.finished()
+        XCTAssertTrue(done.nails[2].painted)
+        XCTAssertFalse(done.nails[0].painted)
+        XCTAssertEqual(done.nails[2].color.map { RGB(hex: $0).b > 0.8 }, true)
+    }
+
+    func testMakeupStrokesStayOnTheFace() {
+        let world = BeautyWorld(look: Look.starter, mode: .makeup)
+        world.size = CGSize(width: 600, height: 790)
+        world.tool = .lip
+        world.color = "#E8475A"
+        let b = BeautyWorld.faceBox
+        let k = min(600 / b.width, 790 / b.height)
+        let ox = (600 - b.width * k) / 2, oy = (790 - b.height * k) / 2
+        func stage(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - b.minX) * k + ox, y: (p.y - b.minY) * k + oy + BeautyWorld.lift) }
+        world.press(stage(CGPoint(x: 280, y: 388)))
+        world.move(stage(CGPoint(x: 300, y: 390)))
+        world.move(stage(CGPoint(x: 320, y: 388)))
+        world.move(stage(CGPoint(x: 300, y: 200)))   // far off the lips: ignored
+        world.release()
+        let lip = world.look.makeup.first { $0.tool == "lip" }
+        XCTAssertNotNil(lip)
+        XCTAssertTrue(lip?.points.allSatisfy { abs($0.y - 388) < 25 } ?? false)
+        world.tool = .wipe
+        world.press(stage(CGPoint(x: 300, y: 390)))
+        world.move(stage(CGPoint(x: 282, y: 388)))
+        world.move(stage(CGPoint(x: 318, y: 388)))
+        world.release()
+        XCTAssertTrue(world.look.makeup.allSatisfy { $0.points.allSatisfy { abs($0.x - 300) > 15 } })
+        world.undo()
+        XCTAssertFalse(world.look.makeup.isEmpty)
+    }
 }

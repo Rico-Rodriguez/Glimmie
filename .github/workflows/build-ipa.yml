@@ -185,6 +185,8 @@ jobs:
           shot 5-dressup-gallery 6 -game dressup -demoGallery
           shot 5b-dressup-stickers 6 -game dressup -randomLook -demoCompanion -demoStudio
           shot 5c-dressup-story 6 -game dressup -randomLook -demoCompanion -demoStory
+          shot 5d-dressup-makeup 6 -game dressup -demoMakeup
+          shot 5e-dressup-nails 6 -game dressup -demoNails
           shot 7-dressup-pets 6 -game dressup -petDemo dressed
           shot 7b-pets-closet 6 -game dressup -petDemo closet
           shot 7c-pets-picker 6 -game dressup -petDemo pets
@@ -230,6 +232,14 @@ jobs:
           shot spa-4-mask 8 -game spa -spaDemo mask
           shot spa-5-wand 8 -game spa -spaDemo wand
           shot spa-6-towel 8 -game spa -spaDemo towel
+          shot aquarium-1-tank 7 -game aquarium
+          shot aquarium-2-busy 8 -game aquarium -aquaDemo
+          shot aquarium-3-feed 6 -game aquarium -aquaDemo -aquaTool food
+          shot aquarium-4-sponge 6 -game aquarium -aquaDemo -aquaTool sponge
+          shot aquarium-5-net 6 -game aquarium -aquaDemo -aquaTool net
+          shot aquarium-6-night 8 -game aquarium -aquaDemo -aquaNight
+          shot aquarium-7-fish-tray 6 -game aquarium -aquaTray fish
+          shot aquarium-8-decor-tray 6 -game aquarium -aquaTray decor
           shot salon-1-chair 7 -game salon
           shot salon-2-wash 7 -game salon -salonDemo wash
           shot salon-3-cut 7 -game salon -salonDemo cut

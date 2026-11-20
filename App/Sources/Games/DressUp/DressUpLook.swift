@@ -25,12 +25,16 @@ struct Look: Codable, Equatable, Identifiable {
     /// Stickers and a frame on a gallery photo (the studio after the camera).
     var stickers: [PhotoSticker] = []
     var frame: String?
+    /// What she painted in the makeup studio, and her nail polish (Beauty.swift).
+    var makeup: [BeautyStroke] = []
+    var nails: [NailPaint] = []
 
     static let maxStickers = 30
+    static let maxMakeupPoints = 6000
 
     init() {}
 
-    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved, pet, mixed, stickers, frame }
+    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved, pet, mixed, stickers, frame, makeup, nails }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -48,6 +52,8 @@ struct Look: Codable, Equatable, Identifiable {
         mixed = (try? c.decodeIfPresent([String: String].self, forKey: .mixed)) ?? [:]
         stickers = (try? c.decodeIfPresent([PhotoSticker].self, forKey: .stickers)) ?? []
         frame = try? c.decodeIfPresent(String.self, forKey: .frame)
+        makeup = (try? c.decodeIfPresent([BeautyStroke].self, forKey: .makeup)) ?? []
+        nails = (try? c.decodeIfPresent([NailPaint].self, forKey: .nails)) ?? []
     }
 
     static var starter: Look {
@@ -90,6 +96,32 @@ struct Look: Codable, Equatable, Identifiable {
             return s
         }
         if let f = l.frame, !Stickers.frames.contains(f) { l.frame = nil }
+        // makeup: known tools and colors, whole finite points, and not too many of them
+        var budget = Look.maxMakeupPoints
+        l.makeup = l.makeup.compactMap { st in
+            guard BeautyStroke.tools.contains(st.tool), BeautyColors.isColor(st.color), budget > 0 else { return nil }
+            var st = st
+            if st.pts.count % 2 == 1 { st.pts.removeLast() }
+            st.pts = st.pts.map { $0.isFinite ? min(max($0, -100), 1000) : 0 }
+            if st.pts.count > budget { st.pts = Array(st.pts.prefix(budget - budget % 2)) }
+            budget -= st.pts.count
+            return st.pts.isEmpty ? nil : st
+        }
+        l.nails = Array(l.nails.prefix(5)).map { n in
+            var n = n
+            if let c = n.color, !Look.isHex(c) { n.color = nil }
+            if !NailGrid.isMask(n.mask) { n.mask = "" }
+            n.coats = min(max(n.coats, 0), 3)
+            n.gems = Array(n.gems.filter { NailGem.isKnown($0.kind) && Look.isHex($0.color) }.prefix(6)).map { g in
+                var g = g
+                g.u = g.u.isFinite ? min(max(g.u, -1), 1) : 0
+                g.v = g.v.isFinite ? min(max(g.v, 0), 1) : 0.5
+                g.turn = g.turn.isFinite ? g.turn.truncatingRemainder(dividingBy: 360) : 0
+                return g
+            }
+            return n
+        }
+        if l.nails.allSatisfy({ !$0.painted && $0.gems.isEmpty }) { l.nails = [] }
         return l
     }
 
@@ -265,11 +297,12 @@ enum DollPainter {
         return out.map { ($0.2, $0.3, $0.4) }
     }
 
-    static func paintDoll(_ look: Look, _ expression: Expression, box: CGRect? = nil, in ctx: inout GraphicsContext, size: CGSize) {
+    static func paintDoll(_ look: Look, _ expression: Expression, box: CGRect? = nil, in ctx: inout GraphicsContext, size: CGSize,
+                          t: Double = 0) {
         let art = DressUpArt.shared
         ArtPainter.fit(&ctx, box: box ?? CGRect(origin: .zero, size: art.dollSize), into: size)
-        for (layer, p, _) in layers(look, expression, art: art) {
-            ArtPainter.draw(layer.shapes, p, in: ctx)
+        BeautyPainter.interleave(layers(look, expression, art: art), z: { $0.0.z }, look: look, t: t, in: ctx) { l in
+            ArtPainter.draw(l.0.shapes, l.1, in: ctx)
         }
         if let pet = look.pet { PetPainter.drawCompanion(pet, in: ctx) }
     }

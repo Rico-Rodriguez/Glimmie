@@ -189,7 +189,8 @@ enum LiveDollPainter {
         g.scaleBy(x: mv.flip, y: breath)
         g.translateBy(x: -300, y: -730)
 
-        for (layer, p, item) in DollPainter.layers(look, expression, art: art) {
+        BeautyPainter.interleave(DollPainter.layers(look, expression, art: art), z: { $0.0.z }, look: look, t: t, in: g) { entry in
+            let (layer, p, item) = entry
             let extras: (GraphicsContext) -> Void = { c in
                 if satin.contains(item.category) && !stiff.contains(item.id) { sheen(item, layer, p, t: t, in: c) }
                 if sparkly.contains(item.id) { twinkles(item, t: t, in: c) }
