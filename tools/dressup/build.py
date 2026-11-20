@@ -2,7 +2,7 @@
 Run from the repo root:  python3 tools/dressup/build.py  [--sheet DIR]"""
 import json, os, re, sys
 sys.path.insert(0, os.path.dirname(__file__))
-import body, face, hair, clothes, extras, backgrounds, patterns, more, round2, pets
+import body, face, hair, clothes, extras, backgrounds, patterns, more, round2, pets, seasons
 from colors import SKIN, HAIR, EYES, CLOTH
 
 def eye_styles():
@@ -119,6 +119,7 @@ def main():
     items += extras.hats() + more.hats() + extras.glasses() + extras.necks() + extras.backs() + extras.held() + more.held()
     # the old little pets she held now live in the pet corner (pets.py), drawn at her feet from there
     items = [i for i in items if i['id'] not in OLD_PETS]
+    items += seasons.dresses() + seasons.tops() + seasons.hats() + seasons.held()
     bgs = backgrounds.all_bgs() + more.bgs()
     ids = [i['id'] for i in items + bgs]
     assert len(ids) == len(set(ids)), [x for x in ids if ids.count(x) > 1]

@@ -187,6 +187,9 @@ jobs:
           shot 7d-pets-bath 6 -game dressup -petDemo foam
           shot 7e-pets-sleep 6 -game dressup -petDemo sleep
           shot 7f-dressup-companion 6 -game dressup -randomLook -demoCompanion
+          shot 7g-pets-salon 6 -game dressup -petDemo salon
+          shot 7h-dressup-dance 4 -game dressup -randomLook -demoCompanion -demoDance
+          shot 7i-dressup-sets 6 -game dressup -demoCompanion -tab sets
           shot 8-dressup-face 6 -game dressup -randomLook -tab me
           shot 9-battle-theme 6 -game dressup -demoBattle
           shot 10-battle-runway 10 -game dressup -randomLook -demoRunway

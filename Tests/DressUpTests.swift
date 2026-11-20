@@ -149,4 +149,47 @@ final class DressUpTests: XCTestCase {
             XCTAssertTrue(stars.allSatisfy { (1...5).contains($0) })
         }
     }
+
+    func testPaintMixesLikePaint() {
+        let green = PaintMix.mix([(RGB(hex: "#5C9BEB"), 1), (RGB(hex: "#FFE27A"), 1)])
+        XCTAssertGreaterThan(green.g, green.r)
+        XCTAssertGreaterThan(green.g, green.b)
+        let pink = PaintMix.mix([(RGB(hex: "#E8475A"), 1), (RGB(hex: "#FFFFFF"), 3)])
+        XCTAssertGreaterThan(pink.r, pink.g)
+        XCTAssertTrue(Look.isHex(PaintMix.hex(pink)))
+    }
+
+    func testMixedColorsAndSalonSanitize() throws {
+        var l = Look.starter
+        l.mixed = ["dress": "#12AB34", "hat": "nope", "zzz": "#FFFFFF"]
+        let s = l.sanitized()
+        XCTAssertEqual(s.mixed, ["dress": "#12AB34"])
+        let dress = try XCTUnwrap(art.items["d_princess"])
+        XCTAssertEqual(s.paints(for: dress).main, RGB(hex: "#12AB34"))
+        var p = PetLook(kind: "kitty")
+        p.dye = 99; p.nails = -1; p.cheek = "moon"; p.glitter = true
+        let q = try XCTUnwrap(p.sanitized())
+        XCTAssertNil(q.dye); XCTAssertNil(q.nails); XCTAssertNil(q.cheek); XCTAssertTrue(q.glitter)
+        p.dye = PetPainter.dyes.count
+        XCTAssertEqual(p.sanitized()?.dye, PetPainter.dyes.count)
+    }
+
+    func testOutfitSetsUseRealItems() throws {
+        let pets = PetArt.shared
+        for set in OutfitSet.all {
+            XCTAssertEqual(art.items[set.bg]?.category, "bg", set.id)
+            XCTAssertNotNil(art.items[set.icon], set.id)
+            for (cat, id) in set.picks {
+                XCTAssertEqual(art.items[id]?.category, cat, "\(set.id): \(id)")
+                XCTAssertTrue(OutfitSet.dressing.contains(cat), "\(set.id): \(cat)")
+            }
+            for (slot, id) in set.pet { XCTAssertEqual(pets.wear[id]?.slot, slot, "\(set.id): \(id)") }
+            var l = Look.starter
+            l.pet = PetLook(kind: "kitty")
+            let on = set.apply(to: l).sanitized()
+            for (cat, id) in set.picks { XCTAssertEqual(on.picks[cat], id, "\(set.id): \(cat)") }
+            XCTAssertEqual(on.bg, set.bg)
+            for (slot, id) in set.pet { XCTAssertEqual(on.pet?.wear[slot], id, "\(set.id) pet: \(slot)") }
+        }
+    }
 }

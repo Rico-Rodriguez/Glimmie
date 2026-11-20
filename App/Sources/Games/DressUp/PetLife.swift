@@ -131,6 +131,14 @@ final class PetLife {
         for _ in 0..<5 { spawn(.heart, at: headC, spread: 80) }
     }
 
+    /// A salon treatment: a twinkly swirl and a proud wiggle.
+    func pamper() {
+        hop(0.6)
+        express("sparkle", "grin", 1.0)
+        for _ in 0..<14 { spawn(.sparkle, at: toCanvas(CGPoint(x: 300, y: 380)), spread: 200) }
+        play("sparkle", 0.1)
+    }
+
     func demo(_ mode: String) {
         switch mode {
         case "foam":
@@ -662,6 +670,7 @@ final class PetLife {
         p.tilt = tilt
         p.look = eyeOff
         p.flap = CGFloat(sin(t * (sleeping ? 1.5 : 6)))
+        p.time = t
         if sleeping {
             p.eyes = "blink"; p.mouth = "smile"
         } else if t < yawnUntil {

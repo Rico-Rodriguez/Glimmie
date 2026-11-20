@@ -162,10 +162,16 @@ struct PetLook: Codable, Equatable {
     var colors: [String: Int] = [:]
     /// slot -> fabric pattern name
     var patterns: [String: String] = [:]
+    /// Salon: fur dye (index into `PetPainter.dyes`; the last one is rainbow), nail polish (cloth index),
+    /// sparkle fur, and a cheek sticker ("heart" or "star").
+    var dye: Int?
+    var nails: Int?
+    var glitter = false
+    var cheek: String?
 
     init(kind: String) { self.kind = kind }
 
-    enum CodingKeys: String, CodingKey { case kind, wear, colors, patterns }
+    enum CodingKeys: String, CodingKey { case kind, wear, colors, patterns, dye, nails, glitter, cheek }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -173,6 +179,10 @@ struct PetLook: Codable, Equatable {
         wear = (try? c.decodeIfPresent([String: String].self, forKey: .wear)) ?? [:]
         colors = (try? c.decodeIfPresent([String: Int].self, forKey: .colors)) ?? [:]
         patterns = (try? c.decodeIfPresent([String: String].self, forKey: .patterns)) ?? [:]
+        dye = try? c.decodeIfPresent(Int.self, forKey: .dye)
+        nails = try? c.decodeIfPresent(Int.self, forKey: .nails)
+        glitter = (try? c.decodeIfPresent(Bool.self, forKey: .glitter)) ?? false
+        cheek = try? c.decodeIfPresent(String.self, forKey: .cheek)
     }
 
     /// Drops anything this build doesn't know. Returns nil for an unknown pet.
@@ -182,6 +192,9 @@ struct PetLook: Codable, Equatable {
         p.wear = wear.filter { art.wear[$0.value]?.slot == $0.key }
         p.colors = colors.filter { p.wear[$0.key] != nil }.mapValues { min(max($0, 0), max(0, dress.cloth.count - 1)) }
         p.patterns = patterns.filter { p.wear[$0.key] != nil && dress.patterns[$0.value] != nil }
+        if let d = dye, !(0...PetPainter.dyes.count).contains(d) { p.dye = nil }
+        if let n = nails, !(0..<dress.cloth.count).contains(n) { p.nails = nil }
+        if let c = cheek, !PetPainter.cheeks.contains(c) { p.cheek = nil }
         return p
     }
 
@@ -223,6 +236,8 @@ struct PetPose {
     /// Wing flap, -1...1.
     var flap: CGFloat = 0
     var blush = true
+    /// Seconds, for things that twinkle.
+    var time: Double = 0
 
     static let still = PetPose()
 }
@@ -247,16 +262,34 @@ enum PetPainter {
             transform(&w, slot: slot, a, flap: pose.flap)
             ArtPainter.draw(item.shapes, pet.paints(for: item), in: w)
         }
+        let dyeFill = dyeShading(pet.dye)
+        func fur(_ shapes: [ArtShape]) {
+            guard let fill = dyeFill else { ArtPainter.draw(shapes, plain, in: g); return }
+            g.drawLayer { l in
+                l.clipToLayer { c in ArtPainter.draw(shapes, plain, in: c) }
+                ArtPainter.draw(shapes, plain, in: l)
+                // keep the fur's light and shade, take the dye's color, then deepen it a little
+                var c = l
+                c.blendMode = .color
+                c.fill(Path(CGRect(x: -100, y: -100, width: 800, height: 900)), with: fill)
+                c.blendMode = .multiply
+                c.opacity = 0.35
+                c.fill(Path(CGRect(x: -100, y: -100, width: 800, height: 900)), with: fill)
+            }
+        }
         wear("back")
-        ArtPainter.draw(a.back, plain, in: g)
-        ArtPainter.draw(a.torso, plain, in: g)
+        fur(a.back)
+        fur(a.torso)
         under?(g)
         wear("body")
-        ArtPainter.draw(a.limbs, plain, in: g)
-        ArtPainter.draw(a.head, plain, in: g)
+        fur(a.limbs)
+        if let n = pet.nails { polish(n, in: g) }
+        fur(a.head)
         wear("neck")
-        ArtPainter.draw(a.front, plain, in: g)
+        fur(a.front)
         if pose.blush { ArtPainter.draw(a.blush, plain, in: g) }
+        if let c = pet.cheek { cheekSticker(c, a, in: g) }
+        if pet.glitter { sparkleFur(time: pose.time, in: g) }
         var e = g
         if pose.look != .zero { e.translateBy(x: pose.look.width, y: pose.look.height) }
         ArtPainter.draw(a.eyes[pose.eyes] ?? a.eyes["open"] ?? [], plain, in: e)
@@ -264,6 +297,82 @@ enum PetPainter {
         wear("glasses")
         wear("hat")
         over?(g)
+    }
+
+    // MARK: Salon
+
+    static let dyes: [RGB] = ["#FF8FB8", "#FF8A73", "#FFD86E", "#8FE0A4", "#7FD6E8", "#7FA8FF", "#B89CFF", "#F2A6FF"].map { RGB(hex: $0) }
+    static let cheeks = ["heart", "star"]
+
+    private static func dyeShading(_ i: Int?) -> GraphicsContext.Shading? {
+        guard let i else { return nil }
+        if let c = dyes[safe: i] { return .color(c.color) }
+        guard i == dyes.count else { return nil }
+        let rainbow = ["#FF8FB8", "#FFB27A", "#FFE27A", "#8FE0A4", "#7FC8FF", "#B89CFF"].map { RGB(hex: $0).color }
+        return .linearGradient(Gradient(colors: rainbow), startPoint: CGPoint(x: 120, y: 60), endPoint: CGPoint(x: 480, y: 620))
+    }
+
+    /// A dye swatch (for the salon shelf).
+    static func dyeSwatch(_ i: Int) -> GraphicsContext.Shading? { dyeShading(i) }
+
+    private static func polish(_ n: Int, in g: GraphicsContext) {
+        guard let c = DressUpArt.shared.cloth[safe: n] else { return }
+        let dots: [CGPoint] = [CGPoint(x: 214, y: 538), CGPoint(x: 234, y: 543), CGPoint(x: 204, y: 621), CGPoint(x: 228, y: 627), CGPoint(x: 252, y: 621)]
+        for d in dots + dots.map({ CGPoint(x: 600 - $0.x, y: $0.y) }) {
+            let r = CGRect(x: d.x - 8, y: d.y - 6, width: 16, height: 12)
+            g.fill(Path(ellipseIn: r), with: .color(c.color))
+            g.stroke(Path(ellipseIn: r), with: .color(Shades.outline(c).color), lineWidth: 2)
+            g.fill(Path(ellipseIn: CGRect(x: d.x - 4, y: d.y - 4, width: 5, height: 3)), with: .color(.white.opacity(0.8)))
+        }
+    }
+
+    private static func cheekSticker(_ kind: String, _ a: PetAnimal, in g: GraphicsContext) {
+        let c = CGPoint(x: a.eyeAnchor.x - 44, y: a.eyeAnchor.y + 50)
+        let r = CGRect(x: c.x - 17, y: c.y - 16, width: 34, height: 32)
+        let path = kind == "star" ? starPath(c, 19) : heartPath(in: r)
+        let col = kind == "star" ? RGB(hex: "#FFD86E") : RGB(hex: "#FF6F96")
+        g.fill(path, with: .color(col.color))
+        g.stroke(path, with: .color(.white), lineWidth: 4)
+    }
+
+    private static func sparkleFur(time t: Double, in g: GraphicsContext) {
+        let spots: [CGPoint] = [CGPoint(x: 200, y: 200), CGPoint(x: 390, y: 180), CGPoint(x: 330, y: 300), CGPoint(x: 190, y: 330),
+                                CGPoint(x: 420, y: 340), CGPoint(x: 240, y: 450), CGPoint(x: 370, y: 470), CGPoint(x: 300, y: 560),
+                                CGPoint(x: 210, y: 560), CGPoint(x: 400, y: 570), CGPoint(x: 280, y: 150)]
+        for (i, p) in spots.enumerated() {
+            let tw = 0.55 + 0.45 * sin(t * 3 + Double(i) * 1.9)
+            let s = CGFloat(14 + (i % 3) * 6) * CGFloat(0.6 + 0.4 * tw)
+            var q = g
+            q.opacity = 0.35 + 0.6 * tw
+            q.fill(Twinkle().path(in: CGRect(x: p.x - s, y: p.y - s, width: s * 2, height: s * 2)), with: .color(.white))
+        }
+    }
+
+    static func heartPath(in r: CGRect) -> Path {
+        var p = Path()
+        let w = r.width, h = r.height
+        p.move(to: CGPoint(x: r.midX, y: r.maxY))
+        p.addCurve(to: CGPoint(x: r.minX, y: r.minY + h * 0.3), control1: CGPoint(x: r.midX - w * 0.1, y: r.maxY - h * 0.15),
+                   control2: CGPoint(x: r.minX, y: r.minY + h * 0.65))
+        p.addCurve(to: CGPoint(x: r.midX, y: r.minY + h * 0.22), control1: CGPoint(x: r.minX, y: r.minY - h * 0.05),
+                   control2: CGPoint(x: r.midX - w * 0.05, y: r.minY))
+        p.addCurve(to: CGPoint(x: r.maxX, y: r.minY + h * 0.3), control1: CGPoint(x: r.midX + w * 0.05, y: r.minY),
+                   control2: CGPoint(x: r.maxX, y: r.minY - h * 0.05))
+        p.addCurve(to: CGPoint(x: r.midX, y: r.maxY), control1: CGPoint(x: r.maxX, y: r.minY + h * 0.65),
+                   control2: CGPoint(x: r.midX + w * 0.1, y: r.maxY - h * 0.15))
+        return p
+    }
+
+    static func starPath(_ c: CGPoint, _ R: CGFloat) -> Path {
+        var p = Path()
+        for i in 0..<10 {
+            let a = -Double.pi / 2 + Double(i) * Double.pi / 5
+            let r = i % 2 == 0 ? R : R * 0.48
+            let q = CGPoint(x: c.x + CGFloat(cos(a)) * r, y: c.y + CGFloat(sin(a)) * r)
+            if i == 0 { p.move(to: q) } else { p.addLine(to: q) }
+        }
+        p.closeSubpath()
+        return p
     }
 
     /// Moves an outfit drawn on the canonical pet onto this pet.
