@@ -502,6 +502,8 @@ final class HairSim {
             if let top = SalonBody.capeTop(cur.x), s.front, cur.y > top - 2 { v = v * 0.86; resting = true }
             if cur.y > SalonBody.floorY - 1 { v = v * 0.6; resting = true }
             if resting, v.len < 0.35 { v = .zero }
+            // and hair that has all but stopped stops, so a long lock can't keep up a faint sway forever
+            if v.len < 0.04 { v = .zero }
             s.o[i] = cur
             var a = g
             if let w { a += windAccel(cur, w) * (h * h) }
