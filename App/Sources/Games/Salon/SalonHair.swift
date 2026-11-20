@@ -278,6 +278,8 @@ struct HairStrand {
     var tangle: CGFloat = 0
     var gloss: CGFloat = 0
     var growth: CGFloat = 0
+    /// Points lying on the cape or the floor this step (they grip it).
+    var touch: [Bool] = []
 
     var pinned: Int { rest.count }
     var maxNodes: Int { rest.count + HairSim.maxFree }
@@ -665,6 +667,7 @@ final class HairSim {
         let g = HairV(0, HairSim.gravity * (1 + 0.45 * s.wet) * h * h)
         let w = dryer
         let sq = squash
+        if s.touch.count != s.p.count { s.touch = Array(repeating: false, count: s.p.count) }
         for i in P..<s.p.count {
             let cur = s.p[i]
             let cz = s.z[i]
@@ -686,6 +689,7 @@ final class HairSim {
             }
             if cur.y > SalonBody.floorY - 1 { v = v * 0.6; vz *= 0.6; vl *= 0.6; resting = true }
             // and hair that has all but stopped stops, so a long lock can't keep up a faint sway forever
+            s.touch[i] = resting
             if (resting && vl < 0.35) || vl < 0.04 { v = .zero; vz = 0 }
             s.o[i] = cur
             s.oz[i] = cz
@@ -763,10 +767,11 @@ final class HairSim {
             if s.kind == .side { SalonBody.keepOffFace(&xy, &z, root: root, yaw: yaw) }
             SalonBody.pushOutOfBody(&xy, &z, squash: squash)
             xy.x = max(-300, min(900, xy.x))
-            if last, xy != inX || z != inZ {
+            let hit = xy != inX || z != inZ
+            if last, hit || (i < s.touch.count && s.touch[i]) {
                 // touching her: barely moving hair stays put (static friction), the rest slides with drag
                 let creep = H3(xy - s.o[i], z - s.oz[i]).len
-                if creep < 0.5 {
+                if creep < 0.2 {
                     xy = s.o[i]
                     z = s.oz[i]
                 } else {
