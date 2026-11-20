@@ -72,11 +72,66 @@ final class DressUpTests: XCTestCase {
     }
 
     func testPetSaveDefaultsAndLenientDecoding() throws {
-        let s = try JSONDecoder().decode(PetSave.self, from: Data(#"{"names": {"p_kitty": "Luna"}, "odd": true}"#.utf8))
-        XCTAssertEqual(s.name("p_kitty"), "Luna")
-        XCTAssertEqual(s.name("p_puppy"), "Biscuit")
-        XCTAssertEqual(s.current, "p_kitty")
-        for p in PetSave.pets { XCTAssertEqual(art.items[p]?.category, "hold", p) }
+        let s = try JSONDecoder().decode(PetSave.self, from: Data(#"{"names": {"p_kitty": "Luna"}, "love": {"p_teddy": 7}, "current": "p_duck", "odd": true}"#.utf8))
+        XCTAssertEqual(s.name("kitty"), "Luna")
+        XCTAssertEqual(s.name("puppy"), "Biscuit")
+        XCTAssertEqual(s.love["bear"], 7)
+        XCTAssertEqual(s.current, "duckling")
+        XCTAssertEqual(PetSave().current, "kitty")
+        XCTAssertEqual(PetSave.pets.count, 20)
+        for p in PetSave.pets {
+            XCTAssertNotNil(PetArt.shared.animals[p], p)
+            XCTAssertNotNil(PetSave.defaultNames[p], p)
+            XCTAssertNotNil(PetSave.favorites[p].flatMap { PetArt.shared.props[$0] }, p)
+        }
+    }
+
+    func testPetArtLoads() {
+        let pets = PetArt.shared
+        XCTAssertEqual(pets.slots, ["hat", "glasses", "neck", "body", "back"])
+        for s in pets.slots {
+            XCTAssertFalse(pets.bySlot[s]?.isEmpty ?? true, s)
+            XCTAssertNotNil(pets.thumbs[s], s)
+        }
+        for (id, a) in pets.animals {
+            XCTAssertFalse(a.torso.isEmpty, id)
+            XCTAssertFalse(a.head.isEmpty, id)
+            for e in ["open", "blink", "happy", "sparkle", "tired"] { XCTAssertNotNil(a.eyes[e], "\(id) \(e)") }
+            for m in ["smile", "grin", "yum", "o", "wide"] { XCTAssertNotNil(a.mouths[m], "\(id) \(m)") }
+        }
+        for name in ["sponge", "shower", "towel", "brush", "ball", "yarn", "feather", "bed", "blanket", "foam",
+                     "fish", "bone", "carrot", "berry", "cookie", "cupcake"] {
+            XCTAssertFalse(pets.props[name]?.isEmpty ?? true, name)
+        }
+    }
+
+    func testOldHeldPetsMoveToThePetCorner() throws {
+        let json = Data(#"{"picks": {"hold": "p_kitty", "eyes": "e_star"}}"#.utf8)
+        let l = try JSONDecoder().decode(Look.self, from: json).sanitized()
+        XCTAssertNil(l.picks["hold"])
+        XCTAssertEqual(l.pet?.kind, "kitty")
+        let teddy = try JSONDecoder().decode(Look.self, from: Data(#"{"picks": {"hold": "p_teddy"}}"#.utf8)).sanitized()
+        XCTAssertEqual(teddy.picks["hold"], "p_teddy")
+        XCTAssertNil(teddy.pet)
+    }
+
+    func testPetLookSanitizeAndRoundTrip() throws {
+        var p = PetLook(kind: "dragon")
+        p.wear = ["hat": "ph_crown", "body": "ph_crown", "neck": "nope"]
+        p.colors = ["hat": 999, "glasses": 2]
+        p.patterns = ["hat": "dots"]
+        let s = try XCTUnwrap(p.sanitized())
+        XCTAssertEqual(s.wear, ["hat": "ph_crown"])
+        XCTAssertEqual(s.colors, ["hat": art.cloth.count - 1])
+        XCTAssertNil(PetLook(kind: "dodo").sanitized())
+        var l = Look.starter
+        l.pet = s
+        let back = try JSONDecoder().decode(Look.self, from: JSONEncoder().encode(l))
+        XCTAssertEqual(back.pet, s)
+        for _ in 0..<30 {
+            let r = PetLook.random(kind: "kitty")
+            XCTAssertEqual(r.sanitized(), r)
+        }
     }
 
     func testOldLooksGainAFaceAndNose() throws {

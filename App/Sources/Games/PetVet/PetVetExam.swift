@@ -103,12 +103,24 @@ struct VetExamView: View {
 
                 topBar
 
+                ZStack {
+                    if tool != nil && toolOverPatient {
+                        loupe.transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
+                }
+                .animation(.easeOut(duration: 0.18), value: tool != nil && toolOverPatient)
+
                 if let t = tool, let art = VetArt.shared.tools[t] {
                     let tip = tipRoom
-                    let s: CGFloat = 150.0 / 140
+                    // over the patient the tool turns see-through, so the fur and the spot show through it
+                    let over = toolOverPatient
+                    let side: CGFloat = over ? 132 : 150
+                    let s: CGFloat = side / 140
                     VetToolPicture(tool: t)
-                        .frame(width: 150, height: 150)
-                        .shadow(color: Theme.ink.opacity(0.25), radius: 8, y: 8)
+                        .frame(width: side, height: side)
+                        .opacity(over ? 0.5 : 1)
+                        .shadow(color: Theme.ink.opacity(over ? 0.12 : 0.25), radius: 8, y: 8)
+                        .animation(.easeOut(duration: 0.15), value: over)
                         .position(x: tip.x + (70 - art.tip.x) * s, y: tip.y + (70 - art.tip.y) * s)
                         .allowsHitTesting(false)
                 }
@@ -117,6 +129,7 @@ struct VetExamView: View {
             .onAppear {
                 size = geo.size
                 if ProcessInfo.processInfo.arguments.contains("-vetFX") { effects.demo(toRoom: VetLayout(size: geo.size).toRoom) }
+                holdDemoTool(VetLayout(size: geo.size))
             }
             .onChange(of: geo.size) { size = $0 }
         }
@@ -172,6 +185,44 @@ struct VetExamView: View {
         .shadow(color: Theme.ink.opacity(0.12), radius: 5, y: 3)
     }
 
+    // MARK: Magnifier
+    //
+    // While a tool is over the patient, a round magnifier near the top shows the spot under the tool
+    // tip at twice the size, without the tool or her hand in the way. It sits on the side away from
+    // the tip so it never covers the place she is working on.
+
+    static let loupeSize: CGFloat = 176
+    static let loupeZoom: CGFloat = 2
+
+    private var loupeCenter: CGPoint {
+        let left = tipRoom.x > size.width / 2
+        return CGPoint(x: size.width / 2 + (left ? -168 : 168), y: 96 + VetExamView.loupeSize / 2)
+    }
+
+    private var loupe: some View {
+        let tip = tipRoom
+        let d = VetExamView.loupeSize
+        let z = VetExamView.loupeZoom
+        let room = size
+        return TimelineView(.animation) { tl in
+            Canvas { ctx, s in
+                var g = ctx
+                g.translateBy(x: s.width / 2, y: s.height / 2)
+                g.scaleBy(x: z, y: z)
+                g.translateBy(x: -tip.x, y: -tip.y)
+                VetDraw.room("exam", size: room, in: g)
+                draw(g, now: tl.date)
+            }
+        }
+        .frame(width: d, height: d)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(.white, lineWidth: 7))
+        .overlay(Circle().stroke(Theme.pink.opacity(0.55), lineWidth: 2).padding(5))
+        .shadow(color: Theme.ink.opacity(0.25), radius: 8, y: 5)
+        .position(loupeCenter)
+        .allowsHitTesting(false)
+    }
+
     // MARK: Shelves
 
     private func shelf(_ tools: [VetTool]) -> some View {
@@ -193,7 +244,18 @@ struct VetExamView: View {
 
     // MARK: Dragging
 
-    private var tipRoom: CGPoint { CGPoint(x: finger.x, y: finger.y - 44) }
+    /// How far above her finger the tool tip works, so her finger and hand stay below the spot
+    /// (it was 44, which put her fingertip right on top of what she was treating).
+    static let tipLift: CGFloat = 80
+
+    private var tipRoom: CGPoint { CGPoint(x: finger.x, y: finger.y - VetExamView.tipLift) }
+
+    /// True when the lifted tool's tip is over the patient (head or body).
+    private var toolOverPatient: Bool { VetExamView.onPatient(layout.toPatient(tipRoom)) }
+
+    static func onPatient(_ tip: CGPoint) -> Bool {
+        hypot(tip.x - 300, tip.y - 262) < 170 || (abs(tip.x - 300) < 150 && tip.y > 330 && tip.y < 650)
+    }
 
     private func drag(_ t: VetTool, _ p: CGPoint) {
         guard !consumed else { return }
@@ -229,6 +291,16 @@ struct VetExamView: View {
         } else {
             Sound.shared.play(.flip, volume: 0.4)
         }
+    }
+
+    /// `-vetHold <tool>`: hold that tool over the first spot that needs it (for simulator screenshots).
+    private func holdDemoTool(_ L: VetLayout) {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-vetHold"), i + 1 < args.count, let t = VetTool(rawValue: args[i + 1]) else { return }
+        let spot = visit.spots.first { $0.step?.tool == t } ?? visit.spots.first
+        let at = L.toRoom(spot?.target ?? CGPoint(x: 300, y: 420))
+        tool = t
+        finger = CGPoint(x: at.x + 6, y: at.y + VetExamView.tipLift + 4)
     }
 
     private func addSticker(_ s: VetSticker) {
@@ -363,8 +435,7 @@ struct VetExamView: View {
         let a = VetArt.shared.animals[animal]
         let mouth = a?.mouth ?? CGPoint(x: 300, y: 334)
         let nearMouth = hypot(tip.x - mouth.x, tip.y - mouth.y) < 70
-        let onPatient = hypot(tip.x - 300, tip.y - 262) < 170 || (abs(tip.x - 300) < 150 && tip.y > 330 && tip.y < 650)
-        guard onPatient else { return }
+        guard VetExamView.onPatient(tip) else { return }
         let room = layout.toRoom(tip)
         let rubbing = moved > 2
         switch t {
@@ -581,6 +652,15 @@ struct VetExamView: View {
 
         drawParticles(ctx, now: now)
         effects.drawInRoom(ctx, t: t)
+
+        // a small bright ring right where the tool tip works (it shows through the see-through tool)
+        if tool != nil && toolOverPatient {
+            let c = tipRoom
+            let r: CGFloat = 11 + 1.5 * CGFloat(sin(t * 8))
+            let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+            ctx.stroke(ring, with: .color(.white.opacity(0.95)), lineWidth: 5)
+            ctx.stroke(ring, with: .color(Theme.pink), lineWidth: 2.5)
+        }
     }
 
     private func drawSpots(_ c: GraphicsContext, t: Double, now: Date) {

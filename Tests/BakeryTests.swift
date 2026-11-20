@@ -146,4 +146,139 @@ final class BakeryTests: XCTestCase {
             }
         }
     }
+
+    // MARK: Orders
+
+    func testTheOrderedTreatGetsThreeStars() {
+        for seed in 0..<40 {
+            let o = BakeryOrder.random(customer: seed % BakeryPalette.customers.count, seed: seed)
+            XCTAssertEqual(o.matchCount(o.picture), 4, "\(o)")
+            XCTAssertEqual(o.stars(for: o.picture), 3)
+            XCTAssertNotNil(BakeryArt.shared.sprites[o.topping], o.topping)
+            XCTAssertGreaterThanOrEqual(o.frosting, 2)
+        }
+    }
+
+    func testStarsAreGentle() {
+        var o = BakeryOrder.random(customer: 0, seed: 3)
+        o.kind = .cake
+        o.flavor = 1
+        o.frosting = 4
+        o.topping = "top_star"
+        var t = Treat(kind: .iceCream)
+        XCTAssertEqual(o.stars(for: t), 1, "a different treat still gets a star")
+        t = Treat(kind: .cake)
+        t.flavor = 1
+        XCTAssertEqual(o.stars(for: t), 2)
+        t.frosting = 4
+        XCTAssertEqual(o.stars(for: t), 2)
+        t.toppings = [PlacedTopping(sprite: "top_star", x: 300, y: 380)]
+        XCTAssertEqual(o.stars(for: t), 3)
+        // ice cream: the cone and any scoop of the flavor count
+        o.kind = .iceCream
+        o.cone = "sugar"
+        var ic = Treat(kind: .iceCream)
+        ic.cone = "sugar"
+        ic.scoops = [3, 1]
+        ic.toppings = t.toppings
+        XCTAssertEqual(o.matchCount(ic), 4)
+    }
+
+    // MARK: Hands-on ingredients
+
+    func testHoldingMilkOverTheBowlPoursUntilFull() {
+        let sim = BowlSim()
+        let hands = HandsOnBowl()
+        hands.sim = sim
+        var t = Date()
+        hands.grab(.milk, at: CGPoint(x: 300, y: 0), now: t)
+        XCTAssertTrue(hands.overBowl())
+        var full: [Ingredient] = []
+        var n = 0
+        while full.isEmpty && n < 600 {
+            t = t.addingTimeInterval(1.0 / 60)
+            full = hands.step(t)
+            n += 1
+        }
+        XCTAssertEqual(full, [.milk])
+        XCTAssertLessThan(Double(n) / 60, 3, "a couple of seconds of pouring fills it")
+        XCTAssertNil(hands.holding)
+        XCTAssertGreaterThan(sim.poolRadius(t.addingTimeInterval(2)), 0.8)
+    }
+
+    func testNothingPoursAwayFromTheBowl() {
+        let hands = HandsOnBowl()
+        var t = Date()
+        hands.grab(.flour, at: CGPoint(x: 560, y: 0), now: t)
+        XCTAssertFalse(hands.overBowl())
+        for _ in 0..<120 { t = t.addingTimeInterval(1.0 / 60); _ = hands.step(t) }
+        XCTAssertEqual(hands.progress(.flour), 0)
+        XCTAssertTrue(hands.grains.isEmpty)
+    }
+
+    func testShakingTheFlourPoursFaster() {
+        func seconds(shake: Bool) -> Double {
+            let hands = HandsOnBowl()
+            hands.sim = BowlSim()
+            var t = Date()
+            hands.grab(.flour, at: CGPoint(x: 300, y: 0), now: t)
+            var n = 0
+            while hands.holding != nil && n < 900 {
+                t = t.addingTimeInterval(1.0 / 60)
+                if shake { hands.move(to: CGPoint(x: 300 + CGFloat(sin(Double(n) * 0.8)) * 30, y: 0), now: t) }
+                _ = hands.step(t)
+                n += 1
+            }
+            return Double(n) / 60
+        }
+        XCTAssertLessThan(seconds(shake: true), seconds(shake: false))
+    }
+
+    func testEggsCrackOnTheRim() {
+        let sim = BowlSim()
+        let hands = HandsOnBowl()
+        hands.sim = sim
+        let t = Date()
+        let x: CGFloat = 200
+        let rest = HandsOnBowl.rimY(x) - 26
+        for egg in 0..<HandsOnBowl.eggs {
+            hands.grab(.eggs, at: CGPoint(x: x, y: rest - 20), now: t)
+            // the egg can't go through the rim: pushing down knocks it, lifting and pushing again breaks it
+            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 60), now: t), .knock)
+            XCTAssertEqual(hands.hand.y, rest, accuracy: 0.01)
+            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 70), now: t), .none, "one knock per push")
+            hands.move(to: CGPoint(x: x, y: rest - 10), now: t)
+            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 60), now: t), .crack)
+            XCTAssertEqual(hands.eggsCracked, egg + 1)
+            XCTAssertNil(hands.holding)
+        }
+        XCTAssertTrue(hands.finished.contains(.eggs))
+        XCTAssertEqual(sim.blobs.filter { $0.yolk }.count, 2)
+    }
+
+    func testAnEggLetGoOnTheRimWaitsForTaps() {
+        let hands = HandsOnBowl()
+        hands.sim = BowlSim()
+        let t = Date()
+        hands.grab(.eggs, at: CGPoint(x: 230, y: HandsOnBowl.rimY(230)), now: t)
+        XCTAssertTrue(hands.release(now: t))
+        XCTAssertTrue(hands.parked)
+        XCTAssertTrue(hands.touchesParkedEgg(hands.hand))
+        XCTAssertEqual(hands.knock(t), .knock)
+        XCTAssertEqual(hands.knock(t), .crack)
+        XCTAssertEqual(hands.eggsCracked, 1)
+    }
+
+    func testButterDropsInWhenLetGoOverTheBowl() {
+        let sim = BowlSim()
+        let hands = HandsOnBowl()
+        hands.sim = sim
+        let t = Date()
+        hands.grab(.butter, at: CGPoint(x: 520, y: 100), now: t)
+        XCTAssertFalse(hands.release(now: t), "let go beside the bowl: it goes back")
+        hands.grab(.butter, at: CGPoint(x: 210, y: 20), now: t)
+        XCTAssertTrue(hands.release(now: t))
+        XCTAssertTrue(hands.finished.contains(.butter))
+        XCTAssertEqual(sim.blobs.filter { $0.cube }.count, 1)
+    }
 }
