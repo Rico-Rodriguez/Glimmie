@@ -32,6 +32,7 @@ enum GameRegistry {
         BakeryGame.entry,
         IceCreamGame.entry,
         GardenGame.entry,
+        AquariumGame.entry,
         SalonGame.entry,
         TidyGame.entry,
     ]

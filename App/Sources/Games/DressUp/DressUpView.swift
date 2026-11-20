@@ -15,6 +15,8 @@ struct DressUpView: View {
     @State private var galleryBounce = false
     @State private var showPets = false
     @State private var showStory = false
+    /// The makeup or nail studio, when open.
+    @State private var beauty: BeautyWorld.Mode?
     @State private var danceID = 0
     @State private var battle: BattleState?
     /// Her skirt and hair swing (a class: it changes every frame).
@@ -89,6 +91,15 @@ struct DressUpView: View {
                            done: { withAnimation(.spring(response: 0.4)) { battle = nil } })
                     .transition(.opacity)
                     .zIndex(4)
+            }
+            if let mode = beauty {
+                BeautyStudio(look: store.current, mode: mode) { look in
+                    store.current = look
+                    withAnimation(.spring(response: 0.4)) { beauty = nil }
+                    cheer()
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(3)
             }
             if showStory {
                 StoryStage(me: store.current, friends: store.gallery,
@@ -184,6 +195,14 @@ struct DressUpView: View {
                     store.flush()
                     withAnimation(.spring(response: 0.4)) { showStory = true }
                 }
+                RoundButton(symbol: "paintbrush.pointed.fill", tint: Color(hex: 0xF45C9A)) {
+                    Sound.shared.play(.whoosh)
+                    withAnimation(.spring(response: 0.4)) { beauty = .makeup }
+                }
+                RoundButton(symbol: "hand.raised.fill", tint: Color(hex: 0xFF8F6B)) {
+                    Sound.shared.play(.whoosh)
+                    withAnimation(.spring(response: 0.4)) { beauty = .nails }
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 26)
@@ -201,7 +220,7 @@ struct DressUpView: View {
         }
     }
 
-    /// Simulator screenshot hooks: -randomLook, -tab <group>, -demoGallery, -demoStudio, -demoStory, -demoDance.
+    /// Simulator screenshot hooks: -randomLook, -tab <group>, -demoGallery, -demoStudio, -demoStory, -demoDance, -demoMakeup, -demoNails.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-randomLook") { store.current = Look.random().sanitized() }
@@ -231,6 +250,28 @@ struct DressUpView: View {
                 store.update(first)
             }
             showGallery = true
+        }
+        if args.contains("-demoMakeup") || args.contains("-demoNails") {
+            var l = store.current
+            l.makeup = [BeautyStroke(tool: "blush", color: "#FF8FA8", pts: [206, 362, 222, 366, 238, 364]),
+                        BeautyStroke(tool: "blush", color: "#FF8FA8", pts: [362, 364, 378, 366, 394, 362]),
+                        BeautyStroke(tool: "shadow", color: "#B48BE8", pts: [214, 306, 238, 300, 262, 306]),
+                        BeautyStroke(tool: "shadow", color: "#B48BE8", pts: [338, 306, 362, 300, 386, 306]),
+                        BeautyStroke(tool: "lip", color: "#F45C9A", pts: [276, 388, 290, 384, 304, 390, 318, 386, 324, 390]),
+                        BeautyStroke(tool: "glitter", color: "#F2C14E", pts: [228, 350, 236, 344, 372, 348, 366, 342, 300, 280, 312, 286])]
+            var nails: [NailPaint] = []
+            for (i, c) in ["#F45C9A", "#7FB8F0", "#F45C9A", "#7FB8F0", "#F45C9A"].enumerated() {
+                var n = NailPaint()
+                n.color = c
+                n.mask = NailGrid.encode(NailGrid.inside)
+                n.coats = 2
+                n.glitter = i == 2
+                if i == 1 { n.gems = [NailGem(kind: "g_heart", color: "#E8F4FF", u: 0, v: 0.5)] }
+                nails.append(n)
+            }
+            l.nails = nails
+            store.current = l.sanitized()
+            beauty = args.contains("-demoNails") ? .nails : .makeup
         }
         if args.contains("-demoStory") {
             let keep = store.current
