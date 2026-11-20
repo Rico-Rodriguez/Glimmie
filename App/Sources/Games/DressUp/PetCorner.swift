@@ -62,7 +62,7 @@ final class PetStore: ObservableObject {
     }
 }
 
-private enum PetTab: String, CaseIterable { case care, closet, pets }
+private enum PetTab: String, CaseIterable { case care, closet, salon, pets }
 
 /// The things on the care shelf, in order, with the section each starts.
 private let careItems = ["fish", "bone", "carrot", "berry", "cookie", "cupcake",
@@ -144,6 +144,11 @@ struct PetCornerView: View {
             }
             switch mode {
             case "closet": tab = .closet
+            case "salon":
+                tab = .salon
+                var p = store.save.look(kind)
+                p.dye = 6; p.nails = 4; p.glitter = true; p.cheek = "heart"
+                store.save.outfits[kind] = p
             case "pets": tab = .pets
             default: break
             }
@@ -286,6 +291,7 @@ struct PetCornerView: View {
             switch tab {
             case .care: careShelf
             case .closet: closet
+            case .salon: salon
             case .pets: petPicker
             }
             Spacer(minLength: 0)
@@ -320,6 +326,10 @@ struct PetCornerView: View {
         switch t {
         case .care: PetPropThumb(name: "bone").padding(6)
         case .closet: PetThumb(pet: dressedSample, box: CGRect(x: 100, y: -20, width: 400, height: 420))
+        case .salon:
+            Image(systemName: "paintpalette.fill")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(.white)
         case .pets: PetThumb(pet: PetLook(kind: kind == "puppy" ? "kitty" : "puppy"), box: CGRect(x: 90, y: 30, width: 420, height: 420))
         }
     }
@@ -556,6 +566,78 @@ struct PetCornerView: View {
         .frame(height: 58)
     }
 
+    // Salon: fur dye, nail polish, sparkle fur and cheek stickers.
+    private var salon: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                salonHeader("drop.fill", Color(hex: 0xFF8FB8))
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
+                    salonButton(selected: pet.dye == nil, action: { pamper { $0.dye = nil } }) {
+                        Image(systemName: "xmark").font(.system(size: 24, weight: .heavy)).foregroundStyle(Theme.pink.opacity(0.7))
+                    }
+                    ForEach(0...PetPainter.dyes.count, id: \.self) { i in
+                        salonButton(selected: pet.dye == i, action: { pamper { $0.dye = i } }) { DyeBottle(index: i) }
+                    }
+                }
+                salonHeader("hand.raised.fingers.spread.fill", Color(hex: 0xF45C9A))
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 5), spacing: 10) {
+                    salonButton(selected: pet.nails == nil, action: { pamper { $0.nails = nil } }) {
+                        Image(systemName: "xmark").font(.system(size: 24, weight: .heavy)).foregroundStyle(Theme.pink.opacity(0.7))
+                    }
+                    ForEach(Self.polishes, id: \.self) { i in
+                        salonButton(selected: pet.nails == i, action: { pamper { $0.nails = i } }) {
+                            PolishBottle(color: DressUpArt.shared.cloth[safe: i] ?? Shades.white)
+                        }
+                    }
+                }
+                salonHeader("sparkles", Color(hex: 0x9B79E0))
+                HStack(spacing: 10) {
+                    salonButton(selected: pet.glitter, action: { pamper { $0.glitter.toggle() } }) {
+                        Image(systemName: "sparkles").font(.system(size: 34, weight: .bold)).foregroundStyle(Color(hex: 0xF2B83E))
+                    }
+                    salonButton(selected: pet.cheek == nil, action: { pamper { $0.cheek = nil } }) {
+                        Image(systemName: "face.smiling").font(.system(size: 30, weight: .bold)).foregroundStyle(Theme.pink.opacity(0.7))
+                    }
+                    salonButton(selected: pet.cheek == "heart", action: { pamper { $0.cheek = "heart" } }) {
+                        Image(systemName: "heart.fill").font(.system(size: 30, weight: .bold)).foregroundStyle(Color(hex: 0xFF6F96))
+                    }
+                    salonButton(selected: pet.cheek == "star", action: { pamper { $0.cheek = "star" } }) {
+                        Image(systemName: "star.fill").font(.system(size: 30, weight: .bold)).foregroundStyle(Color(hex: 0xF2B83E))
+                    }
+                }
+            }
+            .padding(4)
+        }
+    }
+
+    private static let polishes = [3, 4, 5, 8, 9, 12, 16, 19, 20]
+
+    private func pamper(_ change: (inout PetLook) -> Void) {
+        var p = pet
+        change(&p)
+        Sound.shared.play(.sparkle)
+        Sound.shared.tap()
+        setPet(p)
+        life.pamper()
+    }
+
+    private func salonHeader(_ symbol: String, _ tint: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 24, weight: .bold))
+            .foregroundStyle(tint)
+            .padding(.leading, 6)
+    }
+
+    private func salonButton<Content: View>(selected: Bool, action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+        Button(action: action) {
+            content()
+                .frame(width: 62, height: 62)
+                .background(Circle().fill(selected ? Theme.blush : Color(hex: 0xFFF7FA)))
+                .overlay(Circle().stroke(selected ? Theme.pink : Color(hex: 0xF5DDE8), lineWidth: selected ? 5 : 3))
+        }
+        .buttonStyle(Squish())
+    }
+
     // Pets: all twenty, each in its own outfit.
     private var petPicker: some View {
         let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
@@ -591,6 +673,52 @@ struct PetCornerView: View {
                 }
             }
             .padding(6)
+        }
+    }
+}
+
+/// A little bottle of fur dye.
+private struct DyeBottle: View {
+    let index: Int
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            let body = Path(roundedRect: CGRect(x: w * 0.22, y: h * 0.34, width: w * 0.56, height: h * 0.54), cornerRadius: w * 0.16)
+            let neck = Path(roundedRect: CGRect(x: w * 0.38, y: h * 0.14, width: w * 0.24, height: h * 0.24), cornerRadius: w * 0.06)
+            ctx.fill(neck, with: .color(Color(hex: 0xE6E1F0)))
+            ctx.stroke(neck, with: .color(Color(hex: 0xB9B3C9)), lineWidth: 2)
+            var g = ctx
+            g.translateBy(x: w * 0.22, y: h * 0.34)
+            g.scaleBy(x: w * 0.56 / 600, y: h * 0.54 / 660)
+            if let shade = PetPainter.dyeSwatch(index) {
+                g.fill(Path(CGRect(x: 0, y: 0, width: 600, height: 660)), with: shade)
+            }
+            var b = ctx
+            b.clip(to: body)
+            ctx.stroke(body, with: .color(.white), lineWidth: 3)
+            b.fill(Path(ellipseIn: CGRect(x: w * 0.3, y: h * 0.42, width: w * 0.1, height: h * 0.22)), with: .color(.white.opacity(0.6)))
+            ctx.stroke(body, with: .color(Theme.ink.opacity(0.35)), lineWidth: 1.5)
+        }
+        .mask(Canvas { ctx, size in
+            let w = size.width, h = size.height
+            ctx.fill(Path(roundedRect: CGRect(x: w * 0.22, y: h * 0.34, width: w * 0.56, height: h * 0.54), cornerRadius: w * 0.16), with: .color(.black))
+            ctx.fill(Path(roundedRect: CGRect(x: w * 0.38, y: h * 0.14, width: w * 0.24, height: h * 0.24), cornerRadius: w * 0.06), with: .color(.black))
+        })
+    }
+}
+
+/// A bottle of nail polish.
+private struct PolishBottle: View {
+    let color: RGB
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            let cap = Path(roundedRect: CGRect(x: w * 0.4, y: h * 0.12, width: w * 0.2, height: h * 0.32), cornerRadius: w * 0.05)
+            let jar = Path(roundedRect: CGRect(x: w * 0.27, y: h * 0.42, width: w * 0.46, height: h * 0.44), cornerRadius: w * 0.14)
+            ctx.fill(cap, with: .color(Color(hex: 0x5B3A68)))
+            ctx.fill(jar, with: .color(color.color))
+            ctx.stroke(jar, with: .color(Shades.outline(color).color), lineWidth: 2)
+            ctx.fill(Path(ellipseIn: CGRect(x: w * 0.34, y: h * 0.5, width: w * 0.09, height: h * 0.18)), with: .color(.white.opacity(0.7)))
         }
     }
 }
