@@ -115,6 +115,13 @@ history before the game-drawer PR.
   fill tool fills when the finger lifts, so a pinch never leaves a mark. A quick two-finger tap, or the pink button that
   appears in the top bar while zoomed, shows the whole page again. Brush sizes stay in paper pixels, so zooming in makes
   the brush finer on the page. Apple Pencil strokes ignore extra fingers (resting hand).
+- Stickers only have SwiftUI gestures while the sticker tool is on, and `ColoringCanvasView.gestureRecognizerShouldBegin`
+  refuses every recognizer above the canvas otherwise. (A sticker's drag/pinch/twist recognizers used to cancel her
+  strokes, so nothing colored after placing one.) `testThePageTakesTouchesAgainAfterTheStickerTool` guards it.
+- Colors: the palette grid, a rainbow hue slider above it, and a paint palette (`Mixing.swift`): she drops blobs of
+  color and swirls them with a finger. The paint is a grid of wet cells holding amount and Kubelka-Munk K/S, smeared
+  along the finger and blended with neighbours, so it marbles and then mixes like pigment (blue + yellow = green).
+  Lifting the finger picks up the paint under it. The palette keeps its paint while the page is open.
 
 ## Tidy Up decisions
 - Levels are data (`TidyLevels.swift`): a furniture scene (760 x 500 pt, drawn in `TidyScenes.swift` as a back and a

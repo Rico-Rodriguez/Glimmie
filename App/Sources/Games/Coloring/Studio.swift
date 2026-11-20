@@ -72,6 +72,9 @@ final class ColoringStudio: ObservableObject {
     /// Two-finger pinch zoom of the page.
     let zoom = ColoringZoom()
 
+    /// The paint palette's wet paint, kept while she colors this page.
+    let well = PaintWell()
+
     private struct Step { var pixels: Data?; var flakes: [GlitterFlake]?; var stickers: [ColorSticker] }
     private var undo: [Step] = [] { didSet { canUndo = !undo.isEmpty } }
     private static let maxUndo = 12
@@ -434,6 +437,16 @@ final class ColoringCanvasView: UIView {
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         studio?.tool == .stickers ? nil : super.hitTest(point, with: event)
+    }
+
+    /// "After a sticker nothing colors": once a sticker is on the page, SwiftUI puts drag, pinch and twist
+    /// gesture recognizers on the hosting view above this one. UIKit also hands this canvas's touches to its
+    /// ancestors' recognizers, and one that recognizes cancels her stroke a moment after it begins (and a
+    /// cancelled fill never fills). UIKit asks the touched view before such a recognizer may begin, so
+    /// unless the sticker tool is on, only this view's own touch handling runs.
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer.view !== self, studio?.tool != .stickers { return false }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
     }
 
     /// Forgets every finger, so a gesture cut off by a tool change can't leave the page stuck.

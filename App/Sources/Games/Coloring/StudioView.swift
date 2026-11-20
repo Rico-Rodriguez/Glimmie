@@ -7,6 +7,7 @@ struct ColoringStudioView: View {
     let onDone: () -> Void
     @State private var askClear = false
     @State private var celebrate = 0
+    @State private var mixing = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -23,6 +24,14 @@ struct ColoringStudioView: View {
             .padding(.bottom, 14)
         }
         .overlay { if askClear { clearConfirm } }
+        .overlay {
+            if mixing {
+                ColoringMixer(studio: studio, well: studio.well) {
+                    withAnimation(.spring(response: 0.35)) { mixing = false }
+                }
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
+            }
+        }
         .overlay { ColoringConfetti(trigger: celebrate).allowsHitTesting(false) }
     }
 
@@ -195,23 +204,43 @@ struct ColoringStudioView: View {
             }
             .frame(width: 190)
         } else {
-            ScrollView(showsIndicators: false) {
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(54), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(0..<ColoringPalette.colors.count, id: \.self) { i in
-                        let c = ColoringPalette.colors[i]
-                        Button {
-                            Sound.shared.play(.tap, volume: 0.4)
-                            studio.color = c
-                            if studio.tool == .eraser { studio.tool = .marker }
-                        } label: {
-                            ColoringColorDot(color: c, selected: studio.color == c)
-                        }
-                        .buttonStyle(Squish())
-                    }
+            VStack(spacing: 10) {
+                ColoringHueSlider(studio: studio)
+                Button {
+                    Sound.shared.play(.bubble, volume: 0.6)
+                    withAnimation(.spring(response: 0.35)) { mixing = true }
+                } label: {
+                    Image(systemName: "paintpalette.fill")
+                        .symbolRenderingMode(.multicolor)
+                        .font(.system(size: 32, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(Capsule().fill(.white.opacity(0.9)))
+                        .overlay(Capsule().stroke(Theme.blush, lineWidth: 4))
                 }
-                .padding(.vertical, 4)
+                .buttonStyle(Squish())
+                colorGrid
             }
             .frame(width: 190)
+        }
+    }
+
+    private var colorGrid: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(54), spacing: 8), count: 3), spacing: 8) {
+                ForEach(0..<ColoringPalette.colors.count, id: \.self) { i in
+                    let c = ColoringPalette.colors[i]
+                    Button {
+                        Sound.shared.play(.tap, volume: 0.4)
+                        studio.color = c
+                        if studio.tool == .eraser { studio.tool = .marker }
+                    } label: {
+                        ColoringColorDot(color: c, selected: studio.color == c)
+                    }
+                    .buttonStyle(Squish())
+                }
+            }
+            .padding(.vertical, 4)
         }
     }
 
@@ -361,15 +390,22 @@ private struct ColoringStickerLayer: View {
 
     var body: some View {
         let z = zoom.zoom
-        ZStack {
+        let editing = studio.tool == .stickers
+        let layer = ZStack {
             ForEach(studio.stickers) { s in
-                ColoringStickerItem(sticker: s, scale: scale, zoom: z, editable: studio.tool == .stickers,
+                ColoringStickerItem(sticker: s, scale: scale, zoom: z, editable: editing,
                             selected: studio.selected == s.id, studio: studio)
             }
         }
-        .allowsHitTesting(studio.tool == .stickers)
-        .contentShape(Rectangle())
-        .onTapGesture { studio.selected = nil }
+        // Outside the sticker tool the stickers are only pictures: no gestures at all over the page, so
+        // nothing can take her brush strokes away from the canvas underneath.
+        if editing {
+            layer
+                .contentShape(Rectangle())
+                .onTapGesture { studio.selected = nil }
+        } else {
+            layer.allowsHitTesting(false)
+        }
     }
 }
 
@@ -390,7 +426,7 @@ private struct ColoringStickerItem: View {
         let x = zoom.offset.x + CGFloat(sticker.x) * k, y = zoom.offset.y + CGFloat(sticker.y) * k
         // Zoomed far out of view: don't catch taps meant for the buttons around the page.
         let inView = x >= 0 && y >= 0 && x <= CGFloat(ColoringPaper.width) * scale && y <= CGFloat(ColoringPaper.height) * scale
-        Text(sticker.emoji)
+        let picture = Text(sticker.emoji)
             .font(.system(size: size))
             .padding(size * 0.08)
             .background(
@@ -401,9 +437,14 @@ private struct ColoringStickerItem: View {
             .scaleEffect(pinch)
             .rotationEffect(.radians(sticker.angle + twist.radians))
             .position(x: x + drag.width, y: y + drag.height)
-            .allowsHitTesting(inView)
-            .gesture(gestures, including: editable ? .all : .subviews)
-            .onTapGesture { if editable { studio.selected = sticker.id } }
+        if editable {
+            picture
+                .allowsHitTesting(inView)
+                .gesture(gestures)
+                .onTapGesture { studio.selected = sticker.id }
+        } else {
+            picture.allowsHitTesting(false)
+        }
     }
 
     private var gestures: some Gesture {
