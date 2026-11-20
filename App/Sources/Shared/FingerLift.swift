@@ -9,7 +9,10 @@ import SwiftUI
 //
 // - one shared, generous lift (`tool`, `item`), the same in every game, so her hand learns it once;
 // - near the top of the screen the lift shrinks and leans toward the middle, so the tip never runs
-//   off the edge and she can still reach the top of the hair, the pet's ears or the top shelf;
+//   off the edge and she can still reach the top of the hair, the pet's ears or the top shelf; near
+//   the bottom it turns sideways, so she can still reach a patient's feet or the bottom of the bed;
+// - a held tool turns so its handle points at her finger and its working end at the tip (`turn`),
+//   so the tool itself bridges the gap instead of floating somewhere above her hand;
 // - while a tool is working it turns see-through (`seeThrough`) and a small bright ring marks the
 //   exact spot its tip works on (`drawTip` / `TipMarker`);
 // - where the scene is drawn in a Canvas, a round magnifier (`Magnifier`) shows the spot under the tip
@@ -26,46 +29,87 @@ enum FingerLift {
     /// Where a lifted tool tip or dragged thing goes for a finger at `finger`.
     ///
     /// - `top`: the highest point it should reach (the top edge of the play area).
+    /// - `bottom`: the lowest point her finger can go (the bottom edge of the screen). When given, the
+    ///   lift turns sideways as her finger nears it, so the tip can still reach things that sit low
+    ///   (a patient's feet, the floor, the bottom of the flower bed) instead of stopping 120 pt short.
+    ///   It turns to the left of her finger (her hand comes from the bottom right), or to the right
+    ///   near the left edge.
     /// - `width`: the play area's width. When given, the lift leans toward the middle near the top,
     ///   so near the top corners the tool sits beside her finger instead of off the screen.
     ///
-    /// The lift is full while there is room above the finger. Closer to the top it shrinks smoothly
-    /// to a third, and the point still always moves the same way as her finger.
-    static func point(_ finger: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, width: CGFloat? = nil) -> CGPoint {
-        let room = finger.y - top
+    /// The lift is full while there is room around the finger, it changes smoothly near the edges,
+    /// and the point always moves up and down the same way as her finger.
+    static func point(_ finger: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, bottom: CGFloat? = nil,
+                      width: CGFloat? = nil) -> CGPoint {
         let ramp = lift + 60
         var l = lift
+        var x = finger.x
+        // near the top: less lift, leaning toward the middle
+        let room = finger.y - top
         if room < ramp {
             let u = max(0, room) / ramp
             l = lift * (0.35 + 0.65 * u)
+            if let w = width {
+                let side = max(-1, min(1, (w / 2 - finger.x) / (w / 4)))
+                x += side * (lift - l) * 0.6
+            }
         }
-        var x = finger.x
-        if let w = width, l < lift {
-            // the lift it lost goes sideways, toward the middle (less so near the middle)
-            let side = max(-1, min(1, (w / 2 - finger.x) / (w / 4)))
-            x += side * (lift - l) * 0.6
+        // near the bottom: the lift turns sideways
+        if let b = bottom {
+            let below = b - finger.y
+            if below < ramp {
+                let u = 1 - max(0, below) / ramp          // 0 ... 1 as her finger reaches the bottom
+                let up = lift * (1 - 0.75 * u)
+                let sideways = lift * 0.9 * u
+                // to the left of her finger, or to the right near the left edge
+                // (spread over two lifts of width, so the point still moves the same way as her finger)
+                let k = max(0, min(1, (finger.x - lift * 0.5) / (lift * 2)))
+                x += sideways * (1 - 2 * k)
+                l = min(l, up)
+            }
         }
         return CGPoint(x: x, y: finger.y - l)
     }
 
+    /// How far to lift a dragged thing whose drawing reaches `below` points under its anchor point,
+    /// so its bottom edge still clears her finger (never less than `item`).
+    static func carry(below: CGFloat) -> CGFloat { max(item, below + 40) }
+
+    /// How much to turn a held tool so it points from her finger to its tip: its handle toward her
+    /// finger and its working end at the tip, like holding a pencil. `tip` and `center` are in the
+    /// tool's own picture. Round tools that work with their middle (sponges, bandages) don't turn.
+    static func turn(tip: CGPoint, center: CGPoint, finger: CGPoint, lifted: CGPoint) -> Double {
+        let tx = tip.x - center.x, ty = tip.y - center.y
+        guard hypot(tx, ty) > 18 else { return 0 }
+        let want = atan2(Double(lifted.y - finger.y), Double(lifted.x - finger.x))
+        let have = atan2(Double(ty), Double(tx))
+        var a = want - have
+        while a > .pi { a -= 2 * .pi }
+        while a < -.pi { a += 2 * .pi }
+        return a
+    }
+
     /// The other way round: where her finger goes to put the lifted point at `target` (screenshot
     /// hooks and tests use it to "hold" a tool or thing over an exact spot).
-    static func finger(for target: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, width: CGFloat? = nil) -> CGPoint {
+    static func finger(for target: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, bottom: CGFloat? = nil,
+                       width: CGFloat? = nil) -> CGPoint {
         // the lifted y only depends on the finger's y, and always goes the same way as it
         var lo = target.y, hi = target.y + lift * 2 + 60
+        if let b = bottom { hi = min(hi, b) }
         for _ in 0..<40 {
             let mid = (lo + hi) / 2
-            if point(CGPoint(x: 0, y: mid), lift: lift, top: top).y < target.y { lo = mid } else { hi = mid }
+            if point(CGPoint(x: lift * 2, y: mid), lift: lift, top: top, bottom: bottom).y < target.y { lo = mid } else { hi = mid }
         }
         let y = (lo + hi) / 2
         var x = target.x
-        for _ in 0..<8 { x += target.x - point(CGPoint(x: x, y: y), lift: lift, top: top, width: width).x }
+        for _ in 0..<12 { x += target.x - point(CGPoint(x: x, y: y), lift: lift, top: top, bottom: bottom, width: width).x }
         return CGPoint(x: x, y: y)
     }
 
     /// The offset `point` adds to `finger`.
-    static func offset(_ finger: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, width: CGFloat? = nil) -> CGSize {
-        let p = point(finger, lift: lift, top: top, width: width)
+    static func offset(_ finger: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, bottom: CGFloat? = nil,
+                       width: CGFloat? = nil) -> CGSize {
+        let p = point(finger, lift: lift, top: top, bottom: bottom, width: width)
         return CGSize(width: p.x - finger.x, height: p.y - finger.y)
     }
 

@@ -151,6 +151,10 @@ extension SalonWorld {
             } else {
                 g.rotate(by: .radians(Double(atan2(d.y, d.x)) - .pi))
             }
+        } else if t != .shower {
+            // near the bottom the tip sits beside her finger: the tool leans so it still points from her finger to its tip
+            let lean = atan2(Double(tipD.y - f.y), Double(tipD.x - f.x)) + .pi / 2
+            if abs(lean) > 0.01 { g.rotate(by: .radians(lean)) }
         }
         g.scaleBy(x: s, y: s)
         g.translateBy(x: -t.tip.x, y: -t.tip.y)
