@@ -224,6 +224,14 @@ jobs:
           shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
           shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
           shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
+          shot aquarium-1-tank 7 -game aquarium
+          shot aquarium-2-busy 8 -game aquarium -aquaDemo
+          shot aquarium-3-feed 6 -game aquarium -aquaDemo -aquaTool food
+          shot aquarium-4-sponge 6 -game aquarium -aquaDemo -aquaTool sponge
+          shot aquarium-5-net 6 -game aquarium -aquaDemo -aquaTool net
+          shot aquarium-6-night 8 -game aquarium -aquaDemo -aquaNight
+          shot aquarium-7-fish-tray 6 -game aquarium -aquaTray fish
+          shot aquarium-8-decor-tray 6 -game aquarium -aquaTray decor
           shot salon-1-chair 7 -game salon
           shot salon-2-wash 7 -game salon -salonDemo wash
           shot salon-3-cut 7 -game salon -salonDemo cut
