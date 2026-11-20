@@ -146,6 +146,26 @@ history before the game-drawer PR.
 - Saves `garden.json`. Sounds: `python3 tools/garden/sounds.py`. Screenshot hooks: `-gardenDemo`, `-gardenTool can|shovel|seeds`,
   `-gardenWeather sun|rain|wind|night` (screenshot hooks never save).
 
+## Pizza decisions
+- One simulation class (`PizzaSim`) stepped every frame by the view, like Garden. Steps (dough, sauce, cheese, toppings,
+  oven, cutter) are a bar at the top; any step can be opened at any time and the arrow bounces when one is done enough.
+- Dough: a lumpy ball until 6 presses have kneaded it smooth (each press squashes it with a spring and folds the lumps
+  smaller), then a disc whose edge is 96 springy radii. Pushing near the edge stretches it; it keeps 60% of the stretch
+  and springs back the rest, neighbours pull together like a skin, and bigger dough stretches less. A fast flick up
+  (over 900 pt/s) tosses it; it lands 16 pt bigger and rounder. Her bare hand isn't lifted (like petting in Pet Vet).
+- Sauce and cheese are 96 x 96 grids over the pizza. The ladle pours where it's held still and pushes sauce along the way
+  it moves (mass is kept; `testSpreadingSauceKeepsItAndCoversThePizza`). Cheese shreds fall with gravity, are drawn once
+  into a bitmap when they land (`ShredLayer`) and add to the cheese grid, which flows, bubbles and browns in the oven.
+  `PizzaGrids` turns the grids into small bitmaps lit by their slope, so they look raised and glossy.
+- The oven is its own scene (the pizza drawn squashed on the floor for perspective) with particle fire, embers and a
+  flickering glow. A full bake is 9 s; nothing burns. The arrow's ring shows how baked it is.
+- Cuts snap to lines through the middle (up to 8). Tapping a slice lifts it out with cheese strings that snap at random
+  stretches, and it flies to the customer. Stars (gentle, 1 to 3) count wanted toppings with at least 2 pieces.
+- Tools: the ladle and wheel work `FingerLift.tool` above her finger and turn toward it, the cheese bowl and toppings
+  are carried above it. A single tap on any tool does a helpful amount by itself.
+- Saves `pizza.json` (hearts and pizzas served). Sounds: `python3 tools/pizza/sounds.py`.
+  Screenshot hooks: `-pizzaDemo knead | stretch | toss | sauce | cheese | toppings | bake | baked | slice | serve`.
+
 ## Ice Cream & Smoothie Shop decisions
 - One simulation class (`IceSim`, split over IceCreamSim/Soft/Blender) stepped every frame, drawn by `ICScene` and
   `ICArt` in two Canvas layers (a backdrop that only changes with the station, and the shop). The customer (the
