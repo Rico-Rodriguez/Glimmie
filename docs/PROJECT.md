@@ -104,3 +104,14 @@ history before the game-drawer PR.
 - Saves `progress.json` (finished level ids, music on/off). Nothing is locked; the next unfinished level glows.
 - Screenshot hooks: `-tidyLevel <n>`, `-tidyPrefill <k>` (puts k items away), `-tidyHold` (holds one item by its slot),
   `-tidyDemoDone` (marks the first 9 levels done in the picker).
+
+## Garden decisions
+- The soil is a height field of 4 pt columns (`GardenSim.h`) with a wetness per column (`wet`). The shovel carves columns down
+  to its blade and carries the soil as a load; a flick throws it as clods that settle back where they land, so soil is never
+  made or lost (a unit test checks this). Slopes relax to an angle of repose; wet soil holds steeper walls.
+- Water and rain are particles that soak into the column they hit. Wetness spreads, dries in the sun, darkens the soil and
+  a soak line behind the glass, and pools into flat puddles above 0.85.
+- Plants grow only while their soil is damp (about 26 s from seed to ripe) and drink it. A thirsty plant shows a bobbing drop.
+  Every plant and weed is a damped spring pushed by wind, rain, water and her finger.
+- Saves `garden.json`. Sounds: `python3 tools/garden/sounds.py`. Screenshot hooks: `-gardenDemo`, `-gardenTool can|shovel|seeds`,
+  `-gardenWeather sun|rain|wind|night` (screenshot hooks never save).

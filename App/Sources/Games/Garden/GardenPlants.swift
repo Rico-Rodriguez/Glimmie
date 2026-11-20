@@ -82,7 +82,8 @@ enum GardenPlants {
         rib.move(to: CGPoint(x: 2, y: 0))
         rib.addQuadCurve(to: CGPoint(x: length * 0.86, y: curl * 0.8), control: CGPoint(x: length * 0.5, y: -width * 0.12))
         g.stroke(rib, with: .color(color.shade(-0.35).color(0.55)), lineWidth: 1)
-        // A glint of light on the upper half.
+        // A glint of light on the upper half, on leaves big enough to see it.
+        guard length > 20 else { return }
         var shine = Path()
         shine.move(to: CGPoint(x: length * 0.2, y: -width * 0.25))
         shine.addQuadCurve(to: CGPoint(x: length * 0.62, y: -width * 0.32), control: CGPoint(x: length * 0.4, y: -width * 0.55))
@@ -168,24 +169,25 @@ enum GardenPlants {
         sep.closeSubpath()
         hg.fill(sep, with: .color(GRGB(0x4F8F35).color))
         if open > 0 {
+            // Each ring of petals is one path, shaded from base to tip by a single radial gradient.
+            let r0 = 10 + 10 * open
+            let wid = 3 + 6 * open
             for ring in 0..<2 {
                 let n = 20
+                let len = (12 + 28 * open) * (ring == 0 ? 1 : 0.86)
+                var petals = Path()
                 for i in 0..<n {
                     let a = (CGFloat(i) + CGFloat(ring) * 0.5) / CGFloat(n) * 2 * .pi + sin(time * 0.8 + CGFloat(i)) * 0.015
-                    let len = (12 + 28 * open) * (ring == 0 ? 1 : 0.86)
-                    let wid = 3 + 6 * open
-                    var pg = hg
-                    pg.rotate(by: .radians(Double(a)))
-                    let r0 = 10 + 10 * open
                     var pp = Path()
                     pp.move(to: CGPoint(x: r0, y: 0))
                     pp.addQuadCurve(to: CGPoint(x: r0 + len, y: 0), control: CGPoint(x: r0 + len * 0.5, y: -wid))
                     pp.addQuadCurve(to: CGPoint(x: r0, y: 0), control: CGPoint(x: r0 + len * 0.5, y: wid))
-                    let c = ring == 0 ? petal.shade(-0.12) : petal
-                    let grad = Gradient(colors: [c.shade(-0.2).color, c.shade(0.18).color])
-                    pg.fill(pp, with: .linearGradient(grad, startPoint: CGPoint(x: r0, y: 0), endPoint: CGPoint(x: r0 + len, y: 0)))
-                    pg.stroke(pp, with: .color(c.shade(-0.4).color(0.5)), lineWidth: 0.8)
+                    petals.addPath(pp, transform: CGAffineTransform(rotationAngle: a))
                 }
+                let c = ring == 0 ? petal.shade(-0.12) : petal
+                let grad = Gradient(colors: [c.shade(-0.2).color, c.shade(0.18).color])
+                hg.fill(petals, with: .radialGradient(grad, center: .zero, startRadius: r0, endRadius: r0 + len))
+                hg.stroke(petals, with: .color(c.shade(-0.4).color(0.5)), lineWidth: 0.8)
             }
         }
         let diskR: CGFloat = 8 + 16 * max(budK * 0.5, open)
@@ -194,12 +196,13 @@ enum GardenPlants {
         hg.fill(disk, with: .radialGradient(dg, center: CGPoint(x: -diskR * 0.25, y: -diskR * 0.3), startRadius: 0, endRadius: diskR * 1.1))
         if open > 0.2 {
             // Seeds in a golden-angle spiral.
+            var seeds = Path()
             for i in 0..<46 {
                 let r = diskR * 0.92 * sqrt(CGFloat(i) / 46)
                 let a = CGFloat(i) * 2.39996
-                let d = CGRect(x: cos(a) * r - 1.2, y: sin(a) * r - 1.2, width: 2.4, height: 2.4)
-                hg.fill(Path(ellipseIn: d), with: .color(GRGB(0xA0703A).color(0.75 * Double(open))))
+                seeds.addEllipse(in: CGRect(x: cos(a) * r - 1.2, y: sin(a) * r - 1.2, width: 2.4, height: 2.4))
             }
+            hg.fill(seeds, with: .color(GRGB(0xA0703A).color(0.75 * Double(open))))
         }
         hg.fill(Path(ellipseIn: CGRect(x: -diskR * 0.55, y: -diskR * 0.7, width: diskR * 0.7, height: diskR * 0.45)),
                 with: .color(.white.opacity(0.12)))
@@ -307,6 +310,10 @@ enum GardenPlants {
         for j in [0, 4, 1, 3] {
             leaf(ctx, at: base, angle: -.pi / 2 + offs[j] * 2.6, length: 30 * lk, width: 4 * lk, color: GRGB(0x8DAE84))
         }
+        // Every bud of one shade goes into one path, so a whole plant is three fills however many spikes it has.
+        var deep = Path()
+        var pale = Path()
+        var glint = Path()
         for j in 0..<5 {
             let st = stem(base: base, height: hgt * hs[j], bend: bend * (0.8 + CGFloat(j) * 0.08) + offs[j])
             drawStem(ctx, st, width: 2, color: GRGB(0x7E9F6E))
@@ -315,14 +322,19 @@ enum GardenPlants {
                 let t = 0.62 + CGFloat(b) * 0.045
                 let q = st.at(min(1, t))
                 let r = (2 + 2.2 * spikeK) * (1 - CGFloat(b) * 0.04)
-                let col = GRGB(0x9DB08A).mix(purple.shade(b % 2 == 0 ? -0.1 : 0.08), bloomK * 0.9 + 0.1)
                 for side in [-1.0, 1.0] {
                     let cx = q.x + CGFloat(side) * r * 0.55
-                    ctx.fill(Path(ellipseIn: CGRect(x: cx - r, y: q.y - r, width: r * 2, height: r * 2.2)), with: .color(col.color))
+                    let bud = CGRect(x: cx - r, y: q.y - r, width: r * 2, height: r * 2.2)
+                    if b % 2 == 0 { deep.addEllipse(in: bud) } else { pale.addEllipse(in: bud) }
                 }
-                ctx.fill(Path(ellipseIn: CGRect(x: q.x - r * 0.9, y: q.y - r * 0.9, width: r * 0.7, height: r * 0.6)),
-                         with: .color(.white.opacity(0.25 * Double(bloomK))))
+                glint.addEllipse(in: CGRect(x: q.x - r * 0.9, y: q.y - r * 0.9, width: r * 0.7, height: r * 0.6))
             }
+        }
+        if spikeK > 0 {
+            let k = bloomK * 0.9 + 0.1
+            ctx.fill(deep, with: .color(GRGB(0x9DB08A).mix(purple.shade(-0.1), k).color))
+            ctx.fill(pale, with: .color(GRGB(0x9DB08A).mix(purple.shade(0.08), k).color))
+            if bloomK > 0 { ctx.fill(glint, with: .color(.white.opacity(0.25 * Double(bloomK)))) }
         }
         _ = time
     }
