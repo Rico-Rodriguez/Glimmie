@@ -88,8 +88,7 @@ final class ColoringCustom: ObservableObject {
     /// `done` gets the new page id, or nil if the picture had no lines in it.
     func addPage(_ image: CGImage, to tab: String, done: ((String?) -> Void)? = nil) {
         working += 1
-        queue.async { [weak self] in
-            guard let self else { return }
+        queue.async { [self] in
             let id = Self.prefix + UUID().uuidString.prefix(12).lowercased()
             var ok = false
             if let page = ColoringConvert.page(from: image),

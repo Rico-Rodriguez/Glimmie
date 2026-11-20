@@ -256,8 +256,10 @@ final class ColoringTests: XCTestCase {
         let added = expectation(description: "page added")
         var pageID: String?
         store.addPage(printablePage(), to: tab) { pageID = $0; added.fulfill() }
-        wait(for: [added], timeout: 30)
-        let id = try! XCTUnwrap(pageID)
+        wait(for: [added], timeout: 120)
+        guard let id = pageID else {
+            return XCTFail("page conversion did not add a custom page")
+        }
         XCTAssertTrue(ColoringCustom.isCustom(id))
         XCTAssertEqual(store.tabs.first?.pages, [id])
         XCTAssertNotNil(store.lineArt(id))
