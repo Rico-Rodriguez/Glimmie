@@ -241,14 +241,16 @@ final class BakeryTests: XCTestCase {
         let t = Date()
         let x: CGFloat = 200
         let rest = HandsOnBowl.rimY(x) - 26
+        // her finger is below the egg: `lift` under where the egg goes
+        let up = HandsOnBowl.lift
         for egg in 0..<HandsOnBowl.eggs {
-            hands.grab(.eggs, at: CGPoint(x: x, y: rest - 20), now: t)
+            hands.grab(.eggs, at: CGPoint(x: x, y: rest - 50 + up), now: t)
             // the egg can't go through the rim: pushing down knocks it, lifting and pushing again breaks it
-            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 60), now: t), .knock)
+            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 30 + up), now: t), .knock)
             XCTAssertEqual(hands.hand.y, rest, accuracy: 0.01)
-            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 70), now: t), .none, "one knock per push")
-            hands.move(to: CGPoint(x: x, y: rest - 10), now: t)
-            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 60), now: t), .crack)
+            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 40 + up), now: t), .none, "one knock per push")
+            hands.move(to: CGPoint(x: x, y: rest - 40 + up), now: t)
+            XCTAssertEqual(hands.move(to: CGPoint(x: x, y: rest + 30 + up), now: t), .crack)
             XCTAssertEqual(hands.eggsCracked, egg + 1)
             XCTAssertNil(hands.holding)
         }
@@ -260,7 +262,7 @@ final class BakeryTests: XCTestCase {
         let hands = HandsOnBowl()
         hands.sim = BowlSim()
         let t = Date()
-        hands.grab(.eggs, at: CGPoint(x: 230, y: HandsOnBowl.rimY(230)), now: t)
+        hands.grab(.eggs, at: CGPoint(x: 230, y: HandsOnBowl.rimY(230) - 30 + HandsOnBowl.lift), now: t)
         XCTAssertTrue(hands.release(now: t))
         XCTAssertTrue(hands.parked)
         XCTAssertTrue(hands.touchesParkedEgg(hands.hand))

@@ -347,9 +347,9 @@ struct GardenView: View {
                         tray = nil
                         Sound.shared.tap()
                         sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
-                    } else {
-                        sim.carry(to: p)
                     }
+                    // the tool glides up and works well above her finger (see `FingerLift`)
+                    sim.carry(to: FingerLift.point(p, lift: slot == .shovel ? FingerLift.tool : FingerLift.item, width: 1024))
                 }
             }
             .onEnded { _ in
@@ -421,9 +421,8 @@ struct GardenView: View {
                         Sound.shared.tap()
                         let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
                         sim.pickUp(tool, at: p)
-                    } else {
-                        sim.carry(to: p)
                     }
+                    sim.carry(to: FingerLift.point(p, lift: FingerLift.item, width: 1024))
                 }
                 .onEnded { _ in
                     sim.release(home: t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot)

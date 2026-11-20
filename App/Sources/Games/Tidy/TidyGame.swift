@@ -411,7 +411,7 @@ struct TidyPlayView: View {
             guard let b = world.bodies.first(where: { $0.state == .loose }), let s = world.eligible(for: b).first else { return }
             world.touchDown(b.pos.pt)
             let p = world.slotPos(s) + TVec(70, 60)
-            world.touchMoved(p.pt)
+            world.touchMoved(world.finger(toHold: b, at: p.pt))
         }
     }
 }

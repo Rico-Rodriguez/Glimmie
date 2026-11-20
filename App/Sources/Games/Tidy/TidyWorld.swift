@@ -237,7 +237,7 @@ final class TidyWorld: ObservableObject {
         b.state = .held
         b.onFloor = false
         held = b.id
-        grab = b.pos - v
+        grab = b.pos - carried(b, finger: v)
         heldVel = .zero
         zCounter += 1
         b.z = zCounter
@@ -359,11 +359,25 @@ final class TidyWorld: ObservableObject {
         b.lift = max(0, b.lift - dt * 6)
     }
 
+    /// How far above her finger a held item's middle floats, so neither her finger nor her hand hides
+    /// it or the spot it's going to (bigger things float higher so their bottom edge clears her finger).
+    func lift(for b: TidyBody) -> CGFloat { max(FingerLift.item, b.size.height * 0.5 + 40) }
+
+    /// Where the held item goes for her finger at f.
+    private func carried(_ b: TidyBody, finger f: TVec) -> TVec {
+        TVec(FingerLift.point(f.pt, lift: lift(for: b), top: 0, width: size.width))
+    }
+
+    /// The finger point that holds item b with its middle at p (screenshot hooks and tests).
+    func finger(toHold b: TidyBody, at p: CGPoint) -> CGPoint {
+        FingerLift.finger(for: p, lift: lift(for: b), top: 0, width: size.width)
+    }
+
     private func integrateHeld(_ b: TidyBody, _ dt: CGFloat) {
-        // The grab point slides toward a spot just under the item's middle so her finger doesn't hide it.
-        let restGrab = TVec(0, b.size.height * 0.18)
-        grab = grab + (restGrab - grab) * min(1, dt * 5)
-        var target = finger + grab
+        // The item glides up from under her finger to float above it (`grab` starts as where she
+        // touched it and eases to zero), so her finger doesn't hide it or its spot.
+        grab = grab * (1 - min(1, dt * 7))
+        var target = carried(b, finger: finger) + grab
         var baseRot: CGFloat = 0
         hover = nearestSlot(for: b, within: 120)
         if let s = hover {
@@ -657,9 +671,10 @@ final class TidyWorld: ObservableObject {
     func testDrop(_ b: TidyBody, at p: CGPoint) {
         touchDown(b.pos.pt)
         if held == b.id {
-            touchMoved(p)
+            let f = finger(toHold: b, at: p)
+            touchMoved(f)
             for _ in 0..<60 { advance(Self.sub) }
-            touchUp(p)
+            touchUp(f)
         }
     }
 }

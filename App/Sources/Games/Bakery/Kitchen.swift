@@ -402,7 +402,7 @@ struct MixStepView: View {
                     touchStart = v.location
                     if hands.touchesParkedEgg(b) {
                         knocked(hands.knock(now))
-                        if hands.holding == .eggs { hands.grab(.eggs, at: CGPoint(x: b.x, y: b.y + 30), now: now) }
+                        if hands.holding == .eggs { hands.grab(.eggs, at: CGPoint(x: b.x, y: b.y + HandsOnBowl.lift), now: now) }
                         holding = hands.holding?.rawValue
                         return
                     }
@@ -729,10 +729,13 @@ struct FrostStepView: View {
     @ViewBuilder private var spatula: some View {
         let load = full ? 0.15 : max(0.15, 1 - coverage)
         if let p = tool {
+            // the blade works well above her finger, see-through, with a ring where it spreads
             Spatula(load: load, color: TreatPainter.frosting(treat.frosting ?? 0))
                 .frame(width: 220, height: 220)
+                .opacity(FingerLift.seeThrough + 0.15)
                 .position(x: p.x + 60, y: p.y - 60)
                 .allowsHitTesting(false)
+            TipMarker().position(p)
         } else if !done {
             let n = max(1, min(3, treat.tiers))
             let top = KStage.design(CGPoint(x: 300, y: BakeryArt.shared.tiers[n - 1].t))
@@ -766,8 +769,11 @@ struct FrostStepView: View {
         return out
     }
 
-    private func spread(at loc: CGPoint) {
-        tool = CGPoint(x: KStage.center.x - KStage.size / 2 + loc.x, y: KStage.center.y - KStage.size / 2 + loc.y)
+    /// `finger`: loc is where her finger is, and the spatula works above it (see `FingerLift`).
+    private func spread(at finger: CGPoint, lifted: Bool = true) {
+        let stageTop = KStage.center.y - KStage.size / 2
+        let loc = lifted ? FingerLift.point(finger, top: -stageTop) : finger
+        tool = CGPoint(x: KStage.center.x - KStage.size / 2 + loc.x, y: stageTop + loc.y)
         let p = CGPoint(x: loc.x / KStage.k, y: loc.y / KStage.k)
         if !dragging {
             dragging = true
@@ -970,7 +976,7 @@ struct FrostStepView: View {
                         let x = 300 - g.hw * 0.95 + 1.9 * g.hw * CGFloat(s) / CGFloat(steps)
                         let wob = CGFloat(sin(Double(s) * 1.3 + Double(row))) * 8
                         if row == 2 && s > 5 { break }
-                        spread(at: CGPoint(x: x * k, y: (y + wob) * k))
+                        spread(at: CGPoint(x: x * k, y: (y + wob) * k), lifted: false)
                     }
                 }
             }
@@ -1369,6 +1375,11 @@ struct DecorateStepView: View {
             }
         }
         if let id = grabbed, let i = treat.toppings.firstIndex(where: { $0.id == id }) {
+            // the topping floats up above her finger as she moves it, so she can see where it goes
+            let design = KStage.design(p)
+            let up = FingerLift.offset(design, lift: FingerLift.item)
+            let target = CGSize(width: up.width / KStage.k, height: up.height / KStage.k)
+            if hypot(v.translation.width, v.translation.height) > 8 { grabDelta = FingerLift.ease(grabDelta, toward: target) }
             treat.toppings[i].x = Double(p.x + grabDelta.width)
             treat.toppings[i].y = Double(p.y + grabDelta.height)
         }
@@ -1378,7 +1389,8 @@ struct DecorateStepView: View {
         let p = stagePoint(v.location)
         let moved = hypot(v.translation.width, v.translation.height) > 12
         if let id = grabbed {
-            if p.x < -10 || p.x > 610 || p.y < -10 || p.y > 610 {
+            let at = treat.toppings.first(where: { $0.id == id }).map { CGPoint(x: $0.x, y: $0.y) } ?? p
+            if at.x < -10 || at.x > 610 || at.y < -10 || at.y > 610 {
                 treat.toppings.removeAll { $0.id == id }
                 Sound.shared.play(.whoosh, volume: 0.6)
             } else if !moved {

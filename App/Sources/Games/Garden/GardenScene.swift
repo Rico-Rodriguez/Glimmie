@@ -853,6 +853,10 @@ enum GardenPainter {
     private static func tool(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
         if let tl = sim.tool {
             drawTool(g, tl, at: sim.toolP, tilt: sim.tilt, load: sim.load, time: t)
+            // the shovel digs where its blade tip is, well above her finger: a ring marks the spot
+            if case .shovel = tl, sim.toolP.y > GGeo.soilY - 30, sim.toolP.y < 712 {
+                FingerLift.drawTip(g, at: sim.toolP, time: Double(t))
+            }
         }
         if let r = sim.returning {
             let k = gdEase(CGFloat(sim.time - r.start) / 0.32)

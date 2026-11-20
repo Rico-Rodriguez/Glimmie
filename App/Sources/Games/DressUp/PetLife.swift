@@ -92,6 +92,8 @@ final class PetLife {
     // the tool in her hand
     private var held: String?
     private var heldAt: CGPoint = .zero
+    /// Where the held tool is drawn: lifted above her finger (see `FingerLift`), or on its path when it plays itself.
+    private var drawAt: CGPoint = .zero
     private var heldLast: CGPoint = .zero
     private var heldMoved: CGFloat = 0
     private var stepDist: CGFloat = 0
@@ -214,7 +216,7 @@ final class PetLife {
 
     func trayEnded(_ id: String, _ p: CGPoint, predicted: CGPoint) {
         if held == id && auto.isEmpty {
-            drop(at: p, velocity: CGVector(dx: (predicted.x - p.x) * 3, dy: (predicted.y - p.y) * 3))
+            drop(at: drawAt, velocity: CGVector(dx: (predicted.x - p.x) * 3, dy: (predicted.y - p.y) * 3))
         } else if held == nil {
             autoUse(id, from: p)
         }
@@ -223,16 +225,18 @@ final class PetLife {
     private func pick(_ id: String, at p: CGPoint) {
         held = id
         heldAt = p; heldLast = p; heldMoved = 0; stepDist = 0
+        drawAt = lifted(p)
         play("pop", 0.05)
         Sound.shared.tap()
         if id == "ball" || id == "yarn" { ball = nil }
     }
 
-    private func move(to p: CGPoint) {
+    private func move(to p: CGPoint, playing: Bool = false) {
         guard let id = held else { return }
         let d = hypot(p.x - heldAt.x, p.y - heldAt.y)
         heldLast = heldAt
         heldAt = p
+        drawAt = playing ? p : lifted(p)
         heldMoved += d
         stepDist += d
         let tip = tipPoint()
@@ -286,7 +290,7 @@ final class PetLife {
             var vel = speed < 60 ? CGVector(dx: CGFloat.random(in: -120...120), dy: -300) : v
             let cap: CGFloat = 1800
             if speed > cap { vel = CGVector(dx: v.dx / speed * cap, dy: v.dy / speed * cap) }
-            let start = CGPoint(x: min(max(p.x, 60), leftW - 60), y: min(p.y - 50, floorY - 50))
+            let start = CGPoint(x: min(max(p.x, 60), leftW - 60), y: min(p.y, floorY - 50))
             ball = Ball(id: id, p: start, v: vel, touched: t)
             play("whoosh", 0.1, volume: 0.6)
         case "bed":
@@ -334,7 +338,7 @@ final class PetLife {
             dur = 0.7
         }
         pick(id, at: p)
-        auto = [p] + path.map { CGPoint(x: $0.x, y: $0.y + 56) }   // the tool is drawn above the finger point
+        auto = [lifted(p)] + path   // these are where the tool itself goes
         autoStart = t
         autoDur = dur
     }
@@ -480,8 +484,10 @@ final class PetLife {
                                                   "towel": CGPoint(x: 70, y: 96), "shower": CGPoint(x: 44, y: 74),
                                                   "feather": CGPoint(x: 110, y: 26)]
 
-    /// Where the tool is drawn: just above her finger so it doesn't hide what she's doing.
-    private var drawAt: CGPoint { CGPoint(x: heldAt.x, y: heldAt.y - 56) }
+    /// Where a tool goes for her finger at p: well above it, so her finger doesn't hide what she's doing.
+    private func lifted(_ p: CGPoint) -> CGPoint {
+        FingerLift.point(p, lift: foods.contains(held ?? "") ? FingerLift.item : FingerLift.tool, width: leftW)
+    }
 
     private func tipPoint() -> CGPoint {
         guard let id = held, let tip = Self.tips[id] else { return drawAt }
@@ -503,7 +509,7 @@ final class PetLife {
             let i = min(auto.count - 2, Int(f))
             let r = CGFloat(f - Double(i))
             let a = auto[i], b = auto[i + 1]
-            move(to: CGPoint(x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r))
+            move(to: CGPoint(x: a.x + (b.x - a.x) * r, y: a.y + (b.y - a.y) * r), playing: true)
             if u >= 1 {
                 let wasFood = held.map { foods.contains($0) } ?? false
                 if wasFood, let h = held { eat(h) } else { drop(at: heldAt, velocity: .zero) }
@@ -773,7 +779,13 @@ final class PetLife {
                 m.fill(Path(ellipseIn: r), with: .color(Color(hex: 0x6B6FD6)))
                 m.fill(Path(ellipseIn: r.offsetBy(dx: 16, dy: -10)), with: .color(Color(hex: 0xE6E4FF)))
             } else {
-                PetPainter.prop(id, at: drawAt, scale: sc, rotation: id == "sponge" || id == "towel" ? sin(t * 8) * 4 : 0, in: ctx)
+                // over the pet a tool turns see-through, with a ring where its tip works
+                let tip = tipPoint()
+                let working = Self.tips[id] != nil && over(tip)
+                var m = ctx
+                if working { m.opacity = FingerLift.seeThrough }
+                PetPainter.prop(id, at: drawAt, scale: sc, rotation: id == "sponge" || id == "towel" ? sin(t * 8) * 4 : 0, in: m)
+                if working { FingerLift.drawTip(ctx, at: tip, time: t) }
             }
         }
     }
