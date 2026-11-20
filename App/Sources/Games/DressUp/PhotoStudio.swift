@@ -310,7 +310,7 @@ struct PhotoStudio: View {
                         let under = CGPoint(x: CGFloat(m.x) * size.width + v.translation.width,
                                             y: CGFloat(m.y) * size.height + v.translation.height)
                         let high = max(FingerLift.item, size.width * CGFloat(s.size) * 0.5 + 30)
-                        stickerLift = FingerLift.ease(stickerLift, toward: FingerLift.offset(under, lift: high, top: 0, width: size.width))
+                        stickerLift = FingerLift.ease(stickerLift, toward: FingerLift.offset(under, lift: high, top: 0, bottom: size.height, width: size.width))
                         look.stickers[j].x = Double((under.x + stickerLift.width) / size.width)
                         look.stickers[j].y = Double((under.y + stickerLift.height) / size.height)
                         let bin = inBin(look.stickers[j], size)

@@ -664,6 +664,8 @@ struct FrostStepView: View {
     @State private var fullAt: Date?
     @State private var fading = false
     @State private var tool: CGPoint?
+    /// Her finger while she spreads (design space), so the spatula can point from it to the blade.
+    @State private var toolFinger: CGPoint?
     @State private var squish = false
     @State private var burst = 0
     @State private var smearAcc: CGFloat = 0
@@ -721,7 +723,7 @@ struct FrostStepView: View {
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0)
             .onChanged { v in spread(at: v.location) }
-            .onEnded { _ in dragging = false; tool = nil })
+            .onEnded { _ in dragging = false; tool = nil; toolFinger = nil })
         .scaleEffect(x: squish ? 1.04 : 1, y: squish ? 0.96 : 1, anchor: .bottom)
         .position(KStage.center)
     }
@@ -730,10 +732,15 @@ struct FrostStepView: View {
         let load = full ? 0.15 : max(0.15, 1 - coverage)
         if let p = tool {
             // the blade works well above her finger, see-through, with a ring where it spreads
+            // turned so the handle points at her finger and the blade edge is where it spreads
+            let f = toolFinger ?? CGPoint(x: p.x, y: p.y + FingerLift.tool)
+            let turn = FingerLift.turn(tip: CGPoint(x: 50, y: 170), center: CGPoint(x: 110, y: 110), finger: f, lifted: p)
+            let c = CGFloat(cos(turn)), sn = CGFloat(sin(turn))
             Spatula(load: load, color: TreatPainter.frosting(treat.frosting ?? 0))
                 .frame(width: 220, height: 220)
+                .rotationEffect(.radians(turn))
                 .opacity(FingerLift.seeThrough + 0.15)
-                .position(x: p.x + 60, y: p.y - 60)
+                .position(x: p.x + 60 * c + 60 * sn, y: p.y + 60 * sn - 60 * c)
                 .allowsHitTesting(false)
             TipMarker().position(p)
         } else if !done {
@@ -772,8 +779,10 @@ struct FrostStepView: View {
     /// `finger`: loc is where her finger is, and the spatula works above it (see `FingerLift`).
     private func spread(at finger: CGPoint, lifted: Bool = true) {
         let stageTop = KStage.center.y - KStage.size / 2
-        let loc = lifted ? FingerLift.point(finger, top: -stageTop) : finger
-        tool = CGPoint(x: KStage.center.x - KStage.size / 2 + loc.x, y: stageTop + loc.y)
+        let stageLeft = KStage.center.x - KStage.size / 2
+        let loc = lifted ? FingerLift.point(finger, top: -stageTop, bottom: DesignCanvas<EmptyView>.designHeight - stageTop) : finger
+        tool = CGPoint(x: stageLeft + loc.x, y: stageTop + loc.y)
+        toolFinger = lifted ? CGPoint(x: stageLeft + finger.x, y: stageTop + finger.y) : nil
         let p = CGPoint(x: loc.x / KStage.k, y: loc.y / KStage.k)
         if !dragging {
             dragging = true
@@ -1377,7 +1386,7 @@ struct DecorateStepView: View {
         if let id = grabbed, let i = treat.toppings.firstIndex(where: { $0.id == id }) {
             // the topping floats up above her finger as she moves it, so she can see where it goes
             let design = KStage.design(p)
-            let up = FingerLift.offset(design, lift: FingerLift.item)
+            let up = FingerLift.offset(design, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
             let target = CGSize(width: up.width / KStage.k, height: up.height / KStage.k)
             if hypot(v.translation.width, v.translation.height) > 8 { grabDelta = FingerLift.ease(grabDelta, toward: target) }
             treat.toppings[i].x = Double(p.x + grabDelta.width)

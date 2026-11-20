@@ -91,33 +91,58 @@ final class GardenSound {
         }
     }
 
+    /// Starting, seeking and fading AVAudioPlayers can stall for milliseconds, so it all happens on this queue,
+    /// never on the frame that is drawing.
+    private let queue = DispatchQueue(label: "garden.sound", qos: .userInitiated)
+    /// The volume each loop was last set to, kept here so a frame never has to ask the player.
+    private var loopLevel: [GardenSFX: Float] = [:]
+    private var loopSent: [GardenSFX: Float] = [:]
+
     func play(_ s: GardenSFX, volume: Float = 0.9, gap: Double = 0) {
         let now = Date()
         if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
         last[s] = now
         guard let pool = players[s], !pool.isEmpty else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.currentTime = 0
-        p.play()
+        queue.async {
+            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            p.volume = volume
+            p.currentTime = 0
+            p.play()
+        }
     }
 
-    /// Fades a looping sound toward `volume`; it pauses when silent.
+    /// Fades a looping sound toward `volume`; it pauses when silent. Called every frame, but only reaches the
+    /// player when the level has moved enough to hear.
     func setLoop(_ s: GardenSFX, volume: Float) {
         guard let p = loops[s] else { return }
-        let v = p.volume + (volume - p.volume) * 0.15
-        p.volume = v
-        if v > 0.01 {
-            if !p.isPlaying { p.play() }
-        } else if p.isPlaying {
-            p.pause()
+        let old = loopLevel[s] ?? 0
+        let v = old + (volume - old) * 0.15
+        loopLevel[s] = v
+        let sent = loopSent[s] ?? 0
+        let on = v > 0.01
+        guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
+        loopSent[s] = on ? v : 0
+        queue.async {
+            p.volume = on ? v : 0
+            if on {
+                if !p.isPlaying { p.play() }
+            } else if p.isPlaying {
+                p.pause()
+            }
         }
     }
 
     func stopLoops() {
-        for p in loops.values {
-            p.pause()
-            p.volume = 0
+        for s in loops.keys {
+            loopLevel[s] = 0
+            loopSent[s] = 0
+        }
+        let all = Array(loops.values)
+        queue.async {
+            for p in all {
+                p.pause()
+                p.volume = 0
+            }
         }
     }
 }
@@ -361,7 +386,7 @@ struct GardenView: View {
                         sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
                     }
                     // the tool glides up and works well above her finger (see `FingerLift`)
-                    sim.carry(to: FingerLift.point(p, lift: slot == .shovel ? FingerLift.tool : FingerLift.item, width: 1024))
+                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
                 }
             }
             .onEnded { _ in
@@ -376,6 +401,19 @@ struct GardenView: View {
                     finishCarry(slot.rawValue)
                 }
             }
+    }
+
+    /// Where a carried tool goes for her finger at p (design space). Each tool is drawn around a
+    /// different point, so each is lifted until the part that hangs lowest still clears her finger.
+    static func lifted(_ p: CGPoint, _ tool: GardenTool) -> CGPoint {
+        let lift: CGFloat
+        switch tool {
+        case .shovel: lift = FingerLift.tool                                   // the blade tip digs here
+        case .can: lift = FingerLift.carry(below: 106)                         // the can hangs below its handle
+        case .seeds: lift = FingerLift.carry(below: 45)
+        case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
+        }
+        return FingerLift.point(p, lift: lift, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
     }
 
     private func finishCarry(_ key: String) {
@@ -434,7 +472,7 @@ struct GardenView: View {
                         let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
                         sim.pickUp(tool, at: p)
                     }
-                    sim.carry(to: FingerLift.point(p, lift: FingerLift.item, width: 1024))
+                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
                 }
                 .onEnded { _ in
                     sim.release(home: t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot)

@@ -90,9 +90,13 @@ final class SalonWorld {
     static let k: CGFloat = 1.02
     static let headY: CGFloat = 298
     /// Clips ride well above her finger so she can see where they go (see `FingerLift`).
-    static func carried(_ finger: CGPoint) -> CGPoint { FingerLift.point(finger, lift: FingerLift.item) }
+    static func carried(_ finger: CGPoint) -> CGPoint {
+        FingerLift.point(finger, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
+    }
     /// The finger point that carries a clip to design point p (away from the top edge).
-    static func carrying(to p: CGPoint) -> CGPoint { FingerLift.finger(for: p, lift: FingerLift.item) }
+    static func carrying(to p: CGPoint) -> CGPoint {
+        FingerLift.finger(for: p, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
+    }
     var centerX: CGFloat = 487
 
     func toDesign(_ a: HairV) -> CGPoint {
@@ -259,11 +263,13 @@ final class SalonWorld {
     /// Where a tool works for her finger at f (design space): well above it, so her hand doesn't
     /// hide the hair (it was 58 pt; now the shared lift, see `FingerLift`). No tool: right under it.
     func tipDesign(_ f: CGPoint) -> CGPoint {
-        tool == nil ? f : FingerLift.point(f, width: centerX * 2 + 50)
+        tool == nil ? f : FingerLift.point(f, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)
     }
 
     /// The finger point that puts the tool tip at design point d (away from the top edge).
-    func fingerFor(tip d: CGPoint) -> CGPoint { tool == nil ? d : FingerLift.finger(for: d, width: centerX * 2 + 50) }
+    func fingerFor(tip d: CGPoint) -> CGPoint {
+        tool == nil ? d : FingerLift.finger(for: d, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)
+    }
 
     func tip(_ finger: CGPoint) -> HairV { toArt(tipDesign(finger)) }
 

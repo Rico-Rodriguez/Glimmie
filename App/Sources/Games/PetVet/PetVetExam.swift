@@ -116,12 +116,18 @@ struct VetExamView: View {
                     let over = toolOverPatient
                     let side: CGFloat = over ? 132 : 150
                     let s: CGFloat = side / 140
+                    // the tool points from her finger to its tip, handle toward her finger (the shower
+                    // stays upright: it rains down)
+                    let turn = t == .shower ? 0 : FingerLift.turn(tip: art.tip, center: CGPoint(x: 70, y: 70), finger: finger, lifted: tip)
+                    let dx = (70 - art.tip.x) * s, dy = (70 - art.tip.y) * s
+                    let c = CGFloat(cos(turn)), sn = CGFloat(sin(turn))
                     VetToolPicture(tool: t)
                         .frame(width: side, height: side)
+                        .rotationEffect(.radians(turn))
                         .opacity(over ? FingerLift.seeThrough : 1)
                         .shadow(color: Theme.ink.opacity(over ? 0.12 : 0.25), radius: 8, y: 8)
                         .animation(.easeOut(duration: 0.15), value: over)
-                        .position(x: tip.x + (70 - art.tip.x) * s, y: tip.y + (70 - art.tip.y) * s)
+                        .position(x: tip.x + dx * c - dy * sn, y: tip.y + dx * sn + dy * c)
                         .allowsHitTesting(false)
                 }
             }
@@ -224,7 +230,9 @@ struct VetExamView: View {
     /// (it was 44, then 80; now the shared lift every game uses, see `FingerLift`).
     static let tipLift: CGFloat = FingerLift.tool
 
-    private var tipRoom: CGPoint { FingerLift.point(finger, lift: VetExamView.tipLift, width: size.width) }
+    private var tipRoom: CGPoint {
+        FingerLift.point(finger, lift: VetExamView.tipLift, bottom: size.height, width: size.width)
+    }
 
     /// True when the lifted tool's tip is over the patient (head or body).
     private var toolOverPatient: Bool { VetExamView.onPatient(layout.toPatient(tipRoom)) }
@@ -276,7 +284,7 @@ struct VetExamView: View {
         let spot = visit.spots.first { $0.step?.tool == t } ?? visit.spots.first
         let at = L.toRoom(spot?.target ?? CGPoint(x: 300, y: 420))
         tool = t
-        let f = FingerLift.finger(for: at, lift: VetExamView.tipLift, width: L.size.width)
+        let f = FingerLift.finger(for: at, lift: VetExamView.tipLift, bottom: L.size.height, width: L.size.width)
         finger = CGPoint(x: f.x + 6, y: f.y + 4)
     }
 
