@@ -31,5 +31,6 @@ enum GameRegistry {
         PetVetGame.entry,
         BakeryGame.entry,
         GardenGame.entry,
+        SalonGame.entry,
     ]
 }
