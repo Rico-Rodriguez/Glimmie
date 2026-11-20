@@ -30,6 +30,7 @@ enum GameRegistry {
         ColoringGame.entry,
         PetVetGame.entry,
         BakeryGame.entry,
+        IceCreamGame.entry,
         GardenGame.entry,
         SpaGame.entry,
         AquariumGame.entry,
