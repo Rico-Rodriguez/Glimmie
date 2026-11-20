@@ -30,9 +30,14 @@ final class AquariumTests: XCTestCase {
         let hungry = freshSim()
         hungry.spawn(.goldfish, variant: 0, at: CGPoint(x: 500, y: 400))
         for k in 0..<4 { hungry.addFlake(at: CGPoint(x: 420 + CGFloat(k) * 40, y: 80), v: .zero) }
-        run(hungry, seconds: 20)
+        // appetite comes back (1 per 9 s), so look at its lowest point, not the end
+        var lowest = hungry.fish[0].appetite
+        for _ in 0..<(20 * 60) {
+            hungry.step(dt: 1.0 / 60)
+            lowest = min(lowest, hungry.fish[0].appetite)
+        }
         XCTAssertLessThan(hungry.food.count, 4, "the fish swims up and eats")
-        XCTAssertLessThan(hungry.fish[0].appetite, 5)
+        XCTAssertLessThan(lowest, 5)
     }
 
     func testDecorationsSinkThroughWaterAndRestOnTheSand() {

@@ -178,6 +178,78 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
           shot() { name=$1; wait=$2; shift 2; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
+          shot 1-drawer 6
+          shot 2-dressup 6 -game dressup
+          shot 3-dressup-random 6 -game dressup -randomLook
+          shot 4-dressup-clothes 6 -game dressup -randomLook -tab clothes
+          shot 5-dressup-gallery 6 -game dressup -demoGallery
+          shot 5b-dressup-stickers 6 -game dressup -randomLook -demoCompanion -demoStudio
+          shot 5c-dressup-story 6 -game dressup -randomLook -demoCompanion -demoStory
+          shot 5d-dressup-makeup 6 -game dressup -demoMakeup
+          shot 5e-dressup-nails 6 -game dressup -demoNails
+          shot 7-dressup-pets 6 -game dressup -petDemo dressed
+          shot 7b-pets-closet 6 -game dressup -petDemo closet
+          shot 7c-pets-picker 6 -game dressup -petDemo pets
+          shot 7d-pets-bath 6 -game dressup -petDemo foam
+          shot 7e-pets-sleep 6 -game dressup -petDemo sleep
+          shot 7f-dressup-companion 6 -game dressup -randomLook -demoCompanion
+          shot 7g-pets-salon 6 -game dressup -petDemo salon
+          shot 7h-dressup-dance 4 -game dressup -randomLook -demoCompanion -demoDance
+          shot 7i-dressup-sets 6 -game dressup -demoCompanion -tab sets
+          shot 8-dressup-face 6 -game dressup -randomLook -tab me
+          shot 9-battle-theme 6 -game dressup -demoBattle
+          shot 10-battle-runway 10 -game dressup -randomLook -demoRunway
+          shot 6-coloring 6 -game coloring
+          shot coloring-tools 8 -game coloring -coloringDemo
+          shot petvet-1-lobby 6 -game petvet
+          shot petvet-2-exam 6 -game petvet -vetPatient kitty
+          shot petvet-3-bath 4 -game petvet -vetPatient puppy -vetFX
+          shot petvet-4-held-tool 6 -game petvet -vetPatient puppy -vetHold sponge
+          shot bakery-1-shop 6 -game bakery -bakeryServe
+          shot bakery-2-decorate 6 -game bakery -bakeryDecorate cake
+          shot bakery-3-mix 6 -game bakery -bakeryStep cupcake 0
+          shot bakery-4-frost 6 -game bakery -bakeryStep cupcake 2
+          shot bakery-5-icecream 6 -game bakery -bakeryDecorate iceCream
+          shot bakery-6-pour-flour 6 -game bakery -bakeryStep cake 0 -bakeryDemo pour
+          shot bakery-7-stir 6 -game bakery -bakeryStep cake 0 -bakeryDemo stir
+          shot bakery-8-pour-pan 6 -game bakery -bakeryStep cake 1 -bakeryDemo pourpan
+          shot bakery-9-baking 6 -game bakery -bakeryStep cake 1 -bakeryDemo bake
+          shot bakery-10-spread 6 -game bakery -bakeryStep cake 2 -bakeryDemo spread
+          shot bakery-11-pipe 6 -game bakery -bakeryStep cupcake 2 -bakeryDemo pipe
+          shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
+          shot bakery-13-crack 6 -game bakery -bakeryStep cake 0 -bakeryDemo crack
+          shot bakery-14-stars 6 -game bakery -bakeryRated
+          shot pizza-1-start 6 -game pizza
+          shot pizza-2-knead 6 -game pizza -pizzaDemo knead
+          shot pizza-3-stretch 6 -game pizza -pizzaDemo stretch
+          shot pizza-4-toss 6 -game pizza -pizzaDemo toss
+          shot pizza-5-sauce 6 -game pizza -pizzaDemo sauce
+          shot pizza-6-cheese 6 -game pizza -pizzaDemo cheese
+          shot pizza-7-toppings 6 -game pizza -pizzaDemo toppings
+          shot pizza-8-bake 7 -game pizza -pizzaDemo bake
+          shot pizza-9-baked 8 -game pizza -pizzaDemo baked
+          shot pizza-10-slice 8 -game pizza -pizzaDemo slice
+          shot pizza-11-serve 8 -game pizza -pizzaDemo serve
+          shot icecream-1-shop 7 -game icecream
+          shot icecream-2-scoop 7 -game icecream -iceDemo scoop
+          shot icecream-3-soft 8 -game icecream -iceDemo soft
+          shot icecream-4-blend 8 -game icecream -iceDemo blend
+          shot icecream-5-pour 10 -game icecream -iceDemo pour
+          shot icecream-6-sundae 10 -game icecream -iceDemo sundae
+          shot icecream-7-serve 8 -game icecream -iceDemo serve
+          shot garden-1-new 6 -game garden
+          shot garden-2-full 8 -game garden -gardenDemo
+          shot garden-3-water 6 -game garden -gardenDemo -gardenTool can
+          shot garden-4-dig 6 -game garden -gardenDemo -gardenTool shovel
+          shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
+          shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
+          shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
+          shot spa-1-new 6 -game spa
+          shot spa-2-filling 8 -game spa -spaDemo full
+          shot spa-3-bomb 8 -game spa -spaDemo bomb
+          shot spa-4-mask 8 -game spa -spaDemo mask
+          shot spa-5-wand 8 -game spa -spaDemo wand
+          shot spa-6-towel 8 -game spa -spaDemo towel
           shot aquarium-1-tank 7 -game aquarium
           shot aquarium-2-busy 8 -game aquarium -aquaDemo
           shot aquarium-3-feed 6 -game aquarium -aquaDemo -aquaTool food
