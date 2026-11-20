@@ -68,15 +68,26 @@ enum SalonPortrait {
 
     /// Draws a client with her hair, standing still, into `ctx` (already in doll coordinates).
     static func paint(look: Look, sim: HairSim, cape: Int, in ctx: GraphicsContext) {
-        SalonFurniture.drawChairBack(in: ctx)
-        ClientPainter.draw(look, .normal, z: 0...9, in: ctx)
-        HairPainter.drawBack(sim, in: ctx)
-        ClientPainter.draw(look, .normal, z: 10...45, in: ctx)
-        SalonFurniture.drawCape(color: ClipPainter.clipColor(cape), in: ctx)
-        HairPainter.drawFront(sim, in: ctx)
-        ClientPainter.draw(look, .normal, z: 46...200, in: ctx)
-        ClipPainter.drawAll(sim, in: ctx)
-        HairPainter.drawFlakes(sim, t: 0.3, in: ctx)
+        paint(look: look, e: .normal, sim: sim, cape: cape, t: 0.3, client: ctx, art: ctx, foam: false)
+    }
+
+    /// Her, the chair, the cape and her hair, turned however far she is turned. `client` hops with her,
+    /// `art` doesn't (cut hair on the floor).
+    static func paint(look: Look, e: Expression, sim: HairSim, cape: Int, t: Double, client: GraphicsContext,
+                      art: GraphicsContext, foam: Bool) {
+        let yaw = sim.yaw
+        SalonFurniture.drawChairBack(yaw: yaw, in: client)
+        ClientPainter.drawTurned(look, e, z: 0...9, yaw: yaw, in: client)
+        HairPainter.drawBack(sim, in: client)
+        for p in sim.pieces where !p.front { HairPainter.draw(p, in: art) }
+        ClientPainter.drawTurned(look, e, z: 10...45, yaw: yaw, in: client)
+        SalonFurniture.drawCape(color: ClipPainter.clipColor(cape), yaw: yaw, in: client)
+        HairPainter.drawFront(sim, in: client)
+        ClientPainter.drawTurned(look, e, z: 46...200, yaw: yaw, in: client)
+        ClipPainter.drawAll(sim, in: client)
+        if foam { HairPainter.drawFoam(sim, in: client) }
+        HairPainter.drawFlakes(sim, t: t, in: client)
+        for p in sim.pieces where p.front { HairPainter.draw(p, in: art) }
     }
 
     static func lookWithHat(_ v: SalonVisit) -> Look {
@@ -176,6 +187,7 @@ struct SalonView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 16)
                     topBar
+                    turnButtons
                     if burstID > 0 {
                         SparkleBurst(colors: [.white, Theme.lemon, Theme.pink, Theme.lilac], count: 16, radius: 240)
                             .id(burstID)
@@ -240,6 +252,25 @@ struct SalonView: View {
                 }
                 .onEnded { _ in world.release() }
         )
+    }
+
+    // MARK: Turning the chair
+
+    /// Arrows on each side of the chair base spin her around, so she can do the back and sides too.
+    private var turnButtons: some View {
+        let y = min(size.height - 52, world.floorDesign - 24)
+        return ZStack {
+            RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x9B79E0), size: 76) {
+                Sound.shared.tap()
+                world.turn(-1)
+            }
+            .position(x: world.centerX - 200, y: y)
+            RoundButton(symbol: "arrow.clockwise", tint: Color(hex: 0x9B79E0), size: 76) {
+                Sound.shared.tap()
+                world.turn(1)
+            }
+            .position(x: world.centerX + 200, y: y)
+        }
     }
 
     // MARK: Top bar

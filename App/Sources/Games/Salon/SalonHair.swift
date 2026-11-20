@@ -3,14 +3,17 @@ import Foundation
 
 // MARK: - Salon hair: real strands with physics
 //
-// Her client's hair is about 70 locks. Each lock is a chain of points 14 units apart (Dress Up doll
-// coordinates, 600 x 900, so the Dress Up face art lines up). The first points of a lock lie on the
-// scalp and never move; the rest is free hair, simulated with Verlet integration and position-based
-// constraints (Müller et al.): gravity, damping, fixed segment lengths, a little stiffness that keeps
-// the shape near the roots, and collisions with her head, face and the salon cape.
+// Her client's hair is 70 locks in 3D around her head. Each lock is a chain of points 14 units apart
+// (Dress Up doll coordinates, 600 x 900, so the Dress Up face art lines up; z points out of the screen
+// toward her, 0 through the middle of her head). The first points of a lock lie on the scalp and turn
+// with her head; the rest is free hair, simulated with Verlet integration and follow-the-leader
+// constraints: gravity, damping, fixed segment lengths, a little stiffness that keeps the shape near
+// the roots, and collisions with her head (an ellipsoid), her face, her shoulders and the cape.
 //
-//   back locks   hang behind her head (drawn before the face)
-//   nape locks   fill in behind her neck
+// x and y of every point are where it is on screen, so every tool works on what she sees. When she
+// turns the chair (`yaw`), the scalp points rotate around her head and the free hair swings after them.
+//
+//   back locks   run from her crown down the back of her head
 //   side locks   frame her face and drape over the cape in front
 //   fringe locks the bangs
 //
@@ -19,7 +22,8 @@ import Foundation
 // with its own physics, water makes hair heavy, dark and limp, the dryer blows a cone of wind, the
 // curling iron raises a per-point curl (curls also shorten the chain, so curled hair springs up),
 // the straightener takes it away, dye mixes the color of each point it touches, and the grow potion
-// adds points at the tips. A scrunchie pins every lock that passes near it to one spot: ponytails.
+// adds points at the tips. A scrunchie gathers the locks around it to one spot: a ponytail, which a
+// tap turns into a braid (the hair below it is pulled into one rope) or a bun.
 
 /// A 2D vector for the hair simulation (its own type so its operators never clash with another game's).
 struct HairV: Equatable {
@@ -58,6 +62,26 @@ struct HairV: Equatable {
     }
 }
 
+/// A 3D point or direction for the hair (z out of the screen).
+struct H3 {
+    var x: CGFloat
+    var y: CGFloat
+    var z: CGFloat
+
+    init(_ x: CGFloat, _ y: CGFloat, _ z: CGFloat) { self.x = x; self.y = y; self.z = z }
+    init(_ v: HairV, _ z: CGFloat) { x = v.x; y = v.y; self.z = z }
+
+    var xy: HairV { HairV(x, y) }
+    var len: CGFloat { (x * x + y * y + z * z).squareRoot() }
+    var unit: H3 {
+        let l = len
+        return l > 0.00001 ? H3(x / l, y / l, z / l) : H3(0, 1, 0)
+    }
+    static func + (a: H3, b: H3) -> H3 { H3(a.x + b.x, a.y + b.y, a.z + b.z) }
+    static func - (a: H3, b: H3) -> H3 { H3(a.x - b.x, a.y - b.y, a.z - b.z) }
+    static func * (a: H3, k: CGFloat) -> H3 { H3(a.x * k, a.y * k, a.z * k) }
+}
+
 /// Where her head, face, cape and the floor are, in doll coordinates.
 enum SalonBody {
     static let center = HairV(300, 287)
@@ -77,9 +101,103 @@ enum SalonBody {
         return HairV(300 + 128 * s, 232 + 70 * a * a * a)
     }
 
+    /// Her shoulders and the cape look narrower as she turns sideways.
+    static func bodyScale(_ yaw: CGFloat) -> CGFloat { 0.6 + 0.4 * abs(cos(yaw)) }
+    /// How far her shoulders reach in front of and behind the middle of her head.
+    static let bodyDepth: CGFloat = 70
+
+    /// A point on her scalp in head-local coordinates (relative to the head center, facing front):
+    /// polar angle from the top of her head, longitude from her nose toward screen right.
+    static func sphere(_ polar: CGFloat, _ lon: CGFloat, _ k: CGFloat = 1) -> H3 {
+        H3(rx * k * sin(polar) * sin(lon), -ry * k * cos(polar), rx * k * sin(polar) * cos(lon))
+    }
+
+    /// How far in front of the middle of her head the front of the scalp is at screen point (x, y), facing front.
+    static func frontZ(_ x: CGFloat, _ y: CGFloat, _ k: CGFloat = 1) -> CGFloat {
+        let ex = (x - center.x) / rx
+        let ey = (y - center.y) / ry
+        return rx * max(0, k * k - ex * ex - ey * ey).squareRoot()
+    }
+
+    /// Head-local to screen (and depth), with her turned by `yaw`.
+    static func toWorld(_ l: H3, _ yaw: CGFloat) -> H3 {
+        let c = cos(yaw), s = sin(yaw)
+        return H3(center.x + l.x * c + l.z * s, center.y + l.y, -l.x * s + l.z * c)
+    }
+
+    static func toLocal(_ w: H3, _ yaw: CGFloat) -> H3 {
+        let c = cos(yaw), s = sin(yaw)
+        let x = w.x - center.x
+        return H3(x * c - w.z * s, w.y - center.y, x * s + w.z * c)
+    }
+
+    static func rotate(_ d: H3, _ yaw: CGFloat) -> H3 {
+        let c = cos(yaw), s = sin(yaw)
+        return H3(d.x * c + d.z * s, d.y, -d.x * s + d.z * c)
+    }
+
+    /// Pushes a 3D point out of the ellipsoid around her head scaled by `k`.
+    static func pushOutOfHead(_ p: inout HairV, _ z: inout CGFloat, k: CGFloat) {
+        let ex = (p.x - center.x) / (rx * k)
+        let ey = (p.y - center.y) / (ry * k)
+        let ez = z / (rx * k)
+        let r2 = ex * ex + ey * ey + ez * ez
+        guard r2 < 1, r2 > 0.000001 else { return }
+        let r = r2.squareRoot()
+        p = HairV(center.x + ex / r * rx * k, center.y + ey / r * ry * k)
+        z = ez / r * rx * k
+    }
+
+    /// Keeps a 3D point out of her shoulders: onto the cape (sliding down its slope), or in front of or
+    /// behind her, whichever is nearer. Also the floor.
+    static func pushOutOfBody(_ p: inout HairV, _ z: inout CGFloat, squash: CGFloat) {
+        if let top = capeTop(p.x, squash: squash), p.y > top, p.y < capeBottom + 30, abs(z) < bodyDepth {
+            let m = capeSlope(p.x, squash: squash)
+            let depth = p.y - top
+            let k = 1 / (1 + m * m)
+            if depth * k < bodyDepth - abs(z) {
+                p.y -= depth * k
+                p.x += m * depth * k
+            } else {
+                z = z < 0 ? -bodyDepth : bodyDepth
+            }
+        }
+        if p.y > floorY { p.y = floorY }
+    }
+
+    /// Side locks frame her face: in her own (turned) frame they stay outside it, easing out from their
+    /// root over the first 60 points so they are never shoved sideways.
+    static func keepOffFace(_ p: inout HairV, _ z: inout CGFloat, root: H3, yaw: CGFloat) {
+        let l = toLocal(H3(p, z), yaw)
+        guard l.z > -20 else { return }
+        let side: CGFloat = root.x < 0 ? -1 : 1
+        let ey = max(-1, min(0, l.y / ry))
+        let edge = side * rx * (1 - ey * ey).squareRoot()
+        let u = max(0, min(1, (l.y - root.y) / 60))
+        let w = u * u * (3 - 2 * u)
+        let limit = root.x + (edge - root.x) * w
+        var x = l.x
+        if side < 0, x > limit { x = limit }
+        if side > 0, x < limit { x = limit }
+        guard x != l.x else { return }
+        let back = toWorld(H3(x, l.y, l.z), yaw)
+        p = back.xy
+        z = back.z
+    }
+
+    /// Whether hair at this screen point and depth can be seen (not hidden behind her head or shoulders).
+    static func visible(_ p: HairV, _ z: CGFloat, squash: CGFloat = 1) -> Bool {
+        if z > -30 { return true }
+        let ex = (p.x - center.x) / rx
+        let ey = (p.y - center.y) / ry
+        if ex * ex + ey * ey < 1 { return false }
+        if let top = capeTop(p.x, squash: squash), p.y > top - 10 { return false }
+        return true
+    }
+
     /// The top of the salon cape at x, or nil where there is no cape.
-    static func capeTop(_ x: CGFloat) -> CGFloat? {
-        let d = abs(x - 300)
+    static func capeTop(_ x: CGFloat, squash: CGFloat = 1) -> CGFloat? {
+        let d = abs(x - 300) / squash
         let y: CGFloat
         if d <= 34 {
             y = 436
@@ -91,30 +209,18 @@ enum SalonBody {
         return y < capeBottom ? y : nil
     }
 
-    static func capeSlope(_ x: CGFloat) -> CGFloat {
-        let d = abs(x - 300)
-        let s: CGFloat = d <= 34 ? 0 : (d <= 100 ? 0.6 : 2.4)
+    static func capeSlope(_ x: CGFloat, squash: CGFloat = 1) -> CGFloat {
+        let d = abs(x - 300) / squash
+        let s: CGFloat = (d <= 34 ? 0 : (d <= 100 ? 0.6 : 2.4)) / squash
         return x < 300 ? -s : s
-    }
-
-    /// Pushes `p` out of the ellipse around her head scaled by `k`. Returns true if it moved.
-    @discardableResult
-    static func pushOutOfHead(_ p: inout HairV, k: CGFloat) -> Bool {
-        let ex = (p.x - center.x) / (rx * k)
-        let ey = (p.y - center.y) / (ry * k)
-        let r2 = ex * ex + ey * ey
-        guard r2 < 1, r2 > 0.000001 else { return false }
-        let r = r2.squareRoot()
-        p = HairV(center.x + ex / r * rx * k, center.y + ey / r * ry * k)
-        return true
     }
 
     /// Keeps `p` on top of the cape (sliding along its slope) and above the floor. Returns true on contact.
     @discardableResult
-    static func pushOutOfCape(_ p: inout HairV) -> Bool {
+    static func pushOutOfCape(_ p: inout HairV, squash: CGFloat = 1) -> Bool {
         var hit = false
-        if let top = capeTop(p.x), p.y > top, p.y < capeBottom + 30 {
-            let m = capeSlope(p.x)
+        if let top = capeTop(p.x, squash: squash), p.y > top, p.y < capeBottom + 30 {
+            let m = capeSlope(p.x, squash: squash)
             let depth = p.y - top
             let k = 1 / (1 + m * m)
             p.y -= depth * k
@@ -123,19 +229,6 @@ enum SalonBody {
         }
         if p.y > floorY { p.y = floorY; hit = true }
         return hit
-    }
-
-    /// Keeps a side lock from swinging in across her face. The wall starts at the lock's own root and
-    /// eases out to the edge of her face over the first 60 points, so the lock is never shoved sideways.
-    static func keepOffFace(_ p: inout HairV, root: HairV) {
-        let side: CGFloat = root.x < center.x ? -1 : 1
-        let ey = max(-1, min(0, (p.y - center.y) / ry))
-        let edge = center.x + side * rx * (1 - ey * ey).squareRoot()
-        let u = max(0, min(1, (p.y - root.y) / 60))
-        let w = u * u * (3 - 2 * u)
-        let limit = root.x + (edge - root.x) * w
-        if side < 0, p.x > limit { p.x = limit }
-        if side > 0, p.x < limit { p.x = limit }
     }
 
     static func onFace(_ p: HairV) -> Bool {
@@ -151,10 +244,14 @@ struct HairStrand {
     enum Kind: Int { case back, nape, side, fringe }
 
     let kind: Kind
-    /// The scalp part, root first. These points never move.
-    let rest: [HairV]
-    /// Which way the free hair leaves the scalp.
-    let dir: HairV
+    /// The scalp part, root first, in head-local coordinates. These points only move when she turns.
+    let restL: [H3]
+    /// Which way the free hair leaves the scalp, head-local.
+    let dirL: H3
+    /// The scalp part and the direction where they are now (screen x, y and depth z).
+    var rest: [HairV]
+    var restZ: [CGFloat]
+    var dir: H3
     let width: CGFloat
     let phase: CGFloat
     /// Her own hair color for this lock (regrown hair comes in this color).
@@ -166,6 +263,9 @@ struct HairStrand {
 
     var p: [HairV]
     var o: [HairV]
+    /// Depth of each point (and where it was last step).
+    var z: [CGFloat]
+    var oz: [CGFloat]
     /// One color and curl per point, for the longest the lock can grow (so `count` can change freely).
     var color: [RGB]
     var curl: [CGFloat]
@@ -179,6 +279,12 @@ struct HairStrand {
     var free: Int { p.count - rest.count }
     var front: Bool { kind == .side || kind == .fringe }
     var tip: HairV { p[p.count - 1] }
+    /// Average depth: locks behind the middle of her head are drawn behind her.
+    var depth: CGFloat {
+        var t: CGFloat = 0
+        for v in z { t += v }
+        return t / CGFloat(max(1, z.count))
+    }
 
     /// How curly point i looks and behaves now (water relaxes curls until the hair dries).
     func curlNow(_ i: Int) -> CGFloat {
@@ -222,12 +328,20 @@ struct HairClip: Codable, Equatable {
     var tilt: CGFloat = 0
 }
 
-/// A scrunchie: every lock that passed near it is held at one point.
+/// A scrunchie: every lock gathered into it is held at one point, which turns with her head.
 struct HairTie {
+    enum Style: String, Codable, CaseIterable {
+        case pony, braid, bun
+        var next: Style { Style.allCases[(Style.allCases.firstIndex(of: self)! + 1) % Style.allCases.count] }
+    }
     struct Member { let strand: Int; let node: Int; let off: HairV }
     var at: HairV
+    var z: CGFloat
+    /// Where it sits on her head, head-local.
+    var local: H3
     var color: Int
     var members: [Member]
+    var style: Style = .pony
 }
 
 /// A shampoo bubble riding on a point of a lock.
@@ -292,6 +406,9 @@ final class HairSim {
     var clips: [HairClip] = []
     var foam: [HairBubble] = []
     var flakes: [HairFlake] = []
+    /// How far she is turned around (0 facing us, pi her back to us).
+    var yaw: CGFloat = 0
+    var squash: CGFloat { SalonBody.bodyScale(yaw) }
     /// The blow dryer, while it is on: where the nozzle is and which way it blows.
     var dryer: (at: HairV, dir: HairV)?
     /// Bounding box of each lock, refreshed every step (for water drops).
@@ -319,33 +436,23 @@ final class HairSim {
         let lengths: [Int] = [3, 9, 17, 24]
         let L = lengths[min(max(recipe.length, 0), 3)]
 
-        // back locks, rooted over the top of her head and lying along the outline down to her ears
-        let backCount = 34
+        // back locks: from her crown down the back of her head to the nape, and to above her ears at the sides
+        let backCount = 40
         for i in 0..<backCount {
             let u = (CGFloat(i) + 0.5) / CGFloat(backCount)
-            let phi = -1.72 + 3.44 * u + rand(-0.03, 0.03)
-            let side: CGFloat = phi < 0 ? -1 : 1
-            let endPhi = side * rand(1.38, 1.78)
-            let endRho = rand(1.0, 1.09)
-            var path: [HairV] = [SalonBody.head(phi, 0.9)]
-            let steps = 24
-            for k in 0...steps {
-                let t = CGFloat(k) / CGFloat(steps)
-                let th = abs(phi) < abs(endPhi) ? phi + (endPhi - phi) * t : phi
-                let rho = 1.02 + (endRho - 1.02) * t
-                path.append(SalonBody.head(th, rho))
+            let lon = CGFloat.pi * (0.5 + u) + rand(-0.02, 0.02)
+            let a = min(1, abs(lon - .pi) / (.pi / 2))
+            let end = 2.1 - 0.62 * pow(a, 1.4) + rand(-0.05, 0.05)
+            let start = 0.16 + rand(0, 0.06)
+            var path: [H3] = []
+            for k in 0...30 {
+                let t = CGFloat(k) / 30
+                path.append(SalonBody.sphere(start + (end - start) * t, lon))
             }
-            let rest = HairSim.resample(path, HairSim.seg)
-            let dir = HairV(side * rand(0.15, 0.55), 1).unit
+            let rest = HairSim.resample3(path, HairSim.seg)
+            let dir = H3(sin(lon) * 0.35, 1, cos(lon) * 0.35).unit
             out.append(makeStrand(.back, rest: rest, dir: dir, free: L + Int(rand(-1.5, 1.5)),
-                                  width: rand(22, 27), base: base, order: 1 - abs(phi) / 2))
-        }
-        // nape: behind her neck, only seen between her jaw and the cape
-        for i in 0..<9 {
-            let x = 222 + CGFloat(i) * 19.5
-            let rest = [HairV(x, 352), HairV(x, 366)]
-            out.append(makeStrand(.nape, rest: rest, dir: HairV((x - 300) * 0.004, 1).unit,
-                                  free: max(2, L - 6 + Int(rand(-1, 1))), width: rand(24, 28), base: base, order: -1))
+                                  width: rand(22, 27), base: base, order: u))
         }
         // front locks: from the part over the scalp to the hairline, then bangs or face-framing locks
         let frontCount = 30
@@ -359,21 +466,22 @@ final class HairSim {
             let thS = atan2(ex, ey)
             let th0 = s * 0.12
             let rho0: CGFloat = 0.965
-            var path: [HairV] = []
+            var path: [H3] = []
             let steps = 30
             for k in 0...steps {
                 let t = CGFloat(k) / CGFloat(steps)
                 let th = th0 + (thS - th0) * pow(t, 0.85)
                 let rho = rho0 + (rhoS - rho0) * pow(t, 1.7)
-                path.append(SalonBody.head(th, rho))
+                let q = SalonBody.head(th, rho)
+                path.append(H3(q.x - SalonBody.center.x, q.y - SalonBody.center.y, SalonBody.frontZ(q.x, q.y)))
             }
-            let rest = HairSim.resample(path, HairSim.seg)
+            let rest = HairSim.resample3(path, HairSim.seg)
             let fringe = abs(s) < 0.62
             let kind: HairStrand.Kind = fringe ? .fringe : .side
             let side: CGFloat = s < 0 ? -1 : 1
-            let dir = fringe ? HairV(s * 0.45, 1).unit : HairV(side * 0.55, 1).unit
+            let dir = fringe ? H3(s * 0.45, 1, 0.25).unit : H3(side * 0.55, 1, 0.1).unit
             // bangs stop above her eyebrows (they can still be grown longer in the salon)
-            let browRoom = max(1, Int((284 - rest[rest.count - 1].y) / HairSim.seg))
+            let browRoom = max(1, Int((284 - (rest[rest.count - 1].y + SalonBody.center.y)) / HairSim.seg))
             let free = fringe ? min(recipe.fringe + Int(rand(-1, 1.4)), browRoom) : L + 1 + Int(rand(-1.5, 1.5))
             out.append(makeStrand(kind, rest: rest, dir: dir, free: max(1, free), width: rand(20, 25), base: base,
                                   order: 2 - abs(s)))
@@ -382,19 +490,27 @@ final class HairSim {
         boxes = Array(repeating: .zero, count: out.count)
     }
 
-    private func makeStrand(_ kind: HairStrand.Kind, rest: [HairV], dir: HairV, free: Int, width: CGFloat,
+    private func makeStrand(_ kind: HairStrand.Kind, rest restL: [H3], dir dirL: H3, free: Int, width: CGFloat,
                             base: RGB, order: CGFloat) -> HairStrand {
-        let n = rest.count + HairSim.maxFree
+        let n = restL.count + HairSim.maxFree
         // every lock is a slightly different shade, like real hair
         let v = Double(rand(-0.06, 0.06))
         let natural = RGB(min(1, max(0, base.r * (1 + v))), min(1, max(0, base.g * (1 + v))), min(1, max(0, base.b * (1 + v))))
         let jitter = (0..<n).map { _ in rand(-1, 1) }
-        var p = rest
-        let last = rest[rest.count - 1]
+        let world = restL.map { SalonBody.toWorld($0, yaw) }
+        let dir = SalonBody.rotate(dirL, yaw)
+        var p = world.map(\.xy)
+        var z = world.map(\.z)
+        let last = world[world.count - 1]
         let count = min(HairSim.maxFree, max(1, free))
-        for k in 1...count { p.append(last + dir * (HairSim.seg * CGFloat(k))) }
-        var s = HairStrand(kind: kind, rest: rest, dir: dir, width: width, phase: rand(0, 6.28), natural: natural,
-                           jitter: jitter, order: order, p: p, o: p,
+        for k in 1...count {
+            let q = last + dir * (HairSim.seg * CGFloat(k))
+            p.append(q.xy)
+            z.append(q.z)
+        }
+        var s = HairStrand(kind: kind, restL: restL, dirL: dirL, rest: world.map(\.xy), restZ: world.map(\.z), dir: dir,
+                           width: width, phase: rand(0, 6.28), natural: natural,
+                           jitter: jitter, order: order, p: p, o: p, z: z, oz: z,
                            color: Array(repeating: natural, count: n),
                            curl: Array(repeating: CGFloat(recipe.curl), count: n))
         s.tangle = CGFloat(recipe.tangle) * rand(0.6, 1.1)
@@ -426,6 +542,31 @@ final class HairSim {
         return out
     }
 
+    /// The same in 3D.
+    static func resample3(_ path: [H3], _ step: CGFloat) -> [H3] {
+        guard var prev = path.first else { return [] }
+        var out = [prev]
+        var carry: CGFloat = 0
+        for q in path.dropFirst() {
+            var seg = q - prev
+            var l = seg.len
+            while carry + l >= step {
+                let t = (step - carry) / max(l, 0.0001)
+                let np = prev + seg * t
+                out.append(np)
+                prev = np
+                seg = q - prev
+                l = seg.len
+                carry = 0
+            }
+            carry += l
+            prev = q
+        }
+        if let last = path.last, let o = out.last, (o - last).len > step * 0.35 { out.append(last) }
+        if out.count < 2, let last = path.last { out.append(last + H3(0, 1, 0)) }
+        return out
+    }
+
     /// Lets the hair fall into place (used when a client sits down or a photo is opened).
     func settle(seconds: Double = 2) {
         let n = Int(seconds * 120)
@@ -444,14 +585,21 @@ final class HairSim {
 
     func step(_ hd: Double) {
         let h = CGFloat(hd)
+        updateRoots()
         for i in strands.indices { integrate(&strands[i], h) }
-        if moved.count != strands.count { moved = Array(repeating: [], count: strands.count) }
+        if moved.count != strands.count {
+            moved = Array(repeating: [], count: strands.count)
+            movedZ = Array(repeating: [], count: strands.count)
+        }
         for i in strands.indices {
             moved[i].removeAll(keepingCapacity: true)
             moved[i].append(contentsOf: repeatElement(HairV.zero, count: strands[i].p.count))
+            movedZ[i].removeAll(keepingCapacity: true)
+            movedZ[i].append(contentsOf: repeatElement(0, count: strands[i].p.count))
         }
+        let sq = squash
         for _ in 0..<2 {
-            for i in strands.indices { HairSim.constrain(&strands[i], moved: &moved[i]) }
+            for i in strands.indices { HairSim.constrain(&strands[i], moved: &moved[i], movedZ: &movedZ[i], yaw: yaw, squash: sq) }
             applyTies()
         }
         // follow-the-leader damping: pulling a point after its parent must not throw the parent around,
@@ -459,7 +607,10 @@ final class HairSim {
         for i in strands.indices {
             let n = strands[i].p.count
             guard n > strands[i].pinned + 1 else { continue }
-            for k in strands[i].pinned..<(n - 1) { strands[i].o[k] += moved[i][k + 1] * 0.9 }
+            for k in strands[i].pinned..<(n - 1) {
+                strands[i].o[k] += moved[i][k + 1] * 0.9
+                strands[i].oz[k] += movedZ[i][k + 1] * 0.9
+            }
         }
         for i in strands.indices { boxes[i] = HairSim.box(strands[i]) }
         stepPieces(hd)
@@ -468,6 +619,26 @@ final class HairSim {
 
     /// Scratch space for `step`: how far the constraints moved each point this step.
     private var moved: [[HairV]] = []
+    private var movedZ: [[CGFloat]] = []
+
+    /// Puts the scalp points (and scrunchies) where her turned head has them now.
+    private func updateRoots() {
+        if rootsYaw == yaw { return }
+        rootsYaw = yaw
+        for i in strands.indices {
+            let w = strands[i].restL.map { SalonBody.toWorld($0, yaw) }
+            strands[i].rest = w.map(\.xy)
+            strands[i].restZ = w.map(\.z)
+            strands[i].dir = SalonBody.rotate(strands[i].dirL, yaw)
+        }
+        for t in ties.indices {
+            let w = SalonBody.toWorld(ties[t].local, yaw)
+            ties[t].at = w.xy
+            ties[t].z = w.z
+        }
+    }
+
+    private var rootsYaw: CGFloat = 0
 
     private func windAccel(_ p: HairV, _ w: (at: HairV, dir: HairV)) -> HairV {
         let r = p - w.at
@@ -488,41 +659,57 @@ final class HairSim {
         for i in 0..<P {
             s.p[i] = s.rest[i]
             s.o[i] = s.rest[i]
+            s.z[i] = s.restZ[i]
+            s.oz[i] = s.restZ[i]
         }
         let damp: CGFloat = 0.986 - 0.025 * s.wet
         let g = HairV(0, HairSim.gravity * (1 + 0.45 * s.wet) * h * h)
         let w = dryer
+        let sq = squash
         for i in P..<s.p.count {
             let cur = s.p[i]
+            let cz = s.z[i]
             var v = (cur - s.o[i]) * damp
-            let vl = v.len
-            if vl > 26 { v = v * (26 / vl) }
+            var vz = (cz - s.oz[i]) * damp
+            var vl = (v.x * v.x + v.y * v.y + vz * vz).squareRoot()
+            if vl > 26 {
+                v = v * (26 / vl)
+                vz *= 26 / vl
+                vl = 26
+            }
             // hair resting on the cape or the floor grips it: slow creeping stops dead
             var resting = false
-            if let top = SalonBody.capeTop(cur.x), s.front, cur.y > top - 2 { v = v * 0.86; resting = true }
-            if cur.y > SalonBody.floorY - 1 { v = v * 0.6; resting = true }
-            if resting, v.len < 0.35 { v = .zero }
+            if let top = SalonBody.capeTop(cur.x, squash: sq), cur.y > top - 2, abs(cz) < SalonBody.bodyDepth + 2 {
+                v = v * 0.86
+                vz *= 0.86
+                vl *= 0.86
+                resting = true
+            }
+            if cur.y > SalonBody.floorY - 1 { v = v * 0.6; vz *= 0.6; vl *= 0.6; resting = true }
             // and hair that has all but stopped stops, so a long lock can't keep up a faint sway forever
-            if v.len < 0.04 { v = .zero }
+            if (resting && vl < 0.35) || vl < 0.04 { v = .zero; vz = 0 }
             s.o[i] = cur
+            s.oz[i] = cz
             var a = g
             if let w { a += windAccel(cur, w) * (h * h) }
             s.p[i] = cur + v + a
+            s.z[i] = cz + vz
         }
     }
 
     /// Follow-the-leader: each point is bent toward the lock's shape, put back exactly one segment from
-    /// its parent, then kept out of her head, face and cape. Parents are never moved by their children,
-    /// so nothing fights and the hair settles to a standstill.
-    private static func constrain(_ s: inout HairStrand, moved: inout [HairV]) {
+    /// its parent (in 3D), then kept out of her head, face and shoulders. Parents are never moved by
+    /// their children, so nothing fights and the hair settles to a standstill.
+    private static func constrain(_ s: inout HairStrand, moved: inout [HairV], movedZ: inout [CGFloat], yaw: CGFloat,
+                                  squash: CGFloat) {
         let P = s.pinned
         let n = s.p.count
         guard n > P else { return }
         let wetLimp = 1 - 0.45 * s.wet
-        let root = s.rest[P - 1]
+        let root = s.restL[P - 1]
         for i in P..<n {
-            let a = s.p[i - 1]
-            let before = i >= 2 ? s.p[i - 2] : a - s.dir
+            let a = H3(s.p[i - 1], s.z[i - 1])
+            let before = i >= 2 ? H3(s.p[i - 2], s.z[i - 2]) : a - s.dir
             var d = (a - before).unit
             let t = CGFloat(i - P) / CGFloat(HairSim.maxFree)
             let keep: CGFloat = s.kind == .fringe ? 0.6 : 0.45
@@ -532,40 +719,117 @@ final class HairSim {
             let target = a + d * L
             let c = s.curlNow(i)
             let bend = (0.1 + 0.24 * c + (s.kind == .fringe ? 0.12 : 0)) * wetLimp
-            var q = s.p[i] + (target - s.p[i]) * bend
-            // collisions ease in over the first points of a back lock, whose root is inside the outline
-            let ramp = min(1, CGFloat(i - P + 1) / 5)
+            let cur = H3(s.p[i], s.z[i])
+            var q = cur + (target - cur) * bend
+            // collisions ease in over the first points, whose roots are on the scalp itself
+            let ramp = min(1, CGFloat(i - P + 1) / 4)
             for _ in 0..<2 {
                 let dq = q - a
                 let l = dq.len
                 q = l > 0.0001 ? a + dq * (L / l) : a + d * L
-                switch s.kind {
-                case .back:
-                    SalonBody.pushOutOfHead(&q, k: 1.035 * ramp)
-                case .side:
-                    SalonBody.keepOffFace(&q, root: root)
-                    SalonBody.pushOutOfCape(&q)
-                case .fringe:
-                    SalonBody.pushOutOfCape(&q)
-                case .nape:
-                    break
-                }
-                if q.y > SalonBody.floorY { q.y = SalonBody.floorY }
-                q.x = max(-300, min(900, q.x))
+                var xy = q.xy
+                var z = q.z
+                SalonBody.pushOutOfHead(&xy, &z, k: (s.kind == .back ? 1.035 : 1.02) * ramp)
+                if s.kind == .side { SalonBody.keepOffFace(&xy, &z, root: root, yaw: yaw) }
+                SalonBody.pushOutOfBody(&xy, &z, squash: squash)
+                xy.x = max(-300, min(900, xy.x))
+                q = H3(xy, z)
             }
-            if i < moved.count { moved[i] += q - s.p[i] }
-            s.p[i] = q
+            if i < moved.count {
+                moved[i] += q.xy - s.p[i]
+                movedZ[i] += q.z - s.z[i]
+            }
+            s.p[i] = q.xy
+            s.z[i] = q.z
         }
     }
 
     private func applyTies() {
         for t in ties {
             for m in t.members where m.strand < strands.count {
-                let s = strands[m.strand]
-                guard m.node >= s.pinned, m.node < s.p.count else { continue }
-                strands[m.strand].p[m.node] = t.at + m.off
+                let P = strands[m.strand].pinned
+                guard m.node >= P, m.node < strands[m.strand].p.count else { continue }
+                let end = H3(t.at + m.off, t.z)
+                strands[m.strand].p[m.node] = end.xy
+                strands[m.strand].z[m.node] = end.z
+                // the hair between her scalp and the scrunchie is swept smoothly up to it
+                let root = H3(strands[m.strand].rest[P - 1], strands[m.strand].restZ[P - 1])
+                let span = CGFloat(m.node - P + 1)
+                for j in P..<m.node {
+                    let u = CGFloat(j - P + 1) / span
+                    let line = root + (end - root) * u
+                    var xy = line.xy
+                    var z = line.z
+                    SalonBody.pushOutOfHead(&xy, &z, k: 1.04)
+                    strands[m.strand].p[j] = strands[m.strand].p[j].mix(xy, 0.7)
+                    strands[m.strand].z[j] += (z - strands[m.strand].z[j]) * 0.7
+                }
+            }
+            guard t.style != .pony else { continue }
+            // braids and buns: the hair below the scrunchie is pulled together into one rope
+            var longest = 0
+            for m in t.members where m.strand < strands.count { longest = max(longest, strands[m.strand].p.count - 1 - m.node) }
+            guard longest > 0 else { continue }
+            let pull: CGFloat = t.style == .bun ? 1 : 0.85
+            for k in 1...longest {
+                var sum = H3(0, 0, 0)
+                var c: CGFloat = 0
+                for m in t.members where m.strand < strands.count && m.node + k < strands[m.strand].p.count {
+                    sum = sum + H3(strands[m.strand].p[m.node + k], strands[m.strand].z[m.node + k])
+                    c += 1
+                }
+                guard c > 0 else { continue }
+                let avg = sum * (1 / c)
+                for m in t.members where m.strand < strands.count && m.node + k < strands[m.strand].p.count {
+                    let j = m.node + k
+                    strands[m.strand].p[j] = strands[m.strand].p[j].mix(avg.xy, pull)
+                    strands[m.strand].z[j] += (avg.z - strands[m.strand].z[j]) * pull
+                }
             }
         }
+    }
+
+    /// The rope of a braid: the middle of its locks, from the scrunchie down, while enough of them reach.
+    func braidChain(_ t: HairTie) -> [HairV] {
+        var chain = [t.at]
+        var longest = 0
+        for m in t.members where m.strand < strands.count { longest = max(longest, strands[m.strand].p.count - 1 - m.node) }
+        guard longest > 0 else { return chain }
+        let need = max(1, CGFloat(t.members.count) * 0.35)
+        for k in 1...longest {
+            var sum = HairV.zero
+            var c: CGFloat = 0
+            for m in t.members where m.strand < strands.count && m.node + k < strands[m.strand].p.count {
+                sum += strands[m.strand].p[m.node + k]
+                c += 1
+            }
+            guard c >= need else { break }
+            chain.append(sum * (1 / c))
+        }
+        return chain
+    }
+
+    /// How much hair is below a scrunchie (for the size of a bun).
+    func hairBelow(_ t: HairTie) -> Int {
+        var n = 0
+        for m in t.members where m.strand < strands.count { n += max(0, strands[m.strand].p.count - m.node) }
+        return n
+    }
+
+    /// For drawing: locks in a braid or bun end at their scrunchie (the rest is drawn as the braid or bun).
+    func drawnEnd(_ strand: Int) -> Int? {
+        for t in ties where t.style != .pony {
+            for m in t.members where m.strand == strand { return m.node }
+        }
+        return nil
+    }
+
+    /// Switches the scrunchie near q to its next style. Returns the new style, or nil if there is none there.
+    func restyle(near q: HairV) -> HairTie.Style? {
+        guard let i = ties.indices.min(by: { ties[$0].at.dist(q) < ties[$1].at.dist(q) }),
+              ties[i].at.dist(q) < 44, SalonBody.visible(ties[i].at, ties[i].z) else { return nil }
+        ties[i].style = ties[i].style.next
+        return ties[i].style
     }
 
     private static func box(_ s: HairStrand) -> CGRect {
@@ -593,7 +857,7 @@ final class HairSim {
                 let cur = pieces[k].p[i]
                 var v = (cur - pieces[k].o[i]) * 0.99
                 if cur.y >= SalonBody.floorY - 0.5 { v = HairV(v.x * 0.55, v.y) }
-                if let top = SalonBody.capeTop(cur.x), cur.y > top - 2, cur.y < SalonBody.capeBottom { v = v * 0.93 }
+                if let top = SalonBody.capeTop(cur.x, squash: squash), cur.y > top - 2, cur.y < SalonBody.capeBottom { v = v * 0.93 }
                 fastest = max(fastest, v.len)
                 pieces[k].o[i] = cur
                 pieces[k].p[i] = cur + v + g
@@ -612,7 +876,7 @@ final class HairSim {
                 }
                 for i in 0..<n {
                     var q = pieces[k].p[i]
-                    if pieces[k].front { SalonBody.pushOutOfCape(&q) } else if q.y > SalonBody.floorY { q.y = SalonBody.floorY }
+                    if pieces[k].front { SalonBody.pushOutOfCape(&q, squash: squash) } else if q.y > SalonBody.floorY { q.y = SalonBody.floorY }
                     pieces[k].p[i] = q
                 }
             }
@@ -643,6 +907,12 @@ final class HairSim {
         foam = keep
     }
 
+    /// Whether point `node` of lock `strand` can be seen from where we look at her.
+    func visible(_ strand: Int, _ node: Int) -> Bool {
+        guard strand >= 0, strand < strands.count, node >= 0, node < strands[strand].p.count else { return false }
+        return SalonBody.visible(strands[strand].p[node], strands[strand].z[node], squash: squash)
+    }
+
     func position(_ strand: Int, _ node: Int) -> HairV? {
         guard strand >= 0, strand < strands.count, node >= 0, node < strands[strand].p.count else { return nil }
         return strands[strand].p[node]
@@ -654,7 +924,7 @@ final class HairSim {
         for (si, s) in strands.enumerated() {
             if frontOnly && !s.front { continue }
             guard boxes.indices.contains(si), boxes[si].insetBy(dx: -radius, dy: -radius).contains(q.cg) else { continue }
-            for (i, p) in s.p.enumerated() {
+            for (i, p) in s.p.enumerated() where SalonBody.visible(p, s.z[i], squash: squash) {
                 let d = p.dist(q)
                 if d < radius && d < (best?.2 ?? .greatestFiniteMagnitude) { best = (si, i, d) }
             }
@@ -713,7 +983,8 @@ final class HairSim {
             let n = s.p.count
             guard n - P >= 2 else { continue }
             var at: Int?
-            for i in (P + 1)..<n where HairSim.intersects(a, b, s.p[i - 1], s.p[i]) {
+            for i in (P + 1)..<n where HairSim.intersects(a, b, s.p[i - 1], s.p[i])
+                && SalonBody.visible(s.p[i], s.z[i], squash: squash) {
                 at = i
                 break
             }
@@ -730,12 +1001,14 @@ final class HairSim {
         let range = (c - 1)..<n
         var piece = HairPiece(p: Array(s.p[range]), o: Array(s.o[range]), color: Array(s.color[range]),
                               curl: Array(s.curl[range]), width: s.width * 0.92, phase: s.phase,
-                              jitter: Array(s.jitter[range]), tangle: s.tangle, wet: s.wet, front: s.front)
+                              jitter: Array(s.jitter[range]), tangle: s.tangle, wet: s.wet, front: s.z[c] > -30)
         let push = kick * rand(0.4, 1.2) + HairV(rand(-0.6, 0.6), rand(-1.2, -0.2))
         for i in piece.o.indices { piece.o[i] = piece.o[i] - push * (CGFloat(i) / CGFloat(max(1, piece.o.count)) + 0.3) }
         pieces.append(piece)
         strands[si].p.removeLast(n - c)
         strands[si].o.removeLast(n - c)
+        strands[si].z.removeLast(n - c)
+        strands[si].oz.removeLast(n - c)
         strands[si].growth = 0
 
         // whatever was on the cut part falls with it
@@ -779,10 +1052,12 @@ final class HairSim {
                 let t = strands[si]
                 let n = t.p.count
                 let tip = t.p[n - 1]
-                let d = n >= 2 ? (tip - t.p[n - 2]).unit : t.dir
+                let d = n >= 2 ? (tip - t.p[n - 2]).unit : t.dir.xy.unit
                 let np = tip + d * (HairSim.seg * 0.6)
                 strands[si].p.append(np)
                 strands[si].o.append(np)
+                strands[si].z.append(t.z[n - 1])
+                strands[si].oz.append(t.z[n - 1])
                 strands[si].color[n] = t.natural
                 strands[si].curl[n] = t.curl[n - 1]
                 any = true
@@ -798,7 +1073,7 @@ final class HairSim {
             let start = freeOnly ? strands[si].pinned : 0
             for i in start..<strands[si].p.count {
                 let d = strands[si].p[i].dist(q)
-                if d < radius { body(si, i, 1 - d / radius) }
+                if d < radius, SalonBody.visible(strands[si].p[i], strands[si].z[i], squash: squash) { body(si, i, 1 - d / radius) }
             }
         }
     }
@@ -929,24 +1204,39 @@ final class HairSim {
         position(c.strand, c.node).map { $0 + HairV(c.dx, c.dy) }
     }
 
-    /// Ties a scrunchie at q around every lock that passes close by. Returns false if too little hair is there.
-    func tie(at q: HairV, color: Int) -> Bool {
+    /// Ties a scrunchie at q: every lock on this side of her head that passes close by, or is rooted near
+    /// enough and long enough to reach, is gathered into it. Returns false if too little hair is there.
+    func tie(at q: HairV, color: Int, style: HairTie.Style = .pony) -> Bool {
         var members: [HairTie.Member] = []
+        var depth: CGFloat = 0
+        let sideTie = abs(q.x - SalonBody.center.x) > 60
         for (si, s) in strands.enumerated() {
             if ties.contains(where: { t in t.members.contains { m in m.strand == si } }) { continue }
+            let P = s.pinned
+            let root = s.rest[P - 1]
+            guard s.restZ[P - 1] > -40 else { continue }
+            // a pigtail only takes hair from its own side
+            if sideTie && (root.x - SalonBody.center.x) * (q.x - SalonBody.center.x) < -400 { continue }
             var best: (Int, CGFloat)?
-            for i in s.pinned..<s.p.count {
+            for i in P..<s.p.count where s.z[i] > -40 {
                 let d = s.p[i].dist(q)
                 if d < 78 && d < (best?.1 ?? .greatestFiniteMagnitude) { best = (i, d) }
+            }
+            if best == nil {
+                let reach = root.dist(q)
+                let k = max(1, Int((reach / HairSim.seg).rounded()))
+                if reach < (sideTie ? 170 : 210), s.free > k { best = (P + k - 1, 0) }
             }
             if let b = best {
                 let a = rand(0, 6.28)
                 let r = rand(0, 9)
                 members.append(HairTie.Member(strand: si, node: b.0, off: HairV(cos(a) * r, sin(a) * r * 0.6)))
+                depth += max(0, s.z[b.0])
             }
         }
         guard members.count >= 3 else { return false }
-        ties.append(HairTie(at: q, color: color, members: members))
+        let z = depth / CGFloat(members.count) + 10
+        ties.append(HairTie(at: q, z: z, local: SalonBody.toLocal(H3(q, z), yaw), color: color, members: members, style: style))
         return true
     }
 
@@ -964,19 +1254,27 @@ final class HairSim {
         var gloss: Double
         /// Free point positions, x and y, rounded (photos only).
         var pts: [Int16]?
+        /// Their depths.
+        var zs: [Int16]?
     }
 
     struct TieSave: Codable {
         var x: Double
         var y: Double
         var color: Int
+        var style: HairTie.Style?
     }
+
+    /// 3 is the 3D head of hair; older saves had a different set of locks and only keep their recipe.
+    static let layout = 3
 
     struct Save: Codable {
         var recipe: HairRecipe
         var strands: [StrandSave]
         var clips: [HairClip]
         var ties: [TieSave]
+        var layout: Int?
+        var yaw: Double?
     }
 
     func save(positions: Bool) -> Save {
@@ -992,19 +1290,28 @@ final class HairSim {
                 if curls.count >= 2 && curls[curls.count - 1] == q { curls[curls.count - 2] += 1 } else { curls += [1, q] }
             }
             var pts: [Int16]?
+            var zs: [Int16]?
             if positions {
                 pts = s.p.dropFirst(s.pinned).flatMap { [HairSim.q16($0.x), HairSim.q16($0.y)] }
+                zs = s.z.dropFirst(s.pinned).map { HairSim.q16($0) }
             }
             return StrandSave(n: s.free, colors: colors, curls: curls, wet: Double(s.wet), tangle: Double(s.tangle),
-                              gloss: Double(s.gloss), pts: pts)
+                              gloss: Double(s.gloss), pts: pts, zs: zs)
         }
         return Save(recipe: recipe, strands: ss, clips: clips,
-                    ties: ties.map { TieSave(x: Double($0.at.x), y: Double($0.at.y), color: $0.color) })
+                    ties: ties.map { TieSave(x: Double($0.at.x), y: Double($0.at.y), color: $0.color, style: $0.style) },
+                    layout: HairSim.layout, yaw: Double(yaw))
     }
 
     /// Rebuilds hair from a save. Positions come back if saved, otherwise the hair is settled again.
     convenience init(save: Save, palette: [RGB], settle: Bool = true) {
         self.init(recipe: save.recipe, palette: palette)
+        guard save.layout == HairSim.layout else {
+            if settle { self.settle(seconds: 2) }
+            return
+        }
+        yaw = CGFloat(save.yaw ?? 0)
+        updateRoots()
         var hadPositions = false
         for (si, ss) in save.strands.enumerated() where si < strands.count {
             var s = strands[si]
@@ -1029,15 +1336,25 @@ final class HairSim {
                 if i < curls.count { s.curl[i] = max(0, min(1, curls[i])) }
             }
             var p = Array(s.rest)
-            let last = s.rest[P - 1]
+            var z = Array(s.restZ)
+            let last = H3(s.rest[P - 1], s.restZ[P - 1])
             if let pts = ss.pts, pts.count >= n * 2 {
-                for j in 0..<n { p.append(HairV(CGFloat(pts[j * 2]), CGFloat(pts[j * 2 + 1]))) }
+                for j in 0..<n {
+                    p.append(HairV(CGFloat(pts[j * 2]), CGFloat(pts[j * 2 + 1])))
+                    z.append(ss.zs.map { $0.indices.contains(j) ? CGFloat($0[j]) : last.z } ?? last.z)
+                }
                 hadPositions = true
             } else {
-                for j in 1...n { p.append(last + s.dir * (HairSim.seg * CGFloat(j))) }
+                for j in 1...n {
+                    let q = last + s.dir * (HairSim.seg * CGFloat(j))
+                    p.append(q.xy)
+                    z.append(q.z)
+                }
             }
             s.p = p
             s.o = p
+            s.z = z
+            s.oz = z
             s.wet = CGFloat(max(0, min(1, ss.wet)))
             s.tangle = CGFloat(max(0, min(1, ss.tangle)))
             s.gloss = CGFloat(max(0, min(1, ss.gloss)))
@@ -1045,7 +1362,7 @@ final class HairSim {
         }
         boxes = strands.map(HairSim.box)
         clips = save.clips.filter { $0.strand < strands.count && $0.node < strands[$0.strand].p.count }
-        for t in save.ties { _ = tie(at: HairV(CGFloat(t.x), CGFloat(t.y)), color: t.color) }
+        for t in save.ties { _ = tie(at: HairV(CGFloat(t.x), CGFloat(t.y)), color: t.color, style: t.style ?? .pony) }
         if settle && !hadPositions { self.settle(seconds: 2) }
     }
 

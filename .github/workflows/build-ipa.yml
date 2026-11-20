@@ -228,6 +228,8 @@ jobs:
           shot salon-4-dry 7 -game salon -salonDemo dry
           shot salon-5-curl 7 -game salon -salonDemo curl
           shot salon-6-style 7 -game salon -salonDemo style
+          shot salon-8-back 7 -game salon -salonDemo back
+          shot salon-9-side 7 -game salon -salonDemo side
           shot salon-7-photos 9 -game salon -salonDemo photos
           shot tidy-1-levels 6 -game tidy -tidyDemoDone
           shot tidy-2-fridge 7 -game tidy -tidyLevel 12 -tidyPrefill 7

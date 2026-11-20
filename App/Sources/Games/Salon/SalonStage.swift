@@ -20,18 +20,7 @@ extension SalonWorld {
         art.fill(Path(ellipseIn: CGRect(x: 150, y: SalonBody.floorY - 14, width: 300, height: 30)),
                  with: .color(Theme.ink.opacity(0.1)))
         SalonFurniture.drawChairBase(in: art)
-        SalonFurniture.drawChairBack(in: client)
-        ClientPainter.draw(look, e, z: 0...9, in: client)
-        HairPainter.drawBack(sim, in: client)
-        for p in sim.pieces where !p.front { HairPainter.draw(p, in: art) }
-        ClientPainter.draw(look, e, z: 10...45, in: client)
-        SalonFurniture.drawCape(color: ClipPainter.clipColor(cape), in: client)
-        HairPainter.drawFront(sim, in: client)
-        ClientPainter.draw(look, e, z: 46...200, in: client)
-        ClipPainter.drawAll(sim, in: client)
-        HairPainter.drawFoam(sim, in: client)
-        HairPainter.drawFlakes(sim, t: t, in: client)
-        for p in sim.pieces where p.front { HairPainter.draw(p, in: art) }
+        SalonPortrait.paint(look: look, e: e, sim: sim, cape: cape, t: t, client: client, art: art, foam: true)
         drawBits(in: art, t: t)
         drawHeld(in: ctx, art: art)
     }
@@ -212,6 +201,20 @@ enum SalonDemo {
             w.tool = .dye
             w.dyeColor = SalonWorld.rainbowIndex
             hold(w, at: HairV(440, 520))
+        case "back":
+            // her back to us, with a braid
+            w.turn(3)
+            w.sim.yaw = .pi
+            w.sim.settle(seconds: 1.5)
+            _ = w.sim.tie(at: HairV(300, 380), color: 3, style: .braid)
+            w.tool = .comb
+            hold(w, at: HairV(360, 300))
+        case "side":
+            // turned a little, with a bun
+            w.turn(-1)
+            w.sim.yaw = -.pi / 3
+            w.sim.settle(seconds: 1.5)
+            _ = w.sim.tie(at: HairV(330, 190), color: 9, style: .bun)
         default:
             break
         }
