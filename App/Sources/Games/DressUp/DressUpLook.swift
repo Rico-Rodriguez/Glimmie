@@ -22,10 +22,15 @@ struct Look: Codable, Equatable, Identifiable {
     var pet: PetLook?
     /// category id -> a color she mixed herself ("#RRGGBB"), used instead of `colors` for that item.
     var mixed: [String: String] = [:]
+    /// Stickers and a frame on a gallery photo (the studio after the camera).
+    var stickers: [PhotoSticker] = []
+    var frame: String?
+
+    static let maxStickers = 30
 
     init() {}
 
-    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved, pet, mixed }
+    enum CodingKeys: String, CodingKey { case id, skin, hair, eye, picks, colors, patterns, bg, saved, pet, mixed, stickers, frame }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -41,6 +46,8 @@ struct Look: Codable, Equatable, Identifiable {
         saved = (try? c.decodeIfPresent(Date.self, forKey: .saved)) ?? Date()
         pet = try? c.decodeIfPresent(PetLook.self, forKey: .pet)
         mixed = (try? c.decodeIfPresent([String: String].self, forKey: .mixed)) ?? [:]
+        stickers = (try? c.decodeIfPresent([PhotoSticker].self, forKey: .stickers)) ?? []
+        frame = try? c.decodeIfPresent(String.self, forKey: .frame)
     }
 
     static var starter: Look {
@@ -74,6 +81,15 @@ struct Look: Codable, Equatable, Identifiable {
         l.colors = l.colors.mapValues { clamp($0, art.cloth.count) }
         l.patterns = l.patterns.filter { art.patterns[$0.value] != nil }
         l.mixed = l.mixed.filter { Look.isHex($0.value) && art.category($0.key) != nil }
+        let unit = { (v: Double) in v.isFinite ? min(max(v, 0), 1) : 0.5 }
+        l.stickers = Array(l.stickers.filter { Stickers.isKnown($0.kind) }.suffix(Look.maxStickers)).map { s in
+            var s = s
+            s.x = unit(s.x); s.y = unit(s.y)
+            s.size = s.size.isFinite ? min(max(s.size, 0.08), 0.5) : 0.2
+            s.turn = s.turn.isFinite ? s.turn.truncatingRemainder(dividingBy: 360) : 0
+            return s
+        }
+        if let f = l.frame, !Stickers.frames.contains(f) { l.frame = nil }
         return l
     }
 
@@ -183,12 +199,22 @@ final class LookStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: w)
     }
 
-    func saveToGallery() {
+    @discardableResult func saveToGallery() -> Look {
         var l = current
         l.id = UUID()
         l.saved = Date()
+        l.stickers = []
+        l.frame = nil
         gallery.insert(l, at: 0)
         if gallery.count > Self.maxSaved { gallery.removeLast(gallery.count - Self.maxSaved) }
+        GameStorage.save(gallery, game: Self.game, file: "gallery.json")
+        return l
+    }
+
+    /// Puts a decorated photo back in its place in the gallery.
+    func update(_ look: Look) {
+        guard let i = gallery.firstIndex(where: { $0.id == look.id }) else { return }
+        gallery[i] = look
         GameStorage.save(gallery, game: Self.game, file: "gallery.json")
     }
 
@@ -200,6 +226,8 @@ final class LookStore: ObservableObject {
     func open(_ look: Look) {
         var l = look
         l.id = current.id
+        l.stickers = []
+        l.frame = nil
         current = l
     }
 
