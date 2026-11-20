@@ -398,9 +398,9 @@ enum AquaPainter {
     private static func algae(_ g: GraphicsContext, _ sim: AquariumSim) {
         let p = sim.algaePaths
         let c = ARGB(0x6F9E48)
-        g.fill(p[0], with: .color(c.color(0.2)))
-        g.fill(p[1], with: .color(c.color(0.36)))
-        g.fill(p[2], with: .color(c.shade(-0.1).color(0.52)))
+        g.fill(p[0], with: .color(c.color(0.13)))
+        g.fill(p[1], with: .color(c.color(0.24)))
+        g.fill(p[2], with: .color(c.shade(-0.1).color(0.4)))
     }
 
     private static func particlesOut(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
