@@ -505,11 +505,14 @@ final class HairSim {
                     s.p[i - 1] = s.p[i - 1] + corr * 0.4
                 }
             }
+            // collisions ease in over the first points, so the root of a lock that starts inside the
+            // outline (the temples, the top of her head) is never yanked out and stretched
+            let ramp = min(1, CGFloat(i - P + 1) / 5)
             switch s.kind {
             case .back:
-                SalonBody.pushOutOfHead(&q, k: 1.035)
+                SalonBody.pushOutOfHead(&q, k: 1.035 * ramp)
             case .side:
-                SalonBody.pushOutOfHead(&q, k: 0.97)
+                if q.y > 285 { SalonBody.pushOutOfHead(&q, k: 0.97 * ramp) }
                 SalonBody.pushOutOfCape(&q)
             case .fringe:
                 SalonBody.pushOutOfCape(&q)
@@ -519,6 +522,14 @@ final class HairSim {
             if q.y > SalonBody.floorY { q.y = SalonBody.floorY }
             q.x = max(-300, min(900, q.x))
             s.p[i] = q
+        }
+        // hair doesn't stretch: no segment ends longer than a little over its length
+        for i in P..<n {
+            let a = s.p[i - 1]
+            let d = s.p[i] - a
+            let len = d.len
+            let maxL = s.segLen(i) * 1.05
+            if len > maxL { s.p[i] = a + d * (maxL / len) }
         }
     }
 
