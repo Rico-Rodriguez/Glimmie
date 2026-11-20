@@ -1,0 +1,499 @@
+import AVFoundation
+import SwiftUI
+
+// MARK: - Garden (a game in the drawer)
+//
+// A glass-fronted garden bed in a back yard. She carries tools off the dock at the bottom: the shovel digs real holes
+// (the soil comes away on the blade and a flick throws it), seed packets shake seeds out that drop into the holes,
+// the watering can pours a stream that soaks dark into the soil and pools into puddles. Plants grow while their soil
+// is damp, sway in the wind and spring back when she brushes them; she taps ripe things to pick them into the basket
+// and pulls carrots and weeds up by hand. Butterflies and a bee visit the flowers, a ladybug walks the soil, a worm
+// tunnels behind the glass. Sun, rain, wind or a firefly night at a tap. Decorations go on the lawn behind the bed.
+// Everything is open, nothing to read, no voice.
+//
+// Code: GardenSim (the simulation), GardenScene + GardenPlants (drawing), this file (screen and controls).
+// Sounds: tools/garden/sounds.py -> App/Resources/Games/Garden/*.wav. Saves: garden.json.
+
+enum GardenGame {
+    static let entry = GameEntry(
+        id: GardenSim.gameID,
+        title: "Garden",
+        tint: Color(hex: 0xA8E07A),
+        icon: { AnyView(GardenTileIcon()) },
+        play: { exit in AnyView(GardenView(exit: exit)) }
+    )
+}
+
+private struct GardenTileIcon: View {
+    var body: some View {
+        Canvas { ctx, size in
+            var g = ctx
+            let k = size.width / 300
+            g.scaleBy(x: k, y: k)
+            var mound = Path()
+            mound.move(to: CGPoint(x: -10, y: 310))
+            mound.addQuadCurve(to: CGPoint(x: 310, y: 310), control: CGPoint(x: 150, y: 196))
+            mound.closeSubpath()
+            g.fill(mound, with: .linearGradient(Gradient(colors: [GRGB(0x9A6A43).color, GRGB(0x5E3C26).color]),
+                                                startPoint: CGPoint(x: 0, y: 240), endPoint: CGPoint(x: 0, y: 310)))
+            let sun = Plant(kind: .sunflower, growth: 1, left: 1, variant: 0)
+            var sg = g
+            sg.translateBy(x: 118, y: 258)
+            sg.scaleBy(x: 0.72, y: 0.72)
+            GardenPlants.draw(sg, plant: sun, base: .zero, bend: -0.08, pop: 0, pull: 0, time: 0, droop: false)
+            let tulip = Plant(kind: .tulip, growth: 1, left: 1, variant: 0)
+            var tg = g
+            tg.translateBy(x: 212, y: 262)
+            tg.scaleBy(x: 0.95, y: 0.95)
+            GardenPlants.draw(tg, plant: tulip, base: .zero, bend: 0.12, pop: 0, pull: 0, time: 0, droop: false)
+            GardenScenePreview.butterfly(g, at: CGPoint(x: 230, y: 70), look: 0)
+        }
+    }
+}
+
+enum GardenScenePreview {
+    static func butterfly(_ g: GraphicsContext, at p: CGPoint, look: Int) {
+        GardenPainter.butterfly(g, at: p, phase: 1.2, perched: true, facing: -1, look: look, scale: 1.6)
+    }
+}
+
+// MARK: - Sounds
+
+enum GardenSFX: String, CaseIterable {
+    case dig, toss, pat, seeds, water, splash, pluck, grow, basket, buzz, chirp, rain, wind, crickets, plunk, squeak, flutter, rustle
+}
+
+/// The garden's own effects and its looping weather sounds, from App/Resources/Games/Garden.
+final class GardenSound {
+    static let shared = GardenSound()
+    private var players: [GardenSFX: [AVAudioPlayer]] = [:]
+    private var loops: [GardenSFX: AVAudioPlayer] = [:]
+    private var last: [GardenSFX: Date] = [:]
+    static let looping: Set<GardenSFX> = [.water, .rain, .wind, .crickets, .buzz]
+
+    private init() {
+        _ = Sound.shared // sets up the audio session
+        for s in GardenSFX.allCases {
+            guard let url = GameFiles.url(s.rawValue, "wav", game: "Garden") else { continue }
+            if GardenSound.looping.contains(s) {
+                let p = try? AVAudioPlayer(contentsOf: url)
+                p?.numberOfLoops = -1
+                p?.volume = 0
+                p?.prepareToPlay()
+                loops[s] = p
+            } else {
+                players[s] = (0..<3).compactMap { _ in
+                    let p = try? AVAudioPlayer(contentsOf: url)
+                    p?.prepareToPlay()
+                    return p
+                }
+            }
+        }
+    }
+
+    func play(_ s: GardenSFX, volume: Float = 0.9, gap: Double = 0) {
+        let now = Date()
+        if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
+        last[s] = now
+        guard let pool = players[s], !pool.isEmpty else { return }
+        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+        p.volume = volume
+        p.currentTime = 0
+        p.play()
+    }
+
+    /// Fades a looping sound toward `volume`; it pauses when silent.
+    func setLoop(_ s: GardenSFX, volume: Float) {
+        guard let p = loops[s] else { return }
+        let v = p.volume + (volume - p.volume) * 0.15
+        p.volume = v
+        if v > 0.01 {
+            if !p.isPlaying { p.play() }
+        } else if p.isPlaying {
+            p.pause()
+        }
+    }
+
+    func stopLoops() {
+        for p in loops.values {
+            p.pause()
+            p.volume = 0
+        }
+    }
+}
+
+// MARK: - The screen
+
+private enum GardenTray { case seeds, decor }
+
+private enum DockSlot: String {
+    case shovel, can, seeds, decor
+
+    var spot: CGPoint {
+        switch self {
+        case .shovel: return CGPoint(x: 150, y: GGeo.dockY)
+        case .can: return CGPoint(x: 274, y: GGeo.dockY)
+        case .seeds: return CGPoint(x: 398, y: GGeo.dockY)
+        case .decor: return CGPoint(x: 522, y: GGeo.dockY)
+        }
+    }
+}
+
+struct GardenView: View {
+    let exit: () -> Void
+
+    @State private var sim = GardenSim()
+    @State private var tray: GardenTray?
+    @State private var weather: Weather = .sun
+    @State private var carrying: String?
+    @State private var hidden: String?
+    @State private var handLastAt = Date()
+    @State private var handStartAt = Date()
+    @State private var handActive = false
+    @State private var started = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let map = GMap(size: geo.size)
+            ZStack {
+                TimelineView(.animation) { tl in
+                    Canvas { ctx, _ in
+                        sim.step(tl.date)
+                        GardenPainter.draw(ctx, map: map, sim: sim)
+                    }
+                }
+                .contentShape(Rectangle())
+                .gesture(handGesture(map))
+
+                controls(map)
+                    .frame(width: 1024, height: 834)
+                    .scaleEffect(map.s)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+            .coordinateSpace(name: "garden")
+        }
+        .ignoresSafeArea()
+        .onAppear(perform: start)
+        .onDisappear {
+            sim.save()
+            GardenSound.shared.stopLoops()
+        }
+    }
+
+    private func start() {
+        guard !started else { return }
+        started = true
+        _ = GardenSound.shared
+        weather = sim.weather
+        applyLaunchArguments()
+    }
+
+    // MARK: Hand
+
+    private func handGesture(_ map: GMap) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("garden"))
+            .onChanged { v in
+                let p = map.design(v.location)
+                let now = Date()
+                if !handActive {
+                    handActive = true
+                    handStartAt = now
+                    handLastAt = now
+                    sim.handBegan(p)
+                } else {
+                    let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(handLastAt)))
+                    handLastAt = now
+                    sim.handMoved(p, dt: dt)
+                }
+            }
+            .onEnded { v in
+                let p = map.design(v.location)
+                let moved = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y) / map.s
+                let tap = moved < 14 && Date().timeIntervalSince(handStartAt) < 0.45
+                sim.handEnded(p, tap: tap)
+                handActive = false
+            }
+    }
+
+    // MARK: Controls
+
+    private func controls(_ map: GMap) -> some View {
+        ZStack {
+            HomeButton(action: exit)
+                .position(x: 62, y: 60)
+            weatherBar
+                .position(x: 812, y: 60)
+            TimelineView(.periodic(from: .now, by: 0.1)) { tl in
+                dock(map, time: tl.date.timeIntervalSinceReferenceDate)
+            }
+            if let t = tray {
+                trayView(t, map)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    private var weatherBar: some View {
+        HStack(spacing: 14) {
+            ForEach(Weather.allCases, id: \.self) { w in
+                Button {
+                    Sound.shared.tap()
+                    Sound.shared.play(.pop, volume: 0.6)
+                    weather = w
+                    sim.setWeather(w)
+                } label: {
+                    Image(systemName: w.symbol)
+                        .symbolRenderingMode(.multicolor)
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundStyle(w.tint)
+                        .frame(width: 70, height: 70)
+                        .background(Circle().fill(.white))
+                        .overlay(Circle().stroke(weather == w ? w.tint : Color.white.opacity(0.6), lineWidth: weather == w ? 6 : 3))
+                        .scaleEffect(weather == w ? 1.1 : 0.94)
+                        .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.55), value: weather)
+                }
+                .buttonStyle(Squish())
+            }
+        }
+    }
+
+    /// Which tool would help right now: it bounces gently.
+    private var suggested: DockSlot? {
+        let thirsty = sim.plots.contains { $0.plant != nil && $0.dry > 2 && ($0.plant?.growth ?? 1) < 1 }
+        if thirsty { return .can }
+        let holes = sim.plots.indices.contains { sim.hasHole(plot: $0) }
+        if holes { return .seeds }
+        let empty = sim.plots.allSatisfy { $0.plant == nil }
+        return empty ? .shovel : nil
+    }
+
+    private func dock(_ map: GMap, time: Double) -> some View {
+        let hint = sim.tool == nil && tray == nil ? suggested : nil
+        return ZStack {
+            ForEach([DockSlot.shovel, .can, .seeds, .decor], id: \.rawValue) { slot in
+                let bounce: CGFloat = hint == slot ? CGFloat(abs(sin(time * 4))) * -14 : 0
+                dockPlate(slot)
+                    .opacity(hidden == slot.rawValue ? 0.35 : 1)
+                    .offset(y: bounce)
+                    .position(slot.spot)
+                    .gesture(dockGesture(slot, map))
+            }
+        }
+    }
+
+    private func dockPlate(_ slot: DockSlot) -> some View {
+        let open: Bool = (tray == .seeds && slot == .seeds) || (tray == .decor && slot == .decor)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(.white.opacity(0.92))
+                .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(open ? Theme.pink : Color.white, lineWidth: 5))
+                .shadow(color: Theme.ink.opacity(0.22), radius: 7, y: 5)
+            if hidden != slot.rawValue {
+                Canvas { ctx, size in
+                    var g = ctx
+                    g.translateBy(x: size.width / 2, y: size.height / 2)
+                    switch slot {
+                    case .shovel:
+                        g.translateBy(x: 0, y: 40)
+                        g.rotate(by: .radians(0.5))
+                        g.scaleBy(x: 0.42, y: 0.42)
+                        g.translateBy(x: 0, y: 96)
+                        GardenPainter.shovel(g, load: 0)
+                    case .can:
+                        g.scaleBy(x: 0.5, y: 0.5)
+                        g.translateBy(x: 30, y: -50)
+                        GardenPainter.can(g)
+                    case .seeds:
+                        var a = g
+                        a.translateBy(x: -12, y: 2)
+                        a.rotate(by: .radians(-0.2))
+                        a.scaleBy(x: 0.72, y: 0.72)
+                        GardenPainter.packet(a, kind: .tulip)
+                        var b = g
+                        b.translateBy(x: 14, y: 4)
+                        b.rotate(by: .radians(0.18))
+                        b.scaleBy(x: 0.72, y: 0.72)
+                        GardenPainter.packet(b, kind: .sunflower)
+                    case .decor:
+                        var a = g
+                        a.translateBy(x: -16, y: 40)
+                        a.scaleBy(x: 0.5, y: 0.5)
+                        GardenDecorPainter.draw(a, GDecor(id: 0, kind: .pinwheel, x: 0, y: 0, spin: 0.4, held: true), time: 0, night: 0, wind: 0)
+                        var b = g
+                        b.translateBy(x: 18, y: 38)
+                        b.scaleBy(x: 0.6, y: 0.6)
+                        GardenDecorPainter.draw(b, GDecor(id: 0, kind: .mushroom, x: 0, y: 0, held: true), time: 0, night: 0, wind: 0)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .frame(width: 108, height: 108)
+    }
+
+    private func dockGesture(_ slot: DockSlot, _ map: GMap) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("garden"))
+            .onChanged { v in
+                let p = map.design(v.location)
+                switch slot {
+                case .seeds, .decor:
+                    return
+                case .shovel, .can:
+                    if carrying == nil {
+                        carrying = slot.rawValue
+                        hidden = slot.rawValue
+                        tray = nil
+                        Sound.shared.tap()
+                        sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
+                    } else {
+                        sim.carry(to: p)
+                    }
+                }
+            }
+            .onEnded { _ in
+                switch slot {
+                case .seeds, .decor:
+                    Sound.shared.tap()
+                    Sound.shared.play(.pop, volume: 0.6)
+                    let want: GardenTray = slot == .seeds ? .seeds : .decor
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
+                case .shovel, .can:
+                    sim.release(home: slot.spot)
+                    finishCarry(slot.rawValue)
+                }
+            }
+    }
+
+    private func finishCarry(_ key: String) {
+        carrying = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            if carrying != key && hidden == key { hidden = nil }
+        }
+    }
+
+    // MARK: Trays
+
+    private func trayView(_ t: GardenTray, _ map: GMap) -> some View {
+        let count = t == .seeds ? PlantKind.allCases.count : DecorKind.allCases.count
+        return ZStack {
+            RoundedRectangle(cornerRadius: 34, style: .continuous)
+                .fill(.white.opacity(0.9))
+                .overlay(RoundedRectangle(cornerRadius: 34, style: .continuous).stroke(Theme.pink.opacity(0.5), lineWidth: 4))
+                .shadow(color: Theme.ink.opacity(0.25), radius: 10, y: 6)
+                .frame(width: CGFloat(count) * 104 + 30, height: 140)
+                .position(x: 512, y: 640)
+            ForEach(0..<count, id: \.self) { i in
+                trayItem(t, i, map)
+                    .position(x: 512 + (CGFloat(i) - CGFloat(count - 1) / 2) * 104, y: 640)
+            }
+        }
+        .opacity(carrying?.hasPrefix("tray") == true ? 0.3 : 1)
+    }
+
+    private func trayItem(_ t: GardenTray, _ i: Int, _ map: GMap) -> some View {
+        let key = "tray\(i)"
+        return Canvas { ctx, size in
+            var g = ctx
+            g.translateBy(x: size.width / 2, y: size.height / 2)
+            if t == .seeds {
+                g.scaleBy(x: 1.1, y: 1.1)
+                GardenPainter.packet(g, kind: PlantKind.allCases[i])
+            } else {
+                let k = DecorKind.allCases[i]
+                let s = min(0.62, 100 / k.size.height)
+                g.translateBy(x: 0, y: k.size.height * s * 0.5)
+                g.scaleBy(x: s, y: s)
+                GardenDecorPainter.draw(g, GDecor(id: 0, kind: k, x: 0, y: 0, spin: 0.4, held: true), time: 0, night: 0, wind: 0)
+            }
+        }
+        .frame(width: 96, height: 120)
+        .opacity(hidden == key ? 0.25 : 1)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("garden"))
+                .onChanged { v in
+                    let p = map.design(v.location)
+                    if carrying == nil {
+                        carrying = key
+                        hidden = key
+                        Sound.shared.tap()
+                        let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
+                        sim.pickUp(tool, at: p)
+                    } else {
+                        sim.carry(to: p)
+                    }
+                }
+                .onEnded { _ in
+                    sim.release(home: t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot)
+                    carrying = nil
+                    hidden = nil
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil }
+                }
+        )
+    }
+
+    // MARK: Screenshot hooks
+
+    /// -gardenDemo (a full garden, nothing saved), -gardenWeather <sun|rain|wind|night>,
+    /// -gardenTool <can|shovel|seeds> (a tool held still over the bed).
+    private func applyLaunchArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-gardenDemo") { sim.showcase() }
+        if let i = args.firstIndex(of: "-gardenWeather"), i + 1 < args.count, let w = Weather(rawValue: args[i + 1]) {
+            sim.demo = true
+            weather = w
+            sim.setWeather(w)
+            sim.settleWeather()
+        }
+        if let i = args.firstIndex(of: "-gardenTool"), i + 1 < args.count {
+            sim.demo = true
+            switch args[i + 1] {
+            case "can":
+                sim.pickUp(.can, at: CGPoint(x: 420, y: 400))
+                hidden = DockSlot.can.rawValue
+            case "shovel":
+                sim.carveHole(plot: 3)
+                sim.pickUp(.shovel, at: CGPoint(x: 600, y: 470))
+                sim.load = 600
+                hidden = DockSlot.shovel.rawValue
+            default:
+                sim.carveHole(plot: 3)
+                sim.pickUp(.seeds(.sunflower), at: CGPoint(x: 600, y: 440))
+            }
+        }
+    }
+}
+
+extension GardenSim {
+    /// Fills the garden for screenshots: something at every stage, decorations, bugs.
+    func showcase() {
+        demo = true
+        let kinds: [(PlantKind, Double, Int)] = [(.sunflower, 1, 1), (.tulip, 1, 1), (.tomato, 1, 4), (.carrot, 0.7, 0), (.strawberry, 1, 3), (.pumpkin, 1, 1)]
+        for (i, k) in kinds.enumerated() {
+            plots[i].plant = Plant(kind: k.0, growth: k.1, left: k.2, variant: i)
+        }
+        for i in 0..<GGeo.columns {
+            let x = GGeo.colX(i)
+            wet[i] = x > 380 && x < 640 ? 0.75 : 0.25
+        }
+        weeds = [GWeed(x: 360, growth: 1, seed: 2)]
+        decor = []
+        addDecor(.pinwheel, x: 210, falling: false)
+        addDecor(.birdhouse, x: 520, falling: false)
+        addDecor(.flamingo, x: 690, falling: false)
+        addDecor(.lantern, x: 940, falling: false)
+        addDecor(.mushroom, x: 70, falling: false)
+        decor[1].poke = time
+        basket = ["tomato:0", "strawberry:0", "carrot:0", "daisy:1", "tomato:0", "pumpkin:0", "tulip:2"]
+    }
+
+    /// Jumps the sky straight to the chosen weather (for screenshots).
+    func settleWeather() {
+        rain = weather == .rain ? 1 : 0
+        night = weather == .night ? 1 : 0
+        wind = weather == .wind ? 1 : (weather == .rain ? 0.35 : 0.08)
+        cloud = weather == .rain ? 1 : (weather == .wind ? 0.45 : 0.12)
+    }
+}

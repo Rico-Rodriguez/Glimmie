@@ -213,6 +213,20 @@ jobs:
           shot bakery-12-sauce 6 -game bakery -bakeryStep iceCream 2 -bakeryDemo sauce
           shot bakery-13-crack 6 -game bakery -bakeryStep cake 0 -bakeryDemo crack
           shot bakery-14-stars 6 -game bakery -bakeryRated
+          shot garden-1-new 6 -game garden
+          shot garden-2-full 8 -game garden -gardenDemo
+          shot garden-3-water 6 -game garden -gardenDemo -gardenTool can
+          shot garden-4-dig 6 -game garden -gardenDemo -gardenTool shovel
+          shot garden-5-rain 8 -game garden -gardenDemo -gardenWeather rain
+          shot garden-6-night 8 -game garden -gardenDemo -gardenWeather night
+          shot garden-7-wind 6 -game garden -gardenDemo -gardenWeather wind
+          shot salon-1-chair 7 -game salon
+          shot salon-2-wash 7 -game salon -salonDemo wash
+          shot salon-3-cut 7 -game salon -salonDemo cut
+          shot salon-4-dry 7 -game salon -salonDemo dry
+          shot salon-5-curl 7 -game salon -salonDemo curl
+          shot salon-6-style 7 -game salon -salonDemo style
+          shot salon-7-photos 9 -game salon -salonDemo photos
           shot tidy-1-levels 6 -game tidy -tidyDemoDone
           shot tidy-2-fridge 7 -game tidy -tidyLevel 12 -tidyPrefill 7
           shot tidy-3-bookshelf 7 -game tidy -tidyLevel 13 -tidyPrefill 6 -tidyHold
