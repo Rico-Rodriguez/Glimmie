@@ -2,6 +2,32 @@ import SwiftUI
 import UIKit
 
 enum UnicornIllustration {
+    private struct Pigment {
+        let r: Float
+        let g: Float
+        let b: Float
+
+        var light: Float {
+            let red = r * 0.24
+            let green = g * 0.64
+            let blue = b * 0.12
+            return red + green + blue
+        }
+
+        init(_ r: Float, _ g: Float, _ b: Float) {
+            self.r = r
+            self.g = g
+            self.b = b
+        }
+
+        init(hex: UInt32) {
+            let red: UInt32 = (hex >> 16) & 255
+            let green: UInt32 = (hex >> 8) & 255
+            let blue: UInt32 = hex & 255
+            self.init(Float(red), Float(green), Float(blue))
+        }
+    }
+
     private static let images = NSCache<NSString, UIImage>()
     private static let palettes: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
@@ -53,51 +79,54 @@ enum UnicornIllustration {
     private static func tint(_ image: CGImage, look: UnicornLook, changed: [Bool]) -> CGImage? {
         let width = image.width, height = image.height
         var buffer = [UInt8](repeating: 0, count: width * height * 4)
-        let shades = [look.coat, look.mane, look.horn].map { hex in
-            [Float((hex >> 16) & 255), Float((hex >> 8) & 255), Float(hex & 255)]
-        }
+        let shades = [Pigment(hex: look.coat), Pigment(hex: look.mane), Pigment(hex: look.horn)]
+        let light = shades.map { max(Float(1), $0.light) }
         let format = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        return buffer.withUnsafeMutableBytes { data -> CGImage? in
-            guard let bytes = data.bindMemory(to: UInt8.self).baseAddress,
+        return buffer.withUnsafeMutableBufferPointer { data -> CGImage? in
+            guard let bytes = data.baseAddress,
                   let context = CGContext(data: bytes, width: width, height: height, bitsPerComponent: 8,
                                           bytesPerRow: width * 4, space: space, bitmapInfo: format) else { return nil }
             context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
-            for y in 0..<height {
-                let ny = Float(y) / Float(height)
-                for x in 0..<width {
-                    let i = 4 * (y * width + x)
-                    let alpha = Float(bytes[i + 3])
-                    guard alpha > 8 else { continue }
-                    let unpremultiply = 255 / alpha
-                    let red = Float(bytes[i]) * unpremultiply
-                    let green = Float(bytes[i + 1]) * unpremultiply
-                    let blue = Float(bytes[i + 2]) * unpremultiply
-                    let nx = Float(x) / Float(width)
-                    let inMane = nx < 0.63 || ny < 0.21 || nx < 0.68 && ny < 0.48 || nx > 0.80 && ny < 0.20
-                    let inHorn = nx > 0.775 && nx < 0.86 && ny < 0.15
-                    let kind: Int
-                    let amount: Float
-                    if inHorn && red - blue > 49 && green - blue > 27 {
-                        kind = 2; amount = min(1, (green - blue - 20) / 33)
-                    } else if inMane && red > 97 && red - green > 24 && blue >= green - 17 {
-                        kind = 1; amount = min(1, (red - green - 17) / 26)
-                    } else if red > 155 && green > 138 && red - green < 48 && red - blue < 85 && green >= blue {
-                        kind = 0; amount = min(1, (green - 137) / 41)
-                    } else { continue }
-                    guard changed[kind] else { continue }
-                    let value = (red * 0.24 + green * 0.64 + blue * 0.12) / 255
-                    let shade = shades[kind]
-                    let average = max(1, shade[0] * 0.24 + shade[1] * 0.64 + shade[2] * 0.12)
-                    let brightness = value * 255 / average
-                    let fraction = alpha / 255
-                    bytes[i] = channel(red, to: shade[0] * brightness, amount: amount, fraction: fraction)
-                    bytes[i + 1] = channel(green, to: shade[1] * brightness, amount: amount, fraction: fraction)
-                    bytes[i + 2] = channel(blue, to: shade[2] * brightness, amount: amount, fraction: fraction)
-                }
-            }
+            tintPixels(bytes, width: width, height: height, shades: shades, light: light, changed: changed)
             return context.makeImage()
         }
+    }
+
+    private static func tintPixels(_ bytes: UnsafeMutablePointer<UInt8>, width: Int, height: Int,
+                                   shades: [Pigment], light: [Float], changed: [Bool]) {
+        for y in 0..<height {
+            let ny = Float(y) / Float(height)
+            for x in 0..<width {
+                let i = 4 * (y * width + x)
+                let alpha = Float(bytes[i + 3])
+                guard alpha > 8 else { continue }
+                let factor: Float = 255 / alpha
+                let original = Pigment(Float(bytes[i]) * factor, Float(bytes[i + 1]) * factor, Float(bytes[i + 2]) * factor)
+                let nx = Float(x) / Float(width)
+                guard let (kind, amount) = pigmentRegion(original, x: nx, y: ny), changed[kind] else { continue }
+                let shade = shades[kind]
+                let brightness = original.light / light[kind]
+                let fraction: Float = alpha / 255
+                bytes[i] = channel(original.r, to: shade.r * brightness, amount: amount, fraction: fraction)
+                bytes[i + 1] = channel(original.g, to: shade.g * brightness, amount: amount, fraction: fraction)
+                bytes[i + 2] = channel(original.b, to: shade.b * brightness, amount: amount, fraction: fraction)
+            }
+        }
+    }
+
+    private static func pigmentRegion(_ pixel: Pigment, x: Float, y: Float) -> (Int, Float)? {
+        let warmth = pixel.r - pixel.b
+        let pink = pixel.r - pixel.g
+        let gold = pixel.g - pixel.b
+        let inHorn = x > 0.775 && x < 0.86 && y < 0.15
+        let inMane = x < 0.63 || y < 0.21 || (x < 0.68 && y < 0.48) || (x > 0.80 && y < 0.20)
+        if inHorn && warmth > 49 && gold > 27 { return (2, min(1, (gold - 20) / 33)) }
+        if inMane && pixel.r > 97 && pink > 24 && gold <= 17 { return (1, min(1, (pink - 17) / 26)) }
+        if pixel.r > 155 && pixel.g > 138 && pink < 48 && warmth < 85 && gold >= 0 {
+            return (0, min(1, (pixel.g - 137) / 41))
+        }
+        return nil
     }
 
     private static func channel(_ start: Float, to end: Float, amount: Float, fraction: Float) -> UInt8 {
