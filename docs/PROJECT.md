@@ -68,10 +68,10 @@ history before the game-drawer PR.
   (`coin.wav`, and `till.wav` for the till; `python3 tools/coins/sounds.py`). The count goes up as each coin lands.
 - Buying: `Coins.shared.buy("<game>/<item>", price:)` (false if she hasn't enough), `Coins.shared.owns(id)`.
 - Treasure shop (`App/Sources/Shared/TreasureShop.swift`, items in `Treasures.swift`): tap the coin purse on the home
-  screen. Six extras so far, each shown with its game's tile and a price tag (8, 12 or 15 coins): glowing crystals, a
-  rainbow and a unicorn statue for the Garden; crystals, a rainbow coral and a unicorn statue for the Aquarium. Tap one
+  screen. Each extra has its game's tile and a price tag. Garden and Aquarium have three decorations each. Unicorn
+  Stable has a crown and wings, and Dress Up has a moon headband. Tap one
   she can afford and it's bought (green tick) and appears at the end of that game's decorations tray
-  (`DecorKind.available`, `AquaDecorKind.available`); one she can't afford yet wiggles its tag. The drawings are in
+  (for example, `DecorKind.available` and `ArtCategory.availableItems`). One she can't afford yet wiggles its tag. The drawings are in
   `TreasureArt`, shared by the shop and the games. To add an extra: an entry in `Treasures.all`, a drawing, and the
   game showing it when `Coins.shared.owns(id)`. `-treasureShop` opens the shop on launch.
 - Screenshot hooks set `Coins.shared.demo` so they never save coins; `-coinsDemo <n>` starts with n coins, unsaved.
@@ -284,3 +284,34 @@ history before the game-drawer PR.
   a pearl (more likely until she has found it once).
 - Shared helpers: `Twinkles.draw` (the little stars around rare things).
 
+
+## Potion Lab decisions (Nov 2026)
+- Rico picked "both" for finding rare potions: secret combos make them, and a light-bulb card shows a picture recipe
+  for one she hasn't found yet. The Magic Shop doesn't brew its own potions; potion making lives here.
+- The potion is a 48 x 60 grid of 8 pt cells inside the flask (`PotionSim.fluidStep`): stable-fluids advection, an
+  18-step pressure projection, light vorticity confinement, premultiplied pigment (r, g, b, amount) and a density field
+  (heavy night sky sinks, moon milk floats). Liquid poured in thins what is there (`dilute`), so the same pigment makes
+  a bigger, paler potion. Air cells above the surface copy the top cell's color so a rising surface keeps it.
+  `PotionLiquid` turns the pigment into a 48 x 60 picture drawn smooth and clipped under the wavy surface.
+- Volume sets the level through the flask's shape (`PGeo.areaBelow`). Waves are a row of springs; the whirlpool dip
+  comes from how fast it swirls. Foam per column can bubble over the rim.
+- Held bottles tip over the mouth (or the unicorn) and only pour once the level liquid inside reaches the bottle's mouth
+  (`PPoly.level` finds the level of the tipped outline); the flow pulses (glug). Jars are turned over and drop pieces
+  when shaken. Bottles and jars are held `FingerLift.pour` above her finger. The paddle's blade sits
+  `PotionLabView.paddleReach` below her finger: she holds the end of its handle and the shaft goes up through the mouth.
+- Empty bottles only go in through the mouth when brought down from above (`constrainDip`), fill with the color at
+  their mouth and take their share of what's in the potion; lifted out they cork and fly to the rack (11 kept).
+- Rare potions (`PotionSim.rareKind`, most particular first): wild (7 things), rainbow, golden, galaxy, dragon (boiled),
+  dream, moonlight (lights off), frost, love, mermaid. The flask flashes and pulls its colors toward the potion's.
+  Stickers: the 10 potions plus `rainbowUnicorn` and `floatingUnicorn`.
+- The unicorn is the Dress Up pet unicorn (`PetPainter.draw`, which now takes an optional `furShading`).
+- Saves `potionlab.json` (rack, the flask's volume and mixed color, what's in it, lamp, heat). Sounds:
+  `python3 tools/potion/sounds.py`. Screenshot hooks: `-potionDemo mix | pour | shake | stir | boil | dip | unicorn | rare | night | hint`.
+- The screenshot workflow takes an `only` input (a name prefix like `potion`) to take just those screenshots.
+
+## Unicorn Stable
+
+- One customizable unicorn, with separate coat, mane and horn colors. The chosen colors, braid and gear are saved in `unicornstable/stable.json`.
+- Pick a care tool and tap the unicorn, or drag the tool from its tray. The shared `FingerLift` puts the working end ahead of her finger. The sponge leaves bubbles, brushing clears them, the comb loosens braids, and feeding shows a heart.
+- The meadow advances by tapping gallop or jump. Six moves bring a visitor and play coins. A missed jump splashes and still advances the ride. The next visitor is saved, and the shared sticker book records first encounters.
+- Use `-game unicornstable` for the stable and add `-unicornMeadow` for the meadow screenshot.

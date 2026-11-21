@@ -244,7 +244,9 @@ struct PetPose {
 
 enum PetPainter {
     /// Draws the pet into `ctx`, which is already in pet coordinates.
-    static func draw(_ pet: PetLook, pose: PetPose = .still, under: ((GraphicsContext) -> Void)? = nil,
+    /// `furShading` colors the fur like a dye would (the Potion Lab's potions use it), over the pet's own `dye`.
+    static func draw(_ pet: PetLook, pose: PetPose = .still, furShading: GraphicsContext.Shading? = nil,
+                     under: ((GraphicsContext) -> Void)? = nil,
                      over: ((GraphicsContext) -> Void)? = nil, in ctx: GraphicsContext) {
         let art = PetArt.shared
         guard let a = art.animals[pet.kind] else { return }
@@ -262,7 +264,7 @@ enum PetPainter {
             transform(&w, slot: slot, a, flap: pose.flap)
             ArtPainter.draw(item.shapes, pet.paints(for: item), in: w)
         }
-        let dyeFill = dyeShading(pet.dye)
+        let dyeFill = furShading ?? dyeShading(pet.dye)
         func fur(_ shapes: [ArtShape]) {
             guard let fill = dyeFill else { ArtPainter.draw(shapes, plain, in: g); return }
             g.drawLayer { l in

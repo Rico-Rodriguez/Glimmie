@@ -126,6 +126,7 @@ struct ArtItem: Identifiable {
 }
 
 struct ArtCategory: Identifiable {
+    static let treasureItems = ["h_moonband": "dressup/h_moonband"]
     let id: String
     let group: String
     let required: Bool
@@ -133,6 +134,10 @@ struct ArtCategory: Identifiable {
     let palette: String?
     let icon: String?
     let items: [String]
+
+    var availableItems: [String] {
+        items.filter { Self.treasureItems[$0].map { Coins.shared.owns($0) } ?? true }
+    }
 }
 
 final class DressUpArt {

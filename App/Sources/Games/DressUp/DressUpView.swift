@@ -505,7 +505,7 @@ private struct Tray: View {
                     store.current.takeOff(cat)
                 }
             }
-            ForEach(c?.items ?? [], id: \.self) { id in
+            ForEach(c?.availableItems ?? [], id: \.self) { id in
                 cell(selected: selected == id, scene: cat == "bg") {
                     ItemThumb(item: id, look: store.current)
                 } action: {

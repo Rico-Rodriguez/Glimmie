@@ -173,7 +173,7 @@ struct Look: Codable, Equatable, Identifiable {
 
     static func random(_ art: DressUpArt = .shared) -> Look {
         var l = Look()
-        func pick(_ cat: String) -> String? { art.category(cat)?.items.randomElement() }
+        func pick(_ cat: String) -> String? { art.category(cat)?.availableItems.randomElement() }
         l.skin = Int.random(in: 0..<max(1, art.skin.count))
         l.hair = Int.random(in: 0..<max(1, art.hair.count))
         l.eye = Int.random(in: 0..<max(1, art.eye.count))
