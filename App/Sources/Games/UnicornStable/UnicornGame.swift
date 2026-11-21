@@ -5,7 +5,11 @@ enum UnicornGame {
     static let entry = GameEntry(
         id: id, title: "Unicorn Stable", tint: Theme.blush,
         icon: { AnyView(UnicornPortrait(look: UnicornLook())) },
-        play: { exit in AnyView(UnicornStableView(exit: exit)) },
+        play: { exit in
+            let args = ProcessInfo.processInfo.arguments
+            if args.contains("-classicUnicorn") || args.contains("-unicornMeadow") { return AnyView(UnicornStableView(exit: exit)) }
+            return AnyView(PonyGroomingView(exit: exit))
+        },
         stickers: MeadowVisitor.allCases.map(\.sticker)
     )
 }
