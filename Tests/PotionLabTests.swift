@@ -56,6 +56,14 @@ final class PotionLabTests: XCTestCase {
         XCTAssertGreaterThan(sim.doses[.nectar] ?? 0, 0.5)
     }
 
+    func testAFlowerPetalFallsThroughTheOpenRim() {
+        let sim = freshSim()
+        let start = CGPoint(x: PotionGeometry.C.x, y: PotionGeometry.rimY - 16)
+        sim.addPiece(.petals, at: start, v: CGVector(dx: 0, dy: 40))
+        run(sim, seconds: 1.2)
+        XCTAssertTrue(sim.pieces.contains { $0.kind == .petals && $0.state == .liquid })
+    }
+
     func testHeavyLiquidSinksAndStirringMixesIt() {
         let sim = freshSim()
         // a layer of heavy night sky poured in on top

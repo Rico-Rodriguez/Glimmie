@@ -62,6 +62,11 @@ enum PotionGeometry {
         return abs(dx) < hw + g && p.y >= rimY - 6 - pad && p.y <= C.y
     }
 
+    /// The empty space between the two sides of the rim. A falling ingredient can enter here.
+    static func aboveOpening(_ p: CGPoint, inset: CGFloat = 0) -> Bool {
+        p.y < rimY + inset && abs(p.x - C.x) < hw - inset
+    }
+
     /// Half the inside width of the flask at height y (0 above the rim or below the bottom).
     static func halfWidth(at y: CGFloat) -> CGFloat {
         if y < rimY || y > bottomY { return 0 }

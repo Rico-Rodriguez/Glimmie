@@ -1177,7 +1177,7 @@ final class PotionSim {
                     landInPotion(dp)
                     continue
                 }
-            } else if !dp.onGlass && PotionGeometry.insideOuter(dp.p) {
+            } else if !dp.onGlass && !PotionGeometry.aboveOpening(dp.p) && PotionGeometry.insideOuter(dp.p) {
                 // it hit the glass from outside: it runs down the side
                 dp.onGlass = true
                 dp.v = CGVector(dx: dp.p.x < PotionGeometry.C.x ? -20 : 20, dy: 40)
@@ -1284,7 +1284,7 @@ final class PotionSim {
                         cue(.plop, gap: 0.08)
                         for _ in 0..<2 { bubbles.append(PBubble(p: CGPoint(x: pc.p.x + rand(-6, 6), y: pc.p.y + rand(4, 12)), r: rand(1.5, 3), phase: rand(0, 6), fizzy: false)) }
                     }
-                } else if PotionGeometry.insideOuter(pc.p, pad: 6) {
+                } else if !PotionGeometry.aboveOpening(pc.p, inset: 4) && PotionGeometry.insideOuter(pc.p, pad: 6) {
                     // bounced off the rim or the glass: it falls off to the side
                     let side: CGFloat = pc.p.x < PotionGeometry.C.x ? -1 : 1
                     pc.v = CGVector(dx: side * rand(60, 140), dy: -abs(pc.v.dy) * 0.3)
