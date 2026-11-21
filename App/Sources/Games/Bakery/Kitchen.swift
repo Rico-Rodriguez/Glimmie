@@ -675,6 +675,8 @@ struct FrostStepView: View {
     @State private var tool: CGPoint?
     /// Her finger while she spreads (design space), so the spatula can point from it to the blade.
     @State private var toolFinger: CGPoint?
+    /// A quick tap on the cake: the spatula spreads that spot by itself (see `ToolTap`).
+    @State private var auto = AutoTool()
     @State private var squish = false
     @State private var burst = 0
     @State private var smearAcc: CGFloat = 0
@@ -731,8 +733,19 @@ struct FrostStepView: View {
         .frame(width: KStage.size, height: KStage.size)
         .contentShape(Rectangle())
         .gesture(DragGesture(minimumDistance: 0)
-            .onChanged { v in spread(at: v.location) }
-            .onEnded { _ in dragging = false; tool = nil; toolFinger = nil })
+            .onChanged { v in
+                if auto.running { auto.cancel() }
+                spread(at: v.location)
+            }
+            .onEnded { v in
+                dragging = false; tool = nil; toolFinger = nil
+                if ToolTap.isTap(v.translation) && !full {
+                    // a tap: the spatula swooshes round that spot by itself
+                    auto.run(from: CGPoint(x: v.location.x + 70, y: v.location.y + 90), to: v.location,
+                             step: { q in spread(at: q) },
+                             end: { _ in dragging = false; tool = nil; toolFinger = nil })
+                }
+            })
         .scaleEffect(x: squish ? 1.04 : 1, y: squish ? 0.96 : 1, anchor: .bottom)
         .position(KStage.center)
     }
