@@ -68,10 +68,10 @@ history before the game-drawer PR.
   (`coin.wav`, and `till.wav` for the till; `python3 tools/coins/sounds.py`). The count goes up as each coin lands.
 - Buying: `Coins.shared.buy("<game>/<item>", price:)` (false if she hasn't enough), `Coins.shared.owns(id)`.
 - Treasure shop (`App/Sources/Shared/TreasureShop.swift`, items in `Treasures.swift`): tap the coin purse on the home
-  screen. Six extras so far, each shown with its game's tile and a price tag (8, 12 or 15 coins): glowing crystals, a
-  rainbow and a unicorn statue for the Garden; crystals, a rainbow coral and a unicorn statue for the Aquarium. Tap one
+  screen. Each extra has its game's tile and a price tag. Garden and Aquarium have three decorations each. Unicorn
+  Stable has a crown and wings, and Dress Up has a moon headband. Tap one
   she can afford and it's bought (green tick) and appears at the end of that game's decorations tray
-  (`DecorKind.available`, `AquaDecorKind.available`); one she can't afford yet wiggles its tag. The drawings are in
+  (for example, `DecorKind.available` and `ArtCategory.availableItems`). One she can't afford yet wiggles its tag. The drawings are in
   `TreasureArt`, shared by the shop and the games. To add an extra: an entry in `Treasures.all`, a drawing, and the
   game showing it when `Coins.shared.owns(id)`. `-treasureShop` opens the shop on launch.
 - Screenshot hooks set `Coins.shared.demo` so they never save coins; `-coinsDemo <n>` starts with n coins, unsaved.
@@ -308,3 +308,10 @@ history before the game-drawer PR.
 - Saves `potionlab.json` (rack, the flask's volume and mixed color, what's in it, lamp, heat). Sounds:
   `python3 tools/potion/sounds.py`. Screenshot hooks: `-potionDemo mix | pour | shake | stir | boil | dip | unicorn | rare | night | hint`.
 - The screenshot workflow takes an `only` input (a name prefix like `potion`) to take just those screenshots.
+
+## Unicorn Stable
+
+- One customizable unicorn, with separate coat, mane and horn colors. The chosen colors, braid and gear are saved in `unicornstable/stable.json`.
+- Pick a care tool and tap the unicorn, or drag the tool from its tray. The shared `FingerLift` puts the working end ahead of her finger. The sponge leaves bubbles, brushing clears them, the comb loosens braids, and feeding shows a heart.
+- The meadow advances by tapping gallop or jump. Six moves bring a visitor and play coins. A missed jump splashes and still advances the ride. The next visitor is saved, and the shared sticker book records first encounters.
+- Use `-game unicornstable` for the stable and add `-unicornMeadow` for the meadow screenshot.

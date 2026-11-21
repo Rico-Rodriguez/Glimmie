@@ -173,6 +173,8 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath simbuild CODE_SIGNING_ALLOWED=NO build | tee simbuild.log | grep -E -A3 "error:|BUILD (SUCCEEDED|FAILED)"
       - name: Boot an iPad, install, capture screens
+        env:
+          ONLY: ${{ inputs.only }}
         run: |
           set -x
           UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if 'iPad' in x['name']))")
@@ -181,7 +183,6 @@ jobs:
           APP=simbuild/Build/Products/Debug-iphonesimulator/Glimmie.app
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
-          ONLY="${{ inputs.only }}"
           shot() { name=$1; wait=$2; shift 2; if [ -n "$ONLY" ] && [[ "$name" != "$ONLY"* ]]; then return; fi; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
           shot 1-drawer 6
           shot 1b-treasure-shop 6 -treasureShop -coinsDemo 30
@@ -275,6 +276,8 @@ jobs:
           shot potion-9-rare 9 -game potionlab -potionDemo rare
           shot potion-10-night 9 -game potionlab -potionDemo night
           shot potion-11-hint 7 -game potionlab -potionDemo hint
+          shot unicorn-1-stable 5 -game unicornstable
+          shot unicorn-2-meadow 5 -game unicornstable -unicornMeadow
           xcrun simctl shutdown "$UDID"
           if [ -z "$ONLY" ]; then
             PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")

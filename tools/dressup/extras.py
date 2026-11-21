@@ -23,6 +23,14 @@ def hats():
              {'d': poly([(270, 152), (284, 128), (300, 112), (316, 128), (330, 152), (300, 144)]), 'f': '#E8E6F2', 's': '#9E9AB4', 'w': 3},
              {'d': heart(300, 132, 9), 'f': 'c', 's': 'c.o', 'w': 2.5}, {'d': both(circle(250, 158, 5)), 'f': 'c', 's': 'c.o', 'w': 2}]
     out.append(hat('h_tiara', tiara, default=15))
+    moonband = [
+        {'d': smooth_open([(218, 172), (300, 131), (382, 172)]), 's': 'c.o', 'w': 11},
+        {'d': smooth_open([(218, 172), (300, 131), (382, 172)]), 's': 'c', 'w': 6},
+        {'d': 'M309 96 C287 121 303 147 332 137 C319 160 288 154 277 134 C268 117 282 99 309 96 Z',
+         'f': '#FFE38A', 's': '#C98F12', 'w': 3},
+        {'d': star(250, 148, 12, 0.45) + ' ' + star(357, 147, 11, 0.45), 'f': '#FFF7CF', 's': 'c.o', 'w': 2},
+    ]
+    out.append(hat('h_moonband', moonband, default=15))
     fl = []
     for i, a in enumerate(range(-160, -15, 18)):
         x = 300 + math.cos(math.radians(a)) * 132; y = 196 + math.sin(math.radians(a)) * 72

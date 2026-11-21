@@ -15,6 +15,12 @@ struct TreasureShopView: View {
     /// Redraws after a purchase (Coins isn't observable).
     @State private var tick = 0
 
+    private let columns = 3
+    private var cellHeight: CGFloat {
+        let rows = max(1, (Treasures.all.count + columns - 1) / columns)
+        return min(248, (526 - CGFloat(rows - 1) * 20) / CGFloat(rows))
+    }
+
     var body: some View {
         ZStack {
             Color.black.opacity(0.35)
@@ -30,7 +36,7 @@ struct TreasureShopView: View {
                 }
                 .padding(.horizontal, 34)
                 .padding(.top, 26)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 3), spacing: 20) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: columns), spacing: 20) {
                     ForEach(Treasures.all) { item in
                         cell(item)
                     }
@@ -146,7 +152,7 @@ struct TreasureShopView: View {
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 10)
                 }
-                .frame(height: 248)
+                .frame(height: cellHeight)
                 .scaleEffect(CGFloat(1 + pop))
             }
         }

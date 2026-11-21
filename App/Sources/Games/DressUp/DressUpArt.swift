@@ -133,6 +133,10 @@ struct ArtCategory: Identifiable {
     let palette: String?
     let icon: String?
     let items: [String]
+
+    var availableItems: [String] {
+        items.filter { $0 != "h_moonband" || Coins.shared.owns("dressup/\($0)") }
+    }
 }
 
 final class DressUpArt {
