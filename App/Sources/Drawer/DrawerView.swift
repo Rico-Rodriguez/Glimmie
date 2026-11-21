@@ -15,11 +15,15 @@ struct DrawerView: View {
                     .frame(maxWidth: .infinity)
                     .overlay(alignment: .trailing) {
                         // the sticker book: every game's surprises in one place
-                        if !StickerBook.pages.isEmpty {
-                            StickerBookButton(size: 66) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
-                                .padding(.trailing, DrawerLayout.sidePadding)
-                                .padding(.top, 10)
+                        HStack(spacing: 16) {
+                            // her play coins, from serving customers in the shops
+                            CoinCounter(height: 60)
+                            if !StickerBook.pages.isEmpty {
+                                StickerBookButton(size: 66) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
+                            }
                         }
+                        .padding(.trailing, DrawerLayout.sidePadding)
+                        .padding(.top, 10)
                     }
                 GeometryReader { geo in
                     let layout = DrawerLayout.best(count: GameRegistry.all.count, in: geo.size)

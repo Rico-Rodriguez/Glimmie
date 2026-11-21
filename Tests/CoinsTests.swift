@@ -1,0 +1,60 @@
+import XCTest
+@testable import Glimmie
+
+final class CoinsTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Coins.shared.resetForTests()
+    }
+
+    func testEveryCustomerPaysAndHappierOnesPayMore() {
+        XCTAssertEqual(Coins.reward(stars: 1), 3)
+        XCTAssertEqual(Coins.reward(stars: 2), 4)
+        XCTAssertEqual(Coins.reward(stars: 3), 5)
+        XCTAssertEqual(Coins.reward(stars: 0), 3, "even a mixed-up order pays")
+        XCTAssertEqual(Coins.reward(stars: 9), 5)
+    }
+
+    func testEarningFillsThePurse() {
+        let c = Coins.shared
+        c.earn(4, game: "bakery")
+        c.earn(5, game: "pizza")
+        XCTAssertEqual(c.balance, 9)
+        XCTAssertEqual(c.earned, 9)
+        XCTAssertEqual(c.lastPay?.game, "pizza")
+        c.earn(0, game: "pizza")
+        XCTAssertEqual(c.balance, 9)
+    }
+
+    func testCoinsCountOnlyOnceTheyLand() {
+        let c = Coins.shared
+        c.earn(3, game: "icecream")
+        let at = c.lastPay!.at
+        XCTAssertEqual(c.flying(game: "icecream", at: at), 3)
+        XCTAssertEqual(c.flying(game: "bakery", at: at), 0, "another game's purse doesn't wait for them")
+        XCTAssertEqual(c.flying(game: "icecream", at: at.addingTimeInterval(Coins.land(0) + 0.01)), 2)
+        XCTAssertEqual(c.flying(game: "icecream", at: at.addingTimeInterval(Coins.land(2) + 0.01)), 0)
+    }
+
+    func testBuyingTakesCoinsOnceAndNeverGoesBelowZero() {
+        let c = Coins.shared
+        c.earn(10, game: "bakery")
+        XCTAssertFalse(c.buy("shop/crown", price: 12))
+        XCTAssertEqual(c.balance, 10)
+        XCTAssertFalse(c.owns("shop/crown"))
+        XCTAssertTrue(c.buy("shop/bow", price: 6))
+        XCTAssertTrue(c.owns("shop/bow"))
+        XCTAssertEqual(c.balance, 4)
+        XCTAssertTrue(c.buy("shop/bow", price: 6), "buying it again keeps it and costs nothing")
+        XCTAssertEqual(c.balance, 4)
+        XCTAssertFalse(c.spend(5))
+        XCTAssertTrue(c.spend(4))
+        XCTAssertEqual(c.balance, 0)
+    }
+
+    func testTheCoinSoundsShip() {
+        for name in ["coin", "till"] {
+            XCTAssertNotNil(Bundle.main.url(forResource: name, withExtension: "wav"), name)
+        }
+    }
+}

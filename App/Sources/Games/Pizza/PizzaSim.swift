@@ -1166,6 +1166,9 @@ final class PizzaSim {
             if allEaten {
                 PizzaSound.shared.play(.yay)
                 Sound.shared.play(.fanfare, volume: 0.5)
+                // the whole pizza is eaten: the customer pays, and the coins fly into the purse
+                Coins.shared.earn(Coins.reward(stars: stars ?? 1), game: PizzaSim.gameID,
+                                  from: CGPoint(x: PGeo.customer.x, y: PGeo.customer.y + 40))
                 newPizzaAt = time + 2.6
             }
         }
@@ -1459,6 +1462,7 @@ extension PizzaSim {
 
     func demoSetup(_ name: String) {
         demo = true
+        Coins.shared.demo = true
         hold = true
         order = PizzaOrder.random(customer: 3, seed: 21)
         switch name {

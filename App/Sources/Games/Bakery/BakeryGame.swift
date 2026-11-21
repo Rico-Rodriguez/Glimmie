@@ -69,6 +69,7 @@ struct BakeryGameView: View {
             // the exact order, served: three stars
             ready = order.picture
             ShopView.demoServe = true
+            Coins.shared.demo = true
         }
     }
 }
@@ -112,6 +113,7 @@ struct ShopView: View {
                     topBar
                 }
                 .frame(width: 1024, height: 834)
+                .coinPurse(game: "bakery")
             }
             if showCase {
                 TreatCase(store: store, close: { withAnimation(.spring(response: 0.4)) { showCase = false } }) { t in
@@ -214,6 +216,7 @@ struct ShopView: View {
         HStack(spacing: 18) {
             HomeButton { store.save(); exit() }
             Spacer()
+            CoinCounter(game: "bakery")
             ZStack(alignment: .bottomTrailing) {
                 Sprite("heartjar", box: Box.thing).frame(width: 86, height: 86)
                 Text("\(store.hearts)")
@@ -282,6 +285,8 @@ struct ShopView: View {
             eyes = matched ? "star" : "happy"
             mouth = "open"
             store.serve(t, hearts: stars)
+            // the customer pays: coins hop out of their paws into the purse
+            Coins.shared.earn(Coins.reward(stars: stars), game: "bakery", from: CGPoint(x: 470, y: 360))
             withAnimation(.easeOut(duration: 0.25)) { ready = nil }
             BakerySound.shared.play(.yay)
             Sound.shared.play(matched ? .fanfare : .cheer, volume: 0.7)
