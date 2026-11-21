@@ -12,7 +12,7 @@ import SwiftUI
 // smears if she paints her skin, and dries glossy (faster under the fan). The remover swab cleans
 // up, and gems and stickers press on (and fall if they miss).
 //
-// Every tool works at her fingertip, held with its handle toward her hand; the glitter jar is held
+// Every tool is held by its handle, its tip just above her finger; the glitter jar is held
 // above her finger so the glitter falls onto the spot below it (see `FingerLift`).
 
 final class BeautyWorld {

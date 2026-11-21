@@ -1,12 +1,16 @@
 import SwiftUI
 
-// MARK: - Tools at her fingertip
+// MARK: - Tools held by their handle
 //
-// A tool works right where her finger is. Lifting tools above the finger (120 pt, with a zoom bubble)
-// made her hand keep making up for a gap, so instead:
+// History: tools first floated 120 pt straight above her finger (a gap to aim across, "I always want to peek
+// around my finger"), then worked right at her fingertip (and her finger covered the net, "what's the point,
+// I can't see"). Now a tool is held the way a real one is:
 //
-// - a tool's working end sits at her fingertip (`tool` is 0), held the way a hand holds it: working end up
-//   and a little to the left, handle down toward her hand (`lean`, `turn`, `handle`);
+// - her finger holds the handle, and the working end (the net's hoop, the brush, the scoop) sits ahead of it
+//   along the handle (`tool`, about a handle's length), up and to the left, away from her hand, which comes
+//   from the bottom right (`lean`). The tool is drawn turned so its handle runs from the working end back to
+//   her finger (`turn`, `handle`), so it reads as a tool in her hand, not a thing floating off it;
+// - things held by an edge (sponges, towels) sit up and to the left of her finger, her finger at a corner (`grip`);
 // - what the tool does reaches well past her fingertip (`spread`): foam, water, polish, scrubbing and the
 //   spot it works on are all bigger than a finger, so she sees it working around her finger;
 // - a dragged thing (a sticker, a topping, a sock) still floats a little above her finger (`item`), so she
@@ -18,9 +22,13 @@ import SwiftUI
 // Every game passes its points through `point`, so the near-edge rules still apply to dragged things.
 
 enum FingerLift {
-    /// How far above her finger a tool's tip works: none, it works right at her fingertip.
-    /// (It was 44 to 80 in the first games, then 120 everywhere; both felt like aiming with a gap.)
-    static let tool: CGFloat = 0
+    /// How far ahead of her finger, along the handle, a tool's working end is.
+    static let tool: CGFloat = 96
+    /// How far from her finger the middle of a thing held by its edge (a sponge, a towel) is.
+    static let grip: CGFloat = 64
+    /// How far to the side a lifted point leans for each point of lift: to the left (her hand comes from
+    /// the bottom right), or to the right near the left edge of the screen.
+    static let leanSide: CGFloat = 0.42
     /// How far above her finger a container that pours, shakes or rains is held.
     static let pour: CGFloat = 110
     /// How much further than a finger a tool's effect reaches: games multiply their effect radii,
@@ -50,6 +58,8 @@ enum FingerLift {
         let ramp = lift + 60
         var l = lift
         var x = finger.x
+        // how much of the usual lean is left (the bottom edge takes over below)
+        var leanK: CGFloat = 1
         // near the top: less lift, leaning toward the middle
         let room = finger.y - top
         if room < ramp {
@@ -72,8 +82,13 @@ enum FingerLift {
                 let k = max(0, min(1, (finger.x - lift * 0.5) / (lift * 2)))
                 x += sideways * (1 - 2 * k)
                 l = min(l, up)
+                leanK = 1 - u
             }
         }
+        // up and to the left, away from her hand; to the right near the left edge
+        // (spread over three lifts of width, so it still moves the same way as her finger)
+        let side = max(0, min(1, finger.x / (lift * 3)))
+        x -= leanSide * lift * leanK * (2 * side - 1)
         return CGPoint(x: x, y: finger.y - l)
     }
 
@@ -83,7 +98,7 @@ enum FingerLift {
 
     /// Which way a tool held at her fingertip points (from its middle to its working end): up and a
     /// little to the left, with the handle toward her hand (which comes from the bottom right).
-    static let lean = CGVector(dx: -0.3, dy: -1)
+    static let lean = CGVector(dx: -leanSide, dy: -1)
 
     /// How much to turn a held tool so its working end points from the tool toward `lifted` (where it
     /// works) and its handle away. When the tool works right at her finger (no lift), it points along `lean`. `tip` and `center` are in the tool's own picture. Round tools that

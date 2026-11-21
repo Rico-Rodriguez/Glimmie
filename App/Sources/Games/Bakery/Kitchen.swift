@@ -753,7 +753,7 @@ struct FrostStepView: View {
     @ViewBuilder private var spatula: some View {
         let load = full ? 0.15 : max(0.15, 1 - coverage)
         if let p = tool {
-            // the blade spreads at her fingertip, see-through, held with its handle toward her hand
+            // the blade spreads just ahead of her finger, see-through, its handle running back to her hand
             let f = toolFinger ?? p
             let turn = FingerLift.turn(tip: CGPoint(x: 50, y: 170), center: CGPoint(x: 110, y: 110), finger: f, lifted: p)
             let c = CGFloat(cos(turn)), sn = CGFloat(sin(turn))

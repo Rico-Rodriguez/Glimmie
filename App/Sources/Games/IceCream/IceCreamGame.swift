@@ -320,7 +320,7 @@ struct IceCreamView: View {
         })
     }
 
-    /// Where a held thing goes for her finger at p. The dipper works at her fingertip, pourers and carried things sit above.
+    /// Where a held thing goes for her finger at p. The dipper works just ahead of her finger, held by its handle; pourers and carried things sit above.
     static func lifted(_ p: CGPoint, _ h: ICHeld) -> CGPoint {
         let lift: CGFloat
         switch h {

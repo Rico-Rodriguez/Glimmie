@@ -949,7 +949,7 @@ enum GardenPainter {
 
     private static func tool(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
         if let tl = sim.tool {
-            drawTool(g, tl, at: sim.toolP, tilt: sim.tilt, load: sim.load, time: t)
+            drawTool(g, tl, at: sim.toolP, tilt: sim.tilt, load: sim.load, time: t, hand: sim.hold)
         }
         if let r = sim.returning {
             let k = gdEase(CGFloat(sim.time - r.start) / 0.32)
@@ -962,12 +962,16 @@ enum GardenPainter {
         }
     }
 
-    static func drawTool(_ g: GraphicsContext, _ tool: GardenTool, at p: CGPoint, tilt: CGFloat, load: CGFloat, time: CGFloat) {
+    static func drawTool(_ g: GraphicsContext, _ tool: GardenTool, at p: CGPoint, tilt: CGFloat, load: CGFloat, time: CGFloat,
+                         hand: CGPoint? = nil) {
         var c = g
         c.translateBy(x: p.x, y: p.y)
         switch tool {
         case .shovel:
-            c.rotate(by: .radians(Double(tilt)))
+            // held by the shaft: the blade points out ahead of her finger and the shaft runs back to her hand
+            var a: Double = 0
+            if let h = hand { a = FingerLift.turn(tip: .zero, center: CGPoint(x: 0, y: -100), finger: h, lifted: p) }
+            c.rotate(by: .radians(a + Double(tilt)))
             shovel(c, load: load)
         case .can:
             c.rotate(by: .radians(Double(-tilt)))

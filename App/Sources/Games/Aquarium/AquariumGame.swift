@@ -444,7 +444,7 @@ struct AquariumView: View {
             Sound.shared.tap()
             sim.pickUp(tool(for: slot), at: p)
         }
-        // the sponge and net work at her fingertip, the food is shaken from above it (see `FingerLift`)
+        // she holds the net by its grip and the sponge by a corner, the food is shaken from above (see `FingerLift`)
         if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }
     }
 
@@ -466,10 +466,14 @@ struct AquariumView: View {
         FingerLift.point(p, lift: lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
     }
 
+    /// From the middle of the net's hoop to the middle of its grip, in the net's drawing.
+    static let netGrip: CGFloat = 134
+
     static func lift(_ tool: AquaTool) -> CGFloat {
         let lift: CGFloat
         switch tool {
-        case .sponge, .net: lift = FingerLift.tool
+        case .net: lift = AquariumView.netGrip                 // her finger on the pink grip, the hoop out ahead
+        case .sponge: lift = FingerLift.grip                   // her finger at its corner, the sponge up and to the left
         case .food: lift = FingerLift.pour
         case .fish: lift = FingerLift.carry(below: 50)
         case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)

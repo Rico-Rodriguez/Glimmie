@@ -521,7 +521,7 @@ final class PizzaSim {
         if t == .ladle { ladleLoad = 1 }
     }
 
-    /// How far above her finger each tool works (see `FingerLift`): the ladle and the wheel at her fingertip.
+    /// How far above her finger each tool works (see `FingerLift`): the ladle and the wheel held by their handles, working just ahead of her finger.
     func lift(for t: PizzaTool) -> CGFloat {
         switch t {
         case .ladle, .cutter: return FingerLift.tool

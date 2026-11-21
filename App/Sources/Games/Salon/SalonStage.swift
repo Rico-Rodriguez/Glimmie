@@ -141,7 +141,7 @@ extension SalonWorld {
                 g.rotate(by: .radians(Double(atan2(d.y, d.x)) - .pi))
             }
         } else if t != .shower {
-            // the tool points from her finger to its tip; at her fingertip it is held along `FingerLift.lean`
+            // the tool points from her finger to its tip (along `FingerLift.lean` if they ever meet)
             let gap = hypot(tipD.x - f.x, tipD.y - f.y)
             let lean = gap < 4 ? atan2(Double(FingerLift.lean.dy), Double(FingerLift.lean.dx)) + .pi / 2
                                : atan2(Double(tipD.y - f.y), Double(tipD.x - f.x)) + .pi / 2
