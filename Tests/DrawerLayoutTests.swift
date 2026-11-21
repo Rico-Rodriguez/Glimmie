@@ -3,7 +3,22 @@ import XCTest
 
 final class DrawerLayoutTests: XCTestCase {
     /// Grid area on an 11-inch iPad in landscape, under the title.
-    private let ipad11 = CGSize(width: 1194, height: 690)
+    private let ipad11 = CGSize(width: 1194, height: 760)
+    /// Grid area on an iPad mini in landscape, under the title.
+    private let mini = CGSize(width: 1133, height: 680)
+
+    /// Every game in the drawer today is on one screen, with no scrolling, even on the smallest iPad.
+    func testAllGamesFitOnOneScreen() {
+        for size in [ipad11, mini] {
+            let n = GameRegistry.all.count
+            let layout = DrawerLayout.best(count: n, in: size)
+            XCTAssertGreaterThanOrEqual(layout.tile, DrawerLayout.minFitTile, "\(size)")
+            let rows = (n + layout.columns - 1) / layout.columns
+            let height = CGFloat(rows) * (layout.tile + DrawerLayout.labelHeight)
+                + CGFloat(rows - 1) * DrawerLayout.rowSpacing + DrawerLayout.verticalPadding * 2
+            XCTAssertLessThanOrEqual(height, size.height, "\(size)")
+        }
+    }
 
     func testNineGamesFitOnOneScreen() {
         let layout = DrawerLayout.best(count: 9, in: ipad11)
@@ -15,7 +30,7 @@ final class DrawerLayoutTests: XCTestCase {
     }
 
     func testManyGamesKeepBigTilesAndScroll() {
-        let layout = DrawerLayout.best(count: 14, in: ipad11)
+        let layout = DrawerLayout.best(count: 24, in: ipad11)
         XCTAssertGreaterThanOrEqual(layout.tile, DrawerLayout.scrollTile)
         XCTAssertGreaterThan(layout.columns, 1)
     }
