@@ -84,7 +84,8 @@ enum TreatPainter {
     // MARK: Frosting
 
     /// How wide the spatula spreads (stage units, radius).
-    static let spreadBrush: CGFloat = 52
+    /// How wide the spatula spreads (stage units): well past her fingertip.
+    static let spreadBrush: CGFloat = 68
 
     /// Cake baked a touch golden (cupcake tops; 0 = raw batter color, 1 = out of the oven).
     static func baked(_ c: RGB, _ k: CGFloat) -> RGB { c.mix(RGB(hex: "#C9803F"), 0.16 * Double(k)) }

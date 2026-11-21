@@ -597,7 +597,6 @@ enum ICScene {
         var w = g
         if working { w.opacity = FingerLift.seeThrough + 0.15 }
         draw(w, h, at: sim.tip, sim: sim, t: t, finger: sim.finger, tilt: sim.tilt)
-        if working { FingerLift.drawTip(g, at: sim.tip, time: Double(t)) }
     }
 
     private static func returning(_ g: GraphicsContext, _ sim: IceSim, _ t: CGFloat) {

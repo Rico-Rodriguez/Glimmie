@@ -413,7 +413,8 @@ struct AquariumView: View {
     static func lifted(_ p: CGPoint, _ tool: AquaTool) -> CGPoint {
         let lift: CGFloat
         switch tool {
-        case .food, .sponge, .net: lift = FingerLift.tool
+        case .sponge, .net: lift = FingerLift.tool
+        case .food: lift = FingerLift.pour
         case .fish: lift = FingerLift.carry(below: 50)
         case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
         }

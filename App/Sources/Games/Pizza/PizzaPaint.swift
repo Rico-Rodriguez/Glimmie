@@ -931,7 +931,6 @@ enum PizzaPainter {
             var lg = g
             lg.rotate(by: .radians(a))
             ladle(lg, load: sim.ladleLoad)
-            if working { FingerLift.drawTip(ctx, at: tip, time: t) }
         case .cutter:
             let a = FingerLift.turn(tip: .zero, center: CGPoint(x: 0, y: 90), finger: sim.finger, lifted: tip)
             g.translateBy(x: tip.x, y: tip.y)
@@ -939,7 +938,6 @@ enum PizzaPainter {
             var cg = g
             cg.rotate(by: .radians(a))
             cutter(cg, spin: sim.wheel)
-            if working { FingerLift.drawTip(ctx, at: tip, time: t) }
         case .cheese:
             g.translateBy(x: tip.x, y: tip.y)
             g.rotate(by: .radians(working ? -0.35 + 0.06 * sin(t * 18) : 0))

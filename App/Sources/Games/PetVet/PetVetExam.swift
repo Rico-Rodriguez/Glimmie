@@ -103,20 +103,13 @@ struct VetExamView: View {
 
                 topBar
 
-                ZStack {
-                    if tool != nil && toolOverPatient {
-                        loupe.transition(.scale(scale: 0.6).combined(with: .opacity))
-                    }
-                }
-                .animation(.easeOut(duration: 0.18), value: tool != nil && toolOverPatient)
-
                 if let t = tool, let art = VetArt.shared.tools[t] {
                     let tip = tipRoom
                     // over the patient the tool turns see-through, so the fur and the spot show through it
                     let over = toolOverPatient
-                    let side: CGFloat = over ? 132 : 150
+                    let side: CGFloat = over ? 168 : 176
                     let s: CGFloat = side / 140
-                    // the tool points from her finger to its tip, handle toward her finger (the shower
+                    // the tool's tip is at her fingertip and the tool stands up from it (the shower
                     // stays upright: it rains down)
                     let turn = t == .shower ? 0 : FingerLift.turn(tip: art.tip, center: CGPoint(x: 70, y: 70), finger: finger, lifted: tip)
                     let dx = (70 - art.tip.x) * s, dy = (70 - art.tip.y) * s
@@ -191,20 +184,6 @@ struct VetExamView: View {
         .shadow(color: Theme.ink.opacity(0.12), radius: 5, y: 3)
     }
 
-    // MARK: Magnifier
-    //
-    // While a tool is over the patient, a round magnifier near the top shows the spot under the tool
-    // tip at twice the size, without the tool or her hand in the way. It sits on the side away from
-    // the tip so it never covers the place she is working on.
-
-    private var loupe: some View {
-        let room = size
-        return Magnifier(tip: tipRoom, area: size) { g, now in
-            VetDraw.room("exam", size: room, in: g)
-            draw(g, now: now)
-        }
-    }
-
     // MARK: Shelves
 
     private func shelf(_ tools: [VetTool]) -> some View {
@@ -226,12 +205,12 @@ struct VetExamView: View {
 
     // MARK: Dragging
 
-    /// How far above her finger the tool tip works, so her finger and hand stay below the spot
-    /// (it was 44, then 80; now the shared lift every game uses, see `FingerLift`).
-    static let tipLift: CGFloat = FingerLift.tool
+    /// How far above her finger a tool works: at her fingertip (`FingerLift.tool`), except the shower,
+    /// which rains down from above it (`FingerLift.pour`).
+    static func tipLift(_ t: VetTool?) -> CGFloat { t == .shower ? FingerLift.pour : FingerLift.tool }
 
     private var tipRoom: CGPoint {
-        FingerLift.point(finger, lift: VetExamView.tipLift, bottom: size.height, width: size.width)
+        FingerLift.point(finger, lift: VetExamView.tipLift(tool), bottom: size.height, width: size.width)
     }
 
     /// True when the lifted tool's tip is over the patient (head or body).
@@ -284,7 +263,7 @@ struct VetExamView: View {
         let spot = visit.spots.first { $0.step?.tool == t } ?? visit.spots.first
         let at = L.toRoom(spot?.target ?? CGPoint(x: 300, y: 420))
         tool = t
-        let f = FingerLift.finger(for: at, lift: VetExamView.tipLift, bottom: L.size.height, width: L.size.width)
+        let f = FingerLift.finger(for: at, lift: VetExamView.tipLift(t), bottom: L.size.height, width: L.size.width)
         finger = CGPoint(x: f.x + 6, y: f.y + 4)
     }
 
@@ -637,11 +616,6 @@ struct VetExamView: View {
 
         drawParticles(ctx, now: now)
         effects.drawInRoom(ctx, t: t)
-
-        // a small bright ring right where the tool tip works (it shows through the see-through tool)
-        if tool != nil && toolOverPatient {
-            FingerLift.drawTip(ctx, at: tipRoom, time: t)
-        }
     }
 
     private func drawSpots(_ c: GraphicsContext, t: Double, now: Date) {

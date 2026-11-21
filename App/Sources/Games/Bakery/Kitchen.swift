@@ -740,9 +740,8 @@ struct FrostStepView: View {
     @ViewBuilder private var spatula: some View {
         let load = full ? 0.15 : max(0.15, 1 - coverage)
         if let p = tool {
-            // the blade works well above her finger, see-through, with a ring where it spreads
-            // turned so the handle points at her finger and the blade edge is where it spreads
-            let f = toolFinger ?? CGPoint(x: p.x, y: p.y + FingerLift.tool)
+            // the blade spreads at her fingertip, see-through, held with its handle toward her hand
+            let f = toolFinger ?? p
             let turn = FingerLift.turn(tip: CGPoint(x: 50, y: 170), center: CGPoint(x: 110, y: 110), finger: f, lifted: p)
             let c = CGFloat(cos(turn)), sn = CGFloat(sin(turn))
             Spatula(load: load, color: TreatPainter.frosting(treat.frosting ?? 0))
@@ -751,7 +750,6 @@ struct FrostStepView: View {
                 .opacity(FingerLift.seeThrough + 0.15)
                 .position(x: p.x + 60 * c + 60 * sn, y: p.y + 60 * sn - 60 * c)
                 .allowsHitTesting(false)
-            TipMarker().position(p)
         } else if !done {
             let n = max(1, min(3, treat.tiers))
             let top = KStage.design(CGPoint(x: 300, y: BakeryArt.shared.tiers[n - 1].t))

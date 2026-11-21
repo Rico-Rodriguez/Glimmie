@@ -2,23 +2,46 @@ import XCTest
 @testable import Glimmie
 
 final class FingerLiftTests: XCTestCase {
+    func testToolsWorkAtHerFingertip() {
+        XCTAssertEqual(FingerLift.tool, 0)
+        for f in [CGPoint(x: 400, y: 600), CGPoint(x: 20, y: 10), CGPoint(x: 1000, y: 830)] {
+            XCTAssertEqual(FingerLift.point(f, bottom: 834, width: 1024), f)
+            XCTAssertEqual(FingerLift.finger(for: f, bottom: 834, width: 1024), f)
+        }
+        XCTAssertGreaterThan(FingerLift.spread, 1.2, "what a tool does reaches past her fingertip")
+    }
+
+    func testAToolAtHerFingertipIsHeldHandleTowardHerHand() {
+        // a tool drawn tip-up only leans a little to the left
+        let a = FingerLift.turn(tip: CGPoint(x: 70, y: 10), center: CGPoint(x: 70, y: 70),
+                                finger: CGPoint(x: 300, y: 300), lifted: CGPoint(x: 300, y: 300))
+        XCTAssertLessThan(a, 0)
+        XCTAssertGreaterThan(a, -0.5)
+        // the handle goes down and to the right, toward her hand
+        let h = FingerLift.handle(tip: CGPoint(x: 300, y: 300), finger: CGPoint(x: 300, y: 300), length: 150)
+        XCTAssertGreaterThan(h.dir.dy, 0.8)
+        XCTAssertGreaterThan(h.dir.dx, 0)
+        XCTAssertEqual(h.length, 150)
+        XCTAssertEqual(hypot(h.dir.dx, h.dir.dy), 1, accuracy: 0.001)
+    }
+
     func testFullLiftAwayFromTheTop() {
-        let p = FingerLift.point(CGPoint(x: 400, y: 600), width: 1024)
+        let p = FingerLift.point(CGPoint(x: 400, y: 600), lift: FingerLift.pour, width: 1024)
         XCTAssertEqual(p.x, 400, accuracy: 0.001)
-        XCTAssertEqual(p.y, 600 - FingerLift.tool, accuracy: 0.001)
+        XCTAssertEqual(p.y, 600 - FingerLift.pour, accuracy: 0.001)
     }
 
     func testNearTheTopItShrinksButStillFollowsTheFinger() {
         var last = -CGFloat.infinity
         for y in stride(from: CGFloat(0), through: 400, by: 5) {
-            let p = FingerLift.point(CGPoint(x: 200, y: y), width: 1024)
+            let p = FingerLift.point(CGPoint(x: 200, y: y), lift: FingerLift.pour, width: 1024)
             XCTAssertGreaterThan(p.y, last, "lifted point moves the same way as the finger at y \(y)")
             XCTAssertLessThan(p.y, y, "still above the finger at y \(y)")
             last = p.y
         }
         // at the very top it leans toward the middle instead
-        XCTAssertGreaterThan(FingerLift.point(CGPoint(x: 100, y: 40), width: 1024).x, 100)
-        XCTAssertLessThan(FingerLift.point(CGPoint(x: 900, y: 40), width: 1024).x, 900)
+        XCTAssertGreaterThan(FingerLift.point(CGPoint(x: 100, y: 40), lift: FingerLift.pour, width: 1024).x, 100)
+        XCTAssertLessThan(FingerLift.point(CGPoint(x: 900, y: 40), lift: FingerLift.pour, width: 1024).x, 900)
     }
 
     func testFingerForIsTheInverse() {
@@ -33,22 +56,22 @@ final class FingerLiftTests: XCTestCase {
     func testNearTheBottomItTurnsSidewaysSoLowSpotsCanBeReached() {
         // a patient's feet sit about 70 pt above the bottom of the screen
         let foot = CGPoint(x: 450, y: 764)
-        let f = FingerLift.finger(for: foot, bottom: 834, width: 1024)
+        let f = FingerLift.finger(for: foot, lift: FingerLift.pour, bottom: 834, width: 1024)
         XCTAssertLessThanOrEqual(f.y, 834, "her finger stays on the screen")
-        let back = FingerLift.point(f, bottom: 834, width: 1024)
+        let back = FingerLift.point(f, lift: FingerLift.pour, bottom: 834, width: 1024)
         XCTAssertEqual(back.x, foot.x, accuracy: 0.5)
         XCTAssertEqual(back.y, foot.y, accuracy: 0.5)
         XCTAssertGreaterThan(f.x, foot.x, "the tip sits to the left of her finger down there")
         // it still moves the same way as her finger, up and down and side to side
         var lastY = -CGFloat.infinity
         for y in stride(from: CGFloat(500), through: 834, by: 4) {
-            let p = FingerLift.point(CGPoint(x: 500, y: y), bottom: 834, width: 1024)
+            let p = FingerLift.point(CGPoint(x: 500, y: y), lift: FingerLift.pour, bottom: 834, width: 1024)
             XCTAssertGreaterThan(p.y, lastY)
             lastY = p.y
         }
         var lastX = -CGFloat.infinity
         for x in stride(from: CGFloat(0), through: 1024, by: 4) {
-            let p = FingerLift.point(CGPoint(x: x, y: 830), bottom: 834, width: 1024)
+            let p = FingerLift.point(CGPoint(x: x, y: 830), lift: FingerLift.pour, bottom: 834, width: 1024)
             XCTAssertGreaterThan(p.x, lastX)
             lastX = p.x
         }

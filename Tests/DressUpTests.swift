@@ -296,11 +296,11 @@ final class DressUpTests: XCTestCase {
         world.size = CGSize(width: 600, height: 790)
         world.color = "#7FB8F0"
         world.dip()
-        // brush up and down the middle nail, the tool tip above the finger
+        // brush up and down the middle nail, the tool tip at her fingertip
         let k = min(600 / BeautyWorld.handBox.width, 790 / BeautyWorld.handBox.height)
         let ox = (600 - BeautyWorld.handBox.width * k) / 2, oy = (790 - BeautyWorld.handBox.height * k) / 2
         func stage(_ p: CGPoint) -> CGPoint {
-            CGPoint(x: (p.x - BeautyWorld.handBox.minX) * k + ox, y: (p.y - BeautyWorld.handBox.minY) * k + oy + BeautyWorld.lift)
+            CGPoint(x: (p.x - BeautyWorld.handBox.minX) * k + ox, y: (p.y - BeautyWorld.handBox.minY) * k + oy + world.lift)
         }
         var t = 100.0
         world.step(to: t)
@@ -328,7 +328,7 @@ final class DressUpTests: XCTestCase {
         let b = BeautyWorld.faceBox
         let k = min(600 / b.width, 790 / b.height)
         let ox = (600 - b.width * k) / 2, oy = (790 - b.height * k) / 2
-        func stage(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - b.minX) * k + ox, y: (p.y - b.minY) * k + oy + BeautyWorld.lift) }
+        func stage(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - b.minX) * k + ox, y: (p.y - b.minY) * k + oy + world.lift) }
         world.press(stage(CGPoint(x: 280, y: 388)))
         world.move(stage(CGPoint(x: 300, y: 390)))
         world.move(stage(CGPoint(x: 320, y: 388)))

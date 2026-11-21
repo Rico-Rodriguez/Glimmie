@@ -477,12 +477,6 @@ enum AquaPainter {
             }
             if working { see.opacity = tl == .sponge ? 0.75 : 0.85 }
             drawTool(see, sim, tl, at: sim.toolP, tilt: sim.tilt, t: t)
-            switch tl {
-            case .sponge, .net, .food:
-                if AGeo.tank.contains(sim.toolP) { FingerLift.drawTip(g, at: sim.toolP, time: Double(t)) }
-            default:
-                break
-            }
         }
         if let r = sim.returning {
             let k = aqEase(CGFloat(sim.time - r.start) / 0.32)
@@ -504,6 +498,8 @@ enum AquaPainter {
             AquaDecorPainter.shaker(c)
         case .sponge:
             c.rotate(by: .radians(Double(tilt)))
+            // in her hand the sponge is much bigger than her fingertip, so it shows all round it
+            if sim != nil { c.scaleBy(x: AquariumSim.spongeScale, y: AquariumSim.spongeScale) }
             AquaDecorPainter.sponge(c)
         case .net:
             var a: Double = 0

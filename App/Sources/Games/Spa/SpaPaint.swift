@@ -880,6 +880,7 @@ enum ToolPainter {
             var b = g
             b.translateBy(x: p.x, y: p.y)
             b.rotate(by: .radians(Double(max(-0.3, min(0.3, sim.toolV.dx / 3000)))))
+            b.scaleBy(x: 1.4, y: 1.4)   // held by the middle: bigger than her fingertip all round
             sponge(b, wet: sim.spongeWet, foam: sim.spongeFoam, t: sim.time)
         case .shower:
             shower(g, head: p, finger: sim.toolFinger)
@@ -887,6 +888,7 @@ enum ToolPainter {
             var b = g
             b.translateBy(x: p.x, y: p.y)
             b.rotate(by: .radians(Double(max(-0.25, min(0.25, sim.toolV.dx / 4000)))))
+            b.scaleBy(x: 1.3, y: 1.3)
             towel(b, wet: sim.towelWet)
         case .mask(let k):
             maskBrush(g, tip: p, finger: sim.toolFinger, kind: k)
@@ -894,11 +896,6 @@ enum ToolPainter {
             var b = g
             b.translateBy(x: p.x, y: p.y)
             cucumber(b, r: 34)
-        }
-        var tipped = tool == .wand
-        if case .mask = tool { tipped = true }
-        if tipped {
-            FingerLift.drawTip(ctx, at: p, time: sim.time)
         }
     }
 
@@ -923,12 +920,12 @@ enum ToolPainter {
     }
 
     static func wand(_ g: GraphicsContext, tip: CGPoint, finger: CGPoint, film: CGFloat, v: CGVector, t: Double) {
-        let dx = finger.x - tip.x, dy = finger.y - tip.y
-        let len = max(1, hypot(dx, dy))
-        let ux = dx / len, uy = dy / len
-        let ringR: CGFloat = 26
+        let (u, len) = FingerLift.handle(tip: tip, finger: finger, length: 150)
+        let ux = u.dx, uy = u.dy
+        // a big ring around her fingertip, the stick standing up from it
+        let ringR: CGFloat = 26 * FingerLift.spread
         let stickStart = CGPoint(x: tip.x + ux * ringR, y: tip.y + uy * ringR)
-        let stickEnd = CGPoint(x: tip.x + ux * min(len, 150), y: tip.y + uy * min(len, 150))
+        let stickEnd = CGPoint(x: tip.x + ux * max(ringR + 20, len), y: tip.y + uy * max(ringR + 20, len))
         var stick = Path(); stick.move(to: stickStart); stick.addLine(to: stickEnd)
         g.stroke(stick, with: .color(hx("#9F7BEF").c()), style: StrokeStyle(lineWidth: 9, lineCap: .round))
         g.stroke(stick, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -936,7 +933,7 @@ enum ToolPainter {
         if film > 0.04 {
             // the soap film bulges away from the way it moves
             let sp = hypot(v.dx, v.dy)
-            let bulge = min(16, sp / 60)
+            let bulge = min(16 * FingerLift.spread, sp / 60)
             let bx = sp > 1 ? -v.dx / sp * bulge : 0, by = sp > 1 ? -v.dy / sp * bulge : 0
             let fr = CGRect(x: tip.x - ringR + min(0, bx), y: tip.y - ringR + min(0, by), width: ringR * 2 + abs(bx), height: ringR * 2 + abs(by))
             g.fill(Path(ellipseIn: fr), with: .conicGradient(Gradient(colors: [hx("#FF9ECF").c(0.35), hx("#9FF0D8").c(0.3), hx("#8FC6FF").c(0.35), hx("#FF9ECF").c(0.35)]),
@@ -1011,11 +1008,10 @@ enum ToolPainter {
     }
 
     static func maskBrush(_ g: GraphicsContext, tip: CGPoint, finger: CGPoint, kind: MaskKind) {
-        let dx = finger.x - tip.x, dy = finger.y - tip.y
-        let len = max(1, hypot(dx, dy))
-        let ux = dx / len, uy = dy / len
-        let a = CGPoint(x: tip.x + ux * 18, y: tip.y + uy * 18)
-        let b = CGPoint(x: tip.x + ux * min(len, 130), y: tip.y + uy * min(len, 130))
+        let (u, len) = FingerLift.handle(tip: tip, finger: finger, length: 150)
+        let ux = u.dx, uy = u.dy
+        let a = CGPoint(x: tip.x + ux * 18 * FingerLift.spread, y: tip.y + uy * 18 * FingerLift.spread)
+        let b = CGPoint(x: tip.x + ux * len, y: tip.y + uy * len)
         var stick = Path(); stick.move(to: a); stick.addLine(to: b)
         g.stroke(stick, with: .color(hx("#FFF7F2").c()), style: StrokeStyle(lineWidth: 12, lineCap: .round))
         g.stroke(stick, with: .color(hx("#E9C9D6").c()), style: StrokeStyle(lineWidth: 2, lineCap: .round))
@@ -1023,6 +1019,8 @@ enum ToolPainter {
         var head = g
         head.translateBy(x: tip.x, y: tip.y)
         head.rotate(by: .radians(Double(atan2(uy, ux)) - .pi / 2))
+        // a wide brush, wider than her fingertip
+        head.scaleBy(x: FingerLift.spread, y: FingerLift.spread)
         let bristles = Path(roundedRect: CGRect(x: -15, y: 0, width: 30, height: 26), cornerRadius: 6)
         head.fill(bristles, with: .color(hx("#F4E3C8").c()))
         let blob = Path(roundedRect: CGRect(x: -17, y: -8, width: 34, height: 18), cornerRadius: 9)

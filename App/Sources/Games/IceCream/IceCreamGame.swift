@@ -304,7 +304,7 @@ struct IceCreamView: View {
         hand.mode = .none
     }
 
-    /// Where a held thing goes for her finger at p. Tools work at their tip, carried things float above.
+    /// Where a held thing goes for her finger at p. The dipper works at her fingertip, pourers and carried things sit above.
     static func lifted(_ p: CGPoint, _ h: ICHeld) -> CGPoint {
         let lift: CGFloat
         switch h {
@@ -312,7 +312,7 @@ struct IceCreamView: View {
         case .topping(let t):
             switch t {
             case .cherry, .wafer, .straw: lift = FingerLift.item
-            default: lift = FingerLift.tool
+            default: lift = FingerLift.pour             // shakers, sauce bottles and the cream: it falls onto the treat
             }
         case .fruit: lift = FingerLift.item
         case .milk: lift = FingerLift.carry(below: 46)

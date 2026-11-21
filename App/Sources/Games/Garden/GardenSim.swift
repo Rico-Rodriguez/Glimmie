@@ -542,15 +542,16 @@ final class GardenSim {
         flow = gdClamp((tilt - 0.35) / 0.45)
         guard flow > 0 else { return }
         let (spout, dir) = canSpout()
-        waterAcc += flow * 300 * dt
+        waterAcc += flow * 420 * dt
         let perp = CGVector(dx: -dir.dy, dy: dir.dx)
         while waterAcc >= 1 {
             waterAcc -= 1
             let speed = CGFloat.random(in: 170...260)
+            // a wide shower, so the water lands well past her fingertip (see `FingerLift.spread`)
             let spread = CGFloat.random(in: -1...1)
-            let j = CGFloat.random(in: -7...7)
-            let v = CGVector(dx: dir.dx * speed + perp.dx * spread * 70 + toolV.dx * 0.3,
-                             dy: dir.dy * speed + perp.dy * spread * 70 + toolV.dy * 0.3)
+            let j = CGFloat.random(in: -7...7) * FingerLift.spread
+            let v = CGVector(dx: dir.dx * speed + perp.dx * spread * 70 * FingerLift.spread + toolV.dx * 0.3,
+                             dy: dir.dy * speed + perp.dy * spread * 70 * FingerLift.spread + toolV.dy * 0.3)
             let drop = GParticle(kind: .water, p: CGPoint(x: spout.x + perp.dx * j, y: spout.y + perp.dy * j), v: v,
                                  life: 3, size: CGFloat.random(in: 3...5), color: GRGB(0xBFE3FF))
             particles.append(drop)
@@ -568,8 +569,10 @@ final class GardenSim {
                 var took: CGFloat = 0
                 let floor = GGeo.soilY + GGeo.maxDepth
                 let tipY = min(tip.y, floor)
-                for i in max(0, c - 6)...min(GGeo.columns - 1, c + 6) {
-                    let d = CGFloat(i - c) / 5.5
+                // the blade takes a scoop wider than her fingertip (see `FingerLift.spread`)
+                let reach = Int((6 * FingerLift.spread).rounded())
+                for i in max(0, c - reach)...min(GGeo.columns - 1, c + reach) {
+                    let d = CGFloat(i - c) / (5.5 * FingerLift.spread)
                     let w = exp(-d * d * 1.4)
                     let want = (tipY - 3 * d * d) - h[i]
                     if want > 0 {
@@ -586,7 +589,7 @@ final class GardenSim {
                         Sound.shared.tap()
                     }
                     for _ in 0..<Int(min(4, took / 30)) {
-                        let dust = GParticle(kind: .dust, p: CGPoint(x: tip.x + CGFloat.random(in: -16...16), y: surf),
+                        let dust = GParticle(kind: .dust, p: CGPoint(x: tip.x + CGFloat.random(in: -16...16) * FingerLift.spread, y: surf),
                                              v: CGVector(dx: CGFloat.random(in: -40...40), dy: CGFloat.random(in: -60 ... -20)),
                                              life: 0.7, size: CGFloat.random(in: 8...14), color: GRGB(0xB08660))
                         particles.append(dust)
@@ -600,10 +603,10 @@ final class GardenSim {
                     deposit(spill * 0.5, at: tip.x + 30)
                 }
                 // A weed in the way pops out.
-                if let wi = weeds.firstIndex(where: { abs($0.x - tip.x) < 18 }) { popWeed(wi, v: CGVector(dx: toolV.dx * 0.4, dy: -620)) }
+                if let wi = weeds.firstIndex(where: { abs($0.x - tip.x) < 18 * FingerLift.spread }) { popWeed(wi, v: CGVector(dx: toolV.dx * 0.4, dy: -620)) }
                 // Digging hard at a plant lifts it out.
                 for i in plots.indices where plots[i].plant != nil {
-                    if abs(GGeo.plotX[i] - tip.x) < 20 {
+                    if abs(GGeo.plotX[i] - tip.x) < 20 * FingerLift.spread {
                         plots[i].digWork += moved
                         plots[i].bendV += (tip.x - prev.x) * 0.02
                         if plots[i].digWork > 160 { uproot(i) }
