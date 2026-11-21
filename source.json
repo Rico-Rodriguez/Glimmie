@@ -22,6 +22,12 @@
       ],
       "versions": [
         {
+          "version": "1.0.222",
+          "date": "2026-11-21T20:11:45Z",
+          "size": 207178742,
+          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.222/Glimmie.ipa"
+        },
+        {
           "version": "1.0.219",
           "date": "2026-11-21T19:30:33Z",
           "size": 218205128,
@@ -74,18 +80,12 @@
           "date": "2026-11-21T01:23:05Z",
           "size": 205454812,
           "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.191/Glimmie.ipa"
-        },
-        {
-          "version": "1.0.189",
-          "date": "2026-11-21T00:11:20Z",
-          "size": 205453169,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.189/Glimmie.ipa"
         }
       ],
-      "version": "1.0.219",
-      "versionDate": "2026-11-21T19:30:33Z",
-      "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.219/Glimmie.ipa",
-      "size": 218205128,
+      "version": "1.0.222",
+      "versionDate": "2026-11-21T20:11:45Z",
+      "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.222/Glimmie.ipa",
+      "size": 207178742,
       "appPermissions": {}
     }
   ],
