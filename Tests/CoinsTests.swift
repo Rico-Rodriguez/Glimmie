@@ -57,4 +57,28 @@ final class CoinsTests: XCTestCase {
             XCTAssertNotNil(Bundle.main.url(forResource: name, withExtension: "wav"), name)
         }
     }
+
+    func testTheFreeTraysStayWhole() {
+        XCTAssertEqual(DecorKind.available.count, 8, "all the free garden decorations, no extras")
+        XCTAssertEqual(AquaDecorKind.available.count, 12, "all the free tank decorations, no extras")
+    }
+
+    func testEveryTreasureShowsUpInItsGameOnceBought() {
+        let gameIDs = Set(GameRegistry.all.map(\.id))
+        let inGames = Set(DecorKind.allCases.compactMap(\.treasure) + AquaDecorKind.allCases.compactMap(\.treasure))
+        XCTAssertEqual(Set(Treasures.all.map(\.id)).count, Treasures.all.count)
+        for t in Treasures.all {
+            XCTAssertTrue(gameIDs.contains(t.game), t.id)
+            XCTAssertTrue(t.id.hasPrefix(t.game + "/"), t.id)
+            XCTAssertTrue(inGames.contains(t.id), "\(t.id) has a place in its game")
+            XCTAssertGreaterThan(t.price, 0)
+        }
+        Coins.shared.resetForTests(balance: 100)
+        XCTAssertTrue(Coins.shared.buy("garden/unicorn", price: 15))
+        XCTAssertTrue(Coins.shared.buy("aquarium/coral", price: 12))
+        XCTAssertEqual(DecorKind.available.count, 9)
+        XCTAssertEqual(DecorKind.available.last, .unicorn)
+        XCTAssertEqual(AquaDecorKind.available.count, 13)
+        XCTAssertEqual(AquaDecorKind.available.last, .rainbowCoral)
+    }
 }

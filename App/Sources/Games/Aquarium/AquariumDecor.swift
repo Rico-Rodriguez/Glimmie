@@ -32,6 +32,9 @@ enum AquaDecorPainter {
         case .grass: grass(g, t: t, sway: sway, seed: seed)
         case .shell: shell(g)
         case .starfish: starfish(g)
+        case .crystal: TreasureArt.crystals(g, glow: 0.5 + 0.2 * sin(t * 1.6))
+        case .rainbowCoral: TreasureArt.rainbowCoral(g, sway: sway + sin(t * 0.9 + CGFloat(seed)) * 0.3)
+        case .unicorn: TreasureArt.unicorn(g)
         }
     }
 

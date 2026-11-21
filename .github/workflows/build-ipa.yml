@@ -179,6 +179,7 @@ jobs:
           mkdir -p shots
           shot() { name=$1; wait=$2; shift 2; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
           shot 1-drawer 6
+          shot 1b-treasure-shop 6 -treasureShop -coinsDemo 30
           shot 2-dressup 6 -game dressup
           shot 3-dressup-random 6 -game dressup -randomLook
           shot 4-dressup-clothes 6 -game dressup -randomLook -tab clothes

@@ -491,7 +491,7 @@ struct AquariumView: View {
     // MARK: Trays
 
     private func trayView(_ t: AquaTray, _ map: AMap) -> some View {
-        let count = t == .fish ? FishKind.allCases.count : AquaDecorKind.allCases.count
+        let count = t == .fish ? FishKind.allCases.count : AquaDecorKind.available.count
         let perRow = t == .fish ? count : 6
         let rows = (count + perRow - 1) / perRow
         let rowH: CGFloat = 116
@@ -528,7 +528,7 @@ struct AquariumView: View {
                 }
                 AquaFishPainter.drawLocal(g, kind: k, variant: 0, phase: 1, amp: 0.2, gulp: 0, puff: 0, time: 0)
             } else {
-                let k = AquaDecorKind.allCases[i]
+                let k = AquaDecorKind.available[i]
                 let s = min(0.9, 92 / max(k.size.height, k.size.width))
                 g.translateBy(x: 0, y: k.size.height * s * 0.5)
                 g.scaleBy(x: s, y: s)
@@ -547,7 +547,7 @@ struct AquariumView: View {
                         carrying = key
                         hidden = key
                         Sound.shared.tap()
-                        let tool: AquaTool = t == .fish ? .fish(FishKind.allCases[i]) : .decor(AquaDecorKind.allCases[i])
+                        let tool: AquaTool = t == .fish ? .fish(FishKind.allCases[i]) : .decor(AquaDecorKind.available[i])
                         sim.pickUp(tool, at: p)
                     }
                     if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }

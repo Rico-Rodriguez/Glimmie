@@ -11,7 +11,7 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 
 ## Games
 
-The home screen shows every game at once. Customers in the Bakery, Ice Cream and Pizza shops pay in play coins that fly into the coin purse (shown in each shop and on the home screen); coins buy extras only, never the free things. The book button at the top right opens the sticker book: surprises she finds in the games (so far the Garden and the Aquarium) fill it in, and the ones still to find are grey shapes.
+The home screen shows every game at once. Customers in the Bakery, Ice Cream and Pizza shops pay in play coins that fly into the coin purse (shown in each shop and on the home screen); coins buy extras only, never the free things. Tap the purse on the home screen for the treasure shop: a unicorn statue, a rainbow and glowing crystals for the Garden, and a unicorn statue, crystals and a rainbow coral for the Aquarium. The book button at the top right opens the sticker book: surprises she finds in the games (so far the Garden and the Aquarium) fill it in, and the ones still to find are grey shapes.
 
 | Game | What it is |
 |---|---|

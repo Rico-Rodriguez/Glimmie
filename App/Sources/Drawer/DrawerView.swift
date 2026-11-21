@@ -4,6 +4,7 @@ import SwiftUI
 struct DrawerView: View {
     let open: (String) -> Void
     @State private var book = false
+    @State private var shop = DrawerView.launchShop
 
     var body: some View {
         ZStack {
@@ -16,8 +17,8 @@ struct DrawerView: View {
                     .overlay(alignment: .trailing) {
                         // the sticker book: every game's surprises in one place
                         HStack(spacing: 16) {
-                            // her play coins, from serving customers in the shops
-                            CoinCounter(height: 60)
+                            // her play coins, from serving customers in the shops: tap to open the treasure shop
+                            CoinCounter(height: 60) { withAnimation(.easeOut(duration: 0.2)) { shop = true } }
                             if !StickerBook.pages.isEmpty {
                                 StickerBookButton(size: 66) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
                             }
@@ -51,8 +52,18 @@ struct DrawerView: View {
                     .transition(.opacity)
                     .zIndex(2)
             }
+            if shop {
+                DesignCanvas {
+                    TreasureShopView { withAnimation(.easeOut(duration: 0.2)) { shop = false } }
+                }
+                .transition(.opacity)
+                .zIndex(3)
+            }
         }
     }
+
+    /// `-treasureShop` on launch opens the treasure shop (for screenshots).
+    static var launchShop: Bool { ProcessInfo.processInfo.arguments.contains("-treasureShop") }
 }
 
 /// Picks how many columns the drawer grid uses and how big each tile is.
