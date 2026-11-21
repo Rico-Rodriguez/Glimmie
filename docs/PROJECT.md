@@ -41,6 +41,12 @@ history before the game-drawer PR.
   near the top edge the lift shrinks and leans toward the middle, and near the bottom it turns sideways (`point`).
   `FingerLift.finger(for:)` is the inverse, for screenshot hooks and tests.
 - No zoom bubble and no tip ring any more (both removed). Tools still turn see-through over what they work on.
+- Tap to do it by itself (`App/Sources/Shared/ToolTap.swift`): in Pet Vet, Garden, Aquarium and Bubble Spa a tap on a
+  tray tool picks it (pink ring); while picked, a tap on the scene makes the tool glide there and do that spot
+  (`AutoTool` plays a little rub through the game's own drag code), and a drag anywhere uses it directly. Tap the
+  picked tool again to put it down. Hair Salon: with a tool picked, a tap on her hair does that spot. Ice Cream: a tap
+  in a tub scoops a ball and puts it on the treat. Bakery: a tap on the cake spreads that spot. Pizza, Ice Cream
+  toppings and the pet corner already did a whole job on a tap of the tray tool.
 - Not lifted on purpose: coloring brushes, pinch and turn coloring stickers, the pet salon (tap only), cupcake
   piping (press and hold), and her bare hand (petting, weeds).
 

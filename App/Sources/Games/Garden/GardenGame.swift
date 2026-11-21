@@ -237,6 +237,9 @@ struct GardenView: View {
     /// Touch bookkeeping lives outside SwiftUI state so a drag does not rebuild the view on every move.
     @State private var hand = GardenHandState()
     @State private var started = false
+    /// The shovel or can she tapped on the dock: a tap on the garden makes it do that spot (see `ToolTap`).
+    @State private var picked: DockSlot?
+    @State private var auto = AutoTool()
 
     var body: some View {
         GeometryReader { geo in
@@ -258,6 +261,16 @@ struct GardenView: View {
                 }
                 .contentShape(Rectangle())
                 .gesture(handGesture(map))
+
+                if let pk = picked {
+                    ToolTapLayer(space: "garden",
+                                 onDrag: { loc in
+                                     if auto.running { auto.cancel() }
+                                     useTool(pk, map.design(loc))
+                                 },
+                                 onEnd: { _ in endTool(pk) },
+                                 onTap: { loc in autoDo(pk, map.design(loc)) })
+                }
 
                 controls(map)
                     .frame(width: 1024, height: 834)
@@ -375,6 +388,7 @@ struct GardenView: View {
                 GardenDockPlate(slot: slot, open: open, iconHidden: hidden == slot.rawValue)
                     .equatable()
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
+                    .picked(picked == slot && hidden != slot.rawValue, corner: 30)
                     .offset(y: bounce)
                     .position(slot.spot)
                     .gesture(dockGesture(slot, map))
@@ -390,18 +404,11 @@ struct GardenView: View {
                 case .seeds, .decor:
                     return
                 case .shovel, .can:
-                    if carrying == nil {
-                        carrying = slot.rawValue
-                        hidden = slot.rawValue
-                        tray = nil
-                        Sound.shared.tap()
-                        sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
-                    }
-                    // the tool glides up and works well above her finger (see `FingerLift`)
-                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
+                    if auto.running { auto.cancel() }
+                    useTool(slot, p)
                 }
             }
-            .onEnded { _ in
+            .onEnded { v in
                 switch slot {
                 case .seeds, .decor:
                     Sound.shared.tap()
@@ -409,15 +416,51 @@ struct GardenView: View {
                     let want: GardenTray = slot == .seeds ? .seeds : .decor
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                 case .shovel, .can:
-                    sim.release(home: slot.spot)
-                    finishCarry(slot.rawValue)
+                    endTool(slot)
+                    // a tap on the dock picks the tool (or puts it down)
+                    if ToolTap.isTap(v.translation) {
+                        picked = picked == slot ? nil : slot
+                        Sound.shared.play(.pop, volume: 0.6)
+                    }
                 }
             }
+    }
+
+    /// The shovel or can in her hand at p (design space): picked up first if it isn't yet.
+    private func useTool(_ slot: DockSlot, _ p: CGPoint) {
+        if carrying == nil {
+            carrying = slot.rawValue
+            hidden = slot.rawValue
+            tray = nil
+            Sound.shared.tap()
+            sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
+        }
+        // the shovel digs at her fingertip, the can hangs below her finger (see `FingerLift`)
+        if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
+    }
+
+    private func endTool(_ slot: DockSlot) {
+        sim.release(home: slot.spot)
+        finishCarry(slot.rawValue)
+    }
+
+    /// The picked tool flies off the dock and does the spot she tapped by itself: the shovel digs there,
+    /// the can waters it from above.
+    private func autoDo(_ slot: DockSlot, _ spot: CGPoint) {
+        guard slot == .shovel || slot == .can else { return }
+        let tool: GardenTool = slot == .shovel ? .shovel : .can
+        let target = slot == .can ? CGPoint(x: spot.x + 80, y: spot.y - 160) : CGPoint(x: spot.x, y: spot.y + 10)
+        let f = FingerLift.finger(for: target, lift: GardenView.lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        auto.run(from: slot.spot, to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
     }
 
     /// Where a carried tool goes for her finger at p (design space). Each tool is drawn around a
     /// different point, so each is lifted until the part that hangs lowest still clears her finger.
     static func lifted(_ p: CGPoint, _ tool: GardenTool) -> CGPoint {
+        FingerLift.point(p, lift: lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+    }
+
+    static func lift(_ tool: GardenTool) -> CGFloat {
         let lift: CGFloat
         switch tool {
         case .shovel: lift = FingerLift.tool                                   // the blade tip digs at her fingertip
@@ -425,7 +468,7 @@ struct GardenView: View {
         case .seeds: lift = FingerLift.carry(below: 45)
         case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
         }
-        return FingerLift.point(p, lift: lift, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        return lift
     }
 
     private func finishCarry(_ key: String) {

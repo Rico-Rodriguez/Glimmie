@@ -156,6 +156,8 @@ struct SalonView: View {
     @State private var burstID = 0
     @State private var pressStart: (tool: SalonTool, wasSelected: Bool)?
     @State private var sideTie = 0
+    /// A quick tap on her hair with a tool picked: the tool does that spot by itself (see `ToolTap`).
+    @State private var auto = AutoTool()
     @State private var size = CGSize(width: 1024, height: 834)
     @Environment(\.scenePhase) private var phase
 
@@ -249,10 +251,23 @@ struct SalonView: View {
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("salon"))
                 .onChanged { v in
+                    if auto.running { auto.cancel() }
                     if world.finger == nil { world.press(v.location) } else { world.move(v.location) }
                 }
-                .onEnded { _ in world.release() }
+                .onEnded { v in
+                    world.release()
+                    if let t = tool, t != .clips, ToolTap.isTap(v.translation) { autoDo(at: v.location) }
+                }
         )
+    }
+
+    /// The picked tool does the spot she tapped by itself: a little rub there, through the same hands.
+    private func autoDo(at spot: CGPoint) {
+        let f = world.fingerFor(tip: spot)
+        let w = world
+        auto.run(from: CGPoint(x: f.x + 70, y: f.y + 90), to: f,
+                 step: { q in if w.finger == nil { w.press(q) } else { w.move(q) } },
+                 end: { _ in w.release() })
     }
 
     // MARK: Turning the chair

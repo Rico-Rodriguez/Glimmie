@@ -230,6 +230,9 @@ struct AquariumView: View {
     /// Touch bookkeeping lives outside SwiftUI state so a drag does not rebuild the view on every move.
     @State private var hand = AquaHandState()
     @State private var started = false
+    /// The food, sponge or net she tapped on the dock: a tap on the tank makes it do that spot (see `ToolTap`).
+    @State private var picked: AquaSlot?
+    @State private var auto = AutoTool()
 
     var body: some View {
         GeometryReader { geo in
@@ -251,6 +254,16 @@ struct AquariumView: View {
                 }
                 .contentShape(Rectangle())
                 .gesture(handGesture(map))
+
+                if let pk = picked {
+                    ToolTapLayer(space: "aquarium",
+                                 onDrag: { loc in
+                                     if auto.running { auto.cancel() }
+                                     useTool(pk, map.design(loc))
+                                 },
+                                 onEnd: { _ in endTool(pk) },
+                                 onTap: { loc in autoDo(pk, map.design(loc)) })
+                }
 
                 controls(map)
                     .frame(width: 1024, height: 834)
@@ -367,6 +380,7 @@ struct AquariumView: View {
                 AquaDockPlate(slot: slot, open: open, iconHidden: hidden == slot.rawValue)
                     .equatable()
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
+                    .picked(picked == slot && hidden != slot.rawValue, corner: 30)
                     .offset(y: bounce)
                     .position(slot.spot)
                     .gesture(dockGesture(slot, map))
@@ -382,19 +396,11 @@ struct AquariumView: View {
                 case .fish, .decor:
                     return
                 case .food, .sponge, .net:
-                    if carrying == nil {
-                        carrying = slot.rawValue
-                        hidden = slot.rawValue
-                        tray = nil
-                        Sound.shared.tap()
-                        let tool: AquaTool = slot == .food ? .food : (slot == .sponge ? .sponge : .net)
-                        sim.pickUp(tool, at: p)
-                    }
-                    // the tool glides up and works well above her finger (see `FingerLift`)
-                    if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }
+                    if auto.running { auto.cancel() }
+                    useTool(slot, p)
                 }
             }
-            .onEnded { _ in
+            .onEnded { v in
                 switch slot {
                 case .fish, .decor:
                     Sound.shared.tap()
@@ -402,15 +408,52 @@ struct AquariumView: View {
                     let want: AquaTray = slot == .fish ? .fish : .decor
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                 case .food, .sponge, .net:
-                    sim.release(home: slot.spot)
-                    finishCarry(slot.rawValue)
+                    endTool(slot)
+                    // a tap on the dock picks the tool (or puts it down)
+                    if ToolTap.isTap(v.translation) {
+                        picked = picked == slot ? nil : slot
+                        Sound.shared.play(.pop, volume: 0.6)
+                    }
                 }
             }
+    }
+
+    private func tool(for slot: AquaSlot) -> AquaTool {
+        slot == .food ? .food : (slot == .sponge ? .sponge : .net)
+    }
+
+    /// The food, sponge or net in her hand at p (design space): picked up first if it isn't yet.
+    private func useTool(_ slot: AquaSlot, _ p: CGPoint) {
+        if carrying == nil {
+            carrying = slot.rawValue
+            hidden = slot.rawValue
+            tray = nil
+            Sound.shared.tap()
+            sim.pickUp(tool(for: slot), at: p)
+        }
+        // the sponge and net work at her fingertip, the food is shaken from above it (see `FingerLift`)
+        if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }
+    }
+
+    private func endTool(_ slot: AquaSlot) {
+        sim.release(home: slot.spot)
+        finishCarry(slot.rawValue)
+    }
+
+    /// The picked tool flies off the dock and does the spot she tapped by itself.
+    private func autoDo(_ slot: AquaSlot, _ spot: CGPoint) {
+        guard slot == .food || slot == .sponge || slot == .net else { return }
+        let f = FingerLift.finger(for: spot, lift: AquariumView.lift(tool(for: slot)), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        auto.run(from: slot.spot, to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
     }
 
     /// Where a carried thing goes for her finger at p (design space). Things drawn around their middle are lifted
     /// until their lowest part still clears her finger.
     static func lifted(_ p: CGPoint, _ tool: AquaTool) -> CGPoint {
+        FingerLift.point(p, lift: lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+    }
+
+    static func lift(_ tool: AquaTool) -> CGFloat {
         let lift: CGFloat
         switch tool {
         case .sponge, .net: lift = FingerLift.tool
@@ -418,7 +461,7 @@ struct AquariumView: View {
         case .fish: lift = FingerLift.carry(below: 50)
         case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
         }
-        return FingerLift.point(p, lift: lift, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        return lift
     }
 
     private func finishCarry(_ key: String) {

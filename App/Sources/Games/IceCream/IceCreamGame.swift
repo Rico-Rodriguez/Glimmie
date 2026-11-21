@@ -149,6 +149,8 @@ struct IceCreamView: View {
     @State private var carrying: ICTopping?
     @State private var started = false
     @State private var demoServe = false
+    /// A quick tap in a tub: the dipper scoops a ball there by itself and puts it on the treat (see `ToolTap`).
+    @State private var auto = AutoTool()
 
     static let toppings: [ICTopping] = ICTopping.allCases
 
@@ -220,6 +222,7 @@ struct IceCreamView: View {
     }
 
     private func began(_ p: CGPoint) {
+        if auto.running { auto.cancel() }
         hand.startAt = Date()
         hand.start = p
         tray = false
@@ -293,7 +296,8 @@ struct IceCreamView: View {
 
     private func ended(_ p: CGPoint, tap: Bool) {
         switch hand.mode {
-        case .held: sim.release()
+        case .held:
+            if tap, case .scoop? = sim.held { autoScoop(at: p) } else { sim.release() }
         case .lever: sim.pressLever(nil)
         case .blend:
             sim.blending = false
@@ -302,6 +306,17 @@ struct IceCreamView: View {
         default: break
         }
         hand.mode = .none
+    }
+
+    /// The dipper rubs round in the tub she tapped until it has a ball, then carries it over the treat and
+    /// lets it drop on (or back to its well when there's no cone yet).
+    private func autoScoop(at p: CGPoint) {
+        let s = sim
+        let a = auto
+        a.run(from: p, to: p, step: { q in s.carry(to: q, finger: q) }, end: { q in
+            let over = CGPoint(x: s.S.x, y: s.S.y - 130)
+            a.run(from: q, to: over, step: { r in s.carry(to: r, finger: r) }, end: { _ in s.release() })
+        })
     }
 
     /// Where a held thing goes for her finger at p. The dipper works at her fingertip, pourers and carried things sit above.
