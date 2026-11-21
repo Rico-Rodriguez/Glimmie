@@ -493,7 +493,7 @@ private struct CareEffect: View {
                     .font(.system(size: 31, weight: .bold))
                     .foregroundStyle(Theme.pink)
                     .offset(y: moved ? -67 : -19)
-                    .opacity(moved && !faded ? 1 : 0)
+                    .opacity(moved ? 1 : 0)
             case .rinse:
                 ForEach(0..<7) { index in
                     let direction = Double(index) / 7 * .pi
