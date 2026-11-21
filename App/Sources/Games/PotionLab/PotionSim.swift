@@ -1789,8 +1789,10 @@ final class PotionSim {
 
     var flaskGlow: CGFloat {
         if let r = rare { return r.glow * min(1, turn + 0.3) }
-        let g = (doses[.moon] ?? 0) * 0.35 + (doses[.dragon] ?? 0) * 0.18 + (doses[.stars] ?? 0) * 0.08
-        return min(0.9, g * 0.5)
+        let moonGlow: CGFloat = (doses[.moon] ?? 0) * 0.35
+        let dragonGlow: CGFloat = (doses[.dragon] ?? 0) * 0.18
+        let starGlow: CGFloat = (doses[.stars] ?? 0) * 0.08
+        return min(0.9, (moonGlow + dragonGlow + starGlow) * 0.5)
     }
 
     func has(_ i: PIngredient) -> Bool { (doses[i] ?? 0) >= i.need }
