@@ -31,9 +31,10 @@ enum ICGeo {
     static let tubRX: CGFloat = 56
     static let tubRY: CGFloat = 21
     static let well = CGPoint(x: 476, y: 598)
-    // Soft serve handles.
-    static let handleX: [CGFloat] = [528, 576, 624, 672]
-    static let handleY: CGFloat = 258
+    // Soft serve: four big flavor buttons on the machine's face (vanilla, chocolate, twist, strawberry).
+    static let softButtons: [CGPoint] = [CGPoint(x: 418, y: 158), CGPoint(x: 494, y: 158),
+                                         CGPoint(x: 418, y: 232), CGPoint(x: 494, y: 232)]
+    static let softButtonR: CGFloat = 30
     // Blender.
     static let jarHome = CGPoint(x: 178, y: 566)
     static let jarH: CGFloat = 270

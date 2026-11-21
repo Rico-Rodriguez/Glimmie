@@ -108,4 +108,79 @@ final class GardenTests: XCTestCase {
     func testEverySoundIsBundled() {
         for s in GardenSFX.allCases { XCTAssertNotNil(GameFiles.url(s.rawValue, "wav", game: "Garden"), s.rawValue) }
     }
+
+    // MARK: Surprises for the sticker book
+
+    func testABunnyVisitsRipeCarrotsAndLeavesWhenTheyArePulled() {
+        let sim = freshSim()
+        sim.decor = []
+        sim.plots[1].plant = Plant(kind: .carrot, growth: 1, left: 1, variant: 0)
+        sim.nextVisit = 0
+        run(sim, seconds: 12)
+        guard let bunny = sim.visitors.first(where: { $0.kind == .bunny }) else { return XCTFail("no bunny came") }
+        XCTAssertEqual(bunny.state, .staying)
+        XCTAssertTrue((160...864).contains(bunny.p.x), "the bunny sits where she can see it")
+        sim.plots[1].plant = nil
+        run(sim, seconds: 12)
+        XCTAssertFalse(sim.visitors.contains { $0.kind == .bunny })
+    }
+
+    func testNobodyVisitsWhenThereIsNothingForThem() {
+        let sim = freshSim()
+        sim.decor = []
+        for i in sim.plots.indices { sim.plots[i].plant = nil }
+        sim.nextVisit = 0
+        run(sim, seconds: 10)
+        XCTAssertTrue(sim.visitors.isEmpty)
+    }
+
+    func testAnOwlSitsOnTheFenceAtNight() {
+        let sim = freshSim()
+        sim.decor = []
+        for i in sim.plots.indices { sim.plots[i].plant = nil }
+        sim.setWeather(.night)
+        sim.settleWeather()
+        sim.nextVisit = 0
+        run(sim, seconds: 1)
+        sim.nextVisit = 0
+        run(sim, seconds: 12)
+        let owl = sim.visitors.first { $0.kind == .owl }
+        XCTAssertNotNil(owl)
+        XCTAssertEqual(owl?.p.y ?? 0, 428, accuracy: 1)
+    }
+
+    func testSpecialPlantsLookDifferent() {
+        let plain = Plant(kind: .tomato, growth: 1, left: 1, variant: 2)
+        let gold = Plant(kind: .tomato, growth: 1, left: 1, variant: Plant.specialVariant + 2)
+        XCTAssertFalse(plain.isSpecial)
+        XCTAssertTrue(gold.isSpecial)
+        XCTAssertNil(plain.specialTint)
+        XCTAssertEqual(gold.kind.bloom(gold.variant), PlantKind.tomato.specialColor)
+        for k in PlantKind.allCases where k != .pumpkin {
+            XCTAssertNotEqual(k.specialColor, k.bloom(0), k.rawValue)
+        }
+        for _ in 0..<200 {
+            let v = GardenSim.rollVariant()
+            XCTAssertTrue((0..<6).contains(v % Plant.specialVariant))
+        }
+    }
+
+    func testEverySurpriseHasASticker() {
+        let entry = GameRegistry.all.first { $0.id == GardenSim.gameID }
+        XCTAssertEqual(entry?.stickers.map(\.id), GardenFind.allCases.map(\.rawValue))
+        for k in PlantKind.allCases { XCTAssertEqual(GardenFind.special(k).plant, k) }
+        for v in GVisitorKind.allCases { XCTAssertEqual(GardenFind(rawValue: v.rawValue)?.visitor, v) }
+    }
+
+    func testTheStickerBookCountsAFindOnce() {
+        let book = StickerBook.shared
+        book.demo = true
+        let id = "test-\(UUID().uuidString)"
+        XCTAssertTrue(book.find(game: "testgame", id: id))
+        XCTAssertFalse(book.find(game: "testgame", id: id))
+        XCTAssertTrue(book.has(game: "testgame", id: id))
+        XCTAssertTrue(book.hasUnseen(game: "testgame"))
+        book.markSeen(game: "testgame")
+        XCTAssertFalse(book.hasUnseen(game: "testgame"))
+    }
 }

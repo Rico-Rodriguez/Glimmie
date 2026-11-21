@@ -236,7 +236,8 @@ struct AquariumView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let map = AMap(size: geo.size)
+            // the tank is zoomed in to fill the screen; the buttons stay their usual size
+            let map = AMap.tank(size: geo.size)
             ZStack {
                 // The room, the back of the tank and the sand change slowly: 30 fps in their own layer.
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
@@ -261,13 +262,13 @@ struct AquariumView: View {
                                      if auto.running { auto.cancel() }
                                      useTool(pk, map.design(loc))
                                  },
-                                 onEnd: { _ in endTool(pk) },
-                                 onTap: { loc in autoDo(pk, map.design(loc)) })
+                                 onEnd: { _ in endTool(pk, map) },
+                                 onTap: { loc in autoDo(pk, map.design(loc), map) })
                 }
 
                 controls(map)
                     .frame(width: 1024, height: 834)
-                    .scaleEffect(map.s)
+                    .scaleEffect(map.ui)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
             .coordinateSpace(name: "aquarium")
@@ -408,7 +409,7 @@ struct AquariumView: View {
                     let want: AquaTray = slot == .fish ? .fish : .decor
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                 case .food, .sponge, .net:
-                    endTool(slot)
+                    endTool(slot, map)
                     // a tap on the dock picks the tool (or puts it down)
                     if ToolTap.isTap(v.translation) {
                         picked = picked == slot ? nil : slot
@@ -435,16 +436,16 @@ struct AquariumView: View {
         if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }
     }
 
-    private func endTool(_ slot: AquaSlot) {
-        sim.release(home: slot.spot)
+    private func endTool(_ slot: AquaSlot, _ map: AMap) {
+        sim.release(home: map.fromUI(slot.spot))
         finishCarry(slot.rawValue)
     }
 
     /// The picked tool flies off the dock and does the spot she tapped by itself.
-    private func autoDo(_ slot: AquaSlot, _ spot: CGPoint) {
+    private func autoDo(_ slot: AquaSlot, _ spot: CGPoint, _ map: AMap) {
         guard slot == .food || slot == .sponge || slot == .net else { return }
         let f = FingerLift.finger(for: spot, lift: AquariumView.lift(tool(for: slot)), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
-        auto.run(from: slot.spot, to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
+        auto.run(from: map.fromUI(slot.spot), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot, map) })
     }
 
     /// Where a carried thing goes for her finger at p (design space). Things drawn around their middle are lifted
@@ -536,7 +537,7 @@ struct AquariumView: View {
                     if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }
                 }
                 .onEnded { _ in
-                    sim.release(home: t == .fish ? AquaSlot.fish.spot : AquaSlot.decor.spot)
+                    sim.release(home: map.fromUI(t == .fish ? AquaSlot.fish.spot : AquaSlot.decor.spot))
                     carrying = nil
                     hidden = nil
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil }

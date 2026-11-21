@@ -3,14 +3,24 @@ import SwiftUI
 /// The home screen: a toy drawer with one big tile per game, laid out in rows and columns.
 struct DrawerView: View {
     let open: (String) -> Void
+    @State private var book = false
 
     var body: some View {
         ZStack {
             DrawerBackground()
             VStack(spacing: 0) {
                 Title()
-                    .padding(.top, 28)
-                    .padding(.bottom, 8)
+                    .padding(.top, 14)
+                    .padding(.bottom, 2)
+                    .frame(maxWidth: .infinity)
+                    .overlay(alignment: .trailing) {
+                        // the sticker book: every game's surprises in one place
+                        if !StickerBook.pages.isEmpty {
+                            StickerBookButton(size: 66) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
+                                .padding(.trailing, DrawerLayout.sidePadding)
+                                .padding(.top, 10)
+                        }
+                    }
                 GeometryReader { geo in
                     let layout = DrawerLayout.best(count: GameRegistry.all.count, in: geo.size)
                     ScrollView(.vertical, showsIndicators: false) {
@@ -32,28 +42,34 @@ struct DrawerView: View {
                     .bounceOnlyWhenScrolling()
                 }
             }
+            if book {
+                StickerBookView { withAnimation(.easeOut(duration: 0.2)) { book = false } }
+                    .transition(.opacity)
+                    .zIndex(2)
+            }
         }
     }
 }
 
 /// Picks how many columns the drawer grid uses and how big each tile is.
-/// Prefers the biggest tiles that still show every game without scrolling; when there are
-/// too many games for that, it keeps tiles big and lets the grid scroll up and down.
+/// Every game should be on screen at once, like a table of tiles: it picks the biggest tiles that
+/// show them all without scrolling. Only when there are so many games that the tiles would get too
+/// small to tap does the grid scroll up and down.
 struct DrawerLayout: Equatable {
     let columns: Int
     let tile: CGFloat
 
-    static let columnSpacing: CGFloat = 32
-    static let rowSpacing: CGFloat = 26
-    static let sidePadding: CGFloat = 48
-    static let verticalPadding: CGFloat = 18
+    static let columnSpacing: CGFloat = 24
+    static let rowSpacing: CGFloat = 16
+    static let sidePadding: CGFloat = 32
+    static let verticalPadding: CGFloat = 12
     /// Room under each tile for its name.
-    static let labelHeight: CGFloat = 58
+    static let labelHeight: CGFloat = 40
     static let maxTile: CGFloat = 260
     /// Smallest tile we accept to fit everything on one screen.
-    static let minFitTile: CGFloat = 190
+    static let minFitTile: CGFloat = 140
     /// Tile size to aim for once the grid has to scroll.
-    static let scrollTile: CGFloat = 210
+    static let scrollTile: CGFloat = 160
 
     static func tileWidth(columns: Int, width: CGFloat) -> CGFloat {
         (width - sidePadding * 2 - columnSpacing * CGFloat(columns - 1)) / CGFloat(columns)
@@ -97,7 +113,7 @@ private struct Title: View {
                 .foregroundStyle(Theme.ink)
             Image(systemName: "sparkles").foregroundStyle(Theme.lemon)
         }
-        .font(.system(size: 56, weight: .heavy, design: .rounded))
+        .font(.system(size: 40, weight: .heavy, design: .rounded))
         .shadow(color: .white, radius: 0, x: 0, y: 3)
     }
 }
@@ -114,7 +130,7 @@ private struct GameTile: View {
 
     var body: some View {
         Button(action: tap) {
-            VStack(spacing: 10) {
+            VStack(spacing: 6) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 56, style: .continuous)
                         .fill(game.tint.gradient)
@@ -127,10 +143,10 @@ private struct GameTile: View {
                 .scaleEffect(size / Self.designSize)
                 .frame(width: size, height: size)
                 .shadow(color: Theme.ink.opacity(0.22), radius: 12, y: 8)
-                .offset(y: bob ? -5 : 3)
+                .offset(y: bob ? -3 : 2)
 
                 Text(game.title)
-                    .font(.system(size: min(32, max(24, size * 0.12)), weight: .heavy, design: .rounded))
+                    .font(.system(size: min(28, max(20, size * 0.12)), weight: .heavy, design: .rounded))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)

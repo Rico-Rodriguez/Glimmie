@@ -234,7 +234,8 @@ struct IceCreamView: View {
                 return
             }
         case .soft:
-            for (i, hx) in ICGeo.handleX.enumerated() where abs(p.x - hx) < 26 && p.y > 200 && p.y < 300 {
+            // the big flavor buttons: anywhere on one (and a little round it) works
+            for (i, c) in ICGeo.softButtons.enumerated() where hypot(p.x - c.x, p.y - c.y) < ICGeo.softButtonR + 12 {
                 hand.mode = .lever
                 sim.pressLever(i)
                 return
