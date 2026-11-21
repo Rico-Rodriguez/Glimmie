@@ -26,11 +26,16 @@ Version 1.0.48 and earlier were "Glimmie Closet", a Blender-rendered sticker dre
 of mini-games and a text-to-speech voice. Rico retired it in Nov 2026 ("it all sucks"); it lives in git
 history before the game-drawer PR.
 
-## Tools at her fingertip (every hands-on game)
+## Tools held by their handle (every hands-on game)
 - Shared code: `App/Sources/Shared/FingerLift.swift`. Tune the numbers there, not per game.
-- Rico, Nov 2026: lifting tools 120 pt above the finger (and the zoom bubble) felt like aiming with a gap ("I always
-  want to peek around my finger"). So a tool now works right at her fingertip (`FingerLift.tool` = 0), held the way
-  a hand holds it: working end up and a little left, handle toward her hand (`lean`, `turn`, `handle`).
+- Rico, Nov 2026, round 1: lifting tools 120 pt straight above the finger (and the zoom bubble) felt like aiming with a
+  gap ("I always want to peek around my finger"). Round 2: tools worked right at her fingertip, and then her finger
+  covered them ("I grab the net and the net is under my finger, I can't see what's going on").
+- Now a tool is held like a real one: her finger is on the handle and the working end sits a handle's length ahead
+  (`FingerLift.tool`, 96 pt), up and to the left, away from her hand (`leanSide`; to the right near the left edge).
+  The tool is drawn turned so its handle runs from the working end back to her finger (`turn`, `handle`). Per tool:
+  the aquarium net is held by its pink grip (`AquariumView.netGrip`, 134), the garden shovel by its shaft (110),
+  sponges and towels by a corner (`FingerLift.grip`, 64). Everything lifted (dragged things, pourers) leans the same way.
 - What a tool does reaches well past her fingertip (`FingerLift.spread`, 1.8x): foam, scrubbing, wiping, combing,
   dye, mask paint, the shovel's scoop, the ladle, the net's hoop, a Pet Vet spot's reach. Games multiply their
   effect radii and emitter spreads by it. Held sponges, towels and the bubble wand are drawn bigger too.
@@ -76,7 +81,7 @@ history before the game-drawer PR.
 - All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
-- Tools work at her fingertip and reach well past it (see "Tools at her fingertip"); a tool turns see-through over
+- Tools are held by their handle and reach well past it (see "Tools held by their handle"); a tool turns see-through over
   the patient. The shower rains from above her finger.
   Screenshot hook: `-vetHold <tool>` holds a tool over its spot.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.

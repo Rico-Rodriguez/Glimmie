@@ -274,7 +274,7 @@ final class SalonWorld {
 
     // MARK: Fingers
 
-    /// Where a tool works for her finger at f (design space): right at her fingertip (see `FingerLift`).
+    /// Where a tool works for her finger at f (design space): just ahead of her finger, held by its handle (see `FingerLift`).
     /// The shower rains down from above her finger (`FingerLift.pour`).
     func tipDesign(_ f: CGPoint) -> CGPoint {
         tool == nil ? f : FingerLift.point(f, lift: toolLift, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)

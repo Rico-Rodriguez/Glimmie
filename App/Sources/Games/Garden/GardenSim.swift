@@ -219,6 +219,7 @@ final class GardenSim {
     // The carried tool
     var tool: GardenTool?
     var toolP = CGPoint.zero
+    var hold = CGPoint.zero
     var finger = CGPoint.zero
     var toolV = CGVector.zero
     var tilt: CGFloat = 0
@@ -482,7 +483,11 @@ final class GardenSim {
         }
     }
 
-    func carry(to p: CGPoint) { finger = p }
+    /// `p` is where the tool goes, `hand` where her finger really is (the shovel's shaft runs back to it).
+    func carry(to p: CGPoint, hand h: CGPoint? = nil) {
+        finger = p
+        hold = h ?? p
+    }
 
     /// Lets go of the carried tool. `home` is where it flies back to.
     func release(home: CGPoint) {

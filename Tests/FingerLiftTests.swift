@@ -2,13 +2,28 @@ import XCTest
 @testable import Glimmie
 
 final class FingerLiftTests: XCTestCase {
-    func testToolsWorkAtHerFingertip() {
-        XCTAssertEqual(FingerLift.tool, 0)
-        for f in [CGPoint(x: 400, y: 600), CGPoint(x: 20, y: 10), CGPoint(x: 1000, y: 830)] {
-            XCTAssertEqual(FingerLift.point(f, bottom: 834, width: 1024), f)
-            XCTAssertEqual(FingerLift.finger(for: f, bottom: 834, width: 1024), f)
-        }
+    func testAToolWorksAheadOfHerFingerUpAndToTheLeft() {
+        XCTAssertGreaterThan(FingerLift.tool, 60, "the working end is a handle's length from her finger")
+        let p = FingerLift.point(CGPoint(x: 400, y: 600), lift: FingerLift.tool, bottom: 834, width: 1024)
+        XCTAssertEqual(p.y, 600 - FingerLift.tool, accuracy: 0.001)
+        XCTAssertEqual(p.x, 400 - FingerLift.leanSide * FingerLift.tool, accuracy: 0.001, "away from her hand")
+        // near the left edge it leans to the right instead
+        XCTAssertGreaterThan(FingerLift.point(CGPoint(x: 10, y: 600), lift: FingerLift.tool, bottom: 834, width: 1024).x, 10)
+        // a tool that works right at her finger (lift 0) stays there
+        XCTAssertEqual(FingerLift.point(CGPoint(x: 400, y: 600), lift: 0), CGPoint(x: 400, y: 600))
         XCTAssertGreaterThan(FingerLift.spread, 1.2, "what a tool does reaches past her fingertip")
+    }
+
+    func testAHeldToolTurnsSoItsHandleRunsBackToHerFinger() {
+        // a net drawn hoop at the top, handle down: held up and to the left, it leans over to the left
+        let finger = CGPoint(x: 500, y: 600)
+        let hoop = FingerLift.point(finger, lift: FingerLift.tool, width: 1024)
+        let a = FingerLift.turn(tip: .zero, center: CGPoint(x: 0, y: 80), finger: finger, lifted: hoop)
+        XCTAssertLessThan(a, -0.2)
+        XCTAssertGreaterThan(a, -0.7)
+        let h = FingerLift.handle(tip: hoop, finger: finger, length: 150)
+        XCTAssertGreaterThan(h.dir.dx, 0, "the handle goes down and to the right, to her finger")
+        XCTAssertGreaterThan(h.dir.dy, 0)
     }
 
     func testAToolAtHerFingertipIsHeldHandleTowardHerHand() {
@@ -27,7 +42,7 @@ final class FingerLiftTests: XCTestCase {
 
     func testFullLiftAwayFromTheTop() {
         let p = FingerLift.point(CGPoint(x: 400, y: 600), lift: FingerLift.pour, width: 1024)
-        XCTAssertEqual(p.x, 400, accuracy: 0.001)
+        XCTAssertEqual(p.x, 400 - FingerLift.leanSide * FingerLift.pour, accuracy: 0.001)
         XCTAssertEqual(p.y, 600 - FingerLift.pour, accuracy: 0.001)
     }
 

@@ -436,7 +436,7 @@ struct SpaView: View {
         switch tool {
         case .wand, .mask: lift = FingerLift.tool                 // the ring, the brush tip
         case .shower: lift = FingerLift.pour                      // it rains down onto what's below it
-        case .sponge, .towel: lift = FingerLift.tool              // held by the middle, bigger than her finger
+        case .sponge, .towel: lift = FingerLift.grip              // held by a corner, up and to the left of her finger
         case .soap: lift = FingerLift.carry(below: 50)
         case .cucumber: lift = FingerLift.item
         }

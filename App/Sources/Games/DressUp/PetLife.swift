@@ -488,11 +488,12 @@ final class PetLife {
                                                   "towel": CGPoint(x: 70, y: 96), "shower": CGPoint(x: 44, y: 74),
                                                   "feather": CGPoint(x: 110, y: 26)]
 
-    /// Where a tool goes for her finger at p: a tool's tip works at her fingertip, the shower rains from
+    /// Where a tool goes for her finger at p: a tool's tip works just ahead of her finger (a sponge or towel is held by a corner), the shower rains from
     /// above it and a snack floats the item lift above it (see `FingerLift`).
     private func lifted(_ p: CGPoint) -> CGPoint {
         let id = held ?? ""
-        let lift = foods.contains(id) ? FingerLift.item : id == "shower" ? FingerLift.pour : FingerLift.tool
+        let lift = foods.contains(id) ? FingerLift.item : id == "shower" ? FingerLift.pour
+            : id == "sponge" || id == "towel" ? FingerLift.grip : FingerLift.tool
         return FingerLift.point(p, lift: lift, bottom: size.height, width: leftW)
     }
 

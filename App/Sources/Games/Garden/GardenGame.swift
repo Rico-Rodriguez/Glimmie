@@ -449,8 +449,8 @@ struct GardenView: View {
             Sound.shared.tap()
             sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
         }
-        // the shovel digs at her fingertip, the can hangs below her finger (see `FingerLift`)
-        if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
+        // she holds the shovel by its shaft with the blade out ahead, the can hangs below her finger (see `FingerLift`)
+        if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl), hand: p) }
     }
 
     private func endTool(_ slot: DockSlot, _ map: GMap) {
@@ -477,7 +477,7 @@ struct GardenView: View {
     static func lift(_ tool: GardenTool) -> CGFloat {
         let lift: CGFloat
         switch tool {
-        case .shovel: lift = FingerLift.tool                                   // the blade tip digs at her fingertip
+        case .shovel: lift = 110                                               // her hand on the shaft, the blade out ahead
         case .can: lift = FingerLift.carry(below: 106)                         // a pourer: the can hangs below its handle
         case .seeds: lift = FingerLift.carry(below: 45)
         case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
@@ -541,7 +541,7 @@ struct GardenView: View {
                         let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
                         sim.pickUp(tool, at: p)
                     }
-                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
+                    if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl), hand: p) }
                 }
                 .onEnded { _ in
                     sim.release(home: map.fromUI(t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot))
