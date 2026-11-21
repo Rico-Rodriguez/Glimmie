@@ -178,6 +178,7 @@ struct IceCreamView: View {
                 .gesture(handGesture(map))
                 controls(map)
                     .frame(width: 1024, height: 834)
+                    .coinPurse(game: IceSim.gameID)
                     .scaleEffect(map.s)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
@@ -357,6 +358,8 @@ struct IceCreamView: View {
                 sim.clearStand()
             }
             .position(x: 690, y: 60)
+            CoinCounter(game: IceSim.gameID, height: 64)
+                .position(x: 836, y: 58)
             heartJar.position(x: 960, y: 56)
             if phase == .waiting || phase == .happy {
                 orderBubble
@@ -643,6 +646,8 @@ struct IceCreamView: View {
             let s = order.stars(for: b)
             sim.served = nil
             sim.addHearts(s)
+            // the customer pays at the window: coins hop out and fly into the purse
+            Coins.shared.earn(Coins.reward(stars: s), game: IceSim.gameID, from: CGPoint(x: ICGeo.customer.x, y: ICGeo.customer.y - 20))
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 stars = s
                 phase = .happy
@@ -695,6 +700,7 @@ struct IceCreamView: View {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-iceDemo"), i + 1 < args.count else { return }
         sim.demo = true
+        Coins.shared.demo = true
         order = ICOrder.random(customer: 1, seed: 21)
         picture = order.picture()
         let what = args[i + 1]

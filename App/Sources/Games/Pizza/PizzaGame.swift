@@ -334,6 +334,7 @@ struct PizzaView: View {
                     controls(map, time: tl.date.timeIntervalSinceReferenceDate)
                 }
                 .frame(width: 1024, height: 834)
+                .coinPurse(game: PizzaSim.gameID)
                 .scaleEffect(map.s)
                 .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
@@ -395,6 +396,8 @@ struct PizzaView: View {
                 .position(x: 62, y: 60)
             stepBar(step)
                 .position(x: 470, y: 60)
+            CoinCounter(game: PizzaSim.gameID, height: 64)
+                .position(x: 900, y: 60)
             dock(step, map)
             nextButton(step, ready: ready)
                 .offset(y: bounce)

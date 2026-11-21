@@ -55,6 +55,20 @@ history before the game-drawer PR.
 - Not lifted on purpose: coloring brushes, pinch and turn coloring stickers, the pet salon (tap only), cupcake
   piping (press and hold), and her bare hand (petting, weeds).
 
+## Play coins (shared by every game)
+- One purse for the whole app: `App/Sources/Shared/Coins.swift`, saved in `Application Support/Games/coins/purse.json`.
+- Rico, Nov 2026: shop customers pay her in play coins, and she spends them in a treasure shop on the home screen on
+  extras (unicorn gear, sparkly decorations, Dress Up pieces). Coins only add extras: every tray, tool and item that was
+  free stays free, nothing is locked behind coins, no real money, no timers.
+- Paying: `Coins.shared.earn(Coins.reward(stars: s), game: id, from: customerPoint)` (3 to 5 coins: every customer pays,
+  a happier one a little more). Bakery pays when the treat is eaten, Ice Cream when the treat is eaten at the window,
+  Pizza when the whole pizza is eaten.
+- Showing it: `CoinCounter(game: id)` in the top bar and `.coinPurse(game: id)` on the 1024 x 834 view that holds the
+  customer and the counter; the coins hop out of the customer, arc up and land in the counter one by one with a chime
+  (`coin.wav`, and `till.wav` for the till; `python3 tools/coins/sounds.py`). The count goes up as each coin lands.
+- Buying: `Coins.shared.buy("<game>/<item>", price:)` (false if she hasn't enough), `Coins.shared.owns(id)`.
+- Screenshot hooks set `Coins.shared.demo` so they never save coins; `-coinsDemo <n>` starts with n coins, unsaved.
+
 ## Dress Up art decisions
 - Flat cute 2D vector chibi (about 2.2 heads tall), color-derived outlines (never black), one shade and
   one highlight per color. Shade math is in `tools/dressup/colors.py` and mirrored in `DressUpArt.swift`.
