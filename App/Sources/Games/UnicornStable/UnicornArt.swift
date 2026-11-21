@@ -1,264 +1,217 @@
 import SwiftUI
-import UIKit
 
-enum UnicornIllustration {
-    private struct Pigment {
-        let r: Float
-        let g: Float
-        let b: Float
+enum UnicornMotion { case lean, shake, nibble, nuzzle, stroll }
 
-        var light: Float {
-            let red = r * 0.24
-            let green = g * 0.64
-            let blue = b * 0.12
-            return red + green + blue
+enum UnicornPart: String, CaseIterable {
+    case ears, tail, horn, mane, braid, torso, head, foreLeft, foreRight, hindLeft, hindRight, saddle
+}
+
+/// Joint transforms in the shared Pet Vet and Dress Up coordinates, with a face suited to the action.
+struct UnicornPose {
+    var lift: CGFloat = 0
+    var head = CGAffineTransform.identity
+    var mane = CGAffineTransform.identity
+    var tail = CGAffineTransform.identity
+    var frontLeft = CGAffineTransform.identity
+    var frontRight = CGAffineTransform.identity
+    var backLeft = CGAffineTransform.identity
+    var backRight = CGAffineTransform.identity
+    var eyes = "open"
+    var mouth = "smile"
+    var gaze: CGSize = .zero
+    var flap: CGFloat = 0
+
+    static func frame(time: TimeInterval, age: TimeInterval?, motion: UnicornMotion,
+                      target: CGPoint? = nil, direction: CGFloat = 1, reduceMotion: Bool = false) -> Self {
+        var pose = Self()
+        let phase = min(1, max(0, (age ?? 2) / 0.82))
+        let active = age != nil && phase < 1
+        let beat: CGFloat = active ? sin(phase * .pi) : 0
+        let idle: CGFloat = reduceMotion ? 0 : sin(time * 2.8)
+        let amplitude: CGFloat = reduceMotion ? 0 : beat
+        var nod: CGFloat = 0
+        var headTurn: CGFloat = 0
+        var tailFlick: CGFloat = idle * 0.055
+        var step: CGFloat = 0
+
+        if let target {
+            pose.gaze = CGSize(width: max(-8, min(8, (target.x - 300) * 0.045)),
+                               height: max(-7, min(7, (target.y - 270) * 0.039)))
         }
-
-        init(_ r: Float, _ g: Float, _ b: Float) {
-            self.r = r
-            self.g = g
-            self.b = b
-        }
-
-        init(hex: UInt32) {
-            let red: UInt32 = (hex >> 16) & 255
-            let green: UInt32 = (hex >> 8) & 255
-            let blue: UInt32 = hex & 255
-            self.init(Float(red), Float(green), Float(blue))
-        }
-    }
-
-    private static let images = NSCache<NSString, UIImage>()
-    private static let palettes: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 52 * 1024 * 1024
-        return cache
-    }()
-    static let aspect = CGFloat(1199) / 1312
-
-    static func source(_ name: String) -> UIImage? {
-        if let cached = images.object(forKey: name as NSString) { return cached }
-        guard let url = GameFiles.url(name, "png", game: "UnicornStable"),
-              let image = UIImage(contentsOfFile: url.path) else { return nil }
-        images.setObject(image, forKey: name as NSString)
-        return image
-    }
-
-    static func fitted(in frame: CGRect) -> CGRect {
-        let width = min(frame.width, frame.height * aspect)
-        let height = width / aspect
-        return CGRect(x: frame.midX - width / 2, y: frame.midY - height / 2, width: width, height: height)
-    }
-
-    static func anchor(_ spot: CareSpot) -> CGPoint {
-        switch spot {
-        case .shoulder: return CGPoint(x: 0.70, y: 0.54)
-        case .flank: return CGPoint(x: 0.41, y: 0.53)
-        case .knee: return CGPoint(x: 0.65, y: 0.74)
-        case .forelock: return CGPoint(x: 0.75, y: 0.15)
-        case .mane: return CGPoint(x: 0.59, y: 0.42)
-        case .tail: return CGPoint(x: 0.18, y: 0.58)
-        case .muzzle: return CGPoint(x: 0.87, y: 0.32)
-        }
-    }
-
-    static func sprite(_ name: String, look: UnicornLook) -> UIImage? {
-        guard let original = source(name) else { return nil }
-        let initial = UnicornLook()
-        let changed = [look.coat != initial.coat, look.mane != initial.mane, look.horn != initial.horn]
-        guard changed.contains(true), let pixels = original.cgImage else { return original }
-        let key = "\(name)/\(look.coat)/\(look.mane)/\(look.horn)" as NSString
-        if let cached = palettes.object(forKey: key) { return cached }
-        guard let recolored = tint(pixels, look: look, changed: changed) else { return original }
-        let image = UIImage(cgImage: recolored)
-        palettes.setObject(image, forKey: key, cost: pixels.width * pixels.height * 4)
-        return image
-    }
-
-    /// Map the painted pigment to the selected coat, mane and horn colors while keeping its original shading.
-    private static func tint(_ image: CGImage, look: UnicornLook, changed: [Bool]) -> CGImage? {
-        let width = image.width, height = image.height
-        var buffer = [UInt8](repeating: 0, count: width * height * 4)
-        let shades = [Pigment(hex: look.coat), Pigment(hex: look.mane), Pigment(hex: look.horn)]
-        let light = shades.map { max(Float(1), $0.light) }
-        let format = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        return buffer.withUnsafeMutableBufferPointer { data -> CGImage? in
-            guard let bytes = data.baseAddress,
-                  let context = CGContext(data: bytes, width: width, height: height, bitsPerComponent: 8,
-                                          bytesPerRow: width * 4, space: space, bitmapInfo: format) else { return nil }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
-            tintPixels(bytes, width: width, height: height, shades: shades, light: light, changed: changed)
-            return context.makeImage()
-        }
-    }
-
-    private static func tintPixels(_ bytes: UnsafeMutablePointer<UInt8>, width: Int, height: Int,
-                                   shades: [Pigment], light: [Float], changed: [Bool]) {
-        for y in 0..<height {
-            let ny = Float(y) / Float(height)
-            for x in 0..<width {
-                let i = 4 * (y * width + x)
-                let alpha = Float(bytes[i + 3])
-                guard alpha > 8 else { continue }
-                let factor: Float = 255 / alpha
-                let original = Pigment(Float(bytes[i]) * factor, Float(bytes[i + 1]) * factor, Float(bytes[i + 2]) * factor)
-                let nx = Float(x) / Float(width)
-                guard let (kind, amount) = pigmentRegion(original, x: nx, y: ny), changed[kind] else { continue }
-                let shade = shades[kind]
-                let brightness = original.light / light[kind]
-                let fraction: Float = alpha / 255
-                bytes[i] = channel(original.r, to: shade.r * brightness, amount: amount, fraction: fraction)
-                bytes[i + 1] = channel(original.g, to: shade.g * brightness, amount: amount, fraction: fraction)
-                bytes[i + 2] = channel(original.b, to: shade.b * brightness, amount: amount, fraction: fraction)
+        if time.truncatingRemainder(dividingBy: 4.2) < 0.15 { pose.eyes = "blink" }
+        if active {
+            switch motion {
+            case .lean:
+                nod = -6 * amplitude
+                headTurn = (target.map { $0.x < 300 ? -0.13 : 0.13 } ?? -0.13) * amplitude
+                pose.eyes = "happy"
+            case .shake:
+                headTurn = sin(phase * 6 * .pi) * amplitude * 0.22
+                tailFlick += sin(phase * 5 * .pi) * amplitude * 0.29
+                pose.eyes = "blink"
+            case .nibble:
+                nod = 18 * amplitude
+                pose.eyes = phase > 0.65 ? "happy" : "open"
+                pose.mouth = phase < 0.24 ? "wide" : (sin(phase * 9 * .pi) > 0 ? "yum" : "grin")
+            case .nuzzle:
+                nod = 10 * amplitude
+                headTurn = (target.map { $0.x < 300 ? -0.13 : 0.13 } ?? 0.13) * amplitude
+                tailFlick += amplitude * 0.20
+                pose.eyes = "happy"
+                pose.mouth = "grin"
+                pose.frontLeft = joint(x: 228, y: 468, angle: -0.15 * amplitude, dy: -10 * amplitude)
+            case .stroll:
+                step = sin(phase * 5 * .pi) * amplitude
+                pose.lift = -abs(step) * 13
+                nod = step * 8
+                headTurn = direction * amplitude * 0.105
+                tailFlick += step * 0.20
+                pose.gaze.width = direction * 8 * beat
+                pose.frontLeft = joint(x: 228, y: 468, angle: step * 0.31, dy: -max(0, step) * 20)
+                pose.frontRight = joint(x: 372, y: 468, angle: -step * 0.31, dy: -max(0, -step) * 20)
+                pose.backLeft = joint(x: 228, y: 570, angle: -step * 0.25, dy: -max(0, -step) * 18)
+                pose.backRight = joint(x: 372, y: 570, angle: step * 0.25, dy: -max(0, step) * 18)
             }
         }
+        pose.head = joint(x: 300, y: 315, angle: headTurn, dy: nod + idle * 3)
+        pose.mane = joint(x: 323, y: 171, angle: -headTurn * 0.55 + idle * 0.027).concatenating(pose.head)
+        pose.tail = joint(x: 404, y: 580, angle: tailFlick)
+        pose.flap = step
+        return pose
     }
 
-    private static func pigmentRegion(_ pixel: Pigment, x: Float, y: Float) -> (Int, Float)? {
-        let warmth = pixel.r - pixel.b
-        let pink = pixel.r - pixel.g
-        let gold = pixel.g - pixel.b
-        let inHorn = x > 0.775 && x < 0.86 && y < 0.15
-        let inMane = x < 0.63 || y < 0.21 || (x < 0.68 && y < 0.48) || (x > 0.80 && y < 0.20)
-        if inHorn && warmth > 49 && gold > 27 { return (2, min(1, (gold - 20) / 33)) }
-        if inMane && pixel.r > 97 && pink > 24 && gold <= 17 { return (1, min(1, (pink - 17) / 26)) }
-        if pixel.r > 155 && pixel.g > 138 && pink < 48 && warmth < 85 && gold >= 0 {
-            return (0, min(1, (pixel.g - 137) / 41))
+    func transform(_ part: UnicornPart) -> CGAffineTransform {
+        switch part {
+        case .ears, .horn, .head: return head
+        case .mane, .braid: return mane
+        case .tail: return tail
+        case .foreLeft: return frontLeft
+        case .foreRight: return frontRight
+        case .hindLeft: return backLeft
+        case .hindRight: return backRight
+        case .torso, .saddle: return .identity
         }
-        return nil
     }
 
-    private static func channel(_ start: Float, to end: Float, amount: Float, fraction: Float) -> UInt8 {
-        UInt8(max(0, min(255, start + (min(255, end) - start) * amount)) * fraction)
+    private static func joint(x: CGFloat, y: CGFloat, angle: CGFloat, dy: CGFloat = 0) -> CGAffineTransform {
+        CGAffineTransform(translationX: -x, y: -y)
+            .concatenating(CGAffineTransform(rotationAngle: angle))
+            .concatenating(CGAffineTransform(translationX: x, y: y + dy))
+    }
+}
+
+enum UnicornRig {
+    static let box = CGRect(x: 0, y: 0, width: 600, height: 660)
+
+    private static func anchor(_ spot: CareSpot) -> (CGPoint, UnicornPart) {
+        switch spot {
+        case .shoulder: return (CGPoint(x: 229, y: 413), .torso)
+        case .flank: return (CGPoint(x: 368, y: 466), .torso)
+        case .knee: return (CGPoint(x: 228, y: 512), .foreLeft)
+        case .forelock: return (CGPoint(x: 238, y: 172), .mane)
+        case .mane: return (CGPoint(x: 429, y: 246), .mane)
+        case .tail: return (CGPoint(x: 477, y: 537), .tail)
+        case .muzzle: return (PetArt.shared.animals["unicorn"]?.mouth ?? CGPoint(x: 300, y: 334), .head)
+        }
+    }
+
+    static func point(_ spot: CareSpot, pose: UnicornPose = UnicornPose()) -> CGPoint {
+        let (p, part) = anchor(spot)
+        let moved = p.applying(pose.transform(part))
+        return CGPoint(x: moved.x, y: moved.y + pose.lift)
+    }
+
+    static func scale(in frame: CGRect) -> CGFloat { min(frame.width / box.width, frame.height / box.height) }
+
+    static func project(_ p: CGPoint, into frame: CGRect) -> CGPoint {
+        let s = scale(in: frame)
+        return CGPoint(x: frame.midX + (p.x - box.midX) * s, y: frame.midY + (p.y - box.midY) * s)
+    }
+
+    static func unproject(_ p: CGPoint, from frame: CGRect) -> CGPoint {
+        let s = scale(in: frame)
+        return CGPoint(x: box.midX + (p.x - frame.midX) / s, y: box.midY + (p.y - frame.midY) / s)
+    }
+
+    static func draw(_ look: UnicornLook, pose: UnicornPose, in context: GraphicsContext) {
+        let art = PetArt.shared
+        guard let animal = art.animals["unicorn"], !art.unicornRig.isEmpty else { return }
+        var g = context
+        g.translateBy(x: 0, y: pose.lift)
+        let colors = PaintSet(main: RGB(hex: String(look.coat, radix: 16)),
+                              accent: RGB(hex: String(look.mane, radix: 16)),
+                              skin: RGB(hex: String(look.horn, radix: 16)), pattern: nil)
+        func draw(_ part: UnicornPart) {
+            guard let shapes = art.unicornRig[part.rawValue] else { return }
+            var layer = g
+            layer.concatenate(pose.transform(part))
+            ArtPainter.draw(shapes, colors, in: layer)
+        }
+        func wear(_ id: String, in local: GraphicsContext) {
+            guard let item = art.wear[id] else { return }
+            var layer = local
+            PetPainter.transform(&layer, slot: item.slot, animal, flap: pose.flap)
+            let pet = PetLook(kind: "unicorn")
+            ArtPainter.draw(item.shapes, pet.paints(for: item), in: layer)
+        }
+
+        draw(.tail)
+        if look.gear == .wings { wear("pk_fairy", in: g) }
+        draw(.hindLeft); draw(.hindRight)
+        draw(.torso)
+        if look.gear == .saddle { draw(.saddle) }
+        draw(.foreLeft); draw(.foreRight)
+        draw(.ears); draw(.head)
+        draw(look.braided ? .braid : .mane)
+        draw(.horn)
+
+        var face = g
+        face.concatenate(pose.head)
+        ArtPainter.draw(animal.blush, colors, in: face)
+        ArtPainter.draw(animal.brows, colors, in: face)
+        var eyes = face
+        eyes.translateBy(x: pose.gaze.width, y: pose.gaze.height)
+        ArtPainter.draw(animal.eyes[pose.eyes] ?? [], colors, in: eyes)
+        ArtPainter.draw(animal.mouths[pose.mouth] ?? [], colors, in: face)
+        if look.gear == .bow { wear("ph_bow", in: face) }
+        if look.gear == .crown { wear("ph_crown", in: face) }
     }
 }
 
 struct UnicornPortrait: View {
     let look: UnicornLook
-    var expression: UnicornExpression?
-    var intensity: Double = 0
+    var pose = UnicornPose()
 
     var body: some View {
-        GeometryReader { geometry in
-            let bounds = CGRect(origin: .zero, size: geometry.size)
-            let fit = UnicornIllustration.fitted(in: bounds)
-            ZStack {
-                if look.gear == .wings {
-                    Image(systemName: "feather.fill")
-                        .font(.system(size: fit.width * 0.35, weight: .medium))
-                        .foregroundStyle(Theme.mint.gradient)
-                        .rotationEffect(.degrees(-75))
-                        .shadow(color: Theme.ink.opacity(0.25), radius: 3, y: 3)
-                        .position(x: fit.minX + fit.width * 0.46, y: fit.minY + fit.height * 0.42)
-                }
-                if let portrait = UnicornIllustration.sprite("unicorn", look: look) {
-                    Image(uiImage: portrait).resizable().frame(width: fit.width, height: fit.height)
-                        .position(x: fit.midX, y: fit.midY)
-                }
-                if let expression, intensity > 0, let frame = UnicornIllustration.sprite(expression.rawValue, look: look) {
-                    Image(uiImage: frame).resizable().frame(width: fit.width, height: fit.height)
-                        .position(x: fit.midX, y: fit.midY)
-                        .mask {
-                            let patch = expression.patch
-                            Ellipse().fill(.white).blur(radius: fit.width * 0.014)
-                                .frame(width: fit.width * patch.width, height: fit.height * patch.height)
-                                .position(x: fit.minX + fit.width * patch.midX, y: fit.minY + fit.height * patch.midY)
-                        }
-                        .opacity(intensity)
-                }
-                if look.braided { accessory("ribbon.fill", in: fit, at: CGPoint(x: 0.60, y: 0.44), color: Theme.lilac) }
-                if look.gear == .bow { accessory("ribbon.fill", in: fit, at: CGPoint(x: 0.70, y: 0.15), color: Theme.pink) }
-                if look.gear == .crown { accessory("crown.fill", in: fit, at: CGPoint(x: 0.77, y: 0.13), color: Theme.lemon) }
-                if look.gear == .saddle {
-                    Capsule().fill(Color(hex: 0xA777AD).gradient)
-                        .overlay(Capsule().strokeBorder(Theme.blush, lineWidth: 2))
-                        .frame(width: fit.width * 0.20, height: fit.height * 0.11)
-                        .rotationEffect(.degrees(-12))
-                        .position(x: fit.minX + fit.width * 0.47, y: fit.minY + fit.height * 0.48)
-                    accessory("heart.fill", in: fit, at: CGPoint(x: 0.47, y: 0.48), color: Theme.blush)
-                }
-            }
+        Canvas { context, size in
+            var g = context
+            ArtPainter.fit(&g, box: UnicornRig.box, into: size)
+            UnicornRig.draw(look, pose: pose, in: g)
         }
         .accessibilityHidden(true)
         .allowsHitTesting(false)
-    }
-
-    private func accessory(_ icon: String, in frame: CGRect, at p: CGPoint, color: Color) -> some View {
-        Image(systemName: icon).font(.system(size: frame.width * 0.092, weight: .bold))
-            .foregroundStyle(color.gradient)
-            .shadow(color: Theme.ink.opacity(0.29), radius: 2, y: 3)
-            .position(x: frame.minX + frame.width * p.x, y: frame.minY + frame.height * p.y)
-    }
-}
-
-enum UnicornExpression: String {
-    case contented, nibble
-
-    var patch: CGRect {
-        switch self {
-        case .contented: return CGRect(x: 0.694, y: 0.163, width: 0.207, height: 0.128)
-        case .nibble: return CGRect(x: 0.819, y: 0.283, width: 0.108, height: 0.070)
-        }
-    }
-}
-
-enum UnicornMotion {
-    case lean, shake, nibble, nuzzle, stroll
-}
-
-struct AnimatedUnicorn: View {
-    let look: UnicornLook
-    let reaction: Date?
-    let motion: UnicornMotion
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion && reaction == nil)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let age = reaction.map { timeline.date.timeIntervalSince($0) } ?? 2
-            let phase = min(1, max(0, age / 0.85))
-            let pulse = sin(phase * .pi)
-            let blink = t.truncatingRemainder(dividingBy: 5.3)
-            let expression: UnicornExpression? = phase < 1 && motion != .stroll && motion != .shake
-                ? (motion == .nibble ? .nibble : .contented) : (blink < 0.16 ? .contented : nil)
-            let strength = reduceMotion ? 0 : pulse
-            let chew = motion == .nibble ? abs(sin(phase * 4 * .pi)) : 1
-            let bounce = motion == .stroll ? abs(sin(phase * 4 * .pi)) : 0
-            let tilt = motion == .shake ? sin(phase * 6 * .pi) * 2.7 : motion == .nuzzle ? 3.3 : 0.9
-            UnicornPortrait(look: look, expression: expression, intensity: phase < 1 ? min(1, 2.2 * pulse * chew) : 1)
-                .scaleEffect(x: 1 + 0.009 * strength, y: 1 + (reduceMotion ? 0 : 0.004 * sin(t * 2)) - 0.024 * strength,
-                             anchor: .bottom)
-                .rotationEffect(.degrees(tilt * strength), anchor: .bottom)
-                .offset(x: motion == .lean ? 11 * strength : 0,
-                        y: motion == .stroll ? -16 * bounce * strength : motion == .nibble ? 9 * strength : 0)
-        }
     }
 }
 
 extension MeadowVisitor {
     var sticker: Sticker {
-        Sticker(id: rawValue) { g, _ in
-            if let look, let picture = UnicornIllustration.sprite("unicorn", look: look) {
-                g.draw(Image(uiImage: picture), in: CGRect(x: -46, y: -50, width: 92, height: 100))
+        Sticker(id: rawValue) { context, _ in
+            var g = context
+            if let look {
+                let s: CGFloat = 0.145
+                g.scaleBy(x: s, y: s)
+                g.translateBy(x: -300, y: -341)
+                UnicornRig.draw(look, pose: UnicornPose(), in: g)
             } else if self == .bunny {
-                let fur = Color(hex: 0xEDCCB8)
-                for x in [-22.0, 4.0] {
-                    g.fill(Path(ellipseIn: CGRect(x: x, y: -44, width: 18, height: 44)), with: .color(fur))
-                    g.fill(Path(ellipseIn: CGRect(x: x + 5, y: -39, width: 8, height: 31)), with: .color(Theme.pink))
-                }
-                g.fill(Path(ellipseIn: CGRect(x: -30, y: -16, width: 60, height: 51)), with: .color(fur))
-                for x in [-15.0, 8.0] {
-                    g.fill(Path(ellipseIn: CGRect(x: x, y: 3, width: 7, height: 10)), with: .color(Theme.ink))
-                }
-                g.fill(Path(ellipseIn: CGRect(x: -4, y: 13, width: 8, height: 7)), with: .color(Theme.pink))
+                g.scaleBy(x: 0.15, y: 0.15)
+                g.translateBy(x: -300, y: -325)
+                PetPainter.draw(PetLook(kind: "bunny"), in: g)
             } else {
-                for x in [-35.0, 2.0] {
-                    g.fill(Path(ellipseIn: CGRect(x: x, y: -25, width: 33, height: 39)), with: .color(Theme.lilac))
-                    g.fill(Path(ellipseIn: CGRect(x: x + 4, y: 1, width: 25, height: 27)), with: .color(Theme.pink))
-                    g.fill(Path(ellipseIn: CGRect(x: x + 11, y: -16, width: 11, height: 13)), with: .color(.white))
-                }
-                g.fill(Path(roundedRect: CGRect(x: -4, y: -18, width: 8, height: 44), cornerRadius: 4), with: .color(Theme.ink))
+                let a: CGFloat = 100 / 420
+                g.scaleBy(x: a, y: a)
+                g.translateBy(x: -300, y: -425)
+                guard let item = PetArt.shared.wear["pk_butterfly"] else { return }
+                ArtPainter.draw(item.shapes, PetLook(kind: "unicorn").paints(for: item), in: g)
             }
         }
     }

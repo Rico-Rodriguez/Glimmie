@@ -1,4 +1,4 @@
-import UIKit
+import CoreGraphics
 import XCTest
 @testable import Glimmie
 
@@ -40,17 +40,40 @@ final class UnicornStableTests: XCTestCase {
         XCTAssertEqual(UnicornGame.entry.stickers.map(\.id), MeadowVisitor.allCases.map(\.rawValue))
     }
 
-    func testIllustratedScenesAndAnimatedPortraitAreBundled() throws {
-        let unicorn = try XCTUnwrap(UnicornIllustration.source("unicorn"))
-        for name in ["contented", "nibble"] {
-            let reaction = try XCTUnwrap(UnicornIllustration.source(name), name)
-            XCTAssertEqual(reaction.size, unicorn.size, name)
+    func testSharedUnicornRigAndCarePropsAreBundled() throws {
+        let art = PetArt.shared
+        let foal = try XCTUnwrap(art.animals["unicorn"])
+        for part in UnicornPart.allCases {
+            XCTAssertFalse(try XCTUnwrap(art.unicornRig[part.rawValue], part.rawValue).isEmpty)
         }
-        for name in ["stable", "meadow"] {
-            XCTAssertNotNil(UnicornIllustration.source(name), name)
+        for prop in ["brush", "sponge", "shower", "carrot"] {
+            XCTAssertFalse(try XCTUnwrap(art.props[prop], prop).isEmpty)
         }
-        let otherCoat = try XCTUnwrap(UnicornIllustration.sprite("unicorn", look: UnicornLook(coat: 0xADDCC6)))
-        XCTAssertEqual(otherCoat.size, unicorn.size)
-        XCTAssertNotEqual(otherCoat.pngData(), unicorn.pngData())
+        for mouth in ["wide", "yum", "grin"] { XCTAssertNotNil(foal.mouths[mouth], mouth) }
+    }
+
+    func testNibblingMovesTheHeadAndProjectsTheMuzzleWithIt() {
+        let pose = UnicornPose.frame(time: 2, age: 0.15, motion: .nibble)
+        XCTAssertEqual(pose.mouth, "wide")
+        XCTAssertNotEqual(pose.transform(.head), .identity)
+        XCTAssertEqual(pose.transform(.torso), .identity)
+        XCTAssertEqual(pose.transform(.foreLeft), .identity)
+        XCTAssertGreaterThan(UnicornRig.point(.muzzle, pose: pose).y, UnicornRig.point(.muzzle).y)
+        let frame = CGRect(x: 200, y: 90, width: 640, height: 550)
+        let muzzle = UnicornRig.point(.muzzle, pose: pose)
+        let back = UnicornRig.unproject(UnicornRig.project(muzzle, into: frame), from: frame)
+        XCTAssertEqual(back.x, muzzle.x, accuracy: 0.01)
+        XCTAssertEqual(back.y, muzzle.y, accuracy: 0.01)
+    }
+
+    func testWalkingAlternatesHoovesAndHonorsReduceMotion() {
+        let walk = UnicornPose.frame(time: 2, age: 0.4, motion: .stroll)
+        XCTAssertNotEqual(walk.transform(.foreLeft), walk.transform(.foreRight))
+        XCTAssertNotEqual(walk.transform(.hindLeft), walk.transform(.hindRight))
+        XCTAssertEqual(walk.transform(.torso), .identity)
+        let reduced = UnicornPose.frame(time: 2, age: 0.4, motion: .stroll, reduceMotion: true)
+        XCTAssertEqual(reduced.transform(.head), .identity)
+        XCTAssertEqual(reduced.transform(.tail), .identity)
+        XCTAssertEqual(reduced.transform(.foreLeft), .identity)
     }
 }

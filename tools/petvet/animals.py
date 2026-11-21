@@ -455,8 +455,13 @@ def make_all():
         mane.append(blob(circle(x, y, 34 - i * 1.5), col))
     tail = [blob(tube([(398, 580), (452, 572), (492, 530), (500, 470)], 40, 30), '#D2C0FF'),
             blob(tube([(404, 578), (450, 560), (476, 518)], 22, 16), '#FF9EC0')]
-    A['unicorn'] = dict(back=ears_pointy(c, '#FFC6E0', -6, 0.9) + tail, torso=body_set(c, '#FFFFFF'), limbs=paws(c, 'hoof', '#C9AEF5') + feet(c, 'hoof', '#C9AEF5'), head=head_set(c) + nose_small('#FFB3C7', 312),
-                        front=mane + horn, eye=(238, 274), mouth=(300, 334), style='u', col=outline('#E6D6F5'), fur=c, lash=True, eyecolor='#5E3A8A')
+    ears = ears_pointy(c, '#FFC6E0', -6, 0.9)
+    fore, hind = paws(c, 'hoof', '#C9AEF5'), feet(c, 'hoof', '#C9AEF5')
+    parts = dict(ears=ears, tail=tail, horn=horn,
+                 foreLeft=fore[:len(fore)//2], foreRight=fore[len(fore)//2:],
+                 hindLeft=hind[:len(hind)//2], hindRight=hind[len(hind)//2:])
+    A['unicorn'] = dict(back=ears + tail, torso=body_set(c, '#FFFFFF'), limbs=fore + hind, head=head_set(c) + nose_small('#FFB3C7', 312),
+                        front=mane + horn, eye=(238, 274), mouth=(300, 334), style='u', col=outline('#E6D6F5'), fur=c, lash=True, eyecolor='#5E3A8A', parts=parts)
 
     # Fawn: caramel with white spots and big sideways ears
     c = '#E3A574'
@@ -490,6 +495,8 @@ def finish(A):
             'eyes': eyes, 'mouths': mouths, 'brows': brows(ex, ey, a['col'], sc), 'blush': bl,
             'eye': [ex, ey], 'mouth': [mx, my], 'fur': a['fur'],
         }
+        if 'parts' in a:
+            out[k]['parts'] = a['parts']
     return out
 
 

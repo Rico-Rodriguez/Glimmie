@@ -45,6 +45,7 @@ final class PetArt {
     let bySlot: [String: [String]]
     let thumbs: [String: CGRect]
     let props: [String: [ArtShape]]
+    let unicornRig: [String: [ArtShape]]
 
     /// Feet line and head center in pet coordinates.
     static let feetY: CGFloat = 632
@@ -57,7 +58,7 @@ final class PetArt {
         }
         guard let f = file else {
             size = CGSize(width: 600, height: 660); order = []; animals = [:]; wear = [:]; slots = []; bySlot = [:]
-            thumbs = [:]; props = [:]
+            thumbs = [:]; props = [:]; unicornRig = [:]
             return
         }
         size = CGSize(width: f.size[0], height: f.size[1])
@@ -89,6 +90,7 @@ final class PetArt {
         bySlot = slotItems
         thumbs = f.thumbs.mapValues { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) }
         props = f.props.mapValues { $0.map(PetArt.shape) }
+        unicornRig = f.unicornRig?.mapValues { $0.map(PetArt.shape) } ?? [:]
     }
 
     private static func shape(_ r: PetRawShape) -> ArtShape {
@@ -144,6 +146,7 @@ private struct PetRawFile: Decodable {
     let slots: [String]
     let thumbs: [String: [Double]]
     let props: [String: [PetRawShape]]
+    let unicornRig: [String: [PetRawShape]]?
 }
 
 private struct PetRawWrapper: Decodable {
