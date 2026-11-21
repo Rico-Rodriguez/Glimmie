@@ -258,3 +258,27 @@ history before the game-drawer PR.
   a pearl (more likely until she has found it once).
 - Shared helpers: `Twinkles.draw` (the little stars around rare things).
 
+
+## Potion Lab decisions (Nov 2026)
+- Rico picked "both" for finding rare potions: secret combos make them, and a light-bulb card shows a picture recipe
+  for one she hasn't found yet. The Magic Shop doesn't brew its own potions; potion making lives here.
+- The potion is a 48 x 60 grid of 8 pt cells inside the flask (`PotionSim.fluidStep`): stable-fluids advection, an
+  18-step pressure projection, light vorticity confinement, premultiplied pigment (r, g, b, amount) and a density field
+  (heavy night sky sinks, moon milk floats). Liquid poured in thins what is there (`dilute`), so the same pigment makes
+  a bigger, paler potion. Air cells above the surface copy the top cell's color so a rising surface keeps it.
+  `PotionLiquid` turns the pigment into a 48 x 60 picture drawn smooth and clipped under the wavy surface.
+- Volume sets the level through the flask's shape (`PGeo.areaBelow`). Waves are a row of springs; the whirlpool dip
+  comes from how fast it swirls. Foam per column can bubble over the rim.
+- Held bottles tip over the mouth (or the unicorn) and only pour once the level liquid inside reaches the bottle's mouth
+  (`PPoly.level` finds the level of the tipped outline); the flow pulses (glug). Jars are turned over and drop pieces
+  when shaken. Bottles and jars are held `FingerLift.pour` above her finger. The paddle's blade sits
+  `PotionLabView.paddleReach` below her finger: she holds the end of its handle and the shaft goes up through the mouth.
+- Empty bottles only go in through the mouth when brought down from above (`constrainDip`), fill with the color at
+  their mouth and take their share of what's in the potion; lifted out they cork and fly to the rack (11 kept).
+- Rare potions (`PotionSim.rareKind`, most particular first): wild (7 things), rainbow, golden, galaxy, dragon (boiled),
+  dream, moonlight (lights off), frost, love, mermaid. The flask flashes and pulls its colors toward the potion's.
+  Stickers: the 10 potions plus `rainbowUnicorn` and `floatingUnicorn`.
+- The unicorn is the Dress Up pet unicorn (`PetPainter.draw`, which now takes an optional `furShading`).
+- Saves `potionlab.json` (rack, the flask's volume and mixed color, what's in it, lamp, heat). Sounds:
+  `python3 tools/potion/sounds.py`. Screenshot hooks: `-potionDemo mix | pour | shake | stir | boil | dip | unicorn | rare | night | hint`.
+- The screenshot workflow takes an `only` input (a name prefix like `potion`) to take just those screenshots.
