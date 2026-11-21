@@ -20,15 +20,6 @@ private extension CareTool {
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .brush: return "paintbrush.pointed.fill"
-        case .sponge: return "bubbles.and.sparkles.fill"
-        case .rinse: return "drop.fill"
-        case .feed: return "carrot.fill"
-        }
-    }
-
     var color: Color {
         switch self {
         case .brush: return Theme.lilac
@@ -184,9 +175,11 @@ private struct UnicornStableView: View {
     }
 
     private func stablePose(at date: Date) -> UnicornPose {
-        let target = finger.map { position in tool.map { liftedTip(position, tool: $0) } ?? position } ?? reaction?.point
+        let age = reaction.map { date.timeIntervalSince($0.time) }
+        let recentTarget = (age ?? .infinity) < UnicornPose.duration ? reaction?.point : nil
+        let target = finger.map { position in tool.map { liftedTip(position, tool: $0) } ?? position } ?? recentTarget
         return UnicornPose.frame(time: date.timeIntervalSinceReferenceDate,
-                                 age: reaction.map { date.timeIntervalSince($0.time) }, motion: motion,
+                                 age: age, motion: motion,
                                  target: target.map { UnicornRig.unproject($0, from: artFrame) }, reduceMotion: reduceMotion)
     }
 
@@ -210,8 +203,15 @@ private struct UnicornStableView: View {
     }
 
     private func checklistItem(_ item: CareTool, done: Bool) -> some View {
-        actionChip(done ? "checkmark" : item.symbol, label: done ? "\(item.rawValue.capitalized) done" : item.rawValue.capitalized,
-                   color: done ? Color(hex: 0x567745) : item.color, size: 65, selected: tool == item && !done) { pick(item) }
+        Button { pick(item) } label: {
+            if done {
+                chip("checkmark", color: Color(hex: 0x567745), size: 65, selected: false)
+            } else {
+                toolChip(item, size: 65)
+            }
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(done ? "\(item.rawValue.capitalized) done" : item.rawValue.capitalized)
     }
 
     private var controls: some View {
@@ -229,8 +229,7 @@ private struct UnicornStableView: View {
             HStack(spacing: 18) {
                 if tray == .care {
                     ForEach(CareTool.allCases, id: \.self) { item in
-                        chip("", color: item.color.opacity(0.38), size: 88, selected: tool == item)
-                            .overlay { PetPropThumb(name: item.prop).frame(width: 61, height: 61) }
+                        toolChip(item, size: 88)
                             .contentShape(Circle())
                             .gesture(careGesture(from: item))
                             .accessibilityLabel(item.rawValue.capitalized)
@@ -277,6 +276,11 @@ private struct UnicornStableView: View {
         Button(action: action) { chip(symbol, color: color, size: size, selected: selected) }
             .buttonStyle(Squish())
             .accessibilityLabel(label)
+    }
+
+    private func toolChip(_ item: CareTool, size: CGFloat) -> some View {
+        chip("", color: item.color.opacity(0.38), size: size, selected: tool == item)
+            .overlay { PetPropThumb(name: item.prop).frame(width: size * 0.72, height: size * 0.72) }
     }
 
     private func chip(_ symbol: String, color: Color, size: CGFloat, selected: Bool) -> some View {

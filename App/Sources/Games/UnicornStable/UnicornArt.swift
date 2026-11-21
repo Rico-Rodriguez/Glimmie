@@ -8,6 +8,7 @@ enum UnicornPart: String, CaseIterable {
 
 /// Joint transforms in the shared Pet Vet and Dress Up coordinates, with a face suited to the action.
 struct UnicornPose {
+    static let duration: TimeInterval = 0.82
     var lift: CGFloat = 0
     var head = CGAffineTransform.identity
     var mane = CGAffineTransform.identity
@@ -24,7 +25,7 @@ struct UnicornPose {
     static func frame(time: TimeInterval, age: TimeInterval?, motion: UnicornMotion,
                       target: CGPoint? = nil, direction: CGFloat = 1, reduceMotion: Bool = false) -> Self {
         var pose = Self()
-        let phase = min(1, max(0, (age ?? 2) / 0.82))
+        let phase = min(1, max(0, (age ?? 2) / duration))
         let active = age != nil && phase < 1
         let beat: CGFloat = active ? sin(phase * .pi) : 0
         let idle: CGFloat = reduceMotion ? 0 : sin(time * 2.8)
