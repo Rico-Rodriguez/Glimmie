@@ -118,7 +118,7 @@ private struct UnicornStableView: View {
                 }
                 .padding(.horizontal, 26)
                 .position(x: 512, y: 63)
-                StickerToast(game: UnicornGame.id, target: CGPoint(x: 846, y: 63))
+                StickerToast(game: UnicornGame.id, target: CGPoint(x: 874, y: 63))
                 if book {
                     StickerBookView(game: UnicornGame.id) { book = false }
                         .zIndex(1)
@@ -200,9 +200,7 @@ private struct UnicornStableView: View {
                         }
                     }
                 } else {
-                    ForEach(UnicornGear.allCases.filter { gear in
-                        gear.treasureID.map { Coins.shared.owns($0) } ?? true
-                    }, id: \.self) { gear in
+                    ForEach(UnicornGear.available, id: \.self) { gear in
                         chip(gear.symbol, label: gear == .none ? "Remove gear" : gear.rawValue.capitalized,
                              color: Theme.peach, selected: save.look.gear == gear, size: 103) {
                             save.look.gear = gear

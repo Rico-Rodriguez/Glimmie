@@ -27,6 +27,10 @@ enum UnicornGear: String, Codable, CaseIterable {
         default: return nil
         }
     }
+
+    static var available: [UnicornGear] {
+        allCases.filter { $0.treasureID.map { Coins.shared.owns($0) } ?? true }
+    }
 }
 
 enum MeadowVisitor: String, CaseIterable {

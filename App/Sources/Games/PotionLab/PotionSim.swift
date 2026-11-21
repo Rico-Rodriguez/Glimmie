@@ -589,6 +589,7 @@ final class PotionSim {
         held = h
         hand = finger
         heldPos = p
+        lastHeld = p
         heldVel = .zero
         heldTilt = 0
         shakeEnergy = 0
@@ -803,9 +804,11 @@ final class PotionSim {
 
     /// A bottle tips over the flask (or the unicorn) and pours once its liquid reaches the mouth.
     private func pourBottle(_ d: CGFloat, color: RGB, conc: Float, density: Float, ing: PIngredient?, potion: Int?, shape: PBottleShape) {
-        let over = PotionSim.overMouth(heldPos) || (potion != nil && PotionSim.overUnicorn(heldPos)) || PotionSim.overUnicorn(heldPos)
+        let overFlask = PotionSim.overMouth(heldPos)
+        let overUnicorn = PotionSim.overUnicorn(heldPos)
+        let over = overFlask || overUnicorn
         // tip toward the middle of what it's over
-        let targetX = PotionSim.overUnicorn(heldPos) ? PotionGeometry.unicornBox.midX : PotionGeometry.C.x
+        let targetX = overUnicorn ? PotionGeometry.unicornBox.midX : PotionGeometry.C.x
         let side: CGFloat = heldPos.x > targetX + 14 ? -1 : 1
         let want: CGFloat = over ? side * 2.1 : 0
         heldTilt += (want - heldTilt) * min(1, d * (over ? 3.2 : 6))
@@ -815,7 +818,7 @@ final class PotionSim {
         let ca = cos(heldTilt), sa = sin(heldTilt)
         let mouth = CGPoint(x: heldPos.x - PBottleShape.mouthY * s * sa, y: heldPos.y + PBottleShape.mouthY * s * ca)
         let depth = mouth.y - lvl + 3
-        guard heldFill > 0.001, depth > 0 else { return }
+        guard heldFill > 0.001, depth > 0, abs(heldTilt) > 1.2 else { return }
         // glug glug: the flow pulses as air gets back in
         let pulse = 0.7 + 0.3 * sin(CGFloat(time) * 16)
         let q = min(0.9, 0.18 * sqrt(depth)) * pulse
@@ -825,7 +828,14 @@ final class PotionSim {
         let dir = CGVector(dx: sa, dy: -ca)
         let speed = 50 + 60 * sqrt(depth)
         let r = 3 + 5 * min(1, q / 0.5)
-        drops.append(PDrop(p: mouth, v: CGVector(dx: dir.dx * speed + heldVel.dx * 0.3, dy: dir.dy * speed + heldVel.dy * 0.3),
+        var flow = CGVector(dx: dir.dx * speed + heldVel.dx * 0.3, dy: dir.dy * speed + heldVel.dy * 0.3)
+        if overFlask {
+            // Keep a tipped stream aimed down the neck. A sideways launch from a bottle over the rim
+            // otherwise hits the far wall before it reaches the bowl, even with the lip centered.
+            let across = (targetX - mouth.x) * 3.6 + heldVel.dx * 0.12
+            flow = CGVector(dx: max(-150, min(150, across)), dy: max(70, flow.dy))
+        }
+        drops.append(PDrop(p: mouth, v: flow,
                            color: color, conc: conc, density: density, vol: vol, r: r, stream: heldStream, ing: ing, potion: potion))
         cue(.glug, gap: 0.22)
     }
