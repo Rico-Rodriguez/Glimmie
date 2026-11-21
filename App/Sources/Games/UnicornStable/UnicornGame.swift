@@ -11,21 +11,21 @@ enum UnicornGame {
 }
 
 private extension CareTool {
-    var symbol: String {
+    var prop: String {
         switch self {
-        case .brush: return "paintbrush.pointed.fill"
-        case .sponge: return "bubbles.and.sparkles.fill"
-        case .rinse: return "drop.fill"
-        case .feed: return "carrot.fill"
+        case .brush: return "brush"
+        case .sponge: return "sponge"
+        case .rinse: return "shower"
+        case .feed: return "carrot"
         }
     }
 
     var color: Color {
         switch self {
-        case .brush: return Color(hex: 0xAE654F)
-        case .sponge: return Color(hex: 0x7870AA)
-        case .rinse: return Color(hex: 0x357E9C)
-        case .feed: return Color(hex: 0xCC691E)
+        case .brush: return Theme.lilac
+        case .sponge: return Theme.lemon
+        case .rinse: return Theme.sky
+        case .feed: return Theme.peach
         }
     }
 
@@ -94,6 +94,8 @@ private struct UnicornStableView: View {
     @State private var pathX: CGFloat = 483
     @State private var guest: MeadowVisitor?
     @State private var strollStarted: Date?
+    @State private var direction: CGFloat = 1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let artFrame = CGRect(x: 200, y: 95, width: 640, height: 549)
     private var care: StableCare { save.care ?? StableCare() }
@@ -107,7 +109,7 @@ private struct UnicornStableView: View {
                     Spacer()
                     CoinCounter(game: UnicornGame.id, height: 62)
                     StickerBookButton(game: UnicornGame.id, size: 66) { book = true }
-                    RoundButton(symbol: meadow ? "house.lodge.fill" : "leaf.fill", tint: Color(hex: 0x74935F)) {
+                    RoundButton(symbol: meadow ? "house.lodge.fill" : "leaf.fill", tint: Theme.mint) {
                         Sound.shared.play(.whoosh)
                         finishDrag()
                         guest = nil
@@ -126,18 +128,24 @@ private struct UnicornStableView: View {
             .coordinateSpace(name: UnicornGame.id)
             .coinPurse(game: UnicornGame.id)
         }
-        .background(Color(hex: meadow ? 0xCFD9AF : 0xAEA688).ignoresSafeArea())
+        .background((meadow ? Theme.sky : Theme.blush).ignoresSafeArea())
     }
 
     private var stableScene: some View {
         ZStack {
-            scenery("stable", color: Color(hex: 0xD5C59C))
-            Ellipse().fill(Color(hex: 0x674833, alpha: 0.29)).blur(radius: 16)
-                .frame(width: 430, height: 45).position(x: artFrame.midX, y: 625)
-            AnimatedUnicorn(look: save.look, reaction: reaction?.time, motion: motion)
-                .frame(width: artFrame.width, height: artFrame.height)
-                .position(x: artFrame.midX, y: artFrame.midY)
-            marks
+            UnicornBackdrop(meadow: false)
+            Ellipse().fill(Theme.ink.opacity(0.15)).blur(radius: 8)
+                .frame(width: 350, height: 38).position(x: artFrame.midX, y: 620)
+            TimelineView(.animation(minimumInterval: 1 / 30)) { frame in
+                let pose = stablePose(at: frame.date)
+                ZStack {
+                    UnicornPortrait(look: save.look, pose: pose)
+                        .frame(width: artFrame.width, height: artFrame.height)
+                        .position(x: artFrame.midX, y: artFrame.midY)
+                    marks(pose)
+                }
+            }
+            .allowsHitTesting(false)
             Rectangle().fill(.clear)
                 .contentShape(Rectangle())
                 .frame(width: artFrame.width, height: artFrame.height)
@@ -166,18 +174,13 @@ private struct UnicornStableView: View {
         }
     }
 
-    private func scenery(_ name: String, color: Color) -> some View {
-        ZStack {
-            color
-            if let art = UnicornIllustration.source(name) {
-                Image(uiImage: art).resizable().scaledToFill()
-            }
-            LinearGradient(colors: [.black.opacity(0.25), .clear, .clear], startPoint: .top, endPoint: .bottom)
-        }
-        .frame(width: 1024, height: 834)
-        .clipped()
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+    private func stablePose(at date: Date) -> UnicornPose {
+        let age = reaction.map { date.timeIntervalSince($0.time) }
+        let recentTarget = (age ?? .infinity) < UnicornPose.duration ? reaction?.point : nil
+        let target = finger.map { position in tool.map { liftedTip(position, tool: $0) } ?? position } ?? recentTarget
+        return UnicornPose.frame(time: date.timeIntervalSinceReferenceDate,
+                                 age: age, motion: motion,
+                                 target: target.map { UnicornRig.unproject($0, from: artFrame) }, reduceMotion: reduceMotion)
     }
 
     private var checklist: some View {
@@ -194,14 +197,21 @@ private struct UnicornStableView: View {
             }
         }
         .padding(15)
-        .background(Color(hex: 0xFFF4D8).opacity(0.94), in: RoundedRectangle(cornerRadius: 32))
+        .background(Theme.cream, in: RoundedRectangle(cornerRadius: 32))
         .overlay(RoundedRectangle(cornerRadius: 32).strokeBorder(.white.opacity(0.65), lineWidth: 3))
         .shadow(color: .black.opacity(0.2), radius: 11, y: 4)
     }
 
     private func checklistItem(_ item: CareTool, done: Bool) -> some View {
-        actionChip(done ? "checkmark" : item.symbol, label: done ? "\(item.rawValue.capitalized) done" : item.rawValue.capitalized,
-                   color: done ? Color(hex: 0x567745) : item.color, size: 65, selected: tool == item && !done) { pick(item) }
+        Button { pick(item) } label: {
+            if done {
+                chip("checkmark", color: Color(hex: 0x567745), size: 65, selected: false)
+            } else {
+                toolChip(item, size: 65)
+            }
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(done ? "\(item.rawValue.capitalized) done" : item.rawValue.capitalized)
     }
 
     private var controls: some View {
@@ -219,7 +229,7 @@ private struct UnicornStableView: View {
             HStack(spacing: 18) {
                 if tray == .care {
                     ForEach(CareTool.allCases, id: \.self) { item in
-                        chip(item.symbol, color: item.color, size: 88, selected: tool == item)
+                        toolChip(item, size: 88)
                             .contentShape(Circle())
                             .gesture(careGesture(from: item))
                             .accessibilityLabel(item.rawValue.capitalized)
@@ -256,7 +266,7 @@ private struct UnicornStableView: View {
         }
         .padding(.horizontal, 25)
         .padding(.vertical, 11)
-        .background(Color(hex: 0xFFF4DA).opacity(0.97), in: RoundedRectangle(cornerRadius: 36))
+        .background(Theme.cream, in: RoundedRectangle(cornerRadius: 36))
         .overlay(RoundedRectangle(cornerRadius: 36).strokeBorder(.white.opacity(0.8), lineWidth: 4))
         .shadow(color: .black.opacity(0.22), radius: 12, y: 4)
     }
@@ -268,27 +278,30 @@ private struct UnicornStableView: View {
             .accessibilityLabel(label)
     }
 
+    private func toolChip(_ item: CareTool, size: CGFloat) -> some View {
+        chip("", color: item.color.opacity(0.38), size: size, selected: tool == item)
+            .overlay { PetPropThumb(name: item.prop).frame(width: size * 0.72, height: size * 0.72) }
+    }
+
     private func chip(_ symbol: String, color: Color, size: CGFloat, selected: Bool) -> some View {
         ZStack {
-            Circle().fill(symbol.isEmpty ? color : Color(hex: 0xFFFDF2))
+            Circle().fill(symbol.isEmpty ? color : .white)
             if !symbol.isEmpty {
                 Image(systemName: symbol).font(.system(size: size * 0.43, weight: .bold)).foregroundStyle(color)
             }
         }
         .frame(width: size, height: size)
-        .overlay(Circle().strokeBorder(selected ? Color(hex: 0xB67A52) : Color(hex: 0xEEE0BF), lineWidth: selected ? 6 : 3))
+        .overlay(Circle().strokeBorder(selected ? Theme.pink : Theme.blush, lineWidth: selected ? 6 : 3))
     }
 
-    private func point(_ spot: CareSpot) -> CGPoint {
-        let anchor = UnicornIllustration.anchor(spot)
-        let fit = UnicornIllustration.fitted(in: artFrame)
-        return CGPoint(x: fit.minX + anchor.x * fit.width, y: fit.minY + anchor.y * fit.height)
+    private func point(_ spot: CareSpot, pose: UnicornPose? = nil) -> CGPoint {
+        UnicornRig.project(UnicornRig.point(spot, pose: pose ?? stablePose(at: Date())), into: artFrame)
     }
 
-    private var marks: some View {
+    private func marks(_ pose: UnicornPose) -> some View {
         ZStack {
             ForEach(CareSpot.allCases, id: \.self) { spot in
-                let location = point(spot)
+                let location = point(spot, pose: pose)
                 let target = tool.map { care.spots(for: $0).contains(spot) } ?? false
                 ZStack {
                     if target {
@@ -349,9 +362,15 @@ private struct UnicornStableView: View {
     private func careGesture(from item: CareTool? = nil) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(UnicornGame.id))
             .onChanged { value in
-                guard hypot(value.translation.width, value.translation.height) > 10, let active = item ?? tool else { return }
-                if let item { tool = item }
+                guard hypot(value.translation.width, value.translation.height) > 10 else { return }
                 finger = value.location
+                guard let active = item ?? tool else {
+                    if artFrame.contains(value.location), reaction.map({ Date().timeIntervalSince($0.time) > 0.65 }) ?? true {
+                        pet(at: value.location)
+                    }
+                    return
+                }
+                if let item { tool = item }
                 let tip = liftedTip(value.location, tool: active)
                 if let spot = closest(to: tip, for: active, radius: 56), spot != lastSpot {
                     lastSpot = spot
@@ -386,14 +405,15 @@ private struct UnicornStableView: View {
 
     private func heldTool(_ tool: CareTool, finger: CGPoint) -> some View {
         let tip = liftedTip(finger, tool: tool)
-        let dx = finger.x - tip.x, dy = finger.y - tip.y
-        return ZStack {
-            if tool == .brush || tool == .rinse {
-                Capsule().fill(tool.color.opacity(0.86)).frame(width: hypot(dx, dy), height: 17)
-                    .rotationEffect(.radians(Double(atan2(dy, dx))))
-                    .position(x: (finger.x + tip.x) / 2, y: (finger.y + tip.y) / 2)
-            }
-            chip(tool.symbol, color: tool.color, size: 58, selected: false).position(tip)
+        let center: CGPoint = tool == .brush ? CGPoint(x: 50, y: 48) : tool == .rinse ? CGPoint(x: 36, y: 96) : CGPoint(x: 70, y: 70)
+        let grip: CGPoint = tool == .rinse ? CGPoint(x: 118, y: 124) : CGPoint(x: 124, y: 126)
+        let angle = FingerLift.turn(tip: center, center: grip, finger: finger, lifted: tip)
+        let length = hypot(center.x - grip.x, center.y - grip.y)
+        let elongated = tool == .brush || tool == .rinse
+        let scale = elongated ? hypot(tip.x - finger.x, tip.y - finger.y) / length : 0.76
+        return Canvas { context, _ in
+            PetPainter.prop(tool.prop, at: tip, scale: scale, rotation: elongated ? angle * 180 / .pi : 0,
+                            opacity: artFrame.contains(tip) ? 0.82 : 1, center: center, in: context)
         }
     }
 
@@ -429,7 +449,7 @@ private struct UnicornStableView: View {
 
     private var meadowScene: some View {
         ZStack {
-            scenery("meadow", color: Theme.mint)
+            UnicornBackdrop(meadow: true)
             Rectangle().fill(.clear).contentShape(Rectangle())
                 .gesture(SpatialTapGesture(coordinateSpace: .named(UnicornGame.id)).onEnded { value in
                     walk(toward: value.location.x)
@@ -437,14 +457,19 @@ private struct UnicornStableView: View {
                 })
             Ellipse().fill(Color(hex: 0x526445, alpha: 0.34)).blur(radius: 9)
                 .frame(width: 248, height: 34).position(x: pathX, y: 682)
-            AnimatedUnicorn(look: save.look, reaction: strollStarted, motion: .stroll)
-                .frame(width: 430, height: 348).position(x: pathX, y: 512)
-                .allowsHitTesting(false)
+            TimelineView(.animation(minimumInterval: 1 / 30)) { frame in
+                let age = strollStarted.map { frame.date.timeIntervalSince($0) }
+                let pose = UnicornPose.frame(time: frame.date.timeIntervalSinceReferenceDate, age: age, motion: .stroll,
+                                             direction: direction, reduceMotion: reduceMotion)
+                UnicornPortrait(look: save.look, pose: pose)
+            }
+            .frame(width: 430, height: 348).position(x: pathX, y: 512)
+            .allowsHitTesting(false)
             ForEach(Array(MeadowVisitor.allCases.enumerated()), id: \.element) { index, visitor in
                 let found = StickerBook.shared.has(game: UnicornGame.id, id: visitor.rawValue)
                 let stationX: CGFloat = 174 + CGFloat(index) * 225
                 actionChip(found ? "checkmark" : "sparkles", label: found ? visitor.name : "Explore the meadow",
-                           color: Color(hex: 0x637D4F), size: 76) {
+                           color: Theme.ink, size: 76) {
                     walk(toward: stationX)
                     guest = visitor
                     if StickerBook.shared.find(game: UnicornGame.id, id: visitor.rawValue) {
@@ -466,6 +491,7 @@ private struct UnicornStableView: View {
     }
 
     private func walk(toward x: CGFloat) {
+        direction = x < pathX ? -1 : 1
         strollStarted = Date()
         withAnimation(.easeInOut(duration: 0.75)) { pathX = max(232, min(792, x)) }
         Sound.shared.play(.whoosh, volume: 0.42)
@@ -483,9 +509,8 @@ private struct CareEffect: View {
         ZStack {
             switch tool {
             case .feed:
-                Image(systemName: "carrot.fill")
-                    .font(.system(size: 49, weight: .bold))
-                    .foregroundStyle(tool.color)
+                PetPropThumb(name: tool.prop)
+                    .frame(width: 59, height: 59)
                     .rotationEffect(.degrees(-32))
                     .scaleEffect(moved ? 0.13 : 1)
                     .offset(x: moved ? 0 : 68, y: moved ? 0 : 39)

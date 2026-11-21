@@ -312,6 +312,6 @@ history before the game-drawer PR.
 ## Unicorn Stable
 
 - One customizable unicorn with separate coat, mane and horn colors. Appearance and current care progress live in `unicornstable/stable.json`. Older saves keep her appearance and start a new care round.
-- The painted sprite, expression frames, and both backgrounds live in `App/Resources/Games/UnicornStable/`. Runtime tints preserve the shading and let the same expression frames follow the color choices.
+- The stable uses the Pet Vet and Dress Up foal geometry, expression paths and care props. `tools/dressup/pets.py` packages articulated parts and paint roles in `dressup.json`. Head, mane, tail and hooves move independently, and care marks follow the same transforms as the body parts they sit on. The meadow and stable window use Dress Up scenery.
 - Pick a care tool and tap a highlighted spot, or drag the tool from its tray. Brush burrs out of the hair, lather and rinse each muddy spot, and feed two carrot bites. Completing a round awards three play coins.
 - Tap the meadow to stroll or visit marked spots. Each first visit adds a sticker and one play coin. Use `-game unicornstable -unicornMeadow` to launch in the meadow.
