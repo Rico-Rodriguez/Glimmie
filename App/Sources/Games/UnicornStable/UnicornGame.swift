@@ -4,40 +4,35 @@ enum UnicornGame {
     static let id = "unicornstable"
     static let entry = GameEntry(
         id: id, title: "Unicorn Stable", tint: Theme.blush,
-        icon: { AnyView(UnicornPicture(look: UnicornLook())) },
+        icon: { AnyView(UnicornPortrait(look: UnicornLook())) },
         play: { exit in AnyView(UnicornStableView(exit: exit)) },
         stickers: MeadowVisitor.allCases.map(\.sticker)
     )
 }
 
-private enum StableTool: String, CaseIterable {
-    case brush, sponge, comb, braid, feed
-
+private extension CareTool {
     var symbol: String {
         switch self {
         case .brush: return "paintbrush.pointed.fill"
         case .sponge: return "bubbles.and.sparkles.fill"
-        case .comb: return "comb.fill"
-        case .braid: return "ribbon.fill"
+        case .rinse: return "drop.fill"
         case .feed: return "carrot.fill"
         }
     }
 
     var color: Color {
         switch self {
-        case .brush: return Theme.pink
-        case .sponge: return Theme.sky
-        case .comb: return Theme.mint
-        case .braid: return Theme.lilac
-        case .feed: return Theme.peach
+        case .brush: return Color(hex: 0xAE654F)
+        case .sponge: return Color(hex: 0x7870AA)
+        case .rinse: return Color(hex: 0x357E9C)
+        case .feed: return Color(hex: 0xCC691E)
         }
     }
 
     var sound: SFX {
         switch self {
-        case .brush, .comb: return .whoosh
+        case .brush, .rinse: return .whoosh
         case .sponge: return .bubble
-        case .braid: return .sparkle
         case .feed: return .pop
         }
     }
@@ -58,7 +53,7 @@ private enum StableTray: String, CaseIterable {
 
     var colors: [UInt32] {
         switch self {
-        case .coat: return [0xFFF8F1, 0xFFD1DB, 0xCFEAFF, 0xF0CFAB, 0xF3EDF9, 0xADDCC6]
+        case .coat: return [0xFFF8F1, 0xFFD1DB, 0xCFEAFF, 0xF0CFAB, 0xE4D1F3, 0xADDCC6]
         case .mane: return [0xF59FC4, 0xBAA4F3, 0x91D5E1, 0xF8B07D, 0xE8CF71, 0x8BD4AD]
         case .horn: return [0xFFC858, 0xFF9BBE, 0xB89EF8, 0x87D7E9, 0xB8EBB4, 0xFFF5C4]
         default: return []
@@ -78,424 +73,445 @@ private enum StableTray: String, CaseIterable {
 private struct UnicornStableView: View {
     private struct Save: Codable {
         var look = UnicornLook()
-        var nextStretch = 0
+        var care: StableCare?
+    }
+
+    private struct Reaction: Equatable {
+        let tool: CareTool?
+        let point: CGPoint
+        let time = Date()
     }
 
     let exit: () -> Void
     @State private var save = GameStorage.load(Save.self, game: UnicornGame.id, file: "stable.json") ?? Save()
     @State private var tray: StableTray = .care
-    @State private var tool: StableTool?
+    @State private var tool: CareTool?
     @State private var finger: CGPoint?
+    @State private var lastSpot: CareSpot?
+    @State private var reaction: Reaction?
     @State private var book = false
-    @State private var riding = ProcessInfo.processInfo.arguments.contains("-unicornMeadow")
-    @State private var ride = MeadowRide()
-    @State private var reaction = 0
-    @State private var effectPoint = CGPoint(x: 512, y: 360)
-    @State private var effect: StableTool?
-    @State private var lastRub: CGPoint?
-    @State private var landing = 0
-    @State private var splashed = false
-    @State private var rideMotion: Date?
-    @State private var jumped = false
-    @State private var meadowOffset: CGFloat = 0
-    @State private var bubbles: [CGPoint] = []
-    @State private var sheen = 0
+    @State private var meadow = ProcessInfo.processInfo.arguments.contains("-unicornMeadow")
+    @State private var pathX: CGFloat = 483
+    @State private var guest: MeadowVisitor?
+    @State private var strollStarted: Date?
 
-    private let petFrame = CGRect(x: 207, y: 114, width: 610, height: 490)
-    private let workArea = CGRect(x: 290, y: 187, width: 495, height: 376)
+    private let artFrame = CGRect(x: 200, y: 95, width: 640, height: 549)
+    private var care: StableCare { save.care ?? StableCare() }
 
     var body: some View {
         DesignCanvas {
             ZStack {
-                if riding { meadow } else { barn }
+                if meadow { meadowScene } else { stableScene }
                 HStack(spacing: 16) {
                     HomeButton(action: exit)
                     Spacer()
-                    CoinCounter(game: UnicornGame.id)
-                    StickerBookButton(game: UnicornGame.id) { book = true }
-                    RoundButton(symbol: riding ? "house.lodge.fill" : "leaf.fill", tint: Theme.mint) { toggleRide() }
-                        .accessibilityLabel(riding ? "Return to stable" : "Ride in the meadow")
+                    CoinCounter(game: UnicornGame.id, height: 62)
+                    StickerBookButton(game: UnicornGame.id, size: 66) { book = true }
+                    RoundButton(symbol: meadow ? "house.lodge.fill" : "leaf.fill", tint: Color(hex: 0x74935F)) {
+                        Sound.shared.play(.whoosh)
+                        finishDrag()
+                        guest = nil
+                        withAnimation(.easeInOut(duration: 0.28)) { meadow.toggle() }
+                    }
+                    .accessibilityLabel(meadow ? "Return to the stable" : "Visit the meadow")
                 }
-                .padding(.horizontal, 26)
-                .position(x: 512, y: 63)
-                StickerToast(game: UnicornGame.id, target: CGPoint(x: 874, y: 63))
+                .padding(.horizontal, 28)
+                .position(x: 512, y: 58)
+                StickerToast(game: UnicornGame.id, target: CGPoint(x: 875, y: 58))
                 if book {
-                    StickerBookView(game: UnicornGame.id) { book = false }
-                        .zIndex(1)
+                    StickerBookView(game: UnicornGame.id) { book = false }.zIndex(2)
                 }
             }
             .frame(width: 1024, height: 834)
             .coordinateSpace(name: UnicornGame.id)
             .coinPurse(game: UnicornGame.id)
         }
-        .background((riding ? Theme.sky : Theme.cream).ignoresSafeArea())
+        .background(Color(hex: meadow ? 0xCFD9AF : 0xAEA688).ignoresSafeArea())
     }
 
-    private var barn: some View {
+    private var stableScene: some View {
         ZStack {
-            LinearGradient(colors: [Color(hex: 0xFFE6D8), Theme.cream], startPoint: .top, endPoint: .bottom)
-            RoundedRectangle(cornerRadius: 84)
-                .fill(LinearGradient(colors: [Theme.sky, Theme.mint], startPoint: .top, endPoint: .bottom))
-                .overlay(RoundedRectangle(cornerRadius: 84).strokeBorder(.white, lineWidth: 16))
-                .frame(width: 680, height: 460)
-                .position(x: 512, y: 345)
-            HStack(spacing: 686) {
-                Image(systemName: "heart.fill").foregroundStyle(Theme.peach)
-                Image(systemName: "sparkles").foregroundStyle(Theme.lilac)
-            }
-            .font(.system(size: 56, weight: .bold))
-            .position(x: 512, y: 282)
-            Ellipse().fill(Color(hex: 0xBDA0BF, alpha: 0.25)).frame(width: 474, height: 59)
-                .position(x: 512, y: 555)
-            UnicornPicture(look: save.look)
-                .frame(width: petFrame.width, height: petFrame.height)
-                .position(x: petFrame.midX, y: petFrame.midY)
-                .scaleEffect(effect == .feed && reaction.isMultiple(of: 2) ? 1.025 : 1)
-            Rectangle()
-                .fill(.clear)
+            scenery("stable", color: Color(hex: 0xD5C59C))
+            Ellipse().fill(Color(hex: 0x674833, alpha: 0.29)).blur(radius: 16)
+                .frame(width: 430, height: 45).position(x: artFrame.midX, y: 625)
+            AnimatedUnicorn(look: save.look, reaction: reaction?.time, motion: motion)
+                .frame(width: artFrame.width, height: artFrame.height)
+                .position(x: artFrame.midX, y: artFrame.midY)
+            marks
+            Rectangle().fill(.clear)
                 .contentShape(Rectangle())
-                .frame(width: petFrame.width, height: petFrame.height)
-                .position(x: petFrame.midX, y: petFrame.midY)
-                .gesture(careGesture)
+                .frame(width: artFrame.width, height: artFrame.height)
+                .position(x: artFrame.midX, y: artFrame.midY)
+                .gesture(careGesture())
                 .accessibilityLabel("Care for your unicorn")
                 .accessibilityAddTraits(.isButton)
-                .accessibilityAction { react(at: CGPoint(x: 548, y: 375), using: tool) }
-            careEffect
-            controls.position(x: 512, y: 703)
-            if let finger, let tool {
-                heldTool(tool, finger: finger)
-                    .allowsHitTesting(false)
-            }
+                .accessibilityAction {
+                    if let tool, let spot = CareSpot.allCases.first(where: { care.spots(for: tool).contains($0) }) {
+                        use(tool, at: spot)
+                    } else { pet(at: point(.shoulder)) }
+                }
+            checklist.position(x: 113, y: 373)
+            controls.position(x: 512, y: 732)
+            effects
+            if let finger, let tool { heldTool(tool, finger: finger).allowsHitTesting(false) }
         }
     }
 
+    private var motion: UnicornMotion {
+        switch reaction?.tool {
+        case .feed: return .nibble
+        case .rinse, .sponge: return .shake
+        case .brush: return .lean
+        case nil: return .nuzzle
+        }
+    }
+
+    private func scenery(_ name: String, color: Color) -> some View {
+        ZStack {
+            color
+            if let art = UnicornIllustration.source(name) {
+                Image(uiImage: art).resizable().scaledToFill()
+            }
+            LinearGradient(colors: [.black.opacity(0.25), .clear, .clear], startPoint: .top, endPoint: .bottom)
+        }
+        .frame(width: 1024, height: 834)
+        .clipped()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private var checklist: some View {
+        VStack(spacing: 16) {
+            checklistItem(.brush, done: care.groomed)
+            checklistItem(care.dirt.isEmpty ? .rinse : .sponge, done: care.washed)
+            checklistItem(.feed, done: care.fed)
+            if care.complete {
+                actionChip("arrow.counterclockwise", label: "Start another care round", color: Color(hex: 0x897247), size: 54) {
+                    save.care = StableCare()
+                    persist()
+                    pick(.brush)
+                }
+            }
+        }
+        .padding(15)
+        .background(Color(hex: 0xFFF4D8).opacity(0.94), in: RoundedRectangle(cornerRadius: 32))
+        .overlay(RoundedRectangle(cornerRadius: 32).strokeBorder(.white.opacity(0.65), lineWidth: 3))
+        .shadow(color: .black.opacity(0.2), radius: 11, y: 4)
+    }
+
+    private func checklistItem(_ item: CareTool, done: Bool) -> some View {
+        actionChip(done ? "checkmark" : item.symbol, label: done ? "\(item.rawValue.capitalized) done" : item.rawValue.capitalized,
+                   color: done ? Color(hex: 0x567745) : item.color, size: 65, selected: tool == item && !done) { pick(item) }
+    }
+
     private var controls: some View {
-        VStack(spacing: 14) {
-            HStack(spacing: 16) {
-                ForEach(StableTray.allCases, id: \.self) { item in
-                    chip(item.symbol, label: item.rawValue.capitalized, color: Theme.lilac, selected: item == tray, size: 59) {
-                        tray = item
+        VStack(spacing: 8) {
+            HStack(spacing: 13) {
+                ForEach(StableTray.allCases, id: \.self) { tab in
+                    actionChip(tab.symbol, label: tab.rawValue.capitalized, color: Color(hex: 0x785675),
+                               size: 51, selected: tab == tray) {
+                        tray = tab
                         tool = nil
                         Sound.shared.play(.flip)
                     }
                 }
             }
-            HStack(spacing: 19) {
+            HStack(spacing: 18) {
                 if tray == .care {
-                    ForEach(StableTool.allCases, id: \.self) { item in
-                        chipLabel(item.symbol, color: item.color, selected: item == tool, size: 103)
+                    ForEach(CareTool.allCases, id: \.self) { item in
+                        chip(item.symbol, color: item.color, size: 88, selected: tool == item)
                             .contentShape(Circle())
-                            .gesture(selectTool(item))
+                            .gesture(careGesture(from: item))
                             .accessibilityLabel(item.rawValue.capitalized)
                             .accessibilityAddTraits(.isButton)
                             .accessibilityAction { pick(item) }
                     }
+                    actionChip("ribbon.fill", label: save.look.braided ? "Untie the mane" : "Tie the mane",
+                               color: Color(hex: 0x825C91), size: 88, selected: save.look.braided) {
+                        save.look.braided.toggle()
+                        persist()
+                        pet(at: point(.mane))
+                    }
                 } else if let key = tray.keyPath {
-                    ForEach(Array(tray.colors.enumerated()), id: \.offset) { index, color in
-                        chip("", label: "\(tray.rawValue.capitalized) color \(index + 1)", color: Color(hex: color),
-                             selected: save.look[keyPath: key] == color, size: 94) {
+                    ForEach(tray.colors, id: \.self) { color in
+                        actionChip("", label: "\(tray.rawValue.capitalized) color", color: Color(hex: color),
+                                   size: 77, selected: save.look[keyPath: key] == color) {
                             save.look[keyPath: key] = color
                             persist()
-                            react(at: CGPoint(x: 532, y: 355), using: nil, sound: .sparkle)
+                            pet(at: point(.shoulder))
                         }
                     }
                 } else {
                     ForEach(UnicornGear.available, id: \.self) { gear in
-                        chip(gear.symbol, label: gear == .none ? "Remove gear" : gear.rawValue.capitalized,
-                             color: Theme.peach, selected: save.look.gear == gear, size: 103) {
+                        actionChip(gear.symbol, label: gear == .none ? "Remove gear" : gear.rawValue.capitalized,
+                                   color: Color(hex: 0x936580), size: 88, selected: save.look.gear == gear) {
                             save.look.gear = gear
                             persist()
-                            react(at: CGPoint(x: 532, y: 355), using: nil, sound: .sparkle)
+                            pet(at: point(.mane))
                         }
                     }
                 }
             }
-            .frame(height: 110)
+            .frame(height: 96)
         }
         .padding(.horizontal, 25)
-        .padding(.vertical, 13)
-        .background(Theme.blush, in: RoundedRectangle(cornerRadius: 48))
-        .overlay(RoundedRectangle(cornerRadius: 48).strokeBorder(.white, lineWidth: 6))
+        .padding(.vertical, 11)
+        .background(Color(hex: 0xFFF4DA).opacity(0.97), in: RoundedRectangle(cornerRadius: 36))
+        .overlay(RoundedRectangle(cornerRadius: 36).strokeBorder(.white.opacity(0.8), lineWidth: 4))
+        .shadow(color: .black.opacity(0.22), radius: 12, y: 4)
     }
 
-    private func chip(_ symbol: String, label: String, color: Color, selected: Bool = false, size: CGFloat,
-                      action: @escaping () -> Void) -> some View {
-        Button(action: action) { chipLabel(symbol, color: color, selected: selected, size: size) }
+    private func actionChip(_ symbol: String, label: String, color: Color, size: CGFloat, selected: Bool = false,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) { chip(symbol, color: color, size: size, selected: selected) }
             .buttonStyle(Squish())
             .accessibilityLabel(label)
     }
 
-    private func chipLabel(_ symbol: String, color: Color, selected: Bool, size: CGFloat) -> some View {
+    private func chip(_ symbol: String, color: Color, size: CGFloat, selected: Bool) -> some View {
         ZStack {
-            Circle().fill(color.gradient)
+            Circle().fill(symbol.isEmpty ? color : Color(hex: 0xFFFDF2))
             if !symbol.isEmpty {
-                Image(systemName: symbol)
-                    .font(.system(size: size * 0.46, weight: .bold))
-                    .foregroundStyle(Theme.ink)
+                Image(systemName: symbol).font(.system(size: size * 0.43, weight: .bold)).foregroundStyle(color)
             }
         }
-        .overlay(Circle().strokeBorder(selected ? Theme.pink : .white, lineWidth: selected ? 8 : 5))
         .frame(width: size, height: size)
-        .shadow(color: Theme.ink.opacity(0.18), radius: 3, y: 4)
+        .overlay(Circle().strokeBorder(selected ? Color(hex: 0xB67A52) : Color(hex: 0xEEE0BF), lineWidth: selected ? 6 : 3))
     }
 
-    private var careGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(UnicornGame.id))
-            .onChanged { value in
-                guard let tool, moved(value.translation) else { return }
-                drag(tool, to: value.location)
-            }
-            .onEnded { value in
-                if !moved(value.translation), workArea.contains(value.location) {
-                    react(at: value.location, using: tool)
+    private func point(_ spot: CareSpot) -> CGPoint {
+        let anchor = UnicornIllustration.anchor(spot)
+        let fit = UnicornIllustration.fitted(in: artFrame)
+        return CGPoint(x: fit.minX + anchor.x * fit.width, y: fit.minY + anchor.y * fit.height)
+    }
+
+    private var marks: some View {
+        ZStack {
+            ForEach(CareSpot.allCases, id: \.self) { spot in
+                let location = point(spot)
+                let target = tool.map { care.spots(for: $0).contains(spot) } ?? false
+                ZStack {
+                    if target {
+                        Circle().strokeBorder(.white.opacity(0.88), style: StrokeStyle(lineWidth: 4, dash: [8, 6]))
+                            .shadow(color: .black.opacity(0.3), radius: 2)
+                    }
+                    if care.burrs.contains(spot) {
+                        Image(systemName: "leaf.fill").font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(Color(hex: 0x977141)).rotationEffect(.degrees(-28))
+                    } else if care.dirt.contains(spot) {
+                        mud
+                    } else if care.soap.contains(spot) {
+                        bubbles
+                    }
                 }
-                finishDrag()
+                .frame(width: 71, height: 71).position(location)
             }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
-    private func selectTool(_ item: StableTool) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(UnicornGame.id))
-            .onChanged { value in
-                guard moved(value.translation) else { return }
-                tool = item
-                drag(item, to: value.location)
-            }
-            .onEnded { value in
-                if !moved(value.translation) { pick(item) }
-                finishDrag()
-            }
-    }
-
-    private func moved(_ distance: CGSize) -> Bool { hypot(distance.width, distance.height) > 10 }
-
-    private func pick(_ item: StableTool) {
-        tool = tool == item ? nil : item
-        Sound.shared.play(.pop)
-        Sound.shared.tap()
-    }
-
-    private func workPoint(_ tool: StableTool, finger: CGPoint) -> CGPoint {
-        let lift = tool == .sponge ? FingerLift.grip : FingerLift.tool
-        return FingerLift.point(finger, lift: lift, top: 100, bottom: 834, width: 1024)
-    }
-
-    private func drag(_ item: StableTool, to point: CGPoint) {
-        finger = point
-        let tip = workPoint(item, finger: point)
-        guard workArea.contains(tip) else { return }
-        if let lastRub, hypot(lastRub.x - tip.x, lastRub.y - tip.y) < 57 { return }
-        lastRub = tip
-        react(at: tip, using: item)
-    }
-
-    private func finishDrag() {
-        finger = nil
-        lastRub = nil
-    }
-
-    private func heldTool(_ item: StableTool, finger: CGPoint) -> some View {
-        let tip = workPoint(item, finger: finger)
-        let x = finger.x - tip.x
-        let y = finger.y - tip.y
-        return ZStack {
-            if item == .brush || item == .comb {
-                Capsule().fill(item.color).frame(width: hypot(x, y), height: 20)
-                    .rotationEffect(.radians(Double(atan2(y, x))))
-                    .position(x: tip.x + x / 2, y: tip.y + y / 2)
-            }
-            chipLabel(item.symbol, color: item.color, selected: false, size: 64)
-                .rotationEffect(.degrees(-17))
-                .position(tip)
+    private var mud: some View {
+        ZStack {
+            Ellipse().fill(Color(hex: 0x91654A, alpha: 0.64)).frame(width: 33, height: 18).rotationEffect(.degrees(-19))
+            Ellipse().fill(Color(hex: 0x6B4739, alpha: 0.49)).frame(width: 12, height: 8).offset(x: -17, y: -8)
+            Ellipse().fill(Color(hex: 0xA67858, alpha: 0.55)).frame(width: 10, height: 7).offset(x: 14, y: 11)
         }
     }
 
-    private var careEffect: some View {
-        let colors: [Color] = effect == .sponge ? [.white, Theme.sky, Theme.lilac] : [.white, Theme.pink, Theme.lemon]
-        return ZStack {
-            ForEach(bubbles.indices, id: \.self) { index in
-                let point = bubbles[index]
-                Circle().fill(.white.opacity(0.49))
-                    .overlay(Circle().strokeBorder(Theme.sky, lineWidth: 3))
-                    .frame(width: 33 + CGFloat(index % 4) * 8, height: 33 + CGFloat(index % 4) * 8)
-                    .position(x: point.x - 27 + CGFloat(index % 3) * 23, y: point.y - 21)
+    private var bubbles: some View {
+        ZStack {
+            ForEach(0..<7) { index in
+                let size = CGFloat(15 + (index * 7) % 20)
+                Circle().fill(RadialGradient(colors: [.white, Theme.sky.opacity(0.77), Theme.lilac.opacity(0.58)],
+                                             center: .topLeading, startRadius: 3, endRadius: size))
+                    .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+                    .frame(width: size, height: size)
+                    .offset(x: CGFloat(index * 11 % 41 - 20), y: CGFloat(index * 9 % 26 - 13))
             }
-            if reaction > 0 {
-                if effect == .feed {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 57, weight: .bold))
-                        .foregroundStyle(Theme.pink)
-                        .shadow(color: .white, radius: 0, x: 0, y: 3)
-                        .position(x: 733, y: 231)
-                } else {
-                    SparkleBurst(colors: colors, count: 12 + sheen, radius: 92)
-                        .id(reaction)
-                        .position(effectPoint)
+        }
+    }
+
+    private var effects: some View {
+        Group {
+            if let reaction {
+                let colors = reaction.tool == .rinse ? [.white, Theme.sky, Theme.mint] : [.white, Theme.lemon, Theme.blush]
+                SparkleBurst(colors: colors, count: care.complete ? 18 : 9, radius: care.complete ? 140 : 65)
+                    .id(reaction.time).position(reaction.point)
+                if let tool = reaction.tool {
+                    CareEffect(tool: tool).id(reaction.time).position(reaction.point)
                 }
             }
         }
         .allowsHitTesting(false)
     }
 
-    private func react(at point: CGPoint, using item: StableTool?, sound: SFX = .pop) {
-        if item == .sponge {
-            if bubbles.count == 12 { bubbles.removeFirst() }
-            bubbles.append(point)
-            sheen = 0
-        } else if item == .brush {
-            bubbles.removeAll { hypot($0.x - point.x, $0.y - point.y) < 105 }
-            sheen = min(10, sheen + 2)
+    private func careGesture(from item: CareTool? = nil) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(UnicornGame.id))
+            .onChanged { value in
+                guard hypot(value.translation.width, value.translation.height) > 10, let active = item ?? tool else { return }
+                if let item { tool = item }
+                finger = value.location
+                let tip = liftedTip(value.location, tool: active)
+                if let spot = closest(to: tip, for: active, radius: 56), spot != lastSpot {
+                    lastSpot = spot
+                    use(active, at: spot)
+                } else if closest(to: tip, for: active, radius: 66) == nil { lastSpot = nil }
+            }
+            .onEnded { value in
+                if hypot(value.translation.width, value.translation.height) <= 10 {
+                    if let item { pick(item) }
+                    else if let tool, let spot = closest(to: value.location, for: tool, radius: 76) { use(tool, at: spot) }
+                    else if tool == nil { pet(at: value.location) }
+                }
+                finishDrag()
+            }
+    }
+
+    private func closest(to location: CGPoint, for tool: CareTool, radius: CGFloat) -> CareSpot? {
+        var distance = radius
+        var result: CareSpot?
+        let targets = care.spots(for: tool)
+        for spot in CareSpot.allCases where targets.contains(spot) {
+            let p = point(spot)
+            let d = hypot(location.x - p.x, location.y - p.y)
+            if d < distance { result = spot; distance = d }
         }
-        if item == .braid, !save.look.braided {
-            save.look.braided = true
-            persist()
-        } else if item == .comb, save.look.braided {
-            save.look.braided = false
-            persist()
+        return result
+    }
+
+    private func liftedTip(_ finger: CGPoint, tool: CareTool) -> CGPoint {
+        FingerLift.point(finger, lift: tool == .sponge ? FingerLift.grip : FingerLift.tool, top: 90, bottom: 834, width: 1024)
+    }
+
+    private func heldTool(_ tool: CareTool, finger: CGPoint) -> some View {
+        let tip = liftedTip(finger, tool: tool)
+        let dx = finger.x - tip.x, dy = finger.y - tip.y
+        return ZStack {
+            if tool == .brush || tool == .rinse {
+                Capsule().fill(tool.color.opacity(0.86)).frame(width: hypot(dx, dy), height: 17)
+                    .rotationEffect(.radians(Double(atan2(dy, dx))))
+                    .position(x: (finger.x + tip.x) / 2, y: (finger.y + tip.y) / 2)
+            }
+            chip(tool.symbol, color: tool.color, size: 58, selected: false).position(tip)
         }
-        effect = item
-        effectPoint = point
-        reaction += 1
-        Sound.shared.play(item?.sound ?? sound, volume: 0.68)
+    }
+
+    private func finishDrag() { finger = nil; lastSpot = nil }
+
+    private func pick(_ item: CareTool) {
+        tool = tool == item && tray == .care ? nil : item
+        tray = .care
+        Sound.shared.play(.pop)
         Sound.shared.tap()
     }
 
-    private var meadow: some View {
+    private func use(_ item: CareTool, at spot: CareSpot) {
+        var updated = care
+        guard updated.use(item, at: spot) else { return }
+        save.care = updated
+        persist()
+        reaction = Reaction(tool: item, point: point(spot))
+        Sound.shared.play(item.sound, volume: 0.68)
+        Sound.shared.tap()
+        if updated.complete {
+            tool = nil
+            Sound.shared.play(.fanfare, volume: 0.60)
+            Coins.shared.earn(3, game: UnicornGame.id, from: point(.shoulder))
+        }
+    }
+
+    private func pet(at p: CGPoint) {
+        reaction = Reaction(tool: nil, point: p)
+        Sound.shared.play(.sparkle, volume: 0.55)
+        Sound.shared.tap()
+    }
+
+    private var meadowScene: some View {
         ZStack {
-            MeadowBackdrop(offset: meadowOffset)
-            Ellipse().fill(Color(hex: 0x966F73, alpha: 0.24)).frame(width: 375, height: 42)
-                .position(x: 394, y: 555)
-            TimelineView(.animation(minimumInterval: 1 / 30, paused: rideMotion == nil)) { timeline in
-                let elapsed = rideMotion.map { timeline.date.timeIntervalSince($0) } ?? 1
-                let progress = max(0, min(1, elapsed / 0.52))
-                let lift = progress < 1 ? CGFloat(sin(progress * .pi)) * (jumped ? 103 : 21) : 0
-                let stride = progress < 1 ? CGFloat(sin(progress * .pi * (jumped ? 1 : 4))) * 30 : 0
-                UnicornPicture(look: save.look, stride: stride)
-                    .frame(width: 475, height: 400)
-                    .position(x: 391, y: 375 - lift)
-            }
-            if let stop = ride.stop {
-                visitor(stop.visitor)
-            } else {
-                Image(systemName: ride.needsJump ? "water.waves" : "star.fill")
-                    .font(.system(size: ride.needsJump ? 105 : 82, weight: .bold))
-                    .foregroundStyle(ride.needsJump ? Color(hex: 0x5DAFE8) : Theme.lemon)
-                    .shadow(color: .white, radius: 0, x: 0, y: 4)
-                    .position(x: 771, y: ride.needsJump ? 550 : 461)
-                    .accessibilityLabel(ride.needsJump ? "Puddle ahead" : "Star ahead")
-            }
-            if landing > 0 {
-                SparkleBurst(colors: splashed ? [.white, Theme.sky, Theme.mint] : [.white, Theme.lemon], radius: 94)
-                    .id(landing)
-                    .position(x: 600, y: splashed ? 544 : 410)
-            }
-            HStack(spacing: 14) {
-                ForEach(0..<6, id: \.self) { index in
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(index < ride.stars ? Color(hex: 0xFFBF39) : .white.opacity(0.67))
+            scenery("meadow", color: Theme.mint)
+            Rectangle().fill(.clear).contentShape(Rectangle())
+                .gesture(SpatialTapGesture(coordinateSpace: .named(UnicornGame.id)).onEnded { value in
+                    walk(toward: value.location.x)
+                    guest = nil
+                })
+            Ellipse().fill(Color(hex: 0x526445, alpha: 0.34)).blur(radius: 9)
+                .frame(width: 248, height: 34).position(x: pathX, y: 682)
+            AnimatedUnicorn(look: save.look, reaction: strollStarted, motion: .stroll)
+                .frame(width: 430, height: 348).position(x: pathX, y: 512)
+                .allowsHitTesting(false)
+            ForEach(Array(MeadowVisitor.allCases.enumerated()), id: \.element) { index, visitor in
+                let found = StickerBook.shared.has(game: UnicornGame.id, id: visitor.rawValue)
+                let stationX: CGFloat = 174 + CGFloat(index) * 225
+                actionChip(found ? "checkmark" : "sparkles", label: found ? visitor.name : "Explore the meadow",
+                           color: Color(hex: 0x637D4F), size: 76) {
+                    walk(toward: stationX)
+                    guest = visitor
+                    if StickerBook.shared.find(game: UnicornGame.id, id: visitor.rawValue) {
+                        Coins.shared.earn(1, game: UnicornGame.id, from: CGPoint(x: stationX, y: 735))
+                    }
                 }
+                .position(x: stationX, y: 752 - CGFloat(index % 2) * 38)
             }
-            .accessibilityLabel("\(ride.stars) stars")
-            .position(x: 512, y: 152)
-            if ride.stop != nil {
-                chip("arrow.right", label: "Ride onward", color: Theme.mint, size: 124) {
-                    ride.continueRide()
-                    Sound.shared.play(.whoosh)
+            if let guest {
+                Button { book = true } label: {
+                    StickerArt(sticker: guest.sticker, found: true).frame(width: 136, height: 136)
+                        .background(.white.opacity(0.84), in: Circle())
                 }
-                .position(x: 512, y: 704)
-            } else {
-                HStack(spacing: 38) {
-                    chip("arrow.right", label: "Gallop", color: Theme.mint, size: 124) { move(jump: false) }
-                    chip("arrow.up", label: "Jump", color: Theme.lilac, size: 124) { move(jump: true) }
-                }
-                .position(x: 512, y: 704)
+                .buttonStyle(Squish()).accessibilityLabel("Open the \(guest.name) sticker")
+                .position(x: pathX, y: 235)
+                .transition(.scale.combined(with: .opacity))
             }
-        }
-        .clipped()
-        .task(id: rideMotion) {
-            guard rideMotion != nil else { return }
-            do { try await Task.sleep(nanoseconds: 550_000_000) } catch { return }
-            guard !Task.isCancelled else { return }
-            rideMotion = nil
         }
     }
 
-    private func visitor(_ guest: MeadowVisitor) -> some View {
-        Button {
-            Sound.shared.play(.sparkle)
-            book = true
-        } label: {
-            StickerArt(sticker: guest.sticker, found: true)
-                .frame(width: 236, height: 220)
-                .background(.white.opacity(0.45), in: Circle())
-                .overlay(alignment: .topTrailing) {
-                    Image(systemName: "sparkles").font(.system(size: 47, weight: .bold)).foregroundStyle(Theme.lemon)
-                }
-        }
-        .buttonStyle(Squish())
-        .accessibilityLabel("\(guest.name) sticker")
-        .position(x: 764, y: 395)
-    }
-
-    private func toggleRide() {
-        finishDrag()
-        if !riding {
-            ride = MeadowRide(stretch: save.nextStretch)
-            landing = 0
-            rideMotion = nil
-            meadowOffset = 0
-        }
-        withAnimation(.easeInOut(duration: 0.22)) { riding.toggle() }
-        Sound.shared.play(.whoosh)
-    }
-
-    private func move(jump: Bool) {
-        guard ride.stop == nil else { return }
-        splashed = ride.move(jump: jump)
-        landing += 1
-        jumped = jump
-        rideMotion = Date()
-        withAnimation(.easeOut(duration: 0.30)) {
-            meadowOffset += 108
-        }
-        Sound.shared.play(splashed ? .bubble : (jump ? .boing : .ding), volume: 0.72)
-        Sound.shared.tap()
-        if let stop = ride.stop {
-            save.nextStretch = (ride.stretch + 1) % MeadowRide.route.count
-            persist()
-            StickerBook.shared.find(game: UnicornGame.id, id: stop.visitor.rawValue)
-            Coins.shared.earn(max(1, stop.stars / 2), game: UnicornGame.id, from: CGPoint(x: 741, y: 443))
-        }
+    private func walk(toward x: CGFloat) {
+        strollStarted = Date()
+        withAnimation(.easeInOut(duration: 0.75)) { pathX = max(232, min(792, x)) }
+        Sound.shared.play(.whoosh, volume: 0.42)
     }
 
     private func persist() { GameStorage.save(save, game: UnicornGame.id, file: "stable.json") }
 }
 
-private struct MeadowBackdrop: View {
-    let offset: CGFloat
+private struct CareEffect: View {
+    let tool: CareTool
+    @State private var moved = false
+    @State private var faded = false
 
     var body: some View {
-        ZStack(alignment: .top) {
-            LinearGradient(colors: [Theme.sky, Color(hex: 0xE6F8FC)], startPoint: .top, endPoint: .bottom)
-            Circle().fill(Color(hex: 0xFFF1B1)).frame(width: 126).position(x: 795, y: 196)
-            Canvas { g, _ in
-                for i in 0..<7 {
-                    let x = CGFloat(i * 235) - 250 - (offset * 0.4).truncatingRemainder(dividingBy: 235)
-                    let y = CGFloat(252 + (i % 3) * 37)
-                    g.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 467, height: 365)), with: .color(Theme.mint))
+        ZStack {
+            switch tool {
+            case .feed:
+                Image(systemName: "carrot.fill")
+                    .font(.system(size: 49, weight: .bold))
+                    .foregroundStyle(tool.color)
+                    .rotationEffect(.degrees(-32))
+                    .scaleEffect(moved ? 0.13 : 1)
+                    .offset(x: moved ? 0 : 68, y: moved ? 0 : 39)
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 31, weight: .bold))
+                    .foregroundStyle(Theme.pink)
+                    .offset(y: moved ? -67 : -19)
+                    .opacity(moved ? 1 : 0)
+            case .rinse:
+                ForEach(0..<7) { index in
+                    let direction = Double(index) / 7 * .pi
+                    Image(systemName: "drop.fill")
+                        .font(.system(size: CGFloat(12 + index % 3 * 5), weight: .semibold))
+                        .foregroundStyle(Theme.sky.gradient)
+                        .rotationEffect(.radians(direction - .pi / 2))
+                        .offset(x: moved ? 60 * cos(direction) : 0, y: moved ? 58 * sin(direction) + 10 : 0)
                 }
-                g.fill(Path(roundedRect: CGRect(x: -90, y: 486, width: 1204, height: 439), cornerRadius: 131),
-                       with: .color(Color(hex: 0xA2DAB0)))
-                g.fill(Path(ellipseIn: CGRect(x: -150, y: 498, width: 1324, height: 213)),
-                       with: .color(Color(hex: 0xF6D2AF)))
-                for i in 0..<19 {
-                    let x = CGFloat(i * 69) - 105 - offset.truncatingRemainder(dividingBy: 69)
-                    let y = CGFloat(593 + (i % 4) * 48)
-                    let color = i.isMultiple(of: 2) ? Theme.pink : Theme.lemon
-                    g.fill(Twinkle().path(in: CGRect(x: x, y: y, width: 24, height: 24)), with: .color(color))
-                }
+            case .brush, .sponge:
+                EmptyView()
             }
         }
-        .allowsHitTesting(false)
+        .opacity(faded ? 0 : 1)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.40)) { moved = true }
+            withAnimation(.easeIn(duration: 0.31).delay(0.32)) { faded = true }
+        }
+        .accessibilityHidden(true)
     }
 }

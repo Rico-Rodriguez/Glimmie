@@ -311,7 +311,7 @@ history before the game-drawer PR.
 
 ## Unicorn Stable
 
-- One customizable unicorn, with separate coat, mane and horn colors. The chosen colors, braid and gear are saved in `unicornstable/stable.json`.
-- Pick a care tool and tap the unicorn, or drag the tool from its tray. The shared `FingerLift` puts the working end ahead of her finger. The sponge leaves bubbles, brushing clears them, the comb loosens braids, and feeding shows a heart.
-- The meadow advances by tapping gallop or jump. Six moves bring a visitor and play coins. A missed jump splashes and still advances the ride. The next visitor is saved, and the shared sticker book records first encounters.
-- Use `-game unicornstable` for the stable and add `-unicornMeadow` for the meadow screenshot.
+- One customizable unicorn with separate coat, mane and horn colors. Appearance and current care progress live in `unicornstable/stable.json`. Older saves keep her appearance and start a new care round.
+- The painted sprite, expression frames, and both backgrounds live in `App/Resources/Games/UnicornStable/`. Runtime tints preserve the shading and let the same expression frames follow the color choices.
+- Pick a care tool and tap a highlighted spot, or drag the tool from its tray. Brush burrs out of the hair, lather and rinse each muddy spot, and feed two carrot bites. Completing a round awards three play coins.
+- Tap the meadow to stroll or visit marked spots. Each first visit adds a sticker and one play coin. Use `-game unicornstable -unicornMeadow` to launch in the meadow.
