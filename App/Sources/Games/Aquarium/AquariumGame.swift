@@ -21,7 +21,8 @@ enum AquariumGame {
         title: "Aquarium",
         tint: Color(hex: 0x7FD3F2),
         icon: { AnyView(AquariumTileIcon()) },
-        play: { exit in AnyView(AquariumView(exit: exit)) }
+        play: { exit in AnyView(AquariumView(exit: exit)) },
+        stickers: AquaFind.stickers
     )
 }
 
@@ -233,6 +234,8 @@ struct AquariumView: View {
     /// The food, sponge or net she tapped on the dock: a tap on the tank makes it do that spot (see `ToolTap`).
     @State private var picked: AquaSlot?
     @State private var auto = AutoTool()
+    @State private var book = false
+    static let bookSpot = CGPoint(x: 150, y: 46)
 
     var body: some View {
         GeometryReader { geo in
@@ -270,6 +273,12 @@ struct AquariumView: View {
                     .frame(width: 1024, height: 834)
                     .scaleEffect(map.ui)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
+
+                if book {
+                    StickerBookView(game: AquariumSim.gameID) { withAnimation(.easeOut(duration: 0.2)) { book = false } }
+                        .transition(.opacity)
+                        .zIndex(2)
+                }
             }
             .coordinateSpace(name: "aquarium")
         }
@@ -323,6 +332,8 @@ struct AquariumView: View {
         ZStack {
             HomeButton(action: exit)
                 .position(x: 62, y: 46)
+            StickerBookButton(game: AquariumSim.gameID) { book = true }
+                .position(x: AquariumView.bookSpot.x, y: AquariumView.bookSpot.y)
             HStack(spacing: 16) {
                 toggle(symbol: lightsOn ? "sun.max.fill" : "moon.stars.fill", tint: lightsOn ? Color(hex: 0xFFB83D) : Color(hex: 0x7A7AF0), on: true) {
                     lightsOn.toggle()
@@ -345,6 +356,7 @@ struct AquariumView: View {
                 trayView(t, map)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            StickerToast(game: AquariumSim.gameID, target: AquariumView.bookSpot)
         }
     }
 

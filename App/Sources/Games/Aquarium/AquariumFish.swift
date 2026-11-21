@@ -148,6 +148,7 @@ struct FishColors {
 
 enum AquaFishPainter {
     static func colors(_ k: FishKind, _ v: Int) -> FishColors {
+        if v >= AquaRare.variant { return AquaRare.colors(k) }
         switch k {
         case .goldfish:
             switch v {

@@ -143,4 +143,56 @@ final class AquariumTests: XCTestCase {
         XCTAssertFalse(back.lightsOn)
         XCTAssertEqual(back.algae.count, AGeo.algaeCols * AGeo.algaeRows)
     }
+
+    // MARK: Surprises for the sticker book
+
+    func testRareFishKeepTheirColorThroughASave() {
+        let sim = freshSim()
+        sim.spawn(.goldfish, variant: AquaRare.variant + 2)
+        sim.spawn(.tetra, variant: AquaRare.variant + 4)
+        XCTAssertEqual(sim.fish.map(\.variant), [AquaRare.variant + 2, AquaRare.variant])
+        let data = try! JSONEncoder().encode(sim.makeSave())
+        let back = AquariumSim(save: try! JSONDecoder().decode(AquaSave.self, from: data))
+        XCTAssertEqual(back.fish.map(\.variant), [AquaRare.variant + 2, AquaRare.variant])
+        XCTAssertNotEqual(AquaFishPainter.colors(.goldfish, AquaRare.variant).body, AquaFishPainter.colors(.goldfish, 0).body)
+    }
+
+    func testACrabComesOutWhenTheLightsAreOff() {
+        let sim = freshSim()
+        sim.setLights(false)
+        run(sim, seconds: 3)
+        sim.nextVisit = 0
+        run(sim, seconds: 1)
+        sim.nextVisit = 0
+        run(sim, seconds: 15)
+        guard let crab = sim.visitors.first(where: { $0.kind == .crab }) else { return XCTFail("no crab came") }
+        XCTAssertEqual(crab.p.y, AGeo.sand(crab.p.x), accuracy: 0.5)
+        XCTAssertTrue(sim.visitors.allSatisfy { $0.kind == .crab || $0.kind == .jellyfish })
+    }
+
+    func testATurtleSwimsThroughACleanTank() {
+        let sim = freshSim()
+        sim.algae = sim.algae.map { _ in 0 }
+        sim.nextVisit = 0
+        run(sim, seconds: 0.2)
+        XCTAssertEqual(sim.visitors.map(\.kind), [.turtle])
+        sim.nextVisit = 1_000
+        run(sim, seconds: 25)
+        XCTAssertTrue(sim.visitors.isEmpty, "it swims on out the other side")
+    }
+
+    func testNobodyVisitsADirtyTankInTheDay() {
+        let sim = freshSim()
+        sim.algae = sim.algae.map { _ in 0.5 }
+        sim.nextVisit = 0
+        run(sim, seconds: 3)
+        XCTAssertTrue(sim.visitors.isEmpty)
+    }
+
+    func testEveryAquariumSurpriseHasASticker() {
+        let entry = GameRegistry.all.first { $0.id == AquariumSim.gameID }
+        XCTAssertEqual(entry?.stickers.map(\.id), AquaFind.allCases.map(\.rawValue))
+        for k in FishKind.allCases { XCTAssertEqual(AquaFind.rare(k).fish, k) }
+        for v in AVisitorKind.allCases { XCTAssertEqual(AquaFind(rawValue: v.rawValue)?.visitor, v) }
+    }
 }
