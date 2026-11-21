@@ -7,7 +7,7 @@ import SwiftUI
 // picture that does the work (the comb's teeth, the scissors' blades, the dryer's nozzle).
 
 enum SalonTool: String, CaseIterable, Identifiable {
-    case shampoo, shower, towel, comb, scissors, dryer, curler, straightener, dye, glitter, grow, clips
+    case shampoo, shower, towel, straightener, scissors, dryer, curler, dye, glitter, grow, clips
 
     var id: String { rawValue }
 
@@ -16,7 +16,6 @@ enum SalonTool: String, CaseIterable, Identifiable {
         case .shampoo: return Color(hex: 0xFFE3EE)
         case .shower: return Color(hex: 0xDDF0FF)
         case .towel: return Color(hex: 0xE8F7EF)
-        case .comb: return Color(hex: 0xDDF6F2)
         case .scissors: return Color(hex: 0xFFE9E0)
         case .dryer: return Color(hex: 0xEEE6FF)
         case .curler: return Color(hex: 0xFFE7F3)
@@ -33,7 +32,6 @@ enum SalonTool: String, CaseIterable, Identifiable {
         case .shampoo: return CGPoint(x: 21, y: 22)
         case .shower: return CGPoint(x: 40, y: 58)
         case .towel: return CGPoint(x: 50, y: 54)
-        case .comb: return CGPoint(x: 50, y: 62)
         case .scissors: return CGPoint(x: 50, y: 20)
         case .dryer: return CGPoint(x: 8, y: 36)
         case .curler: return CGPoint(x: 36, y: 36)
@@ -120,18 +118,6 @@ enum SalonToolArt {
                 f.addLine(to: CGPoint(x: x, y: 83))
                 ctx.stroke(f, with: .color(Shades.outline(mint).color), style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
             }
-        case .comb:
-            let teal = RGB(0.36, 0.78, 0.74)
-            var comb = Path()
-            comb.addRoundedRect(in: CGRect(x: 10, y: 28, width: 80, height: 16), cornerSize: CGSize(width: 8, height: 8))
-            var x: CGFloat = 15
-            while x < 86 {
-                comb.addRoundedRect(in: CGRect(x: x, y: 38, width: 4.2, height: 32), cornerSize: CGSize(width: 2, height: 2))
-                x += 7.2
-            }
-            fo(ctx, comb, teal, 2.4)
-            ctx.fill(Path(roundedRect: CGRect(x: 10, y: 28, width: 80, height: 14), cornerRadius: 7), with: .color(teal.color))
-            shine(ctx, CGRect(x: 16, y: 31, width: 40, height: 4), teal)
         case .scissors:
             let a = Double(open) * 0.32
             let pink = RGB(1, 0.56, 0.72)

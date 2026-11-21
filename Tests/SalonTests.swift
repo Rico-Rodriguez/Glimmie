@@ -91,6 +91,25 @@ final class SalonTests: XCTestCase {
         XCTAssertEqual(back.clips.count, 1)
     }
 
+    /// A clip holds its bit of hair where it was clipped, even when the rest swings.
+    func testClipHoldsHairInPlace() {
+        let s = sim()
+        s.settle(seconds: 1)
+        guard let si = s.strands.indices.first(where: { s.strands[$0].kind == .side && s.strands[$0].free > 6 }) else {
+            return XCTFail("no long side lock")
+        }
+        let node = s.strands[si].pinned + 4
+        let at = s.strands[si].p[node]
+        XCTAssertTrue(s.attach(.bow, color: 4, at: at))
+        XCTAssertNotNil(s.clips.last?.hx)
+        for i in s.strands[si].pinned..<s.strands[si].p.count { s.strands[si].p[i] += HairV(40, -30) }
+        s.settle(seconds: 1)
+        let c = s.clips.last!
+        XCTAssertLessThan(s.strands[c.strand].p[c.node].dist(HairV(c.hx!, c.hy!)), 1)
+        // leaves don't hold anything
+        XCTAssertFalse(HairClip(kind: .leaf, color: 0, strand: 0, node: 0, dx: 0, dy: 0).holds)
+    }
+
     func testScrunchieMakesAPonytail() {
         let s = sim()
         s.settle(seconds: 1)
@@ -112,10 +131,14 @@ final class SalonTests: XCTestCase {
         let before = s.strands.map(\.p)
         s.settle(seconds: 1)
         var most: CGFloat = 0
+        var where_ = ""
         for (i, st) in s.strands.enumerated() {
             for k in st.p.indices {
                 XCTAssertTrue(st.p[k].x.isFinite && st.p[k].y.isFinite && st.z[k].isFinite)
-                if k < before[i].count { most = max(most, st.p[k].dist(before[i][k])) }
+                if k < before[i].count, st.p[k].dist(before[i][k]) > most {
+                    most = st.p[k].dist(before[i][k])
+                    where_ = "\(st.kind) lock, point \(k - st.pinned) at \(Int(st.p[k].x)),\(Int(st.p[k].y)),\(Int(st.z[k]))"
+                }
                 if k >= st.pinned {
                     // free hair is never inside her head
                     let ex = (st.p[k].x - 300) / SalonBody.rx, ey = (st.p[k].y - 287) / SalonBody.ry, ez = st.z[k] / SalonBody.rx
@@ -123,7 +146,7 @@ final class SalonTests: XCTestCase {
                 }
             }
         }
-        XCTAssertLessThan(most, 2)
+        XCTAssertLessThan(most, 2, where_)
         // her bangs are on the far side now, behind her head
         for st in s.strands where st.kind == .fringe { XCTAssertLessThan(st.depth, 0) }
     }
