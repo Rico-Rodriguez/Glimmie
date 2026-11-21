@@ -521,7 +521,7 @@ final class PizzaSim {
         if t == .ladle { ladleLoad = 1 }
     }
 
-    /// How far above her finger each tool works (see `FingerLift`).
+    /// How far above her finger each tool works (see `FingerLift`): the ladle and the wheel at her fingertip.
     func lift(for t: PizzaTool) -> CGFloat {
         switch t {
         case .ladle, .cutter: return FingerLift.tool
@@ -685,7 +685,9 @@ final class PizzaSim {
     func pour(at p: CGPoint, amount: Float) {
         let g = PGeo.grid, c = PGeo.cell
         let cx = Int((p.x - (PGeo.center.x - PGeo.half)) / c), cy = Int((p.y - (PGeo.center.y - PGeo.half)) / c)
-        let rad = 5
+        // a puddle wider than her fingertip (see `FingerLift.spread`)
+        let rad = Int((5 * FingerLift.spread).rounded())
+        let sigma = Float(11 * FingerLift.spread)
         guard cx + rad >= 0, cy + rad >= 0, cx - rad < g, cy - rad < g else { return }
         var weights: [(Int, Float)] = []
         var total: Float = 0
@@ -694,7 +696,7 @@ final class PizzaSim {
                 let q = cellCenter(x, y)
                 guard inSauceArea(q) else { continue }
                 let d2 = Float((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y))
-                let w = exp(-d2 / (2 * 11 * 11))
+                let w = exp(-d2 / (2 * sigma * sigma))
                 if w < 0.02 { continue }
                 weights.append((gridIndex(x, y), w))
                 total += w
@@ -715,7 +717,8 @@ final class PizzaSim {
         let dx = d.x * k, dy = d.y * k
         let ox = PGeo.center.x - PGeo.half, oy = PGeo.center.y - PGeo.half
         let cx = Int((p.x - ox) / c), cy = Int((p.y - oy) / c)
-        let rad = 7
+        // the back of the ladle is wider than her fingertip (see `FingerLift.spread`)
+        let rad = Int((7 * FingerLift.spread).rounded())
         let radPt = CGFloat(rad) * c
         var out = sauce
         var moved = false

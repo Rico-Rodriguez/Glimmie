@@ -420,8 +420,8 @@ struct GardenView: View {
     static func lifted(_ p: CGPoint, _ tool: GardenTool) -> CGPoint {
         let lift: CGFloat
         switch tool {
-        case .shovel: lift = FingerLift.tool                                   // the blade tip digs here
-        case .can: lift = FingerLift.carry(below: 106)                         // the can hangs below its handle
+        case .shovel: lift = FingerLift.tool                                   // the blade tip digs at her fingertip
+        case .can: lift = FingerLift.carry(below: 106)                         // a pourer: the can hangs below its handle
         case .seeds: lift = FingerLift.carry(below: 45)
         case .decor(let k): lift = FingerLift.carry(below: k.size.height * 0.5)
         }

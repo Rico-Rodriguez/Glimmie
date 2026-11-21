@@ -79,7 +79,9 @@ final class VetFX {
         let moved = hypot(step.dx, step.dy)
         let onFur = silhouette.contains(tip)
         let rubbing = moved > 1.2
-        let muddy: Double = mud.map { Double(1 - min(1, hypot($0.x - tip.x, $0.y - tip.y) / 70)) }.max() ?? 0
+        // what a tool does reaches well past her fingertip (see `FingerLift.spread`)
+        let k = FingerLift.spread
+        let muddy: Double = mud.map { Double(1 - min(1, hypot($0.x - tip.x, $0.y - tip.y) / (70 * k))) }.max() ?? 0
 
         if onFur && rubbing && [.sponge, .comb, .brush, .towel, .feather, .cream, .swab, .tissue].contains(tool) {
             leanTarget = max(-2.2, min(2.2, Double(step.dx) * 0.12))
@@ -89,25 +91,25 @@ final class VetFX {
         switch tool {
         case .sponge:
             guard onFur, rubbing else { break }
-            for _ in 0..<(moved > 8 ? 2 : 1) {
-                addFoam(CGPoint(x: tip.x + .random(in: -16...16), y: tip.y + .random(in: -12...12)),
-                        r: .random(in: 8...16), life: .random(in: 9...12), mud: muddy * 0.85, t: t)
+            for _ in 0..<(moved > 8 ? 4 : 2) {
+                addFoam(CGPoint(x: tip.x + .random(in: -16...16) * k, y: tip.y + .random(in: -12...12) * k),
+                        r: .random(in: 10...18), life: .random(in: 9...12), mud: muddy * 0.85, t: t)
             }
-            if Double.random(in: 0...1) < 0.35 { addBubble(at: CGPoint(x: room.x + .random(in: -20...20), y: room.y - 10), t: t) }
+            if Double.random(in: 0...1) < 0.5 { addBubble(at: CGPoint(x: room.x + .random(in: -20...20) * k, y: room.y - 10), t: t) }
         case .toothbrush:
-            guard rubbing, hypot(tip.x - mouth.x, tip.y - mouth.y) < 80 else { break }
-            addFoam(CGPoint(x: tip.x + .random(in: -10...10), y: tip.y + .random(in: -6...8)),
+            guard rubbing, hypot(tip.x - mouth.x, tip.y - mouth.y) < 80 * k else { break }
+            addFoam(CGPoint(x: tip.x + .random(in: -10...10) * k, y: tip.y + .random(in: -6...8) * k),
                     r: .random(in: 4...8), life: .random(in: 3...4.5), mud: 0, t: t)
             if Double.random(in: 0...1) < 0.25 { addBubble(at: room, t: t, small: true) }
         case .cream, .swab:
             guard onFur, rubbing, let from = lastTip else { break }
             let cream = tool == .cream
             smears.append(Smear(a: from, b: tip, born: t, color: cream ? Color(hex: 0xFFF8EE) : Color(hex: 0xF2A667),
-                                width: cream ? 24 : 13, soak: cream ? 5 : 3.5))
+                                width: (cream ? 24 : 13) * k, soak: cream ? 5 : 3.5))
             if smears.count > 260 { smears.removeFirst(smears.count - 260) }
         case .shower:
-            for _ in 0..<6 {
-                let start = CGPoint(x: room.x + .random(in: -14...14), y: room.y + .random(in: -4...6))
+            for _ in 0..<9 {
+                let start = CGPoint(x: room.x + .random(in: -14...14) * k, y: room.y + .random(in: -4...6))
                 drops.append(Drop(p: start, v: CGVector(dx: .random(in: -70...70), dy: .random(in: 320...480)),
                                   r: .random(in: 2.2...4.2), depth: .random(in: 8...150), startY: tip.y, mud: false))
             }
@@ -115,17 +117,17 @@ final class VetFX {
             // the stream rinses foam below the shower head
             for i in foam.indices where foam[i].rinsed == nil {
                 let f = foam[i]
-                if abs(f.p.x - tip.x) < 64 && f.p.y > tip.y - 30 && f.p.y < tip.y + 220 { foam[i].rinsed = t }
+                if abs(f.p.x - tip.x) < 64 * k && f.p.y > tip.y - 30 * k && f.p.y < tip.y + 220 { foam[i].rinsed = t }
             }
-            for i in smears.indices.reversed() where abs(smears[i].b.x - tip.x) < 50 && smears[i].b.y > tip.y - 20 {
+            for i in smears.indices.reversed() where abs(smears[i].b.x - tip.x) < 50 * k && smears[i].b.y > tip.y - 20 * k {
                 if t - smears[i].born > 0.3 { smears.remove(at: i) }
             }
         case .towel:
             guard onFur, rubbing else { break }
-            for i in wet.indices where hypot(wet[i].p.x - tip.x, wet[i].p.y - tip.y) < 70 { wet[i].amount -= 0.06 }
-            beads.removeAll { hypot($0.p.x - tip.x, $0.p.y - tip.y) < 55 }
-            streams.removeAll { hypot($0.p.x - tip.x, $0.p.y - tip.y) < 55 }
-            for i in foam.indices where foam[i].rinsed == nil && hypot(foam[i].p.x - tip.x, foam[i].p.y - tip.y) < 50 {
+            for i in wet.indices where hypot(wet[i].p.x - tip.x, wet[i].p.y - tip.y) < 70 * k { wet[i].amount -= 0.06 }
+            beads.removeAll { hypot($0.p.x - tip.x, $0.p.y - tip.y) < 55 * k }
+            streams.removeAll { hypot($0.p.x - tip.x, $0.p.y - tip.y) < 55 * k }
+            for i in foam.indices where foam[i].rinsed == nil && hypot(foam[i].p.x - tip.x, foam[i].p.y - tip.y) < 50 * k {
                 foam[i].rinsed = t
             }
             ruffle(tip, step, t: t)
@@ -139,7 +141,7 @@ final class VetFX {
             }
         case .icepack:
             guard onFur, Double.random(in: 0...1) < 0.6 else { break }
-            mist.append(Mist(p: CGPoint(x: room.x + .random(in: -24...24), y: room.y + .random(in: -6...10)),
+            mist.append(Mist(p: CGPoint(x: room.x + .random(in: -24...24) * k, y: room.y + .random(in: -6...10) * k),
                              v: CGVector(dx: .random(in: -24...24), dy: .random(in: 10...40)), born: t, life: .random(in: 1.0...1.6),
                              r: .random(in: 10...18)))
             if mist.count > 60 { mist.removeFirst(mist.count - 60) }
@@ -383,8 +385,9 @@ final class VetFX {
             let age = t - r.born
             let spring = CGFloat(exp(-age * 5) * cos(age * 17))
             let fade = min(1, (0.9 - age) / 0.3)
-            for i in 0..<7 {
-                let off = CGFloat(i - 3) * 6.5
+            // a wide patch of fur, well past her fingertip
+            for i in 0..<13 {
+                let off = CGFloat(i - 6) * 6.5
                 let jit = CGFloat(sin(r.seed + Double(i) * 1.7)) * 3
                 let base = CGPoint(x: r.p.x + off, y: r.p.y - 10 + jit)
                 let len: CGFloat = 15 + CGFloat(i % 3) * 3

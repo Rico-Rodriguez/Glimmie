@@ -141,13 +141,15 @@ extension SalonWorld {
                 g.rotate(by: .radians(Double(atan2(d.y, d.x)) - .pi))
             }
         } else if t != .shower {
-            // near the bottom the tip sits beside her finger: the tool leans so it still points from her finger to its tip
-            let lean = atan2(Double(tipD.y - f.y), Double(tipD.x - f.x)) + .pi / 2
+            // the tool points from her finger to its tip; at her fingertip it is held along `FingerLift.lean`
+            let gap = hypot(tipD.x - f.x, tipD.y - f.y)
+            let lean = gap < 4 ? atan2(Double(FingerLift.lean.dy), Double(FingerLift.lean.dx)) + .pi / 2
+                               : atan2(Double(tipD.y - f.y), Double(tipD.x - f.x)) + .pi / 2
             if abs(lean) > 0.01 { g.rotate(by: .radians(lean)) }
         }
         g.scaleBy(x: s, y: s)
         g.translateBy(x: -t.tip.x, y: -t.tip.y)
-        // over her hair the tool turns see-through, with a ring where its tip works
+        // over her hair the tool turns see-through
         let a = toArt(tipD)
         let working = a.x > 90 && a.x < 510 && a.y > 30 && a.y < 760
         if working { g.opacity = FingerLift.seeThrough }
@@ -155,9 +157,6 @@ extension SalonWorld {
         let dye = dyeFor(dyeColor, at: a, strandTime: 0)
         g.drawLayer { l in
             SalonToolArt.draw(t, dye: dye, open: scissorsOpen, in: l)
-        }
-        if working && t != .dryer && t != .shower {
-            FingerLift.drawTip(ctx, at: tipD, time: Date().timeIntervalSinceReferenceDate)
         }
     }
 }

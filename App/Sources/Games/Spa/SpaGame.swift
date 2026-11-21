@@ -394,9 +394,11 @@ struct SpaView: View {
     static func lifted(_ p: CGPoint, _ tool: SpaTool) -> CGPoint {
         let lift: CGFloat
         switch tool {
-        case .wand, .mask, .shower: lift = FingerLift.tool        // the ring, the brush tip, the shower head
+        case .wand, .mask: lift = FingerLift.tool                 // the ring, the brush tip
+        case .shower: lift = FingerLift.pour                      // it rains down onto what's below it
+        case .sponge, .towel: lift = FingerLift.tool              // held by the middle, bigger than her finger
         case .soap: lift = FingerLift.carry(below: 50)
-        case .sponge, .towel, .cucumber: lift = FingerLift.item
+        case .cucumber: lift = FingerLift.item
         }
         return FingerLift.point(p, lift: lift, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
     }

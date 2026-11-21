@@ -1,26 +1,31 @@
 import SwiftUI
 
-// MARK: - Keeping her finger out of the way
+// MARK: - Tools at her fingertip
 //
-// On a touch screen the finger covers exactly the spot it touches, so every hands-on game lifts what
-// she is holding above her finger: a tool works at its tip, a long way above the fingertip, and a
-// dragged thing (a sticker, a topping, a sock) floats above it. On its own a big jump would feel
-// loose, so four things go together:
+// A tool works right where her finger is. Lifting tools above the finger (120 pt, with a zoom bubble)
+// made her hand keep making up for a gap, so instead:
 //
-// - one shared, generous lift (`tool`, `item`), the same in every game, so her hand learns it once;
-// - near the top of the screen the lift shrinks and leans toward the middle, so the tip never runs
-//   off the edge and she can still reach the top of the hair, the pet's ears or the top shelf; near
-//   the bottom it turns sideways, so she can still reach a patient's feet or the bottom of the bed;
-// - a held tool turns so its handle points at her finger and its working end at the tip (`turn`),
-//   so the tool itself bridges the gap instead of floating somewhere above her hand;
-// - while a tool is working it turns see-through (`seeThrough`) and a small bright ring marks the
-//   exact spot its tip works on (`drawTip` / `TipMarker`);
-// - where the scene is drawn in a Canvas, a round magnifier (`Magnifier`) shows the spot under the tip
-//   at 2x, on the side away from it.
+// - a tool's working end sits at her fingertip (`tool` is 0), held the way a hand holds it: working end up
+//   and a little to the left, handle down toward her hand (`lean`, `turn`, `handle`);
+// - what the tool does reaches well past her fingertip (`spread`): foam, water, polish, scrubbing and the
+//   spot it works on are all bigger than a finger, so she sees it working around her finger;
+// - a dragged thing (a sticker, a topping, a sock) still floats a little above her finger (`item`), so she
+//   can see where it will land;
+// - a container that pours or rains (a watering can, a shaker, a sauce bottle, a shower) is held above her
+//   finger (`pour`): what falls out lands below it, between the container and her finger, so her hand never
+//   covers where it lands. She aims the container itself, not a gap.
+//
+// Every game passes its points through `point`, so the near-edge rules still apply to dragged things.
 
 enum FingerLift {
-    /// How far above her finger a tool's tip works (Pet Vet used 80, most games 44 to 58).
-    static let tool: CGFloat = 120
+    /// How far above her finger a tool's tip works: none, it works right at her fingertip.
+    /// (It was 44 to 80 in the first games, then 120 everywhere; both felt like aiming with a gap.)
+    static let tool: CGFloat = 0
+    /// How far above her finger a container that pours, shakes or rains is held.
+    static let pour: CGFloat = 110
+    /// How much further than a finger a tool's effect reaches: games multiply their effect radii,
+    /// emitter spreads and "close enough" distances by it, so the work shows around her fingertip.
+    static let spread: CGFloat = 1.8
     /// How far above her finger the middle of a dragged thing floats.
     static let item: CGFloat = 100
     /// How opaque a tool is while it's over the thing it works on.
@@ -41,6 +46,7 @@ enum FingerLift {
     /// and the point always moves up and down the same way as her finger.
     static func point(_ finger: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, bottom: CGFloat? = nil,
                       width: CGFloat? = nil) -> CGPoint {
+        guard lift > 0 else { return finger }
         let ramp = lift + 60
         var l = lift
         var x = finger.x
@@ -75,13 +81,18 @@ enum FingerLift {
     /// so its bottom edge still clears her finger (never less than `item`).
     static func carry(below: CGFloat) -> CGFloat { max(item, below + 40) }
 
-    /// How much to turn a held tool so it points from her finger to its tip: its handle toward her
-    /// finger and its working end at the tip, like holding a pencil. `tip` and `center` are in the
-    /// tool's own picture. Round tools that work with their middle (sponges, bandages) don't turn.
+    /// Which way a tool held at her fingertip points (from its middle to its working end): up and a
+    /// little to the left, with the handle toward her hand (which comes from the bottom right).
+    static let lean = CGVector(dx: -0.3, dy: -1)
+
+    /// How much to turn a held tool so its working end points from the tool toward `lifted` (where it
+    /// works) and its handle away. When the tool works right at her finger (no lift), it points along `lean`. `tip` and `center` are in the tool's own picture. Round tools that
+    /// work with their middle (sponges, bandages) don't turn.
     static func turn(tip: CGPoint, center: CGPoint, finger: CGPoint, lifted: CGPoint) -> Double {
         let tx = tip.x - center.x, ty = tip.y - center.y
         guard hypot(tx, ty) > 18 else { return 0 }
-        let want = atan2(Double(lifted.y - finger.y), Double(lifted.x - finger.x))
+        let gx = lifted.x - finger.x, gy = lifted.y - finger.y
+        let want = hypot(gx, gy) < 4 ? atan2(Double(lean.dy), Double(lean.dx)) : atan2(Double(gy), Double(gx))
         let have = atan2(Double(ty), Double(tx))
         var a = want - have
         while a > .pi { a -= 2 * .pi }
@@ -89,10 +100,21 @@ enum FingerLift {
         return a
     }
 
+    /// The way from a tool's working end toward its handle (a unit vector), and how long the handle can
+    /// be: toward her finger when the tool works away from it, otherwise back along `lean`, toward her hand.
+    static func handle(tip: CGPoint, finger: CGPoint, length: CGFloat) -> (dir: CGVector, length: CGFloat) {
+        let dx = finger.x - tip.x, dy = finger.y - tip.y
+        let len = hypot(dx, dy)
+        if len >= 4 { return (CGVector(dx: dx / len, dy: dy / len), min(len, length)) }
+        let l = hypot(lean.dx, lean.dy)
+        return (CGVector(dx: -lean.dx / l, dy: -lean.dy / l), length)
+    }
+
     /// The other way round: where her finger goes to put the lifted point at `target` (screenshot
     /// hooks and tests use it to "hold" a tool or thing over an exact spot).
     static func finger(for target: CGPoint, lift: CGFloat = tool, top: CGFloat = 0, bottom: CGFloat? = nil,
                        width: CGFloat? = nil) -> CGPoint {
+        guard lift > 0 else { return target }
         // the lifted y only depends on the finger's y, and always goes the same way as it
         var lo = target.y, hi = target.y + lift * 2 + 60
         if let b = bottom { hi = min(hi, b) }
@@ -118,72 +140,5 @@ enum FingerLift {
     static func ease(_ current: CGSize, toward target: CGSize, by k: CGFloat = 0.3) -> CGSize {
         CGSize(width: current.width + (target.width - current.width) * k,
                height: current.height + (target.height - current.height) * k)
-    }
-
-    /// A small bright ring right where a tool works (it shows through the see-through tool).
-    static func drawTip(_ ctx: GraphicsContext, at c: CGPoint, time t: Double, scale: CGFloat = 1) {
-        let r: CGFloat = (11 + 1.5 * CGFloat(sin(t * 8))) * scale
-        let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-        ctx.stroke(ring, with: .color(.white.opacity(0.95)), lineWidth: 5 * scale)
-        ctx.stroke(ring, with: .color(Theme.pink), lineWidth: 2.5 * scale)
-    }
-}
-
-/// `FingerLift.drawTip` as a view, for games built from SwiftUI views instead of a Canvas.
-struct TipMarker: View {
-    var body: some View {
-        TimelineView(.animation) { tl in
-            Canvas { ctx, s in
-                FingerLift.drawTip(ctx, at: CGPoint(x: s.width / 2, y: s.height / 2), time: tl.date.timeIntervalSinceReferenceDate)
-            }
-        }
-        .frame(width: 40, height: 40)
-        .allowsHitTesting(false)
-    }
-}
-
-/// A round magnifier that shows the spot under a tool tip at `zoom`x, without the tool or her hand
-/// in the way. It sits near the top on the side away from the tip, and drops lower if the tip is up
-/// there too, so it never covers the place she's working on.
-///
-/// `draw` paints the whole scene (without the held tool) in the same space `tip` is in.
-struct Magnifier: View {
-    let tip: CGPoint
-    /// The area the magnifier sits in (same space as `tip`).
-    let area: CGSize
-    var zoom: CGFloat = 2
-    var diameter: CGFloat = 176
-    /// How far down from the top of `area` it sits.
-    var top: CGFloat = 96
-    let draw: (GraphicsContext, Date) -> Void
-
-    var body: some View {
-        let tip = self.tip, z = zoom, draw = self.draw
-        return TimelineView(.animation) { tl in
-            Canvas { ctx, s in
-                var g = ctx
-                g.translateBy(x: s.width / 2, y: s.height / 2)
-                g.scaleBy(x: z, y: z)
-                g.translateBy(x: -tip.x, y: -tip.y)
-                draw(g, tl.date)
-            }
-        }
-        .frame(width: diameter, height: diameter)
-        .clipShape(Circle())
-        .overlay(Circle().stroke(.white, lineWidth: 7))
-        .overlay(Circle().stroke(Theme.pink.opacity(0.55), lineWidth: 2).padding(5))
-        .shadow(color: Theme.ink.opacity(0.25), radius: 8, y: 5)
-        .position(Magnifier.center(tip: tip, area: area, diameter: diameter, top: top))
-        .allowsHitTesting(false)
-    }
-
-    static func center(tip: CGPoint, area: CGSize, diameter d: CGFloat, top: CGFloat) -> CGPoint {
-        let left = tip.x > area.width / 2
-        var c = CGPoint(x: area.width / 2 + (left ? -1 : 1) * (d * 0.95), y: top + d / 2)
-        // the tip is up here too: go below it instead
-        if abs(tip.x - c.x) < d * 0.9 && abs(tip.y - c.y) < d * 0.9 {
-            c.y = min(area.height - d / 2 - 12, tip.y + d + 30)
-        }
-        return c
     }
 }

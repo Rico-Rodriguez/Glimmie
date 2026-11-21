@@ -274,15 +274,17 @@ final class SalonWorld {
 
     // MARK: Fingers
 
-    /// Where a tool works for her finger at f (design space): well above it, so her hand doesn't
-    /// hide the hair (it was 58 pt; now the shared lift, see `FingerLift`). No tool: right under it.
+    /// Where a tool works for her finger at f (design space): right at her fingertip (see `FingerLift`).
+    /// The shower rains down from above her finger (`FingerLift.pour`).
     func tipDesign(_ f: CGPoint) -> CGPoint {
-        tool == nil ? f : FingerLift.point(f, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)
+        tool == nil ? f : FingerLift.point(f, lift: toolLift, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)
     }
+
+    private var toolLift: CGFloat { tool == .shower ? FingerLift.pour : FingerLift.tool }
 
     /// The finger point that puts the tool tip at design point d (away from the top edge).
     func fingerFor(tip d: CGPoint) -> CGPoint {
-        tool == nil ? d : FingerLift.finger(for: d, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)
+        tool == nil ? d : FingerLift.finger(for: d, lift: toolLift, bottom: DesignCanvas<EmptyView>.designHeight, width: centerX * 2 + 50)
     }
 
     func tip(_ finger: CGPoint) -> HairV { toArt(tipDesign(finger)) }
@@ -491,13 +493,13 @@ final class SalonWorld {
         case .shampoo?:
             if sim.lather(q, dt: h) > 0 { SalonSound.shared.play(.squish, volume: 0.5, gap: 0.28) }
             if Double.random(in: 0..<1, using: &rng) < 0.25 {
-                bits.append(SalonBit(kind: .bubble, p: q + HairV(rnd(-20, 20), rnd(-10, 10)), v: HairV(rnd(-20, 20), rnd(-70, -30)),
+                bits.append(SalonBit(kind: .bubble, p: q + HairV(rnd(-20, 20), rnd(-10, 10)) * FingerLift.spread, v: HairV(rnd(-20, 20), rnd(-70, -30)),
                                      life: rndD(1.2, 2.2), size: rnd(4, 9)))
             }
             if moved > 3 && Double.random(in: 0..<1, using: &rng) < 0.04 { tickle() }
         case .shower?:
             for _ in 0..<8 {
-                bits.append(SalonBit(kind: .drop, p: q + HairV(rnd(-16, 16), rnd(-4, 4)), v: HairV(rnd(-70, 70), rnd(380, 520)),
+                bits.append(SalonBit(kind: .drop, p: q + HairV(rnd(-16, 16) * FingerLift.spread, rnd(-4, 4)), v: HairV(rnd(-70, 70), rnd(380, 520)),
                                      life: 2.5, size: rnd(2.6, 4.2)))
             }
             SalonSound.shared.play(.water, volume: 0.45, gap: 0.42)
@@ -524,7 +526,7 @@ final class SalonWorld {
             var a = q0
             for p in pts.dropFirst() {
                 let b = tip(p)
-                sim.comb(from: a, to: b, radius: 30, detangle: 0.05)
+                sim.comb(from: a, to: b, radius: 30 * FingerLift.spread, detangle: 0.05)
                 a = b
             }
             if sim.straighten(q, dt: h) > 0 {
@@ -545,13 +547,13 @@ final class SalonWorld {
             let c = SalonWorld.glitterColors[min(glitterColor, SalonWorld.glitterColors.count - 1)]
             _ = sim.sprinkleGlitter(q, color: c)
             for _ in 0..<2 {
-                bits.append(SalonBit(kind: .glitter, p: q + HairV(rnd(-10, 10), rnd(-6, 6)), v: HairV(rnd(-50, 50), rnd(-20, 60)),
+                bits.append(SalonBit(kind: .glitter, p: q + HairV(rnd(-10, 10), rnd(-6, 6)) * FingerLift.spread, v: HairV(rnd(-50, 50), rnd(-20, 60)),
                                      life: rndD(2.5, 5), size: rnd(2.5, 4.5), color: c, spin: rnd(-6, 6)))
             }
             SalonSound.shared.play(.spray, volume: 0.35, gap: 0.35)
             SalonSound.shared.play(.sparkle, volume: 0.25, gap: 1.2)
         case .grow?:
-            if sim.grow(near: q, radius: 64, dt: h) {
+            if sim.grow(near: q, radius: 64 * FingerLift.spread, dt: h) {
                 SalonSound.shared.play(.magic, volume: 0.45, gap: 0.7)
             }
             if Double.random(in: 0..<1, using: &rng) < 0.35 {

@@ -12,7 +12,8 @@ import SwiftUI
 // smears if she paints her skin, and dries glossy (faster under the fan). The remover swab cleans
 // up, and gems and stickers press on (and fall if they miss).
 //
-// Every tool is held a little above her finger, so she can see what she paints.
+// Every tool works at her fingertip, held with its handle toward her hand; the glitter jar is held
+// above her finger so the glitter falls onto the spot below it (see `FingerLift`).
 
 final class BeautyWorld {
     enum Mode { case makeup, nails }
@@ -25,8 +26,10 @@ final class BeautyWorld {
     var gemKind = "g_round"
     var gemColor = "#E8F4FF"
 
-    /// How far above the finger the tool's tip is (stage points).
-    static let lift: CGFloat = 84
+    /// How far above the finger the tool's tip is (stage points): none, except the glitter jar.
+    var lift: CGFloat { tool == .glitter ? FingerLift.pour : FingerLift.tool }
+    /// How long a tool's handle is drawn, from its tip toward her hand.
+    static let handle: CGFloat = 84
     static let faceBox = CGRect(x: 110, y: 104, width: 380, height: 380)
     static let handBox = CGRect(x: 40, y: 70, width: 520, height: 650)
 
@@ -125,7 +128,7 @@ final class BeautyWorld {
         ctx.translateBy(x: -box.minX, y: -box.minY)
     }
 
-    var tipOnStage: CGPoint? { finger.map { CGPoint(x: $0.x, y: $0.y - Self.lift) } }
+    var tipOnStage: CGPoint? { finger.map { CGPoint(x: $0.x, y: $0.y - lift) } }
 
     // MARK: Fingers
 
@@ -217,7 +220,7 @@ final class BeautyWorld {
     }
 
     private func wipe(at tip: CGPoint, moved d: CGFloat) {
-        let r: CGFloat = 20
+        let r: CGFloat = 20 * FingerLift.spread
         var out: [BeautyStroke] = []
         var changed = false
         for st in look.makeup {
@@ -323,7 +326,7 @@ final class BeautyWorld {
     }
 
     private func remove(at tip: CGPoint, moved d: CGFloat) {
-        let r: CGFloat = 22
+        let r: CGFloat = 22 * FingerLift.spread
         var hit = false
         for s in spills.indices {
             var keepP: [CGPoint] = [], keepW: [CGFloat] = []
@@ -723,12 +726,11 @@ final class BeautyWorld {
         }
     }
 
-    /// The tool in her hand: its tip `lift` points above her finger.
+    /// The tool in her hand: its tip `lift` points above her finger, its handle reaching down toward her hand.
     private func drawTool(at f: CGPoint, in ctx: GraphicsContext) {
-        let tip = CGPoint(x: f.x, y: f.y - Self.lift)
-        BeautyTools.draw(tool, color: color, gem: (gemKind, gemColor), load: load, tip: tip, finger: f, t: now, in: ctx)
-        // a soft ring where it touches
-        ctx.stroke(Path(ellipseIn: CGRect(x: tip.x - 9, y: tip.y - 9, width: 18, height: 18)), with: .color(.white.opacity(0.7)), lineWidth: 2)
+        let tip = CGPoint(x: f.x, y: f.y - lift)
+        let hand = CGPoint(x: f.x, y: max(f.y, tip.y + Self.handle))
+        BeautyTools.draw(tool, color: color, gem: (gemKind, gemColor), load: load, tip: tip, finger: hand, t: now, in: ctx)
     }
 }
 

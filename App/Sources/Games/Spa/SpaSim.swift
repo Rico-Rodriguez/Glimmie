@@ -1099,14 +1099,15 @@ final class SpaSim {
     /// Water washing over her (doll coordinates): it rinses suds and mask off and leaves drops.
     func rinse(at d: CGPoint, amount: CGFloat) {
         let before = suds.count
-        suds.removeAll { hypot($0.d.x - d.x, $0.d.y - d.y) < 40 && CGFloat.random(in: 0...1) < amount * 6 }
+        suds.removeAll { hypot($0.d.x - d.x, $0.d.y - d.y) < 40 * FingerLift.spread && CGFloat.random(in: 0...1) < amount * 6 }
         if suds.count < before { for _ in 0..<(before - suds.count) { addBead(CGPoint(x: d.x + CGFloat.random(in: -20...20), y: d.y)) } }
-        wipeMask(at: d, radius: 34, amount: amount * 0.8)
+        wipeMask(at: d, radius: 34 * FingerLift.spread, amount: amount * 0.8)
     }
 
     /// Paints face mask at a doll point.
     func paintMask(at d: CGPoint, kind: MaskKind, amount: CGFloat) {
-        for (i, c) in maskCells(near: d, radius: 36) {
+        // the wide brush paints well past her fingertip (see `FingerLift.spread`)
+        for (i, c) in maskCells(near: d, radius: 36 * FingerLift.spread) {
             let w = 1 - c
             if maskCov[i] < 0.4 { maskKind[i] = kind.rawValue }
             else if maskKind[i] != kind.rawValue { maskKind[i] = kind.rawValue }
@@ -1456,7 +1457,7 @@ final class SpaSim {
                 emitCarry += speed * d / 46
                 while emitCarry >= 1 {
                     emitCarry -= 1
-                    let r = max(8, min(38, 3400 / max(90, speed) + CGFloat.random(in: -4...6)))
+                    let r = max(8, min(38, 3400 / max(90, speed) + CGFloat.random(in: -4...6))) * FingerLift.spread
                     let dir = CGVector(dx: toolV.dx / max(1, speed), dy: toolV.dy / max(1, speed))
                     spawnBubble(at: CGPoint(x: ring.x + dir.dx * (24 + r), y: ring.y + dir.dy * (24 + r)),
                                 v: CGVector(dx: toolV.dx * 0.32 + CGFloat.random(in: -20...20), dy: toolV.dy * 0.32 - 20), r: r)
@@ -1487,21 +1488,21 @@ final class SpaSim {
                 let dd = SGeo.toDoll(toolP)
                 if SGeo.onHer(dd, pad: 20) && speed > 60 {
                     rubbing = 1
-                    if spongeFoam > 0.05 && CGFloat.random(in: 0...1) < speed * d / 16 {
-                        addSud(CGPoint(x: dd.x + CGFloat.random(in: -34...34), y: dd.y + CGFloat.random(in: -24...24)), r: CGFloat.random(in: 9...20))
+                    if spongeFoam > 0.05 && CGFloat.random(in: 0...1) < speed * d / 8 {
+                        addSud(CGPoint(x: dd.x + CGFloat.random(in: -34...34) * FingerLift.spread, y: dd.y + CGFloat.random(in: -24...24) * FingerLift.spread), r: CGFloat.random(in: 9...20))
                         spongeFoam = max(0, spongeFoam - 0.02)
                     }
-                    if spongeWet > 0.1 && CGFloat.random(in: 0...1) < speed * d / 60 { addBead(CGPoint(x: dd.x + CGFloat.random(in: -30...30), y: dd.y)) }
-                    wipeMask(at: dd, radius: 46, amount: speed * d * 0.004)
+                    if spongeWet > 0.1 && CGFloat.random(in: 0...1) < speed * d / 60 { addBead(CGPoint(x: dd.x + CGFloat.random(in: -30...30) * FingerLift.spread, y: dd.y)) }
+                    wipeMask(at: dd, radius: 46 * FingerLift.spread, amount: speed * d * 0.004)
                 }
             }
         case .shower:
-            emitCarry += d * 110
+            emitCarry += d * 170
             while emitCarry >= 1 {
                 emitCarry -= 1
                 let a = CGFloat.random(in: -0.35...0.35) + 0.12
                 let sp = CGFloat.random(in: 420...560)
-                let o = CGFloat.random(in: -18...18)
+                let o = CGFloat.random(in: -18...18) * FingerLift.spread
                 drops.append(SDrop(p: CGPoint(x: toolP.x + o, y: toolP.y + 16), v: CGVector(dx: sin(a) * sp, dy: cos(a) * sp), r: CGFloat.random(in: 1.3...2.4), kind: .spray))
             }
             // the spray rinses her and splashes floating things
@@ -1509,9 +1510,9 @@ final class SpaSim {
             let dd = SGeo.toDoll(below)
             if SGeo.onHer(dd, pad: 30) {
                 rinse(at: dd, amount: d * 3)
-                wipeMask(at: dd, radius: 60, amount: d * 1.4)
+                wipeMask(at: dd, radius: 60 * FingerLift.spread, amount: d * 1.4)
             }
-            for i in things.indices where !things[i].held && abs(things[i].p.x - toolP.x) < 50 && things[i].p.y > toolP.y {
+            for i in things.indices where !things[i].held && abs(things[i].p.x - toolP.x) < 50 * FingerLift.spread && things[i].p.y > toolP.y {
                 things[i].v.dy += 260 * d
                 things[i].v.dx += (things[i].p.x - toolP.x) * 3 * d
             }
@@ -1520,10 +1521,11 @@ final class SpaSim {
             if SGeo.onHer(dd, pad: 26) && speed > 50 {
                 rubbing = 1
                 let before = beads.count + suds.count
-                beads.removeAll { hypot($0.d.x - dd.x, $0.d.y - dd.y) < 70 }
-                suds.removeAll { hypot($0.d.x - dd.x, $0.d.y - dd.y) < 64 && CGFloat.random(in: 0...1) < d * 10 }
+                let k = FingerLift.spread
+                beads.removeAll { hypot($0.d.x - dd.x, $0.d.y - dd.y) < 70 * k }
+                suds.removeAll { hypot($0.d.x - dd.x, $0.d.y - dd.y) < 64 * k && CGFloat.random(in: 0...1) < d * 10 }
                 if beads.count + suds.count < before { towelWet = min(1, towelWet + 0.03) }
-                wipeMask(at: dd, radius: 50, amount: speed * d * 0.0016)
+                wipeMask(at: dd, radius: 50 * k, amount: speed * d * 0.0016)
             }
             // mop up puddles on the floor
             if toolP.y > SGeo.floorY - 70 {

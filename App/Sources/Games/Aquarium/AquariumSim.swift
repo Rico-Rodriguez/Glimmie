@@ -1278,7 +1278,10 @@ final class AquariumSim {
         }
     }
 
-    /// `p` is where the lifted tool goes, `hand` where her finger really is (the net's handle points at it).
+    /// How much bigger the sponge is in her hand than on the shelf.
+    static let spongeScale: CGFloat = 1.6
+
+    /// `p` is where the tool goes, `hand` where her finger really is (the net's handle points away from it).
     func carry(to p: CGPoint, hand h: CGPoint? = nil) {
         finger = p
         hold = h ?? CGPoint(x: p.x, y: p.y + FingerLift.tool)
@@ -1348,10 +1351,10 @@ final class AquariumSim {
             // turned over above the water and shaken: flakes tumble out of the cap
             target = over ? 2.55 + sin(CGFloat(time) * 14) * 0.06 * shake : 0
             if over && tilt > 1.9 {
-                foodAcc += dt * (2.5 + shake * 16)
+                foodAcc += dt * (3.5 + shake * 20)
                 while foodAcc > 1 {
                     foodAcc -= 1
-                    addFlake(at: CGPoint(x: toolP.x + CGFloat.random(in: -6...6), y: toolP.y + 4),
+                    addFlake(at: CGPoint(x: toolP.x + CGFloat.random(in: -6...6) * FingerLift.spread * 2, y: toolP.y + 4),
                              v: CGVector(dx: toolV.dx * 0.3 + CGFloat.random(in: -40...40), dy: max(0, toolV.dy * 0.3) + CGFloat.random(in: 20...80)))
                 }
                 if shake > 0.3 { AquaSound.shared.play(.shake, volume: Float(min(0.6, 0.2 + shake * 0.2)), gap: 0.2) }
@@ -1361,9 +1364,9 @@ final class AquariumSim {
             if over {
                 let moved = hypot(toolP.x - prev.x, toolP.y - prev.y)
                 if moved > 0.3 {
-                    let off = wipe(at: toolP, radius: 46, amount: min(0.5, moved * 0.022), sparkle: true)
+                    let off = wipe(at: toolP, radius: 46 * FingerLift.spread, amount: min(0.5, moved * 0.022), sparkle: true)
                     if off > 0.02 && CGFloat.random(in: 0...1) < min(1, off * 3) {
-                        particles.append(AquaParticle(kind: .algae, p: CGPoint(x: toolP.x + CGFloat.random(in: -30...30), y: toolP.y + 26),
+                        particles.append(AquaParticle(kind: .algae, p: CGPoint(x: toolP.x + CGFloat.random(in: -30...30) * FingerLift.spread, y: toolP.y + 26 * AquariumSim.spongeScale),
                                                       v: CGVector(dx: 0, dy: 10), life: 5, size: CGFloat.random(in: 1.5...3), color: ARGB(0x6E9A47)))
                     }
                     let sp = hypot(toolV.dx, toolV.dy)
@@ -1377,7 +1380,8 @@ final class AquariumSim {
             target = max(-0.5, min(0.5, toolV.dx * -0.0008))
             if caught == nil && wet && hypot(toolV.dx, toolV.dy) > 40 {
                 for i in fish.indices where !fish[i].caught {
-                    let r = 30 + fish[i].kind.length * 0.3
+                    // the hoop scoops well past her fingertip (see `FingerLift.spread`)
+                    let r = (30 + fish[i].kind.length * 0.3) * FingerLift.spread
                     if hypot(fish[i].p.x - toolP.x, fish[i].p.y - toolP.y) < r {
                         fish[i].caught = true
                         caught = fish[i].id

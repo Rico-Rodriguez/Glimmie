@@ -26,27 +26,23 @@ Version 1.0.48 and earlier were "Glimmie Closet", a Blender-rendered sticker dre
 of mini-games and a text-to-speech voice. Rico retired it in Nov 2026 ("it all sucks"); it lives in git
 history before the game-drawer PR.
 
-## Finger lift (every hands-on game)
-- A finger covers exactly what it touches, so `App/Sources/Shared/FingerLift.swift` is shared by every game: a tool's tip
-  works `FingerLift.tool` (120 pt) above her finger, and a dragged thing's middle floats `FingerLift.item` (100 pt) above
-  it (Tidy Up: more for tall things, so their bottom clears her finger). Tune those two numbers there, not per game.
-- Near the top edge the lift shrinks smoothly to about a third and leans toward the middle (`FingerLift.point`), so the
-  tip never leaves the screen and still moves the same way as her finger. Near the bottom (pass `bottom:`) it turns
-  sideways, to the left of her finger (to the right near the left edge), so low spots like a patient's feet, the pet's
-  paws or the bottom of the flower bed can still be reached.
-- A held tool points from her finger to its tip, handle toward her finger (`FingerLift.turn`), so the tool bridges the
-  gap. Pet Vet tools drawn tip-down (tweezers, thermometer, comb...) turn over; the Bakery spatula turns too; Salon tools
-  lean as the lift tilts. Not turned: showers (they rain down), the Garden shovel (it digs down) and round tools.
-- Things drawn around a point they hang below (the watering can, the flour bag, decorations) lift by
-  `FingerLift.carry(below:)`, so their bottom edge clears her finger, not just their middle. `FingerLift.finger(for:)` is the inverse,
-  for screenshot hooks and tests that "hold" a tool over an exact spot.
-- While a tool works it turns see-through (`seeThrough`) with a small pink ring at its tip (`drawTip`, `TipMarker`).
-  Dragged things glide up to the lifted spot instead of jumping (`ease`, and Tidy Up's `grab` easing to zero).
-- Where: Pet Vet tools (plus the magnifier), pet corner care tools and snacks, Hair Salon tools and clips, Bakery
-  ingredients, frosting spatula and toppings, Garden shovel, can, seeds and decorations, Aquarium food shaker, sponge, net,
-  fish bags and decorations (also decorations she drags in the tank), Tidy Up items, Dress Up photo
-  stickers. Not lifted on purpose: coloring brushes (painting must land under the finger or Apple Pencil), pinch and
-  turn coloring stickers, the pet salon (tap only), cupcake piping (press and hold), and her bare hand (petting, weeds).
+## Tools at her fingertip (every hands-on game)
+- Shared code: `App/Sources/Shared/FingerLift.swift`. Tune the numbers there, not per game.
+- Rico, Nov 2026: lifting tools 120 pt above the finger (and the zoom bubble) felt like aiming with a gap ("I always
+  want to peek around my finger"). So a tool now works right at her fingertip (`FingerLift.tool` = 0), held the way
+  a hand holds it: working end up and a little left, handle toward her hand (`lean`, `turn`, `handle`).
+- What a tool does reaches well past her fingertip (`FingerLift.spread`, 1.8x): foam, scrubbing, wiping, combing,
+  dye, mask paint, the shovel's scoop, the ladle, the net's hoop, a Pet Vet spot's reach. Games multiply their
+  effect radii and emitter spreads by it. Held sponges, towels and the bubble wand are drawn bigger too.
+- Containers that pour or rain are held above her finger (`FingerLift.pour`, 110 pt): the watering can, the fish food,
+  Ice Cream sprinkles, sauces and cream, the showers (Pet Vet, Spa, Salon, pet corner). What falls out lands between
+  the container and her finger, so her hand never covers it.
+- Dragged things still float a little above her finger (`FingerLift.item`, 100 pt; `carry(below:)` for tall things),
+  near the top edge the lift shrinks and leans toward the middle, and near the bottom it turns sideways (`point`).
+  `FingerLift.finger(for:)` is the inverse, for screenshot hooks and tests.
+- No zoom bubble and no tip ring any more (both removed). Tools still turn see-through over what they work on.
+- Not lifted on purpose: coloring brushes, pinch and turn coloring stickers, the pet salon (tap only), cupcake
+  piping (press and hold), and her bare hand (petting, weeds).
 
 ## Dress Up art decisions
 - Flat cute 2D vector chibi (about 2.2 heads tall), color-derived outlines (never black), one shade and
@@ -74,9 +70,8 @@ history before the game-drawer PR.
 - All 16 animals share one sitting body plan, so problem spots (named anchors in animals.py and VetAnchors in Swift) land on fur for every animal.
 - Each ailment is a short recipe of tool steps (rub, hold or touch). Spots can be treated in any order; unneeded tools still do something fun.
 - Needed tools wiggle with a pink ring on the shelf, and a dashed ring shows where to use the lifted tool.
-- So her finger never hides the work: the tool tip works `FingerLift.tool` above her finger (see "Finger lift" below),
-  the tool turns see-through (and a bit smaller) over the patient with a small pink ring at its tip, and a round
-  magnifier near the top shows the spot under the tip at 2x on the side away from it (`Magnifier`).
+- Tools work at her fingertip and reach well past it (see "Tools at her fingertip"); a tool turns see-through over
+  the patient. The shower rains from above her finger.
   Screenshot hook: `-vetHold <tool>` holds a tool over its spot.
 - Saves `clinic.json`: hearts earned per patient, current problems, and bows/bandages she stuck on them.
 

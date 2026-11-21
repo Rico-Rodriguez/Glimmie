@@ -247,10 +247,14 @@ final class PetLife {
             stepDist = 0
             if foam.count < 70 {
                 let q = toPet(tip)
-                foam.append(CGPoint(x: q.x + CGFloat.random(in: -14...14), y: q.y + CGFloat.random(in: -14...14)))
+                // the foam lands well past her fingertip (see `FingerLift.spread`)
+                let k = FingerLift.spread
+                for _ in 0..<2 {
+                    foam.append(CGPoint(x: q.x + CGFloat.random(in: -14...14) * k, y: q.y + CGFloat.random(in: -14...14) * k))
+                }
                 hadFoam = true
             }
-            spawn(.bubble, at: tip, spread: 30)
+            spawn(.bubble, at: tip, spread: 30 * FingerLift.spread)
             express("happy", "grin", 0.4)
             play("bubble", 0.22, volume: 0.6)
         case "towel":
@@ -258,15 +262,15 @@ final class PetLife {
             stepDist = 0
             let q = toPet(tip)
             let before = foam.count + wet.count
-            foam.removeAll { hypot($0.x - q.x, $0.y - q.y) < 70 }
-            wet.removeAll { hypot($0.x - q.x, $0.y - q.y) < 80 }
+            foam.removeAll { hypot($0.x - q.x, $0.y - q.y) < 70 * FingerLift.spread }
+            wet.removeAll { hypot($0.x - q.x, $0.y - q.y) < 80 * FingerLift.spread }
             express("happy", "smile", 0.4)
             play("whoosh", 0.35, volume: 0.4)
             if before > 0 && foam.isEmpty && wet.isEmpty { clean() }
         case "brush":
             guard over(tip), stepDist > 16 else { return }
             stepDist = 0
-            spawn(.sparkle, at: tip, spread: 24)
+            spawn(.sparkle, at: tip, spread: 24 * FingerLift.spread)
             shine = min(1.4, shine + 0.018)
             express("happy", "smile", 0.4)
             play("sparkle", 0.3, volume: 0.45)
@@ -484,10 +488,12 @@ final class PetLife {
                                                   "towel": CGPoint(x: 70, y: 96), "shower": CGPoint(x: 44, y: 74),
                                                   "feather": CGPoint(x: 110, y: 26)]
 
-    /// Where a tool goes for her finger at p: well above it, so her finger doesn't hide what she's doing.
-    /// A tool's tip goes the shared tool lift above her finger; a snack floats the item lift above it.
+    /// Where a tool goes for her finger at p: a tool's tip works at her fingertip, the shower rains from
+    /// above it and a snack floats the item lift above it (see `FingerLift`).
     private func lifted(_ p: CGPoint) -> CGPoint {
-        FingerLift.point(p, lift: foods.contains(held ?? "") ? FingerLift.item : FingerLift.tool, bottom: size.height, width: leftW)
+        let id = held ?? ""
+        let lift = foods.contains(id) ? FingerLift.item : id == "shower" ? FingerLift.pour : FingerLift.tool
+        return FingerLift.point(p, lift: lift, bottom: size.height, width: leftW)
     }
 
     /// Where the held thing is drawn for her finger at p, so that its tip lands on `lifted(p)`.
@@ -787,13 +793,12 @@ final class PetLife {
                 m.fill(Path(ellipseIn: r), with: .color(Color(hex: 0x6B6FD6)))
                 m.fill(Path(ellipseIn: r.offsetBy(dx: 16, dy: -10)), with: .color(Color(hex: 0xE6E4FF)))
             } else {
-                // over the pet a tool turns see-through, with a ring where its tip works
+                // over the pet a tool turns see-through
                 let tip = tipPoint()
                 let working = Self.tips[id] != nil && over(tip)
                 var m = ctx
                 if working { m.opacity = FingerLift.seeThrough }
                 PetPainter.prop(id, at: drawAt, scale: sc, rotation: id == "sponge" || id == "towel" ? sin(t * 8) * 4 : 0, in: m)
-                if working { FingerLift.drawTip(ctx, at: tip, time: t) }
             }
         }
     }

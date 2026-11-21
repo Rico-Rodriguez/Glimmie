@@ -1130,7 +1130,7 @@ final class HairSim {
 
     func curlUp(_ q: HairV, dt: CGFloat) -> Int {
         var n = 0
-        touch(q, radius: 34, freeOnly: true) { si, i, f in
+        touch(q, radius: 34 * FingerLift.spread, freeOnly: true) { si, i, f in
             strands[si].curl[i] = min(1, strands[si].curl[i] + dt * 2.6 * (0.4 + f))
             strands[si].wet = max(0, strands[si].wet - dt * 0.4)
             n += 1
@@ -1140,7 +1140,7 @@ final class HairSim {
 
     func straighten(_ q: HairV, dt: CGFloat) -> Int {
         var n = 0
-        touch(q, radius: 38, freeOnly: true) { si, i, f in
+        touch(q, radius: 38 * FingerLift.spread, freeOnly: true) { si, i, f in
             strands[si].curl[i] = max(0, strands[si].curl[i] - dt * 3.2 * (0.4 + f))
             strands[si].tangle = max(0, strands[si].tangle - dt * 1.5)
             strands[si].gloss = min(1, strands[si].gloss + dt * 1.2)
@@ -1152,7 +1152,7 @@ final class HairSim {
 
     func dye(_ q: HairV, dt: CGFloat, color: (HairV) -> RGB) -> Int {
         var n = 0
-        touch(q, radius: 38, freeOnly: false) { si, i, f in
+        touch(q, radius: 38 * FingerLift.spread, freeOnly: false) { si, i, f in
             let c = color(strands[si].p[i])
             let k = Double(min(1, dt * 7 * (0.3 + f)))
             strands[si].color[i] = strands[si].color[i].mix(c, k)
@@ -1163,7 +1163,7 @@ final class HairSim {
 
     func towel(_ q: HairV, dt: CGFloat) -> Int {
         var touched = Set<Int>()
-        touch(q, radius: 56, freeOnly: true) { si, i, f in
+        touch(q, radius: 56 * FingerLift.spread, freeOnly: true) { si, i, f in
             touched.insert(si)
             strands[si].p[i] += HairV(rand(-2.5, 2.5), rand(-2.5, 2.5)) * f
         }
@@ -1189,16 +1189,16 @@ final class HairSim {
         var grew = 0
         for k in foam.indices {
             guard let at = position(foam[k].strand, foam[k].node) else { continue }
-            if (at + foam[k].off).dist(q) < 46 {
+            if (at + foam[k].off).dist(q) < 46 * FingerLift.spread {
                 foam[k].target = min(17, foam[k].target + dt * 9)
                 grew += 1
             }
         }
         guard foam.count < HairSim.maxFoam else { return 0 }
         var spots: [(Int, Int)] = []
-        touch(q, radius: 50, freeOnly: false) { si, i, _ in spots.append((si, i)) }
+        touch(q, radius: 50 * FingerLift.spread, freeOnly: false) { si, i, _ in spots.append((si, i)) }
         guard !spots.isEmpty else { return 0 }
-        let tries = grew > 30 ? 1 : 3
+        let tries = grew > 30 ? 2 : 5
         for _ in 0..<tries {
             let (si, i) = spots[Int.random(in: 0..<spots.count, using: &rng)]
             let w = strands[si].width * 0.6
@@ -1228,7 +1228,7 @@ final class HairSim {
     func sprinkleGlitter(_ q: HairV, color: RGB) -> Int {
         guard flakes.count < HairSim.maxFlakes else { return 0 }
         var spots: [(Int, Int)] = []
-        touch(q, radius: 48, freeOnly: false) { si, i, _ in spots.append((si, i)) }
+        touch(q, radius: 48 * FingerLift.spread, freeOnly: false) { si, i, _ in spots.append((si, i)) }
         guard !spots.isEmpty else { return 0 }
         for _ in 0..<2 {
             let (si, i) = spots[Int.random(in: 0..<spots.count, using: &rng)]

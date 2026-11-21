@@ -198,8 +198,8 @@ struct VetVisit: Codable, Equatable {
         case allHealed
     }
 
-    /// How close (in art points) the tool tip must be to a spot.
-    static let reach: CGFloat = 78
+    /// How close (in art points) the tool tip must be to a spot: well past her fingertip (`FingerLift.spread`).
+    static let reach: CGFloat = 78 * FingerLift.spread
 
     /// The tool tip is at `tip` (patient art coordinates), moved `moved` points and was held `dt`
     /// seconds since the last call. Works on the nearest spot that needs this tool.
