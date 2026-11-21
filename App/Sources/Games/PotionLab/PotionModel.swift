@@ -74,12 +74,12 @@ enum PGeo {
 
     /// The liquid's area below each whole y from the rim down (index y - rimY).
     static let areaBelow: [CGFloat] = {
-        let top = Int(rimY), bottom = Int(bottomY) + 1
+        let top = Int(PGeo.rimY), bottom = Int(PGeo.bottomY) + 1
         var a = [CGFloat](repeating: 0, count: bottom - top + 2)
         var sum: CGFloat = 0
         var y = bottom
         while y >= top {
-            sum += 2 * halfWidth(at: CGFloat(y) + 0.5)
+            sum += 2 * PGeo.halfWidth(at: CGFloat(y) + 0.5)
             a[y - top] = sum
             y -= 1
         }
@@ -142,8 +142,8 @@ enum PGeo {
         return p
     }
 
-    static let interior: Path = path(outline())
-    static let exterior: Path = path(outline(out: glass))
+    static let interior: Path = PGeo.path(PGeo.outline())
+    static let exterior: Path = PGeo.path(PGeo.outline(out: PGeo.glass))
 }
 
 // MARK: - The ingredients
