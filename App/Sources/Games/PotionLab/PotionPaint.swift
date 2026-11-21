@@ -28,20 +28,16 @@ struct PMap {
     var visible: CGRect { CGRect(x: -ox / s, y: -oy / s, width: size.width / s, height: size.height / s) }
 }
 
-extension RGB {
-    func c(_ a: Double = 1) -> Color { Color(.sRGB, red: r, green: g, blue: b, opacity: a) }
-}
-
 /// The potion as a small picture (one pixel per fluid cell), made again only when the pigment changed.
 final class PotionLiquid {
-    private var buf = [UInt8](repeating: 0, count: PGeo.NX * PGeo.NY * 4)
+    private var buf = [UInt8](repeating: 0, count: PotionGeometry.NX * PotionGeometry.NY * 4)
     private var img: CGImage?
     private var key = -1
 
     func image(_ sim: PotionSim) -> CGImage? {
         if key == sim.version, let i = img { return i }
         key = sim.version
-        let n = PGeo.NX * PGeo.NY
+        let n = PotionGeometry.NX * PotionGeometry.NY
         let water = PIngredient.water.color
         for k in 0..<n {
             let a = sim.da[k]
@@ -64,7 +60,7 @@ final class PotionLiquid {
             buf[o + 3] = UInt8(op * 255)
         }
         guard let provider = CGDataProvider(data: Data(buf) as CFData) else { return nil }
-        img = CGImage(width: PGeo.NX, height: PGeo.NY, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: PGeo.NX * 4,
+        img = CGImage(width: PotionGeometry.NX, height: PotionGeometry.NY, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: PotionGeometry.NX * 4,
                       space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
         return img
@@ -127,10 +123,10 @@ enum PotionPainter {
             }
         }
         // the table
-        let tableTop = CGRect(x: r.minX, y: PGeo.tableY - 4, width: r.width, height: 30)
+        let tableTop = CGRect(x: r.minX, y: PotionGeometry.tableY - 4, width: r.width, height: 30)
         g.fill(Path(tableTop), with: .linearGradient(Gradient(colors: [RGB(hex: "#D29A6C").c(), wood.c()]), startPoint: CGPoint(x: 0, y: tableTop.minY), endPoint: CGPoint(x: 0, y: tableTop.maxY)))
-        g.fill(Path(CGRect(x: r.minX, y: PGeo.tableY - 4, width: r.width, height: 3)), with: .color(.white.opacity(0.3)))
-        let apron = CGRect(x: r.minX, y: PGeo.tableY + 26, width: r.width, height: r.maxY - PGeo.tableY - 26)
+        g.fill(Path(CGRect(x: r.minX, y: PotionGeometry.tableY - 4, width: r.width, height: 3)), with: .color(.white.opacity(0.3)))
+        let apron = CGRect(x: r.minX, y: PotionGeometry.tableY + 26, width: r.width, height: r.maxY - PotionGeometry.tableY - 26)
         g.fill(Path(apron), with: .color(woodDark.c()))
         var planks = Path()
         var px = r.minX - 20
@@ -141,8 +137,8 @@ enum PotionPainter {
         }
         g.stroke(planks, with: .color(.black.opacity(0.12)), lineWidth: 3)
         // the potion rack along the front
-        g.fill(Path(roundedRect: CGRect(x: r.minX, y: PGeo.rackY, width: r.width, height: 14), cornerRadius: 4), with: .color(wood.c()))
-        g.fill(Path(CGRect(x: r.minX, y: PGeo.rackY, width: r.width, height: 3)), with: .color(.white.opacity(0.3)))
+        g.fill(Path(roundedRect: CGRect(x: r.minX, y: PotionGeometry.rackY, width: r.width, height: 14), cornerRadius: 4), with: .color(wood.c()))
+        g.fill(Path(CGRect(x: r.minX, y: PotionGeometry.rackY, width: r.width, height: 3)), with: .color(.white.opacity(0.3)))
         // the night darkens the room a little more down low
         if n > 0.01 {
             g.fill(Path(r), with: .color(RGB(hex: "#140F2E").c(0.25 * n)))
@@ -257,8 +253,8 @@ enum PotionPainter {
             var lg = g
             lg.blendMode = .plusLighter
             let k = Double(glow) * (0.18 + 0.5 * Double(sim.night))
-            lg.fill(Path(ellipseIn: CGRect(x: PGeo.C.x - 460, y: PGeo.C.y - 420, width: 920, height: 840)),
-                    with: .radialGradient(Gradient(colors: [potionColor.c(k), potionColor.c(k * 0.4), .clear]), center: PGeo.C, startRadius: 40, endRadius: 440))
+            lg.fill(Path(ellipseIn: CGRect(x: PotionGeometry.C.x - 460, y: PotionGeometry.C.y - 420, width: 920, height: 840)),
+                    with: .radialGradient(Gradient(colors: [potionColor.c(k), potionColor.c(k * 0.4), .clear]), center: PotionGeometry.C, startRadius: 40, endRadius: 440))
         }
         // the fire's warm light low down
         if sim.heat > 0 {
@@ -335,12 +331,12 @@ enum PotionPainter {
 
     private static func flask(_ g: GraphicsContext, _ sim: PotionSim, liquid: PotionLiquid, t: CGFloat) {
         // the back of the glass
-        g.fill(PGeo.exterior, with: .color(.white.opacity(0.10)))
-        g.fill(PGeo.interior, with: .radialGradient(Gradient(colors: [RGB(hex: "#E8E0FF").c(0.12), RGB(hex: "#5A4A8A").c(0.16)]),
-                                                     center: CGPoint(x: PGeo.C.x - 40, y: PGeo.C.y - 60), startRadius: 20, endRadius: PGeo.R))
+        g.fill(PotionGeometry.exterior, with: .color(.white.opacity(0.10)))
+        g.fill(PotionGeometry.interior, with: .radialGradient(Gradient(colors: [RGB(hex: "#E8E0FF").c(0.12), RGB(hex: "#5A4A8A").c(0.16)]),
+                                                     center: CGPoint(x: PotionGeometry.C.x - 40, y: PotionGeometry.C.y - 60), startRadius: 20, endRadius: PotionGeometry.R))
         // things inside, tinted by the potion drawn over them
         var inside = g
-        inside.clip(to: PGeo.interior)
+        inside.clip(to: PotionGeometry.interior)
         spoon(g, sim)
         for pc in sim.pieces where pc.state == .liquid { PieceArt.draw(inside, pc, alpha: 1) }
         if sim.held == .empty && sim.dipInside { dipBottle(g, sim) }
@@ -351,7 +347,7 @@ enum PotionPainter {
         }
         // the potion, below its wavy surface
         var surf = Path()
-        let x0 = PGeo.C.x - PGeo.R - 4, x1 = PGeo.C.x + PGeo.R + 4
+        let x0 = PotionGeometry.C.x - PotionGeometry.R - 4, x1 = PotionGeometry.C.x + PotionGeometry.R + 4
         var x = x0
         surf.move(to: CGPoint(x: x0, y: sim.surfaceY(x0)))
         var top: [CGPoint] = []
@@ -361,13 +357,13 @@ enum PotionPainter {
             surf.addLine(to: p)
             x += 4
         }
-        surf.addLine(to: CGPoint(x: x1, y: PGeo.bottomY + 20))
-        surf.addLine(to: CGPoint(x: x0, y: PGeo.bottomY + 20))
+        surf.addLine(to: CGPoint(x: x1, y: PotionGeometry.bottomY + 20))
+        surf.addLine(to: CGPoint(x: x0, y: PotionGeometry.bottomY + 20))
         surf.closeSubpath()
         var lq = inside
         lq.clip(to: surf)
         if let img = liquid.image(sim) {
-            let box = CGRect(x: PGeo.gx0, y: PGeo.gy0, width: CGFloat(PGeo.NX) * PGeo.cell, height: CGFloat(PGeo.NY) * PGeo.cell)
+            let box = CGRect(x: PotionGeometry.gx0, y: PotionGeometry.gy0, width: CGFloat(PotionGeometry.NX) * PotionGeometry.cell, height: CGFloat(PotionGeometry.NY) * PotionGeometry.cell)
             lq.draw(Image(decorative: img, scale: 1).interpolation(.high), in: box)
             // it glows from inside
             let glow = sim.flaskGlow
@@ -379,15 +375,15 @@ enum PotionPainter {
             }
         }
         // its roundness: lighter where the window light comes through, deeper at the edges
-        lq.fill(Path(CGRect(x: x0, y: PGeo.rimY, width: x1 - x0, height: PGeo.bottomY - PGeo.rimY + 10)),
+        lq.fill(Path(CGRect(x: x0, y: PotionGeometry.rimY, width: x1 - x0, height: PotionGeometry.bottomY - PotionGeometry.rimY + 10)),
                 with: .radialGradient(Gradient(colors: [.white.opacity(0.16), .clear, Color.black.opacity(0.16)]),
-                                      center: CGPoint(x: PGeo.C.x - 50, y: PGeo.C.y - 40), startRadius: 10, endRadius: PGeo.R + 20))
+                                      center: CGPoint(x: PotionGeometry.C.x - 50, y: PotionGeometry.C.y - 40), startRadius: 10, endRadius: PotionGeometry.R + 20))
         // light rippling through it
         var caus = Path()
         for k in 0..<7 {
-            let cx = PGeo.C.x - 120 + CGFloat(k) * 40 + sin(t * 0.9 + CGFloat(k)) * 10
+            let cx = PotionGeometry.C.x - 120 + CGFloat(k) * 40 + sin(t * 0.9 + CGFloat(k)) * 10
             caus.move(to: CGPoint(x: cx, y: sim.level + 8))
-            caus.addQuadCurve(to: CGPoint(x: cx - 30, y: PGeo.bottomY), control: CGPoint(x: cx + 26 * sin(t * 1.3 + CGFloat(k) * 2), y: (sim.level + PGeo.bottomY) / 2))
+            caus.addQuadCurve(to: CGPoint(x: cx - 30, y: PotionGeometry.bottomY), control: CGPoint(x: cx + 26 * sin(t * 1.3 + CGFloat(k) * 2), y: (sim.level + PotionGeometry.bottomY) / 2))
         }
         lq.stroke(caus, with: .color(.white.opacity(0.06)), lineWidth: 10)
         // glitter swirling in it
@@ -414,47 +410,47 @@ enum PotionPainter {
         foam(inside, sim, t)
         frontGlass(g, sim, t)
         if let k = sim.rare {
-            Twinkles.draw(g, around: CGPoint(x: PGeo.C.x, y: PGeo.C.y), radius: PGeo.R + 26, time: t * 1.3, count: 7, alpha: 1)
+            Twinkles.draw(g, around: CGPoint(x: PotionGeometry.C.x, y: PotionGeometry.C.y), radius: PotionGeometry.R + 26, time: t * 1.3, count: 7, alpha: 1)
             if sim.flash > 0 {
                 var fl = g
                 fl.blendMode = .plusLighter
-                fl.fill(PGeo.interior, with: .color(k.color.mix(RGB(1, 1, 1), 0.5).c(Double(sim.flash) * 0.7)))
+                fl.fill(PotionGeometry.interior, with: .color(k.color.mix(RGB(1, 1, 1), 0.5).c(Double(sim.flash) * 0.7)))
             }
         }
     }
 
     private static func frontGlass(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
         // the glass itself: a bright rim of light and soft reflections of the window
-        var ring = PGeo.exterior
-        ring.addPath(PGeo.interior)
+        var ring = PotionGeometry.exterior
+        ring.addPath(PotionGeometry.interior)
         g.fill(ring, with: .color(.white.opacity(0.22)), style: FillStyle(eoFill: true))
-        g.stroke(PGeo.exterior, with: .color(glassLine.c(0.9)), lineWidth: 2.5)
-        g.stroke(PGeo.interior, with: .color(.white.opacity(0.55)), lineWidth: 1.5)
+        g.stroke(PotionGeometry.exterior, with: .color(glassLine.c(0.9)), lineWidth: 2.5)
+        g.stroke(PotionGeometry.interior, with: .color(.white.opacity(0.55)), lineWidth: 1.5)
         var refl = Path()
         for k in 0...20 {
             let a = Double.pi * (1.08 + 0.32 * Double(k) / 20)
-            let p = CGPoint(x: PGeo.C.x + (PGeo.R - 22) * CGFloat(cos(a)), y: PGeo.C.y + (PGeo.R - 22) * CGFloat(sin(a)))
+            let p = CGPoint(x: PotionGeometry.C.x + (PotionGeometry.R - 22) * CGFloat(cos(a)), y: PotionGeometry.C.y + (PotionGeometry.R - 22) * CGFloat(sin(a)))
             if k == 0 { refl.move(to: p) } else { refl.addLine(to: p) }
         }
         g.stroke(refl, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 12, lineCap: .round))
         var refl2 = Path()
         for k in 0...10 {
             let a = Double.pi * (1.52 + 0.08 * Double(k) / 10)
-            let p = CGPoint(x: PGeo.C.x + (PGeo.R - 26) * CGFloat(cos(a)), y: PGeo.C.y + (PGeo.R - 26) * CGFloat(sin(a)))
+            let p = CGPoint(x: PotionGeometry.C.x + (PotionGeometry.R - 26) * CGFloat(cos(a)), y: PotionGeometry.C.y + (PotionGeometry.R - 26) * CGFloat(sin(a)))
             if k == 0 { refl2.move(to: p) } else { refl2.addLine(to: p) }
         }
         g.stroke(refl2, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
         var side = Path()
         for k in 0...14 {
             let a = Double.pi * (0.05 + 0.25 * Double(k) / 14)
-            let p = CGPoint(x: PGeo.C.x + (PGeo.R - 16) * CGFloat(cos(a)), y: PGeo.C.y + (PGeo.R - 16) * CGFloat(sin(a)))
+            let p = CGPoint(x: PotionGeometry.C.x + (PotionGeometry.R - 16) * CGFloat(cos(a)), y: PotionGeometry.C.y + (PotionGeometry.R - 16) * CGFloat(sin(a)))
             if k == 0 { side.move(to: p) } else { side.addLine(to: p) }
         }
         g.stroke(side, with: .color(.white.opacity(0.22)), style: StrokeStyle(lineWidth: 5, lineCap: .round))
         // the neck's shine
-        g.fill(Path(roundedRect: CGRect(x: PGeo.C.x - PGeo.hw + 10, y: PGeo.rimY + 16, width: 9, height: PGeo.joinY - PGeo.rimY - 30), cornerRadius: 4), with: .color(.white.opacity(0.4)))
+        g.fill(Path(roundedRect: CGRect(x: PotionGeometry.C.x - PotionGeometry.hw + 10, y: PotionGeometry.rimY + 16, width: 9, height: PotionGeometry.joinY - PotionGeometry.rimY - 30), cornerRadius: 4), with: .color(.white.opacity(0.4)))
         // the lip at the top, seen a little from above
-        let lip = CGRect(x: PGeo.C.x - PGeo.hw - 16, y: PGeo.rimY - 12, width: (PGeo.hw + 16) * 2, height: 22)
+        let lip = CGRect(x: PotionGeometry.C.x - PotionGeometry.hw - 16, y: PotionGeometry.rimY - 12, width: (PotionGeometry.hw + 16) * 2, height: 22)
         g.stroke(Path(ellipseIn: lip), with: .color(glassLine.c(0.95)), lineWidth: 6)
         g.stroke(Path(ellipseIn: lip.insetBy(dx: 3, dy: 3)), with: .color(.white.opacity(0.7)), lineWidth: 2)
     }
@@ -482,8 +478,8 @@ enum PotionPainter {
     private static func foam(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
         var blobs = Path()
         var any = false
-        for i in 0..<PGeo.NX where sim.foam[i] > 1.5 {
-            let x = PGeo.gx0 + (CGFloat(i) + 0.5) * PGeo.cell
+        for i in 0..<PotionGeometry.NX where sim.foam[i] > 1.5 {
+            let x = PotionGeometry.gx0 + (CGFloat(i) + 0.5) * PotionGeometry.cell
             let f = sim.foam[i]
             let y = sim.surfaceY(x)
             let layers = Int(min(6, f / 8)) + 1
@@ -506,7 +502,7 @@ enum PotionPainter {
     static func spoon(_ g: GraphicsContext, _ sim: PotionSim) {
         let blade = sim.spoon
         // the shaft goes up through the flask's mouth and out over the rim
-        let pivot = CGPoint(x: max(PGeo.C.x - PGeo.hw + 14, min(PGeo.C.x + PGeo.hw - 14, blade.x * 0.6 + PGeo.C.x * 0.4 - (sim.spoonHeld ? 0 : 50))), y: PGeo.rimY)
+        let pivot = CGPoint(x: max(PotionGeometry.C.x - PotionGeometry.hw + 14, min(PotionGeometry.C.x + PotionGeometry.hw - 14, blade.x * 0.6 + PotionGeometry.C.x * 0.4 - (sim.spoonHeld ? 0 : 50))), y: PotionGeometry.rimY)
         let dx = pivot.x - blade.x, dy = pivot.y - blade.y
         let len = max(1, hypot(dx, dy))
         let ux = dx / len, uy = dy / len
@@ -568,8 +564,8 @@ enum PotionPainter {
         g.fill(Path(roundedRect: CGRect(x: 480, y: 658, width: 64, height: 10), cornerRadius: 4), with: .color(brassDark.c()))
         g.fill(Path(roundedRect: CGRect(x: 476, y: 668, width: 70, height: 5), cornerRadius: 2), with: .color(.white.opacity(0.35)))
         // the knob: turn it up for a bigger fire
-        let k = PGeo.knob
-        let R = PGeo.knobRadius
+        let k = PotionGeometry.knob
+        let R = PotionGeometry.knobRadius
         g.fill(Path(ellipseIn: CGRect(x: k.x - R - 4, y: k.y - R - 4, width: (R + 4) * 2, height: (R + 4) * 2)), with: .color(brassDark.c()))
         g.fill(Path(ellipseIn: CGRect(x: k.x - R, y: k.y - R, width: R * 2, height: R * 2)),
                with: .radialGradient(Gradient(colors: [RGB(hex: "#FF9AC4").c(), RGB(hex: "#E2558F").c()]), center: CGPoint(x: k.x - 8, y: k.y - 10), startRadius: 2, endRadius: R))
@@ -607,8 +603,8 @@ enum PotionPainter {
         g.stroke(half, with: .color(brass.c()), style: StrokeStyle(lineWidth: 5, lineCap: .round))
         if front {
             var legs = Path()
-            legs.move(to: CGPoint(x: 388, y: 604)); legs.addLine(to: CGPoint(x: 364, y: PGeo.tableY))
-            legs.move(to: CGPoint(x: 636, y: 604)); legs.addLine(to: CGPoint(x: 660, y: PGeo.tableY))
+            legs.move(to: CGPoint(x: 388, y: 604)); legs.addLine(to: CGPoint(x: 364, y: PotionGeometry.tableY))
+            legs.move(to: CGPoint(x: 636, y: 604)); legs.addLine(to: CGPoint(x: 660, y: PotionGeometry.tableY))
             g.stroke(legs, with: .color(brassDark.c()), style: StrokeStyle(lineWidth: 10, lineCap: .round))
             g.stroke(legs, with: .color(brass.c()), style: StrokeStyle(lineWidth: 5, lineCap: .round))
         }
@@ -619,16 +615,16 @@ enum PotionPainter {
         var pipe = Path()
         pipe.move(to: CGPoint(x: 556, y: 636))
         pipe.addQuadCurve(to: CGPoint(x: 640, y: 652), control: CGPoint(x: 580, y: 652))
-        pipe.addLine(to: CGPoint(x: PGeo.drainMouth.x - 8, y: 652))
-        pipe.addQuadCurve(to: CGPoint(x: PGeo.drainMouth.x, y: 664), control: CGPoint(x: PGeo.drainMouth.x, y: 652))
+        pipe.addLine(to: CGPoint(x: PotionGeometry.drainMouth.x - 8, y: 652))
+        pipe.addQuadCurve(to: CGPoint(x: PotionGeometry.drainMouth.x, y: 664), control: CGPoint(x: PotionGeometry.drainMouth.x, y: 652))
         g.stroke(pipe, with: .color(glassLine.c(0.9)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
         g.stroke(pipe, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
         if sim.draining && sim.volume > 1 {
-            let (c, a) = sim.colorAt(CGPoint(x: PGeo.C.x + 40, y: PGeo.bottomY - 14))
+            let (c, a) = sim.colorAt(CGPoint(x: PotionGeometry.C.x + 40, y: PotionGeometry.bottomY - 14))
             g.stroke(pipe, with: .color(PIngredient.water.color.mix(c, Double(min(1, a * 2))).c(0.85)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
         }
         // the tap: a big lever, sideways when shut, along the pipe when open
-        let v = PGeo.valve
+        let v = PotionGeometry.valve
         g.fill(Path(ellipseIn: CGRect(x: v.x - 15, y: v.y - 15, width: 30, height: 30)), with: .color(brassDark.c()))
         g.fill(Path(ellipseIn: CGRect(x: v.x - 11, y: v.y - 11, width: 22, height: 22)), with: .color(brass.c()))
         var lever = g
@@ -642,7 +638,7 @@ enum PotionPainter {
     }
 
     private static func bucket(_ g: GraphicsContext, _ sim: PotionSim) {
-        let b = PGeo.bucket
+        let b = PotionGeometry.bucket
         var body = Path()
         body.move(to: CGPoint(x: b.minX, y: b.minY))
         body.addLine(to: CGPoint(x: b.maxX, y: b.minY))
@@ -663,7 +659,7 @@ enum PotionPainter {
     }
 
     private static func crate(_ g: GraphicsContext, _ sim: PotionSim) {
-        let c = PGeo.crate
+        let c = PotionGeometry.crate
         // three empty bottles standing in it
         for k in 0..<3 {
             let x = c.minX + 48 + CGFloat(k) * 58
@@ -768,11 +764,11 @@ enum PotionPainter {
 
     static func unicorn(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
         let u = sim.uni
-        let feet = CGPoint(x: PGeo.unicornFeet.x, y: PGeo.unicornFeet.y + u.floatY + u.hop)
-        let k = PGeo.unicornScale
+        let feet = CGPoint(x: PotionGeometry.unicornFeet.x, y: PotionGeometry.unicornFeet.y + u.floatY + u.hop)
+        let k = PotionGeometry.unicornScale
         // a soft shadow on the table
         let lift = min(1, -(u.floatY + u.hop) / 140)
-        g.fill(Path(ellipseIn: CGRect(x: PGeo.unicornFeet.x - 90 * (1 - lift * 0.4), y: PGeo.unicornFeet.y - 10, width: 180 * (1 - lift * 0.4), height: 18)),
+        g.fill(Path(ellipseIn: CGRect(x: PotionGeometry.unicornFeet.x - 90 * (1 - lift * 0.4), y: PotionGeometry.unicornFeet.y - 10, width: 180 * (1 - lift * 0.4), height: 18)),
                with: .color(Theme.ink.opacity(0.16 * Double(1 - lift * 0.6))))
         // glowing
         if u.glow > 0 {

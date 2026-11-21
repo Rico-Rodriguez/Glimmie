@@ -349,17 +349,17 @@ struct PotionLabView: View {
     // MARK: Touch
 
     private func grabAt(_ p: CGPoint) -> PotionGrab {
-        if hypot(p.x - PGeo.knob.x, p.y - PGeo.knob.y) < PGeo.knobRadius + 20 { return .knob }
-        if hypot(p.x - PGeo.valve.x, p.y - (PGeo.valve.y - 20)) < 46 { return .valve }
+        if hypot(p.x - PotionGeometry.knob.x, p.y - PotionGeometry.knob.y) < PotionGeometry.knobRadius + 20 { return .knob }
+        if hypot(p.x - PotionGeometry.valve.x, p.y - (PotionGeometry.valve.y - 20)) < 46 { return .valve }
         for ing in PIngredient.allCases where ing.shelfRect.contains(p) { return .ingredient(ing) }
         for i in sim.rack.indices {
             let s = PotionSim.rackSpot(i)
             if CGRect(x: s.x - 40, y: s.y - 96, width: 80, height: 100).contains(p) { return .rack(i) }
         }
-        if PGeo.crate.insetBy(dx: 0, dy: -50).contains(p) { return .crate }
-        if PGeo.unicornBox.contains(p) { return .unicorn }
+        if PotionGeometry.crate.insetBy(dx: 0, dy: -50).contains(p) { return .crate }
+        if PotionGeometry.unicornBox.contains(p) { return .unicorn }
         // the flask (and the paddle's handle sticking out of it)
-        if PGeo.insideOuter(p, pad: 10) || (abs(p.x - PGeo.C.x) < PGeo.hw + 60 && p.y > PGeo.rimY - 160 && p.y < PGeo.rimY + 10) { return .spoon }
+        if PotionGeometry.insideOuter(p, pad: 10) || (abs(p.x - PotionGeometry.C.x) < PotionGeometry.hw + 60 && p.y > PotionGeometry.rimY - 160 && p.y < PotionGeometry.rimY + 10) { return .spoon }
         return .none
     }
 
@@ -423,7 +423,7 @@ struct PotionLabView: View {
                 hand.offset = CGSize(width: c.x - f.x, height: c.y - f.y)
                 sim.pickUp(.rack(i), finger: f, at: c)
             case .crate:
-                let c = CGPoint(x: PGeo.crate.midX, y: PGeo.crate.minY + 10)
+                let c = CGPoint(x: PotionGeometry.crate.midX, y: PotionGeometry.crate.minY + 10)
                 hand.offset = CGSize(width: c.x - f.x, height: c.y - f.y)
                 sim.pickUp(.empty, finger: f, at: c)
             case .spoon:
@@ -449,19 +449,19 @@ struct PotionLabView: View {
         case .ingredient(let ing):
             // it flies over the flask and pours (or shakes) a bit in by itself
             let from = CGPoint(x: ing.shelfSpot.x, y: ing.shelfSpot.y - 62 + FingerLift.pour)
-            let over = CGPoint(x: PGeo.C.x + (ing.isLiquid ? -40 : 0), y: 96 + FingerLift.pour)
+            let over = CGPoint(x: PotionGeometry.C.x + (ing.isLiquid ? -40 : 0), y: 96 + FingerLift.pour)
             auto(g, from: from, legs: [(over, 0.45), (over, ing.isLiquid ? 1.4 : 1.8)])
         case .rack(let i):
             // a potion from the rack goes to the unicorn
             let c = PotionSim.rackFly(i)
             let from = CGPoint(x: c.x, y: c.y + FingerLift.pour)
-            let over = CGPoint(x: PGeo.unicornBox.midX + 50, y: PGeo.unicornBox.minY - 60 + FingerLift.pour)
+            let over = CGPoint(x: PotionGeometry.unicornBox.midX + 50, y: PotionGeometry.unicornBox.minY - 60 + FingerLift.pour)
             auto(g, from: from, legs: [(over, 0.5), (over, 1.4)])
         case .crate:
             // an empty bottle goes in through the mouth, fills, and comes out with its cork
-            let from = CGPoint(x: PGeo.crate.midX, y: PGeo.crate.minY + 10 + FingerLift.item)
-            let above = CGPoint(x: PGeo.C.x, y: 70 + FingerLift.item)
-            let deep = CGPoint(x: PGeo.C.x, y: min(PGeo.bottomY - 70, max(sim.level + 90, PGeo.joinY + 40)) + FingerLift.item)
+            let from = CGPoint(x: PotionGeometry.crate.midX, y: PotionGeometry.crate.minY + 10 + FingerLift.item)
+            let above = CGPoint(x: PotionGeometry.C.x, y: 70 + FingerLift.item)
+            let deep = CGPoint(x: PotionGeometry.C.x, y: min(PotionGeometry.bottomY - 70, max(sim.level + 90, PotionGeometry.joinY + 40)) + FingerLift.item)
             auto(g, from: from, legs: [(above, 0.45), (deep, 0.5), (deep, 1.5), (above, 0.5)])
         case .spoon:
             let f = CGPoint(x: p.x, y: p.y - PotionLabView.paddleReach)
@@ -644,14 +644,14 @@ extension PotionSim {
             PotionBottle(id: 6, r: 1, g: 0.54, b: 0.82, fill: 0.8, shape: PBottleShape.star.rawValue, kind: PotionKind.rainbow.rawValue, magic: ["rainbow": 1], glow: 0.5, sparkle: 0.7),
         ]
         nextID = 10
-        volume = PGeo.capacity * 0.6
+        volume = PotionGeometry.capacity * 0.6
         updateLiquid()
         // three layers: heavy night sky at the bottom, fairy nectar in the middle, moon milk on top
         for j in 0..<PotionSim.NY {
             for i in 0..<PotionSim.NX {
                 let k = PotionSim.idx(i, j)
                 guard !solid[k] else { continue }
-                let y = PGeo.cellCenter(i, j).y
+                let y = PotionGeometry.cellCenter(i, j).y
                 let ing: PIngredient = y > 560 ? .night : (y > 450 ? .nectar : .mermaid)
                 let a: Float = 0.9
                 dr[k] = Float(ing.color.r) * a; dg[k] = Float(ing.color.g) * a; db[k] = Float(ing.color.b) * a; da[k] = a
@@ -662,8 +662,8 @@ extension PotionSim {
         version += 1
         // give it a swirl so the layers marble
         for k in u.indices where liquid[k] {
-            let p = PGeo.cellCenter(k % PotionSim.NX, k / PotionSim.NX)
-            let dx = p.x - PGeo.C.x, dy = p.y - 500
+            let p = PotionGeometry.cellCenter(k % PotionSim.NX, k / PotionSim.NX)
+            let dx = p.x - PotionGeometry.C.x, dy = p.y - 500
             u[k] = Float(-dy * 1.4)
             v[k] = Float(dx * 1.4)
         }
@@ -690,7 +690,7 @@ extension PotionSim {
         case "dip":
             pickUp(.empty, finger: CGPoint(x: 512, y: 520), at: CGPoint(x: 512, y: 120))
             dipInside = true
-            heldPos = CGPoint(x: 512, y: max(level + 90, PGeo.joinY + 40))
+            heldPos = CGPoint(x: 512, y: max(level + 90, PotionGeometry.joinY + 40))
             dipFill = 0.45
             dipColor = PIngredient.nectar.color
         case "unicorn":

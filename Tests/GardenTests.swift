@@ -143,8 +143,12 @@ final class GardenTests: XCTestCase {
         sim.nextVisit = 0
         run(sim, seconds: 1)
         sim.nextVisit = 0
-        run(sim, seconds: 12)
-        let owl = sim.visitors.first { $0.kind == .owl }
+        // Observe the perch during the visit. By 12 seconds an early owl can already be leaving.
+        for _ in 0..<50 {
+            if sim.visitors.contains(where: { $0.kind == .owl && $0.state == .staying }) { break }
+            run(sim, seconds: 0.1)
+        }
+        let owl = sim.visitors.first { $0.kind == .owl && $0.state == .staying }
         XCTAssertNotNil(owl)
         XCTAssertEqual(owl?.p.y ?? 0, 428, accuracy: 1)
     }

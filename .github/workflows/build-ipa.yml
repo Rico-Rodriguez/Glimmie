@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       only:
-        description: "Only take screenshots whose name starts with this (empty = all)"
+        description: "Screenshot name prefixes, separated by commas (empty = all)"
         type: string
         default: ""
 
@@ -183,7 +183,23 @@ jobs:
           APP=simbuild/Build/Products/Debug-iphonesimulator/Glimmie.app
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
-          shot() { name=$1; wait=$2; shift 2; if [ -n "$ONLY" ] && [[ "$name" != "$ONLY"* ]]; then return; fi; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
+          IFS=, read -r -a prefixes <<< "$ONLY"
+          selected() {
+            if [ -z "$ONLY" ]; then return 0; fi
+            for prefix in "${prefixes[@]}"; do
+              if [ -n "$prefix" ] && [[ "$1" == "$prefix"* ]]; then return 0; fi
+            done
+            return 1
+          }
+          shot() {
+            local name=$1 seconds=$2
+            shift 2
+            if ! selected "$name"; then return 0; fi
+            xcrun simctl launch "$UDID" com.glimmie.closet "$@"
+            sleep "$seconds"
+            xcrun simctl io "$UDID" screenshot "shots/$name.png"
+            xcrun simctl terminate "$UDID" com.glimmie.closet
+          }
           shot 1-drawer 6
           shot 1b-treasure-shop 6 -treasureShop -coinsDemo 30
           shot 2-dressup 6 -game dressup

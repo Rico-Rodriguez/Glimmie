@@ -132,7 +132,7 @@ struct PUnicorn {
 
 final class PotionSim {
     static let gameID = "potionlab"
-    static let NX = PGeo.NX, NY = PGeo.NY
+    static let NX = PotionGeometry.NX, NY = PotionGeometry.NY
 
     var demo = false
     /// Screenshot helpers: keep the held bottle full, stir by itself.
@@ -155,9 +155,9 @@ final class PotionSim {
 
     var volume: CGFloat
     var level: CGFloat
-    var waveH = [CGFloat](repeating: 0, count: PGeo.NX)
-    var waveV = [CGFloat](repeating: 0, count: PGeo.NX)
-    var foam = [CGFloat](repeating: 0, count: PGeo.NX)
+    var waveH = [CGFloat](repeating: 0, count: PotionGeometry.NX)
+    var waveV = [CGFloat](repeating: 0, count: PotionGeometry.NX)
+    var foam = [CGFloat](repeating: 0, count: PotionGeometry.NX)
     /// How fast the potion swirls around (it dips in the middle like a whirlpool).
     var swirl: CGFloat = 0
 
@@ -224,7 +224,7 @@ final class PotionSim {
     private var cueAt: [PotionSFX: Double] = [:]
 
     static let rackMax = 11
-    static func rackSpot(_ i: Int) -> CGPoint { CGPoint(x: 92 + CGFloat(i) * 84, y: PGeo.rackY) }
+    static func rackSpot(_ i: Int) -> CGPoint { CGPoint(x: 92 + CGFloat(i) * 84, y: PotionGeometry.rackY) }
     static let rackScale: CGFloat = 0.62
     static let heldScale: CGFloat = 0.9
     /// An ingredient bottle holds this much liquid.
@@ -234,20 +234,20 @@ final class PotionSim {
         let n = PotionSim.NX * PotionSim.NY
         var s = [Bool](repeating: true, count: n)
         for j in 0..<PotionSim.NY {
-            for i in 0..<PotionSim.NX where PGeo.inside(PGeo.cellCenter(i, j), pad: 1) { s[j * PotionSim.NX + i] = false }
+            for i in 0..<PotionSim.NX where PotionGeometry.inside(PotionGeometry.cellCenter(i, j), pad: 1) { s[j * PotionSim.NX + i] = false }
         }
         solid = s
         liquid = [Bool](repeating: false, count: n)
         let z = [Float](repeating: 0, count: n)
         u = z; v = z; dr = z; dg = z; db = z; da = z; rho = z
         t0 = z; t1 = z; t2 = z; t3 = z; t4 = z; t5 = z; pr = z; dv = z; curl = z
-        volume = PGeo.capacity * 0.48
-        level = PGeo.level(for: volume)
+        volume = PotionGeometry.capacity * 0.48
+        level = PotionGeometry.level(for: volume)
         for i in PIngredient.allCases { shelfFill[i] = 1 }
         if let sv = save {
             rack = Array(sv.bottles.prefix(PotionSim.rackMax))
             nextID = sv.nextID
-            volume = max(0, min(PGeo.capacity * 0.96, CGFloat(sv.volume)))
+            volume = max(0, min(PotionGeometry.capacity * 0.96, CGFloat(sv.volume)))
             lightsOn = sv.lightsOn
             night = lightsOn ? 0 : 1
             heat = max(0, min(3, sv.heat))
@@ -258,7 +258,7 @@ final class PotionSim {
             for k in 0..<n where !solid[k] {
                 dr[k] = Float(sv.pr); dg[k] = Float(sv.pg); db[k] = Float(sv.pb); da[k] = Float(sv.pa)
             }
-            level = PGeo.level(for: volume)
+            level = PotionGeometry.level(for: volume)
         }
         updateLiquid()
     }
@@ -294,28 +294,28 @@ final class PotionSim {
 
     /// The surface's height at x (with its waves and the whirlpool dip).
     func surfaceY(_ x: CGFloat) -> CGFloat {
-        let f = (x - PGeo.gx0) / PGeo.cell - 0.5
+        let f = (x - PotionGeometry.gx0) / PotionGeometry.cell - 0.5
         let i = max(0, min(PotionSim.NX - 1, Int(f.rounded(.down))))
         let i1 = min(PotionSim.NX - 1, i + 1)
         let k = max(0, min(1, f - CGFloat(i)))
         let h = waveH[i] * (1 - k) + waveH[i1] * k
-        let hwid = max(20, PGeo.halfWidth(at: level))
-        let dx = (x - PGeo.C.x) / hwid
+        let hwid = max(20, PotionGeometry.halfWidth(at: level))
+        let dx = (x - PotionGeometry.C.x) / hwid
         let dip = swirl * max(0, 1 - dx * dx) - swirl * 0.33
         return level + h + dip - foamLift(i)
     }
 
     private func foamLift(_ i: Int) -> CGFloat { 0 }
 
-    func inLiquid(_ p: CGPoint) -> Bool { PGeo.inside(p) && p.y > surfaceY(p.x) }
+    func inLiquid(_ p: CGPoint) -> Bool { PotionGeometry.inside(p) && p.y > surfaceY(p.x) }
 
     /// The grid position of a point (cell units, cell centers at whole numbers).
     @inline(__always) func gridPos(_ p: CGPoint) -> (Float, Float) {
-        (Float((p.x - PGeo.gx0) / PGeo.cell - 0.5), Float((p.y - PGeo.gy0) / PGeo.cell - 0.5))
+        (Float((p.x - PotionGeometry.gx0) / PotionGeometry.cell - 0.5), Float((p.y - PotionGeometry.gy0) / PotionGeometry.cell - 0.5))
     }
 
     func cellIndex(_ p: CGPoint) -> Int? {
-        let i = Int((p.x - PGeo.gx0) / PGeo.cell), j = Int((p.y - PGeo.gy0) / PGeo.cell)
+        let i = Int((p.x - PotionGeometry.gx0) / PotionGeometry.cell), j = Int((p.y - PotionGeometry.gy0) / PotionGeometry.cell)
         guard i >= 0, j >= 0, i < PotionSim.NX, j < PotionSim.NY else { return nil }
         return PotionSim.idx(i, j)
     }
@@ -392,7 +392,7 @@ final class PotionSim {
     /// Pushes the liquid around p.
     func push(_ p: CGPoint, _ f: CGVector, radius: CGFloat) {
         let (gx, gy) = gridPos(p)
-        let rr = Float(radius / PGeo.cell)
+        let rr = Float(radius / PotionGeometry.cell)
         let i0 = max(0, Int(gx - rr)), i1 = min(PotionSim.NX - 1, Int(gx + rr) + 1)
         let j0 = max(0, Int(gy - rr)), j1 = min(PotionSim.NY - 1, Int(gy + rr) + 1)
         guard i0 <= i1, j0 <= j1 else { return }
@@ -419,14 +419,14 @@ final class PotionSim {
 
     /// Pours liquid in at p (where a drop landed).
     func addLiquid(at p: CGPoint, vol: CGFloat, color: RGB, conc: Float, density: Float, v vin: CGVector) {
-        let room = PGeo.capacity - volume
+        let room = PotionGeometry.capacity - volume
         let dV = min(vol, max(0, room))
         if vol > dV { overflow(vol - dV, color: color) }
         guard dV > 0 else { return }
         dilute(adding: dV)
         volume += dV
         // the new liquid's pigment, spread over the cells it lands in (one cell holds cell*cell of liquid)
-        let cells = Float(dV / (PGeo.cell * PGeo.cell))
+        let cells = Float(dV / (PotionGeometry.cell * PotionGeometry.cell))
         let q = CGPoint(x: p.x, y: max(p.y, level + 6))
         inject(q, color: color, amount: conc * cells, density: density * cells, radius: 1.6)
         push(q, CGVector(dx: vin.dx * 0.05, dy: min(260, vin.dy * 0.1)), radius: 18)
@@ -435,16 +435,16 @@ final class PotionSim {
     /// Too full: it runs over the rim and down the outside of the glass.
     private func overflow(_ vol: CGFloat, color: RGB) {
         let side: CGFloat = rand() < 0.5 ? -1 : 1
-        let x = PGeo.C.x + side * (PGeo.hw + PGeo.glass + 2)
-        drops.append(PDrop(p: CGPoint(x: x, y: PGeo.rimY - 2), v: CGVector(dx: side * 30, dy: 10), color: color, conc: 1,
+        let x = PotionGeometry.C.x + side * (PotionGeometry.hw + PotionGeometry.glass + 2)
+        drops.append(PDrop(p: CGPoint(x: x, y: PotionGeometry.rimY - 2), v: CGVector(dx: side * 30, dy: 10), color: color, conc: 1,
                            density: 0, vol: vol, r: 4, stream: -1, ing: nil, potion: nil, splash: true, onGlass: true))
     }
 
     func updateLiquid() {
-        level = PGeo.level(for: volume)
+        level = PotionGeometry.level(for: volume)
         let NX = PotionSim.NX
         for j in 0..<PotionSim.NY {
-            let y = PGeo.gy0 + (CGFloat(j) + 0.5) * PGeo.cell
+            let y = PotionGeometry.gy0 + (CGFloat(j) + 0.5) * PotionGeometry.cell
             for i in 0..<NX {
                 let k = j * NX + i
                 liquid[k] = !solid[k] && y > level + 2
@@ -506,10 +506,10 @@ final class PotionSim {
             var k = n
             while k > 0 {
                 if rand() < k {
-                    let x = PGeo.C.x + rand(-110, 110)
-                    let y = PGeo.bottomY - 10 - rand(0, 18)
+                    let x = PotionGeometry.C.x + rand(-110, 110)
+                    let y = PotionGeometry.bottomY - 10 - rand(0, 18)
                     let p = CGPoint(x: x, y: y)
-                    if PGeo.inside(p, pad: 4) && inLiquid(p) {
+                    if PotionGeometry.inside(p, pad: 4) && inLiquid(p) {
                         bubbles.append(PBubble(p: p, r: rand(2, 4 + 5 * boiling), phase: rand(0, 6), fizzy: false))
                     }
                 }
@@ -519,8 +519,8 @@ final class PotionSim {
         // steam off a hot potion
         if temp > 0.55 && volume > 1 && rand() < (temp - 0.5) * d * 30 {
             let (c, a) = meanColor()
-            let x = PGeo.C.x + rand(-PGeo.hw * 0.8, PGeo.hw * 0.8)
-            motes.append(PMote(p: CGPoint(x: x, y: max(PGeo.rimY, surfaceY(x)) - 4), v: CGVector(dx: rand(-10, 10), dy: rand(-60, -36)),
+            let x = PotionGeometry.C.x + rand(-PotionGeometry.hw * 0.8, PotionGeometry.hw * 0.8)
+            motes.append(PMote(p: CGPoint(x: x, y: max(PotionGeometry.rimY, surfaceY(x)) - 4), v: CGVector(dx: rand(-10, 10), dy: rand(-60, -36)),
                                max: rand(1.6, 2.6), kind: .steam, color: RGB(1, 1, 1).mix(c, Double(min(0.5, a))), size: rand(14, 24)))
         }
     }
@@ -561,16 +561,16 @@ final class PotionSim {
         let dV = min(volume, rate * d)
         let f = dV / volume
         // the color that runs out is the color down at the valve
-        let (c, a) = colorAt(CGPoint(x: PGeo.C.x + 40, y: PGeo.bottomY - 14))
+        let (c, a) = colorAt(CGPoint(x: PotionGeometry.C.x + 40, y: PotionGeometry.bottomY - 14))
         volume -= dV
         for (k, x) in doses { doses[k] = x * (1 - f) }
         if rand() < f * 40 && !glitter.isEmpty { glitter.removeFirst(min(glitter.count, Int(f * CGFloat(glitter.count)) + 1)) }
         // it swirls toward the valve
-        push(CGPoint(x: PGeo.C.x + 40, y: PGeo.bottomY - 20), CGVector(dx: 30, dy: 40), radius: 40)
+        push(CGPoint(x: PotionGeometry.C.x + 40, y: PotionGeometry.bottomY - 20), CGVector(dx: 30, dy: 40), radius: 40)
         bucketFill = min(1, bucketFill + dV / 60000)
         bucketColor = bucketColor.mix(c.mix(PIngredient.water.color, Double(max(0, 1 - a * 2))), Double(min(1, f * 4)))
         // the stream out of the pipe into the bucket
-        let m = PGeo.drainMouth
+        let m = PotionGeometry.drainMouth
         drops.append(PDrop(p: CGPoint(x: m.x + rand(-2, 2), y: m.y - 6), v: CGVector(dx: 0, dy: 60), color: c.mix(PIngredient.water.color, Double(max(0, 1 - a * 2))),
                            conc: 0, density: 0, vol: 0, r: 5, stream: 0, ing: nil, potion: nil, splash: true, onGlass: true))
         cue(.glug, gap: 0.5)
@@ -579,9 +579,9 @@ final class PotionSim {
     // MARK: - Holding things
 
     /// Where she can pour into: over the flask's mouth.
-    static func overMouth(_ p: CGPoint) -> Bool { abs(p.x - PGeo.C.x) < PGeo.hw + 60 && p.y < PGeo.rimY + 20 }
+    static func overMouth(_ p: CGPoint) -> Bool { abs(p.x - PotionGeometry.C.x) < PotionGeometry.hw + 60 && p.y < PotionGeometry.rimY + 20 }
     static func overUnicorn(_ p: CGPoint) -> Bool {
-        let b = PGeo.unicornBox
+        let b = PotionGeometry.unicornBox
         return p.x > b.minX - 40 && p.x < b.maxX + 40 && p.y < b.minY + 40
     }
 
@@ -635,36 +635,36 @@ final class PotionSim {
         let bottomY = q.y + bottom
         if dipInside {
             // inside: keep the bottle within the glass
-            q.y = min(q.y, PGeo.bottomY - 4 - bottom)
-            let y0 = max(PGeo.rimY + 1, q.y + top), y1 = q.y + bottom
+            q.y = min(q.y, PotionGeometry.bottomY - 4 - bottom)
+            let y0 = max(PotionGeometry.rimY + 1, q.y + top), y1 = q.y + bottom
             var allowed: CGFloat = 999
             var y = y0
             while y <= y1 {
-                allowed = min(allowed, PGeo.halfWidth(at: y) - halfW - 3)
+                allowed = min(allowed, PotionGeometry.halfWidth(at: y) - halfW - 3)
                 y += 8
             }
             allowed = max(0, allowed)
-            q.x = max(PGeo.C.x - allowed, min(PGeo.C.x + allowed, q.x))
-            if bottomY < PGeo.rimY - 4 { dipInside = false }
+            q.x = max(PotionGeometry.C.x - allowed, min(PotionGeometry.C.x + allowed, q.x))
+            if bottomY < PotionGeometry.rimY - 4 { dipInside = false }
         } else {
-            let lineUp = abs(q.x - PGeo.C.x) < PGeo.hw - halfW - 2
-            if bottomY > PGeo.rimY - 6 {
+            let lineUp = abs(q.x - PotionGeometry.C.x) < PotionGeometry.hw - halfW - 2
+            if bottomY > PotionGeometry.rimY - 6 {
                 // it only goes in when she brings it down from above the mouth
-                if lineUp && lastRawY + bottom <= PGeo.rimY + 30 {
+                if lineUp && lastRawY + bottom <= PotionGeometry.rimY + 30 {
                     dipInside = true
                     cue(.clink, gap: 0.3)
-                } else if abs(q.x - PGeo.C.x) < PGeo.R + PGeo.glass + halfW && bottomY < PGeo.bottomY + 40 {
+                } else if abs(q.x - PotionGeometry.C.x) < PotionGeometry.R + PotionGeometry.glass + halfW && bottomY < PotionGeometry.bottomY + 40 {
                     // over the glass but not lined up with the mouth: it rests on the rim / beside it
-                    if abs(q.x - PGeo.C.x) < PGeo.hw + PGeo.glass + halfW {
-                        q.y = min(q.y, PGeo.rimY - 8 - bottom)
-                    } else if q.y + bottom > PGeo.rimY {
+                    if abs(q.x - PotionGeometry.C.x) < PotionGeometry.hw + PotionGeometry.glass + halfW {
+                        q.y = min(q.y, PotionGeometry.rimY - 8 - bottom)
+                    } else if q.y + bottom > PotionGeometry.rimY {
                         // to the side of the flask: keep outside its round body
-                        let dx = q.x - PGeo.C.x, dy = q.y - PGeo.C.y
+                        let dx = q.x - PotionGeometry.C.x, dy = q.y - PotionGeometry.C.y
                         let dist = hypot(dx, dy)
-                        let need = PGeo.R + PGeo.glass + halfW + 4
+                        let need = PotionGeometry.R + PotionGeometry.glass + halfW + 4
                         if dist < need && dist > 1 {
-                            q.x = PGeo.C.x + dx / dist * need
-                            q.y = PGeo.C.y + dy / dist * need
+                            q.x = PotionGeometry.C.x + dx / dist * need
+                            q.y = PotionGeometry.C.y + dy / dist * need
                         }
                     }
                 }
@@ -721,7 +721,7 @@ final class PotionSim {
         if dipFill > 0.2 {
             cork()
         } else {
-            flyers.append(PFlyer(from: heldPos, to: CGPoint(x: PGeo.crate.midX, y: PGeo.crate.minY - 10), bottle: nil, rackIndex: nil, spin: 0))
+            flyers.append(PFlyer(from: heldPos, to: CGPoint(x: PotionGeometry.crate.midX, y: PotionGeometry.crate.minY - 10), bottle: nil, rackIndex: nil, spin: 0))
         }
         dipInside = false
     }
@@ -805,7 +805,7 @@ final class PotionSim {
     private func pourBottle(_ d: CGFloat, color: RGB, conc: Float, density: Float, ing: PIngredient?, potion: Int?, shape: PBottleShape) {
         let over = PotionSim.overMouth(heldPos) || (potion != nil && PotionSim.overUnicorn(heldPos)) || PotionSim.overUnicorn(heldPos)
         // tip toward the middle of what it's over
-        let targetX = PotionSim.overUnicorn(heldPos) ? PGeo.unicornBox.midX : PGeo.C.x
+        let targetX = PotionSim.overUnicorn(heldPos) ? PotionGeometry.unicornBox.midX : PotionGeometry.C.x
         let side: CGFloat = heldPos.x > targetX + 14 ? -1 : 1
         let want: CGFloat = over ? side * 2.1 : 0
         heldTilt += (want - heldTilt) * min(1, d * (over ? 3.2 : 6))
@@ -894,17 +894,17 @@ final class PotionSim {
     private func stepSpoon(_ d: CGFloat) {
         let old = spoon
         if demoStir {
-            spoonTarget = CGPoint(x: PGeo.C.x + cos(CGFloat(time) * 3) * 100, y: PGeo.C.y + 40 + sin(CGFloat(time) * 3) * 60)
+            spoonTarget = CGPoint(x: PotionGeometry.C.x + cos(CGFloat(time) * 3) * 100, y: PotionGeometry.C.y + 40 + sin(CGFloat(time) * 3) * 60)
         }
         if spoonHeld {
             // the blade follows her (it can't leave the glass)
             var t = spoonTarget
-            if !PGeo.inside(t, pad: 14) {
+            if !PotionGeometry.inside(t, pad: 14) {
                 // pull it back inside along the line to the middle
-                let c = CGPoint(x: PGeo.C.x, y: max(PGeo.rimY + 30, min(PGeo.C.y, t.y)))
+                let c = CGPoint(x: PotionGeometry.C.x, y: max(PotionGeometry.rimY + 30, min(PotionGeometry.C.y, t.y)))
                 for _ in 0..<20 {
                     t = CGPoint(x: t.x + (c.x - t.x) * 0.15, y: t.y + (c.y - t.y) * 0.15)
-                    if PGeo.inside(t, pad: 14) { break }
+                    if PotionGeometry.inside(t, pad: 14) { break }
                 }
             }
             spoon = CGPoint(x: spoon.x + (t.x - spoon.x) * min(1, d * 22), y: spoon.y + (t.y - spoon.y) * min(1, d * 22))
@@ -923,7 +923,7 @@ final class PotionSim {
         let r = 26 * FingerLift.spread
         let k: CGFloat = min(1, d * 9)
         let (gx, gy) = gridPos(spoon)
-        let rr = Float(r / PGeo.cell)
+        let rr = Float(r / PotionGeometry.cell)
         let i0 = max(0, Int(gx - rr)), i1 = min(PotionSim.NX - 1, Int(gx + rr) + 1)
         let j0 = max(0, Int(gy - rr)), j1 = min(PotionSim.NY - 1, Int(gy + rr) + 1)
         if i0 <= i1 && j0 <= j1 {
@@ -941,7 +941,7 @@ final class PotionSim {
         // near the top it makes waves, fast near the top it splashes
         let depth = spoon.y - surfaceY(spoon.x)
         if depth < 50 {
-            let col = Int((spoon.x - PGeo.gx0) / PGeo.cell)
+            let col = Int((spoon.x - PotionGeometry.gx0) / PotionGeometry.cell)
             if col >= 0 && col < PotionSim.NX { waveV[col] += spoonVel.dy * 0.004 + abs(spoonVel.dx) * 0.0015 * (50 - depth) / 50 }
             if speed > 700 && depth < 24 && rand() < d * 14 {
                 let (c, a) = colorAt(spoon)
@@ -1013,7 +1013,7 @@ final class PotionSim {
         // carry the velocity along itself
         t0 = u
         t1 = v
-        let s = dt / Float(PGeo.cell)
+        let s = dt / Float(PotionGeometry.cell)
         for j in 0..<NY {
             for i in 0..<NX {
                 let k = j * NX + i
@@ -1155,41 +1155,41 @@ final class PotionSim {
             dp.p.y += dp.v.dy * d
             if dp.stream == 0 {
                 // the drain stream: into the bucket
-                if dp.p.y > PGeo.bucket.minY + 24 - bucketFill * 30 {
+                if dp.p.y > PotionGeometry.bucket.minY + 24 - bucketFill * 30 {
                     if rand() < 0.3 { cue(.drip, gap: 0.25) }
                     continue
                 }
                 keep.append(dp)
                 continue
             }
-            if !dp.onGlass && PGeo.inside(dp.p) {
+            if !dp.onGlass && PotionGeometry.inside(dp.p) {
                 if dp.p.y > surfaceY(dp.p.x) {
                     landInPotion(dp)
                     continue
                 }
-            } else if !dp.onGlass && PGeo.insideOuter(dp.p) {
+            } else if !dp.onGlass && PotionGeometry.insideOuter(dp.p) {
                 // it hit the glass from outside: it runs down the side
                 dp.onGlass = true
-                dp.v = CGVector(dx: dp.p.x < PGeo.C.x ? -20 : 20, dy: 40)
+                dp.v = CGVector(dx: dp.p.x < PotionGeometry.C.x ? -20 : 20, dy: 40)
                 cue(.drip, gap: 0.2)
             }
-            if dp.onGlass && PGeo.insideOuter(dp.p, pad: 2) {
+            if dp.onGlass && PotionGeometry.insideOuter(dp.p, pad: 2) {
                 // slide down the outside of the glass
-                let dx = dp.p.x - PGeo.C.x, dy = dp.p.y - PGeo.C.y
+                let dx = dp.p.x - PotionGeometry.C.x, dy = dp.p.y - PotionGeometry.C.y
                 let dist = max(1, hypot(dx, dy))
-                if dp.p.y > PGeo.joinY {
-                    dp.p = CGPoint(x: PGeo.C.x + dx / dist * (PGeo.R + PGeo.glass + 3), y: PGeo.C.y + dy / dist * (PGeo.R + PGeo.glass + 3))
+                if dp.p.y > PotionGeometry.joinY {
+                    dp.p = CGPoint(x: PotionGeometry.C.x + dx / dist * (PotionGeometry.R + PotionGeometry.glass + 3), y: PotionGeometry.C.y + dy / dist * (PotionGeometry.R + PotionGeometry.glass + 3))
                 } else {
-                    dp.p.x = PGeo.C.x + (dx < 0 ? -1 : 1) * (PGeo.hw + PGeo.glass + 3)
+                    dp.p.x = PotionGeometry.C.x + (dx < 0 ? -1 : 1) * (PotionGeometry.hw + PotionGeometry.glass + 3)
                 }
                 dp.v.dy = min(dp.v.dy, 120)
-                if dp.p.y > PGeo.C.y + PGeo.R * 0.85 { dp.v.dx = 0; dp.onGlass = false; dp.p.y += 4 }
+                if dp.p.y > PotionGeometry.C.y + PotionGeometry.R * 0.85 { dp.v.dx = 0; dp.onGlass = false; dp.p.y += 4 }
             }
-            if PGeo.unicornBox.contains(dp.p) && !dp.splash && dp.p.y > PGeo.unicornBox.minY + 10 {
+            if PotionGeometry.unicornBox.contains(dp.p) && !dp.splash && dp.p.y > PotionGeometry.unicornBox.minY + 10 {
                 unicornGets(dp)
                 continue
             }
-            let floorY: CGFloat = dp.p.x > PGeo.bucket.minX && dp.p.x < PGeo.bucket.maxX ? PGeo.bucket.minY + 20 : PGeo.tableY
+            let floorY: CGFloat = dp.p.x > PotionGeometry.bucket.minX && dp.p.x < PotionGeometry.bucket.maxX ? PotionGeometry.bucket.minY + 20 : PotionGeometry.tableY
             if dp.p.y >= floorY {
                 if dp.r >= 3 || dp.vol > 0 { landOnTable(dp) }
                 continue
@@ -1202,7 +1202,7 @@ final class PotionSim {
     }
 
     private func landInPotion(_ dp: PDrop) {
-        let col = Int((dp.p.x - PGeo.gx0) / PGeo.cell)
+        let col = Int((dp.p.x - PotionGeometry.gx0) / PotionGeometry.cell)
         if col >= 0 && col < PotionSim.NX {
             waveV[col] += min(3, dp.v.dy * 0.0016 * (dp.splash ? 0.4 : 1) * (0.5 + dp.r / 6))
         }
@@ -1240,8 +1240,8 @@ final class PotionSim {
     }
 
     private func landOnTable(_ dp: PDrop) {
-        let y: CGFloat = dp.p.x > PGeo.bucket.minX && dp.p.x < PGeo.bucket.maxX ? PGeo.bucket.minY + 20 : PGeo.tableY
-        if dp.p.x > PGeo.bucket.minX && dp.p.x < PGeo.bucket.maxX { return }
+        let y: CGFloat = dp.p.x > PotionGeometry.bucket.minX && dp.p.x < PotionGeometry.bucket.maxX ? PotionGeometry.bucket.minY + 20 : PotionGeometry.tableY
+        if dp.p.x > PotionGeometry.bucket.minX && dp.p.x < PotionGeometry.bucket.maxX { return }
         if let i = puddles.firstIndex(where: { abs($0.x - dp.p.x) < $0.w * 0.6 && abs($0.y - y) < 4 }) {
             puddles[i].w = min(110, puddles[i].w + dp.vol / 300 + 0.5)
             puddles[i].color = puddles[i].color.mix(dp.color, 0.1)
@@ -1265,24 +1265,24 @@ final class PotionSim {
                 pc.v.dy += 1400 * d
                 pc.p.x += pc.v.dx * d
                 pc.p.y += pc.v.dy * d
-                if PGeo.inside(pc.p, pad: 4) {
+                if PotionGeometry.inside(pc.p, pad: 4) {
                     if pc.p.y > surfaceY(pc.p.x) {
                         pc.state = .liquid
-                        let col = Int((pc.p.x - PGeo.gx0) / PGeo.cell)
+                        let col = Int((pc.p.x - PotionGeometry.gx0) / PotionGeometry.cell)
                         if col >= 0 && col < PotionSim.NX { waveV[col] += min(2.4, pc.v.dy * 0.003) }
                         pc.v = CGVector(dx: pc.v.dx * 0.3, dy: pc.v.dy * 0.25)
                         cue(.plop, gap: 0.08)
                         for _ in 0..<2 { bubbles.append(PBubble(p: CGPoint(x: pc.p.x + rand(-6, 6), y: pc.p.y + rand(4, 12)), r: rand(1.5, 3), phase: rand(0, 6), fizzy: false)) }
                     }
-                } else if PGeo.insideOuter(pc.p, pad: 6) {
+                } else if PotionGeometry.insideOuter(pc.p, pad: 6) {
                     // bounced off the rim or the glass: it falls off to the side
-                    let side: CGFloat = pc.p.x < PGeo.C.x ? -1 : 1
+                    let side: CGFloat = pc.p.x < PotionGeometry.C.x ? -1 : 1
                     pc.v = CGVector(dx: side * rand(60, 140), dy: -abs(pc.v.dy) * 0.3)
                     pc.p.x += side * 4
                     cue(.tink, gap: 0.1)
                 }
-                if pc.p.y > PGeo.tableY - 6 {
-                    pc.p.y = PGeo.tableY - 6
+                if pc.p.y > PotionGeometry.tableY - 6 {
+                    pc.p.y = PotionGeometry.tableY - 6
                     pc.state = .table
                     pc.v = .zero
                     pc.age = 0
@@ -1328,12 +1328,12 @@ final class PotionSim {
             pc.p.y = surf + 3
             pc.v.dy = max(0, pc.v.dy)
         }
-        if !PGeo.inside(pc.p, pad: 6) {
+        if !PotionGeometry.inside(pc.p, pad: 6) {
             // back inside, sliding along the glass
-            let c = CGPoint(x: PGeo.C.x, y: min(PGeo.C.y, max(level + 10, pc.p.y)))
+            let c = CGPoint(x: PotionGeometry.C.x, y: min(PotionGeometry.C.y, max(level + 10, pc.p.y)))
             for _ in 0..<12 {
                 pc.p = CGPoint(x: pc.p.x + (c.x - pc.p.x) * 0.1, y: pc.p.y + (c.y - pc.p.y) * 0.1)
-                if PGeo.inside(pc.p, pad: 6) { break }
+                if PotionGeometry.inside(pc.p, pad: 6) { break }
             }
             pc.v.dx *= -0.3
             pc.v.dy *= 0.5
@@ -1374,7 +1374,7 @@ final class PotionSim {
             inject(pc.p, color: PIngredient.frost.color, amount: amount * 0.5)
             temp = max(0, temp - dd * 0.35)
             if rand() < d * 10 {
-                motes.append(PMote(p: CGPoint(x: PGeo.C.x + rand(-60, 60), y: max(PGeo.rimY, surfaceY(pc.p.x)) - 6), v: CGVector(dx: rand(-20, 20), dy: rand(-30, -8)),
+                motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x + rand(-60, 60), y: max(PotionGeometry.rimY, surfaceY(pc.p.x)) - 6), v: CGVector(dx: rand(-20, 20), dy: rand(-30, -8)),
                                    max: rand(2.5, 4), kind: .fog, color: RGB(0.9, 0.97, 1), size: rand(18, 30)))
             }
             if rand() < d * 3 { cue(.frost, gap: 0.6) }
@@ -1385,7 +1385,7 @@ final class PotionSim {
         case .lavender:
             inject(pc.p, color: PIngredient.lavender.color, amount: amount * 0.6)
             if rand() < d * 1.5 {
-                motes.append(PMote(p: CGPoint(x: pc.p.x, y: PGeo.rimY - 10), v: CGVector(dx: rand(-10, 10), dy: -30), max: 2.2, kind: .zz,
+                motes.append(PMote(p: CGPoint(x: pc.p.x, y: PotionGeometry.rimY - 10), v: CGVector(dx: rand(-10, 10), dy: -30), max: 2.2, kind: .zz,
                                    color: RGB(hex: "#B9A0FF"), size: 14))
             }
         default:
@@ -1428,13 +1428,13 @@ final class PotionSim {
             b.p.x += (fl.dx * 0.6 + sin(b.phase) * b.r * 3) * d
             b.p.y += (fl.dy * 0.4 - rise) * d
             if let k = cellIndex(b.p), liquid[k] { v[k] -= Float(b.r * 6 * d * 60) * 0.04 }
-            if !PGeo.inside(b.p, pad: b.r) {
-                b.p.x += (PGeo.C.x - b.p.x) * 0.08
+            if !PotionGeometry.inside(b.p, pad: b.r) {
+                b.p.x += (PotionGeometry.C.x - b.p.x) * 0.08
             }
             let surf = surfaceY(b.p.x)
             if b.p.y <= surf + b.r * 0.5 {
                 // pop at the top
-                let col = Int((b.p.x - PGeo.gx0) / PGeo.cell)
+                let col = Int((b.p.x - PotionGeometry.gx0) / PotionGeometry.cell)
                 if col >= 0 && col < PotionSim.NX {
                     waveV[col] -= b.r * 0.05
                     if b.fizzy || boiling > 0.6 && (doses[.berries] ?? 0) + (doses[.mermaid] ?? 0) > 1 { foam[col] = min(70, foam[col] + b.r * 1.4) }
@@ -1458,16 +1458,16 @@ final class PotionSim {
 
     private func stepGlitter(_ d: CGFloat) {
         guard !glitter.isEmpty else { return }
-        let bottom = PGeo.bottomY
+        let bottom = PotionGeometry.bottomY
         for i in glitter.indices {
             var g = glitter[i]
             g.phase += d * 3
             let fl = flow(g.p)
             g.p.x += fl.dx * d
             g.p.y += (fl.dy + 9) * d
-            if !PGeo.inside(g.p, pad: 3) {
+            if !PotionGeometry.inside(g.p, pad: 3) {
                 // settle on the bottom / slide back in
-                let c = CGPoint(x: PGeo.C.x, y: min(PGeo.C.y, g.p.y))
+                let c = CGPoint(x: PotionGeometry.C.x, y: min(PotionGeometry.C.y, g.p.y))
                 g.p = CGPoint(x: g.p.x + (c.x - g.p.x) * 0.05, y: min(bottom - 4, g.p.y + (c.y - g.p.y) * 0.05))
             }
             let s = surfaceY(g.p.x) + 3
@@ -1494,12 +1494,12 @@ final class PotionSim {
                 // cold fog is heavy: it spills over the rim and rolls down the glass to the table
                 m.v.dy += 30 * d
                 m.size += d * 10
-                if PGeo.insideOuter(m.p, pad: 4) && m.p.y > PGeo.rimY {
-                    let side: CGFloat = m.p.x < PGeo.C.x ? -1 : 1
+                if PotionGeometry.insideOuter(m.p, pad: 4) && m.p.y > PotionGeometry.rimY {
+                    let side: CGFloat = m.p.x < PotionGeometry.C.x ? -1 : 1
                     m.v.dx += side * 60 * d
-                    if PGeo.inside(m.p) { m.v.dy = min(m.v.dy, -4) }
+                    if PotionGeometry.inside(m.p) { m.v.dy = min(m.v.dy, -4) }
                 }
-                if m.p.y > PGeo.tableY - 10 { m.p.y = PGeo.tableY - 10; m.v.dy = 0; m.v.dx *= 1 - d }
+                if m.p.y > PotionGeometry.tableY - 10 { m.p.y = PotionGeometry.tableY - 10; m.v.dy = 0; m.v.dx *= 1 - d }
             case .sparkle:
                 m.v.dy += 60 * d
                 m.v.dx *= 1 - d * 1.5
@@ -1519,7 +1519,7 @@ final class PotionSim {
                 m.size += d * 500
             case .drip:
                 m.v.dy += 800 * d
-                if m.p.y > PGeo.tableY { continue }
+                if m.p.y > PotionGeometry.tableY { continue }
             }
             m.p.x += m.v.dx * d
             m.p.y += m.v.dy * d
@@ -1533,13 +1533,13 @@ final class PotionSim {
 
     private func stepWaves(_ d: CGFloat) {
         let NX = PotionSim.NX
-        let hwid = PGeo.halfWidth(at: level)
+        let hwid = PotionGeometry.halfWidth(at: level)
         var active = [Bool](repeating: false, count: NX)
         var sum: CGFloat = 0
         var n: CGFloat = 0
         for i in 0..<NX {
-            let x = PGeo.gx0 + (CGFloat(i) + 0.5) * PGeo.cell
-            active[i] = abs(x - PGeo.C.x) < hwid - 2 && volume > 1
+            let x = PotionGeometry.gx0 + (CGFloat(i) + 0.5) * PotionGeometry.cell
+            active[i] = abs(x - PotionGeometry.C.x) < hwid - 2 && volume > 1
             if active[i] { sum += waveH[i]; n += 1 }
         }
         let mean = n > 0 ? sum / n : 0
@@ -1565,13 +1565,13 @@ final class PotionSim {
             f2[i] = foam[i] + 0.06 * (l + r - 2 * foam[i]) * k
             f2[i] *= pow(0.9975, k)
             let top = level + waveH[i] - f2[i]
-            if top < PGeo.rimY - 6 && f2[i] > 4 {
+            if top < PotionGeometry.rimY - 6 && f2[i] > 4 {
                 let spill = min(f2[i] * 0.3, 3 * k)
                 f2[i] -= spill
                 if rand() < 0.3 {
                     let side: CGFloat = i < NX / 2 ? -1 : 1
                     let (c, _) = meanColor()
-                    motes.append(PMote(p: CGPoint(x: PGeo.C.x + side * (PGeo.hw + PGeo.glass), y: PGeo.rimY - 4), v: CGVector(dx: side * 20, dy: 20),
+                    motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x + side * (PotionGeometry.hw + PotionGeometry.glass), y: PotionGeometry.rimY - 4), v: CGVector(dx: side * 20, dy: 20),
                                        max: 3, kind: .drip, color: RGB(1, 1, 1).mix(c, 0.35), size: rand(8, 14)))
                     cue(.fizz, gap: 0.6)
                 }
@@ -1581,7 +1581,7 @@ final class PotionSim {
         // a fizzy potion sends little soap bubbles floating up
         let foamTotal = foam.reduce(0, +)
         if foamTotal > 300 && rand() < d * min(6, foamTotal / 300) {
-            let x = PGeo.C.x + rand(-60, 60)
+            let x = PotionGeometry.C.x + rand(-60, 60)
             motes.append(PMote(p: CGPoint(x: x, y: surfaceY(x) - 30), v: CGVector(dx: rand(-20, 20), dy: rand(-50, -25)), max: rand(3, 5), kind: .soap,
                                color: RGB(1, 1, 1), size: rand(8, 16), spin: rand(0, 6)))
         }
@@ -1677,7 +1677,7 @@ final class PotionSim {
         uni.gotVol = 0
         uni.hop = 0.01
         uni.hopV = -260
-        sparkleBurst(at: CGPoint(x: PGeo.unicornBox.midX, y: PGeo.unicornBox.minY + 40), color: c, n: 10)
+        sparkleBurst(at: CGPoint(x: PotionGeometry.unicornBox.midX, y: PotionGeometry.unicornBox.minY + 40), color: c, n: 10)
         cue(.poof)
     }
 
@@ -1689,7 +1689,7 @@ final class PotionSim {
         cue(.boing)
         if uni.sleepy > 0 { uni.sleepy = 0 }
         for k in 0..<3 {
-            motes.append(PMote(p: CGPoint(x: PGeo.unicornBox.midX + rand(-30, 30), y: PGeo.unicornBox.minY + 30), v: CGVector(dx: rand(-20, 20), dy: -60 - CGFloat(k) * 10),
+            motes.append(PMote(p: CGPoint(x: PotionGeometry.unicornBox.midX + rand(-30, 30), y: PotionGeometry.unicornBox.minY + 30), v: CGVector(dx: rand(-20, 20), dy: -60 - CGFloat(k) * 10),
                                max: 1.6, kind: .heart, color: RGB(hex: "#FF7FB0"), size: 14, spin: rand(0, 6)))
         }
     }
@@ -1706,7 +1706,7 @@ final class PotionSim {
             cue(.shakeOff)
             for _ in 0..<16 {
                 let a = rand(0, 6.28)
-                motes.append(PMote(p: CGPoint(x: PGeo.unicornBox.midX + cos(a) * 60, y: PGeo.unicornBox.midY + sin(a) * 50), v: CGVector(dx: cos(a) * 220, dy: sin(a) * 120 - 80),
+                motes.append(PMote(p: CGPoint(x: PotionGeometry.unicornBox.midX + cos(a) * 60, y: PotionGeometry.unicornBox.midY + sin(a) * 50), v: CGVector(dx: cos(a) * 220, dy: sin(a) * 120 - 80),
                                    max: 1, kind: .drip, color: PIngredient.water.color, size: rand(4, 7)))
             }
         }
@@ -1730,7 +1730,7 @@ final class PotionSim {
             uni.floatY += uni.floatV * d
             if uni.float <= 0 {
                 cue(.pop)
-                sparkleBurst(at: CGPoint(x: PGeo.unicornBox.midX, y: PGeo.unicornBox.midY + uni.floatY), color: RGB(0.8, 0.95, 1), n: 10)
+                sparkleBurst(at: CGPoint(x: PotionGeometry.unicornBox.midX, y: PotionGeometry.unicornBox.midY + uni.floatY), color: RGB(0.8, 0.95, 1), n: 10)
             }
         } else if uni.floatY < 0 {
             uni.floatV += 1400 * d
@@ -1762,12 +1762,12 @@ final class PotionSim {
         }
         uni.hicKick = max(0, uni.hicKick - d * 4)
         if uni.love > 0 && rand() < d * 2.4 {
-            motes.append(PMote(p: CGPoint(x: PGeo.unicornBox.midX + rand(-50, 50), y: PGeo.unicornBox.minY + 40 + uni.floatY), v: CGVector(dx: 0, dy: -50),
+            motes.append(PMote(p: CGPoint(x: PotionGeometry.unicornBox.midX + rand(-50, 50), y: PotionGeometry.unicornBox.minY + 40 + uni.floatY), v: CGVector(dx: 0, dy: -50),
                                max: 2, kind: .heart, color: RGB(hex: "#FF6FA6"), size: rand(12, 18), spin: rand(0, 6)))
             cue(.heart, gap: 1.6)
         }
         if uni.frost > 0 && rand() < d * 6 {
-            motes.append(PMote(p: CGPoint(x: PGeo.unicornBox.midX + rand(-80, 80), y: PGeo.unicornBox.minY - 10), v: CGVector(dx: 0, dy: 40),
+            motes.append(PMote(p: CGPoint(x: PotionGeometry.unicornBox.midX + rand(-80, 80), y: PotionGeometry.unicornBox.minY - 10), v: CGVector(dx: 0, dy: 40),
                                max: 2.4, kind: .snow, color: RGB(1, 1, 1), size: rand(6, 11), spin: rand(0, 6)))
         }
         if uni.sleepy > 0 && rand() < d * 0.9 {
@@ -1776,13 +1776,13 @@ final class PotionSim {
             cue(.yawn, gap: 3)
         }
         // she watches what's going on
-        var target = CGPoint(x: PGeo.C.x, y: level + 40)
+        var target = CGPoint(x: PotionGeometry.C.x, y: level + 40)
         if held != nil { target = held == .spoon ? spoon : heldPos }
         uni.look = CGPoint(x: uni.look.x + (target.x - uni.look.x) * min(1, d * 4), y: uni.look.y + (target.y - uni.look.y) * min(1, d * 4))
     }
 
     var unicornMouth: CGPoint {
-        CGPoint(x: PGeo.unicornFeet.x + 40, y: PGeo.unicornFeet.y - 150 + uni.floatY + uni.hop)
+        CGPoint(x: PotionGeometry.unicornFeet.x + 40, y: PotionGeometry.unicornFeet.y - 150 + uni.floatY + uni.hop)
     }
 
     // MARK: - Rare potions
@@ -1824,9 +1824,9 @@ final class PotionSim {
                     // the magic moment: it flashes and starts turning its new color
                     flash = 1
                     cue(.magic)
-                    motes.append(PMote(p: CGPoint(x: PGeo.C.x, y: max(level, PGeo.joinY) + 60), v: .zero, max: 0.6, kind: .flash,
+                    motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x, y: max(level, PotionGeometry.joinY) + 60), v: .zero, max: 0.6, kind: .flash,
                                        color: k!.color.mix(RGB(1, 1, 1), 0.4), size: 40))
-                    sparkleBurst(at: CGPoint(x: PGeo.C.x, y: PGeo.rimY - 20), color: k!.color, n: 16)
+                    sparkleBurst(at: CGPoint(x: PotionGeometry.C.x, y: PotionGeometry.rimY - 20), color: k!.color, n: 16)
                 }
             }
         }
@@ -1858,36 +1858,36 @@ final class PotionSim {
         switch k {
         case .galaxy, .golden:
             if glitter.count < 260 && rand() < d * 30 {
-                let x = PGeo.C.x + rand(-120, 120)
-                addGlitter(at: CGPoint(x: x, y: rand(max(level, PGeo.rimY) + 10, PGeo.bottomY - 20)), color: k == .golden ? RGB(hex: "#FFE38A") : RGB(1, 1, 1), size: rand(1.4, 2.8))
+                let x = PotionGeometry.C.x + rand(-120, 120)
+                addGlitter(at: CGPoint(x: x, y: rand(max(level, PotionGeometry.rimY) + 10, PotionGeometry.bottomY - 20)), color: k == .golden ? RGB(hex: "#FFE38A") : RGB(1, 1, 1), size: rand(1.4, 2.8))
             }
         case .love:
             if rand() < d * 1.6 {
-                motes.append(PMote(p: CGPoint(x: PGeo.C.x + rand(-50, 50), y: PGeo.rimY - 10), v: CGVector(dx: 0, dy: -46), max: 2.4, kind: .heart,
+                motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x + rand(-50, 50), y: PotionGeometry.rimY - 10), v: CGVector(dx: 0, dy: -46), max: 2.4, kind: .heart,
                                    color: RGB(hex: "#FF6FA6"), size: rand(12, 18), spin: rand(0, 6)))
             }
         case .frost:
             if rand() < d * 4 {
-                motes.append(PMote(p: CGPoint(x: PGeo.C.x + rand(-60, 60), y: PGeo.rimY - 4), v: CGVector(dx: rand(-20, 20), dy: rand(-20, 0)), max: rand(2.5, 4),
+                motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x + rand(-60, 60), y: PotionGeometry.rimY - 4), v: CGVector(dx: rand(-20, 20), dy: rand(-20, 0)), max: rand(2.5, 4),
                                    kind: .fog, color: RGB(0.92, 0.98, 1), size: rand(18, 28)))
             }
         case .mermaid:
             if rand() < d * 5 {
-                bubbles.append(PBubble(p: CGPoint(x: PGeo.C.x + rand(-100, 100), y: PGeo.bottomY - 20), r: rand(2, 5), phase: rand(0, 6), fizzy: true))
+                bubbles.append(PBubble(p: CGPoint(x: PotionGeometry.C.x + rand(-100, 100), y: PotionGeometry.bottomY - 20), r: rand(2, 5), phase: rand(0, 6), fizzy: true))
             }
         case .dragon:
             if rand() < d * 3 {
-                motes.append(PMote(p: CGPoint(x: PGeo.C.x + rand(-40, 40), y: PGeo.rimY - 6), v: CGVector(dx: rand(-20, 20), dy: -70), max: 1.6, kind: .sparkle,
+                motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x + rand(-40, 40), y: PotionGeometry.rimY - 6), v: CGVector(dx: rand(-20, 20), dy: -70), max: 1.6, kind: .sparkle,
                                    color: RGB(hex: "#FFB347"), size: rand(6, 10)))
             }
         case .dream:
             if rand() < d * 0.8 {
-                motes.append(PMote(p: CGPoint(x: PGeo.C.x + rand(-40, 40), y: PGeo.rimY - 10), v: CGVector(dx: 8, dy: -30), max: 2.6, kind: .zz,
+                motes.append(PMote(p: CGPoint(x: PotionGeometry.C.x + rand(-40, 40), y: PotionGeometry.rimY - 10), v: CGVector(dx: 8, dy: -30), max: 2.6, kind: .zz,
                                    color: RGB(hex: "#B9A0FF"), size: rand(14, 20), spin: rand(0, 6)))
             }
         case .wild:
             if rand() < d * 6 {
-                bubbles.append(PBubble(p: CGPoint(x: PGeo.C.x + rand(-100, 100), y: PGeo.bottomY - 20), r: rand(2, 6), phase: rand(0, 6), fizzy: true))
+                bubbles.append(PBubble(p: CGPoint(x: PotionGeometry.C.x + rand(-100, 100), y: PotionGeometry.bottomY - 20), r: rand(2, 6), phase: rand(0, 6), fizzy: true))
             }
         default:
             break

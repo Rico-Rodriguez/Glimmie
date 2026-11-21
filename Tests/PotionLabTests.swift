@@ -13,19 +13,19 @@ final class PotionLabTests: XCTestCase {
     }
 
     func testTheLevelFollowsTheVolumeAndTheFlasksShape() {
-        XCTAssertEqual(PGeo.level(for: 0), PGeo.bottomY, accuracy: 0.5)
-        XCTAssertEqual(PGeo.level(for: PGeo.capacity), PGeo.rimY, accuracy: 0.5)
-        var last = PGeo.bottomY + 1
+        XCTAssertEqual(PotionGeometry.level(for: 0), PotionGeometry.bottomY, accuracy: 0.5)
+        XCTAssertEqual(PotionGeometry.level(for: PotionGeometry.capacity), PotionGeometry.rimY, accuracy: 0.5)
+        var last = PotionGeometry.bottomY + 1
         for k in 1..<20 {
-            let v = PGeo.capacity * CGFloat(k) / 20
-            let y = PGeo.level(for: v)
+            let v = PotionGeometry.capacity * CGFloat(k) / 20
+            let y = PotionGeometry.level(for: v)
             XCTAssertLessThan(y, last, "more potion, higher surface")
-            XCTAssertEqual(PGeo.volume(below: y), v, accuracy: v * 0.01)
+            XCTAssertEqual(PotionGeometry.volume(below: y), v, accuracy: v * 0.01)
             last = y
         }
         // the round body is wider than the neck, so the same amount rises less in the middle than in the neck
-        let mid = PGeo.level(for: PGeo.capacity * 0.5) - PGeo.level(for: PGeo.capacity * 0.55)
-        let neck = PGeo.level(for: PGeo.capacity * 0.9) - PGeo.level(for: PGeo.capacity * 0.95)
+        let mid = PotionGeometry.level(for: PotionGeometry.capacity * 0.5) - PotionGeometry.level(for: PotionGeometry.capacity * 0.55)
+        let neck = PotionGeometry.level(for: PotionGeometry.capacity * 0.9) - PotionGeometry.level(for: PotionGeometry.capacity * 0.95)
         XCTAssertGreaterThan(neck, mid)
     }
 
@@ -66,7 +66,7 @@ final class PotionLabTests: XCTestCase {
         func depthOfColor() -> CGFloat {
             var sum: CGFloat = 0, w: CGFloat = 0
             for k in sim.da.indices where sim.liquid[k] {
-                let y = PGeo.cellCenter(k % PotionSim.NX, k / PotionSim.NX).y
+                let y = PotionGeometry.cellCenter(k % PotionSim.NX, k / PotionSim.NX).y
                 sum += y * CGFloat(sim.da[k]); w += CGFloat(sim.da[k])
             }
             return sum / max(0.001, w)
@@ -82,10 +82,10 @@ final class PotionLabTests: XCTestCase {
             return vals.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Float(max(1, vals.count))
         }
         let unmixed = spread()
-        sim.pickUp(.spoon, finger: PGeo.C, at: sim.spoon)
+        sim.pickUp(.spoon, finger: PotionGeometry.C, at: sim.spoon)
         for i in 0..<(60 * 6) {
             let a = CGFloat(i) / 60 * 5
-            sim.carry(to: CGPoint(x: PGeo.C.x + cos(a) * 110, y: PGeo.C.y + 40 + sin(a) * 80), finger: PGeo.C)
+            sim.carry(to: CGPoint(x: PotionGeometry.C.x + cos(a) * 110, y: PotionGeometry.C.y + 40 + sin(a) * 80), finger: PotionGeometry.C)
             sim.step(dt: 1.0 / 60)
         }
         sim.release()
@@ -156,7 +156,7 @@ final class PotionLabTests: XCTestCase {
             sim.carry(to: CGPoint(x: x, y: 460), finger: CGPoint(x: x, y: 560))
         }
         XCTAssertFalse(sim.dipInside)
-        XCTAssertFalse(PGeo.inside(sim.heldPos), "it stays outside the round body")
+        XCTAssertFalse(PotionGeometry.inside(sim.heldPos), "it stays outside the round body")
     }
 
     func testTheTapDrainsItAll() {
