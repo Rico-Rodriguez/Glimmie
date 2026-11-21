@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.interpolate import CubicSpline
+from scipy.ndimage import gaussian_filter
 from skimage.measure import marching_cubes
 
 
@@ -34,7 +35,12 @@ def tube(p, stations, samples=28):
     for a, b in zip(points, points[1:]):
         d = b[:3] - a[:3]
         r = [axis - c for axis, c in zip(p, a)]
-        t = np.clip(sum(x*v for x, v in zip(r, d)) / np.dot(d, d), 0, 1)
+        length2 = np.dot(d, d)
+        rate = b[3] - a[3]
+        projection = sum(x*v for x, v in zip(r, d)) / length2
+        normal2 = np.maximum(0, sum(x*x for x in r) - projection*projection*length2)
+        shift = rate * np.sqrt(normal2 / max(length2*(length2-rate*rate), 1e-10))
+        t = np.clip(projection + shift, 0, 1)
         distance = np.sqrt(sum((x - t*v)**2 for x, v in zip(r, d)))
         out = np.minimum(out, distance - (a[3] + t*(b[3] - a[3])))
     return out
@@ -73,7 +79,7 @@ def skin(p):
 
     for z in (-.135, .135):
         ear = tube(p, [(.838,2.399,z*.83,.075), (.765,2.56,z*1.44,.068),
-                       (.73,2.694,z*1.59,.018)], 22)
+                       (.736,2.664,z*1.59,.014)], 22)
         shape = union(shape, ear, .046)
     return shape
 
@@ -108,6 +114,14 @@ def coat_color(v):
     legs = np.clip((.66 - y)/.66, 0, 1)
     c = np.column_stack((.96 + warm*.034, .823 + warm*.058, .642 + warm*.085))
     c *= (1 - muzzle*.20 - legs*.135)[:, None]
+    side = np.abs(z)
+    lip_y = 1.86 + (1.55 - x) * .37
+    lip = np.exp(-((lip_y-y)/.012)**2) * np.exp(-((x-1.51)/.125)**4)
+    lip *= np.clip((side-.076)*15, 0, 1)
+    inner_ear = np.exp(-((x-.803)/.027)**2 - ((y-2.566)/.071)**2)
+    inner_ear *= np.clip((side-.125)*18, 0, 1)
+    c *= (1-lip*.31)[:, None]
+    c += (np.array((.76,.45,.40))-c)*inner_ear[:, None]*.69
     # Small, soft rings broken up by position on the coat, mostly on the barrel and haunch.
     rng = np.random.default_rng(4186)
     dapple = np.zeros(len(v))
@@ -126,7 +140,8 @@ def coat_color(v):
 def mesh(field, low, high, pitch, color):
     axes = [np.arange(a, b + pitch, pitch, dtype=np.float32) for a, b in zip(low, high)]
     samples = np.meshgrid(*axes, sparse=True, indexing='ij')
-    xyz, faces, normals, _ = marching_cubes(field(samples).astype(np.float32), 0, spacing=(pitch,)*3, allow_degenerate=False)
+    values = gaussian_filter(field(samples).astype(np.float32), sigma=.65)
+    xyz, faces, normals, _ = marching_cubes(values, 0, spacing=(pitch,)*3, allow_degenerate=False)
     xyz += np.asarray(low)
     normals *= -1
     tris = xyz[faces[:1200]]

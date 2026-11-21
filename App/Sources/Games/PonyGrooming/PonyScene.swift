@@ -59,9 +59,11 @@ final class PonyScene {
         addFace()
         addTack()
         for (i, lock) in PonyLock.all.enumerated() {
-            let mesh = PonyHairMesh(lock: lock, index: i, origin: lock.isTail ? Self.tailRest : Self.neckRest)
+            let origin = lock.isTail ? Self.tailRest : lock.isForelock ? Self.headRest : Self.neckRest
+            let mesh = PonyHairMesh(lock: lock, index: i, origin: origin)
             locks.append(mesh)
-            (lock.isTail ? tail : neck).addChildNode(mesh.node)
+            let joint = lock.isTail ? tail : lock.isForelock ? head : neck
+            joint.addChildNode(mesh.node)
             redraw(i)
         }
         camera.camera = SCNCamera()
@@ -100,6 +102,7 @@ final class PonyScene {
         // The brush catches the neighboring edges of a lock, without affecting the hidden side.
         let neighbors = [index - 1, index + 1].filter {
             locks.indices.contains($0) && locks[$0].lock.side == mesh.lock.side && locks[$0].lock.isTail == mesh.lock.isTail
+                && locks[$0].lock.isForelock == mesh.lock.isForelock
         }
         for neighbor in neighbors {
             motion[neighbor].stroke(localDelta * 0.36, at: fraction)
@@ -292,6 +295,8 @@ final class PonyScene {
                 board(width: 0.021, height: 3.35, depth: 0.17, position: SIMD3<Float>(-1.14 + Float(index) * 0.57, 1.68, -0.05),
                       color: rgb(0xC4A3CD), parent: group)
             }
+            if side % 4 == 0 { window(parent: group) }
+            if side % 4 == 1 { gate(parent: group) }
         }
         let ambient = SCNLight()
         ambient.type = .ambient
@@ -322,6 +327,54 @@ final class PonyScene {
         back.position = SCNVector3(-3, 4, -5)
         back.look(at: SCNVector3(0, 1, 0))
         scene.rootNode.addChildNode(back)
+    }
+
+    private func window(parent: SCNNode) {
+        func arch(_ width: CGFloat, _ height: CGFloat, z: Float, color: UIColor) {
+            let w = width / 2
+            let cap = height - w * 0.72
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: -w, y: 0))
+            path.addLine(to: CGPoint(x: w, y: 0))
+            path.addLine(to: CGPoint(x: w, y: cap))
+            path.addQuadCurve(to: CGPoint(x: 0, y: height), controlPoint: CGPoint(x: w, y: height))
+            path.addQuadCurve(to: CGPoint(x: -w, y: cap), controlPoint: CGPoint(x: -w, y: height))
+            path.close()
+            let shape = SCNShape(path: path, extrusionDepth: 0.04)
+            let m = material(color)
+            m.lightingModel = .constant
+            shape.materials = [m]
+            let node = SCNNode(geometry: shape)
+            node.position = SCNVector3(0, 1.65, z)
+            node.categoryBitMask = 4
+            node.castsShadow = false
+            parent.addChildNode(node)
+        }
+        arch(2.64, 2.18, z: -0.14, color: rgb(0xFFF0DB))
+        arch(2.40, 2.0, z: -0.20, color: rgb(0xCCE9ED))
+        for (x, y, width) in [(-0.72 as Float, 1.83 as Float, 0.43 as Float), (0.40, 1.92, 0.62), (0.86,1.77,0.30)] {
+            let leaf = oval(at: SIMD3<Float>(x, y, -0.23), scale: SIMD3<Float>(width, 0.24, 0.015), color: rgb(0xA9CEA1), parent: parent)
+            leaf.categoryBitMask = 4
+            leaf.castsShadow = false
+        }
+        board(width: 2.69, height: 0.12, depth: 0.22, position: SIMD3<Float>(0, 1.65, -0.22), color: rgb(0xCAB297), parent: parent)
+        board(width: 0.075, height: 1.97, depth: 0.10, position: SIMD3<Float>(0, 2.63, -0.24), color: rgb(0xFFF0DB), parent: parent)
+    }
+
+    private func gate(parent: SCNNode) {
+        board(width: 2.58, height: 1.77, depth: 0.19, position: SIMD3<Float>(0, 0.92, -0.19), color: rgb(0xA9CEB2), parent: parent)
+        for index in 0..<6 {
+            board(width: 0.023, height: 1.72, depth: 0.21, position: SIMD3<Float>(-1.06 + Float(index) * 0.41, 0.91, -0.20),
+                  color: rgb(0x83B097), parent: parent)
+        }
+        let plaster = SCNBox(width: 2.75, height: 0.12, length: 0.08, chamferRadius: 0.025)
+        plaster.materials = [material(rgb(0xC6DDC4))]
+        let brace = SCNNode(geometry: plaster)
+        brace.position = SCNVector3(0, 0.92, -0.31)
+        brace.eulerAngles.z = 0.53
+        brace.categoryBitMask = 4
+        brace.castsShadow = false
+        parent.addChildNode(brace)
     }
 
     private func board(width: CGFloat, height: CGFloat, depth: CGFloat, position: SIMD3<Float>,
