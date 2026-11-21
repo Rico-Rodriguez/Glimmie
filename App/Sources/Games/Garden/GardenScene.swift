@@ -7,25 +7,45 @@ import SwiftUI
 // weeds, the front lawn, then everything that moves (water, clods, seeds, petals, flyers, bugs, rain), the night
 // tint and the things that glow through it, and last the tool in her hand.
 
-/// Maps the screen to the 1024 x 834 design frame the same way `DesignCanvas` does.
+/// Maps the screen to the 1024 x 834 design frame the same way `DesignCanvas` does. With a zoom, the scene
+/// (the world) is drawn bigger than the buttons (`ui`), with world point `anchor` at ui point `at`.
 struct GMap {
     let size: CGSize
     let s: CGFloat
     let ox: CGFloat
     let oy: CGFloat
+    /// The scale and offset of the buttons (the plain design frame).
+    let ui: CGFloat
+    let uox: CGFloat
+    let uoy: CGFloat
 
-    init(size: CGSize) {
+    init(size: CGSize, zoom: CGFloat = 1, anchor: CGPoint = CGPoint(x: 512, y: 417), at: CGPoint = CGPoint(x: 512, y: 417)) {
         self.size = size
         let h = DesignCanvas<EmptyView>.designHeight
         let scale = max(0.1, size.height / h)
         let w = max(1024, size.width / scale)
-        s = min(scale, size.width / w)
-        ox = size.width / 2 - 512 * s
-        oy = size.height / 2 - 417 * s
+        ui = min(scale, size.width / w)
+        uox = size.width / 2 - 512 * ui
+        uoy = size.height / 2 - 417 * ui
+        s = ui * zoom
+        ox = uox + at.x * ui - anchor.x * s
+        oy = uoy + at.y * ui - anchor.y * s
     }
 
     func design(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - ox) / s, y: (p.y - oy) / s) }
     var visible: CGRect { CGRect(x: -ox / s, y: -oy / s, width: size.width / s, height: size.height / s) }
+    /// A point of the buttons' frame (like a dock slot) in the world.
+    func fromUI(_ p: CGPoint) -> CGPoint { design(CGPoint(x: uox + p.x * ui, y: uoy + p.y * ui)) }
+
+    /// The garden, zoomed so the bed and its plants fill the screen: the bed and frame (x 56...968) as wide as
+    /// the screen allows, the front lawn (world 795) at the bottom of the screen, the top of the sky
+    /// cropped a little. Never more than 1.22x.
+    static func garden(size: CGSize) -> GMap {
+        let plain = GMap(size: size)
+        let visW = size.width / plain.ui
+        let z = max(1, min(1.22, (visW - 12) / 912))
+        return GMap(size: size, zoom: z, anchor: CGPoint(x: 512, y: 795), at: CGPoint(x: 512, y: 834))
+    }
 }
 
 enum GardenPainter {

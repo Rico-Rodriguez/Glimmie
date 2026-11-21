@@ -309,28 +309,29 @@ enum ICScene {
 
     private static func machine(_ g: GraphicsContext, _ sim: IceSim, _ t: CGFloat) {
         let steel = ICColor(0xD5DEE7)
-        let body = Path(roundedRect: CGRect(x: 468, y: 92, width: 264, height: 178), cornerRadius: 26)
+        // a big machine: four big flavor buttons on its left face, the head and nozzle on the right
+        let body = Path(roundedRect: CGRect(x: 360, y: 64, width: 376, height: 206), cornerRadius: 30)
         g.fill(body, with: .linearGradient(Gradient(colors: [steel.shade(0.4).color, steel.color, steel.shade(-0.2).color]),
-                                           startPoint: CGPoint(x: 468, y: 0), endPoint: CGPoint(x: 732, y: 0)))
-        g.stroke(body, with: .color(ICArt.outline(steel)), lineWidth: 3)
+                                           startPoint: CGPoint(x: 360, y: 0), endPoint: CGPoint(x: 736, y: 0)))
+        g.stroke(body, with: .color(ICArt.outline(steel)), lineWidth: 3.5)
         // pink top with two hopper lids
-        let top = Path(roundedRect: CGRect(x: 476, y: 98, width: 248, height: 50), cornerRadius: 20)
+        let top = Path(roundedRect: CGRect(x: 370, y: 72, width: 356, height: 42), cornerRadius: 20)
         g.fill(top, with: .color(ICColor(0xFF9EC4).color))
-        for x in [CGFloat(546), 654] {
-            let lid = Path(ellipseIn: CGRect(x: x - 34, y: 106, width: 68, height: 22))
+        for x in [CGFloat(560), 668] {
+            let lid = Path(ellipseIn: CGRect(x: x - 38, y: 80, width: 76, height: 24))
             g.fill(lid, with: .color(ICColor(0xFFE3EE).color))
             g.stroke(lid, with: .color(ICColor(0xE07AA4).color), lineWidth: 2.5)
         }
-        // a cone painted on the front
+        // a cone painted on the front, above the head
         var cone = Path()
-        cone.move(to: CGPoint(x: 492, y: 176))
-        cone.addLine(to: CGPoint(x: 510, y: 176))
-        cone.addLine(to: CGPoint(x: 501, y: 200))
+        cone.move(to: CGPoint(x: 588, y: 158))
+        cone.addLine(to: CGPoint(x: 612, y: 158))
+        cone.addLine(to: CGPoint(x: 600, y: 190))
         cone.closeSubpath()
         g.fill(cone, with: .color(ICColor(0xDDA25C).color))
-        g.fill(Path(ellipseIn: CGRect(x: 489, y: 160, width: 24, height: 20)), with: .color(ICColor(0xFFB3C9).color))
+        g.fill(Path(ellipseIn: CGRect(x: 584, y: 136, width: 32, height: 26)), with: .color(ICColor(0xFFB3C9).color))
         // the head the rope comes out of
-        let head = Path(roundedRect: CGRect(x: 512, y: 226, width: 176, height: 44), cornerRadius: 14)
+        let head = Path(roundedRect: CGRect(x: 540, y: 222, width: 120, height: 48), cornerRadius: 14)
         g.fill(head, with: .color(steel.shade(-0.06).color))
         g.stroke(head, with: .color(ICArt.outline(steel)), lineWidth: 2.5)
         let n = ICGeo.nozzle
@@ -346,27 +347,32 @@ enum ICScene {
         g.fill(spout, with: .color(steel.shade(-0.12).color))
         g.stroke(spout, with: .color(ICArt.outline(steel)), lineWidth: 2)
         g.fill(star, with: .color(steel.shade(-0.3).color))
-        // the handles: pulled down while she holds them
-        for (i, hx) in ICGeo.handleX.enumerated() {
-            let pull = sim.leverPull[i]
-            var arm = g
-            arm.translateBy(x: hx, y: 236)
-            arm.rotate(by: .radians(Double(pull) * 0.55 * (hx < n.x ? -1 : 1)))
-            let stick = Path(roundedRect: CGRect(x: -5, y: -4, width: 10, height: 34), cornerRadius: 5)
-            arm.fill(stick, with: .color(steel.shade(-0.2).color))
+        // the flavor buttons: hold one and it sinks in while the swirl comes out
+        for (i, c) in ICGeo.softButtons.enumerated() {
+            let press = sim.leverPull[i]
+            let r = ICGeo.softButtonR
             let f = ICSoft(rawValue: i) ?? .vanilla
-            let knob = ICArt.circle(CGPoint(x: 0, y: 34), 15)
             let (a, b) = f.colors
-            arm.fill(knob, with: .color(a.color))
+            // a steel ring round each button
+            g.fill(ICArt.circle(c, r + 7), with: .color(steel.shade(-0.18).color))
+            g.stroke(ICArt.circle(c, r + 7), with: .color(ICArt.outline(steel)), lineWidth: 2)
+            var bg = g
+            bg.translateBy(x: c.x, y: c.y + 4 * press)
+            bg.scaleBy(x: 1 - 0.08 * press, y: 1 - 0.08 * press)
+            let knob = ICArt.circle(.zero, r)
+            bg.fill(knob, with: .color(a.color))
             if a != b {
                 var half = Path()
-                half.addArc(center: CGPoint(x: 0, y: 34), radius: 15, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false)
+                half.addArc(center: .zero, radius: r, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false)
                 half.closeSubpath()
-                arm.fill(half, with: .color(b.color))
+                bg.fill(half, with: .color(b.color))
             }
-            arm.stroke(knob, with: .color(ICArt.outline(a.mix(b, 0.5))), lineWidth: 2.5)
-            arm.fill(ICArt.ellipse(CGPoint(x: -5, y: 29), 5, 3), with: .color(.white.opacity(0.7)))
-            if sim.wanted(soft: f) { heart(g, at: CGPoint(x: hx, y: 214), t: t, size: 10) }
+            bg.stroke(knob, with: .color(ICArt.outline(a.mix(b, 0.5))), lineWidth: 3)
+            // a shine that dims as it's pushed in
+            var sh = bg
+            sh.opacity = Double(0.75 * (1 - press * 0.6))
+            sh.fill(ICArt.ellipse(CGPoint(x: -r * 0.35, y: -r * 0.4), r * 0.32, r * 0.2), with: .color(.white))
+            if sim.wanted(soft: f) { heart(g, at: CGPoint(x: c.x + r * 0.75, y: c.y - r * 0.75), t: t, size: 12) }
         }
     }
 

@@ -243,7 +243,8 @@ struct GardenView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let map = GMap(size: geo.size)
+            // the scene is zoomed in so the bed fills the screen; the buttons stay their usual size
+            let map = GMap.garden(size: geo.size)
             ZStack {
                 // The sky, hills, fence and lawns change slowly, so they redraw at 30 fps in their own layer.
                 TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
@@ -268,13 +269,13 @@ struct GardenView: View {
                                      if auto.running { auto.cancel() }
                                      useTool(pk, map.design(loc))
                                  },
-                                 onEnd: { _ in endTool(pk) },
-                                 onTap: { loc in autoDo(pk, map.design(loc)) })
+                                 onEnd: { _ in endTool(pk, map) },
+                                 onTap: { loc in autoDo(pk, map.design(loc), map) })
                 }
 
                 controls(map)
                     .frame(width: 1024, height: 834)
-                    .scaleEffect(map.s)
+                    .scaleEffect(map.ui)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
             .coordinateSpace(name: "garden")
@@ -416,7 +417,7 @@ struct GardenView: View {
                     let want: GardenTray = slot == .seeds ? .seeds : .decor
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                 case .shovel, .can:
-                    endTool(slot)
+                    endTool(slot, map)
                     // a tap on the dock picks the tool (or puts it down)
                     if ToolTap.isTap(v.translation) {
                         picked = picked == slot ? nil : slot
@@ -439,19 +440,19 @@ struct GardenView: View {
         if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
     }
 
-    private func endTool(_ slot: DockSlot) {
-        sim.release(home: slot.spot)
+    private func endTool(_ slot: DockSlot, _ map: GMap) {
+        sim.release(home: map.fromUI(slot.spot))
         finishCarry(slot.rawValue)
     }
 
     /// The picked tool flies off the dock and does the spot she tapped by itself: the shovel digs there,
     /// the can waters it from above.
-    private func autoDo(_ slot: DockSlot, _ spot: CGPoint) {
+    private func autoDo(_ slot: DockSlot, _ spot: CGPoint, _ map: GMap) {
         guard slot == .shovel || slot == .can else { return }
         let tool: GardenTool = slot == .shovel ? .shovel : .can
         let target = slot == .can ? CGPoint(x: spot.x + 80, y: spot.y - 160) : CGPoint(x: spot.x, y: spot.y + 10)
         let f = FingerLift.finger(for: target, lift: GardenView.lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
-        auto.run(from: slot.spot, to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
+        auto.run(from: map.fromUI(slot.spot), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot, map) })
     }
 
     /// Where a carried tool goes for her finger at p (design space). Each tool is drawn around a
@@ -530,7 +531,7 @@ struct GardenView: View {
                     if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl)) }
                 }
                 .onEnded { _ in
-                    sim.release(home: t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot)
+                    sim.release(home: map.fromUI(t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot))
                     carrying = nil
                     hidden = nil
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil }

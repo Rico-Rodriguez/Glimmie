@@ -224,3 +224,12 @@ history before the game-drawer PR.
 - Saves `aquarium.json` (fish kinds and colors, decorations and where they sit, the algae grid, lamp, pump).
   Sounds: `python3 tools/aquarium/sounds.py`. Screenshot hooks: `-aquaDemo`, `-aquaNight`, `-aquaTool food|sponge|net`,
   `-aquaTray fish|decor` (screenshot hooks never save).
+
+## Bigger scenes (Nov 2026)
+- Rico picked "just enlarge current layouts". Garden and Aquarium draw the scene (the world) zoomed past the buttons:
+  `GMap.garden(size:)` (up to 1.22x, the bed as wide as the screen allows, the front lawn at the bottom, a little sky
+  cropped) and `AMap.tank(size:)` (up to 1.18x, the tank frame just above the dock, the cabinet behind it). The maps keep
+  `ui`/`uox`/`uoy` for the buttons, and `fromUI` turns a dock spot into a world point (tool homes, auto-do starts).
+  Sim coordinates are unchanged.
+- Ice Cream's soft-serve machine is bigger (x 360...736) and has four big press-and-hold flavor buttons on its face
+  (`ICGeo.softButtons`, radius 30, touch radius 42) instead of four small levers.

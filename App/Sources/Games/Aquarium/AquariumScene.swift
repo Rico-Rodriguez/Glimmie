@@ -12,19 +12,38 @@ struct AMap {
     let s: CGFloat
     let ox: CGFloat
     let oy: CGFloat
+    /// The scale and offset of the buttons (the plain design frame); the tank (the world) can be zoomed past it.
+    let ui: CGFloat
+    let uox: CGFloat
+    let uoy: CGFloat
 
-    init(size: CGSize) {
+    /// With a zoom, world point `anchor` is drawn at ui point `at`.
+    init(size: CGSize, zoom: CGFloat = 1, anchor: CGPoint = CGPoint(x: 512, y: 417), at: CGPoint = CGPoint(x: 512, y: 417)) {
         self.size = size
         let h = DesignCanvas<EmptyView>.designHeight
         let scale = max(0.1, size.height / h)
         let w = max(1024, size.width / scale)
-        s = min(scale, size.width / w)
-        ox = size.width / 2 - 512 * s
-        oy = size.height / 2 - 417 * s
+        ui = min(scale, size.width / w)
+        uox = size.width / 2 - 512 * ui
+        uoy = size.height / 2 - 417 * ui
+        s = ui * zoom
+        ox = uox + at.x * ui - anchor.x * s
+        oy = uoy + at.y * ui - anchor.y * s
     }
 
     func design(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - ox) / s, y: (p.y - oy) / s) }
     var visible: CGRect { CGRect(x: -ox / s, y: -oy / s, width: size.width / s, height: size.height / s) }
+    /// A point of the buttons' frame (like a dock slot) in the world.
+    func fromUI(_ p: CGPoint) -> CGPoint { design(CGPoint(x: uox + p.x * ui, y: uoy + p.y * ui)) }
+
+    /// The tank zoomed in to fill the screen: its frame (x 30...994) as wide as the screen allows and the bottom
+    /// of its frame (world 704) just above the dock, with the cabinet behind the dock. At most 1.18x.
+    static func tank(size: CGSize) -> AMap {
+        let plain = AMap(size: size)
+        let visW = size.width / plain.ui
+        let z = max(1, min(1.18, (visW - 8) / 964))
+        return AMap(size: size, zoom: z, anchor: CGPoint(x: 512, y: 704), at: CGPoint(x: 512, y: 704 + (724 - 704) * (z - 1) / 0.18))
+    }
 }
 
 enum AquaPainter {
