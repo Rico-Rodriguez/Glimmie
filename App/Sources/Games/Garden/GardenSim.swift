@@ -189,6 +189,9 @@ final class GardenSim {
     var ladybug: GLadybug
     var worm: GWorm
     var fireflies: [GFirefly] = []
+    /// Animals dropping in (see GardenFinds).
+    var visitors: [GVisitor] = []
+    var nextVisit: Double = 7
     var basket: [String] = []
     var basketBounce: CGFloat = 0
     var basketBounceV: CGFloat = 0
@@ -399,6 +402,7 @@ final class GardenSim {
         stepFlyers()
         stepDecor(dt)
         stepCritters(dt)
+        stepFinds(dt)
         stepBasket(dt)
         stepSound()
         if time - lastSave > 20 { lastSave = time; save() }
@@ -658,7 +662,7 @@ final class GardenSim {
 
     func plant(_ kind: PlantKind, plot i: Int) {
         guard plots[i].plant == nil else { return }
-        plots[i].plant = Plant(kind: kind, growth: 0.02, left: 0, variant: Int.random(in: 0..<6))
+        plots[i].plant = Plant(kind: kind, growth: 0.02, left: 0, variant: GardenSim.rollVariant())
         plots[i].fillUntil = time + 0.9
         plots[i].dry = 0
         plots[i].pop = 0
@@ -1307,6 +1311,7 @@ final class GardenSim {
             sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
             return
         }
+        if tapVisitor(p) { return }
         // Bugs
         for i in butterflies.indices where hypot(butterflies[i].p.x - p.x, butterflies[i].p.y - p.y) < 56 {
             flee(i, from: CGPoint(x: p.x, y: p.y + 20))

@@ -71,14 +71,17 @@ enum GardenPainter {
         let r = map.visible
         let t = CGFloat(sim.time)
         for d in sim.decor where !d.held { GardenDecorPainter.draw(g, d, time: t, night: sim.night, wind: sim.windNow) }
+        visitors(g, sim, t, behind: true, flying: false)
         soil(g, sim, t)
         worm(g, sim, t)
         plants(g, sim, t)
+        visitors(g, sim, t, behind: false, flying: false)
         glassAndFrame(g)
         frontGrass(g, r, sim, t)
         particles(g, sim, front: false)
         flyers(g, sim)
         bugs(g, sim, t)
+        visitors(g, sim, t, behind: false, flying: true)
         for d in sim.decor where d.held { GardenDecorPainter.draw(g, d, time: t, night: sim.night, wind: sim.windNow) }
         basket(g, sim, t)
         particles(g, sim, front: true)
@@ -444,6 +447,27 @@ enum GardenPainter {
             let base = CGPoint(x: x, y: sim.surface(x))
             let st = sim.plots[i]
             GardenPlants.draw(g, plant: p, base: base, bend: st.bend, pop: st.pop, pull: st.pull, time: t, droop: st.dry > 1.5)
+            if p.isSpecial && p.growth > 0.2 {
+                // a rare one twinkles as it grows (and the special daisy glows at night)
+                let hgt = GardenPlants.stemHeight(p)
+                let low = !p.kind.isFlower
+                let c = low ? CGPoint(x: base.x + (p.kind == .pumpkin ? 40 : 0), y: base.y - max(30, hgt * 0.5))
+                            : (sim.head(plot: i) ?? CGPoint(x: base.x, y: base.y - hgt))
+                if p.kind == .daisy && sim.night > 0.05 {
+                    let r: CGFloat = 46
+                    g.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
+                           with: .radialGradient(Gradient(colors: [p.kind.specialColor.color(0.75 * Double(sim.night)), p.kind.specialColor.color(0)]),
+                                                 center: c, startRadius: 6, endRadius: r))
+                }
+                GardenVisitorPainter.twinkles(g, around: c, radius: low ? 44 : 36, time: t + CGFloat(i), count: 3,
+                                              alpha: Double(gdEase((CGFloat(p.growth) - 0.2) / 0.3)))
+            }
+        }
+    }
+
+    private static func visitors(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat, behind: Bool, flying: Bool) {
+        for v in sim.visitors where v.kind.behind == behind && (v.kind.flies && !v.kind.behind) == flying {
+            GardenVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
         }
     }
 

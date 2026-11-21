@@ -127,6 +127,7 @@ enum PlantKind: String, Codable, CaseIterable {
 
     /// Petal or fruit color (variant v picks among a few for tulips and daisies).
     func bloom(_ v: Int) -> GRGB {
+        if v >= Plant.specialVariant { return specialColor }
         switch self {
         case .sunflower: return GRGB(0xFFC928)
         case .tulip: return [GRGB(0xFF4F7B), GRGB(0xFF9A3D), GRGB(0xC86BFF), GRGB(0xFFD23F)][abs(v) % 4]
@@ -140,14 +141,36 @@ enum PlantKind: String, Codable, CaseIterable {
     }
 }
 
+extension PlantKind {
+    /// The color of the rare special one (see GardenFinds): a pink sunflower, a blue tulip, a glowing daisy,
+    /// pink lavender, a purple carrot, a golden tomato, a white strawberry and a giant pumpkin.
+    var specialColor: GRGB {
+        switch self {
+        case .sunflower: return GRGB(0xFF8CC6)
+        case .tulip: return GRGB(0x4FC3F7)
+        case .daisy: return GRGB(0xA8F5FF)
+        case .lavender: return GRGB(0xFF7EC8)
+        case .carrot: return GRGB(0x8E4FD8)
+        case .tomato: return GRGB(0xFFC21E)
+        case .strawberry: return GRGB(0xFFF1EA)
+        case .pumpkin: return GRGB(0xFF9A2E)
+        }
+    }
+}
+
 struct Plant: Codable, Equatable {
     var kind: PlantKind
     /// 0 is a seed, 1 is in full bloom or ripe.
     var growth: Double = 0
     /// Ripe things still on the plant (fruit, blooms).
     var left: Int = 0
-    /// Color variant.
+    /// Color variant. `specialVariant` and up is the rare special one (see GardenFinds).
     var variant: Int = 0
+
+    static let specialVariant = 100
+    var isSpecial: Bool { variant >= Plant.specialVariant }
+    /// The special one's fruit color, for the painters (nil draws the usual color).
+    var specialTint: GRGB? { isSpecial ? kind.specialColor : nil }
 }
 
 enum DecorKind: String, Codable, CaseIterable {

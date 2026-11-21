@@ -20,7 +20,8 @@ enum GardenGame {
         title: "Garden",
         tint: Color(hex: 0xA8E07A),
         icon: { AnyView(GardenTileIcon()) },
-        play: { exit in AnyView(GardenView(exit: exit)) }
+        play: { exit in AnyView(GardenView(exit: exit)) },
+        stickers: GardenFind.stickers
     )
 }
 
@@ -240,6 +241,7 @@ struct GardenView: View {
     /// The shovel or can she tapped on the dock: a tap on the garden makes it do that spot (see `ToolTap`).
     @State private var picked: DockSlot?
     @State private var auto = AutoTool()
+    @State private var book = false
 
     var body: some View {
         GeometryReader { geo in
@@ -277,6 +279,12 @@ struct GardenView: View {
                     .frame(width: 1024, height: 834)
                     .scaleEffect(map.ui)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
+
+                if book {
+                    StickerBookView(game: GardenSim.gameID) { withAnimation(.easeOut(duration: 0.2)) { book = false } }
+                        .transition(.opacity)
+                        .zIndex(2)
+                }
             }
             .coordinateSpace(name: "garden")
         }
@@ -295,6 +303,8 @@ struct GardenView: View {
         weather = sim.weather
         applyLaunchArguments()
     }
+
+    static let bookSpot = CGPoint(x: 152, y: 60)
 
     // MARK: Hand
 
@@ -329,6 +339,9 @@ struct GardenView: View {
         ZStack {
             HomeButton(action: exit)
                 .position(x: 62, y: 60)
+            StickerBookButton(game: GardenSim.gameID) { book = true }
+                .position(x: GardenView.bookSpot.x, y: GardenView.bookSpot.y)
+            StickerToast(game: GardenSim.gameID, target: GardenView.bookSpot)
             weatherBar
                 .position(x: 812, y: 60)
             // Which tool to suggest is checked a few times a second; the bounce itself runs at the display's

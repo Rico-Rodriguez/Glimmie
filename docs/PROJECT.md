@@ -233,3 +233,21 @@ history before the game-drawer PR.
   Sim coordinates are unchanged.
 - Ice Cream's soft-serve machine is bigger (x 360...736) and has four big press-and-hold flavor buttons on its face
   (`ICGeo.softButtons`, radius 30, touch radius 42) instead of four small levers.
+
+## Sticker book and surprises (Nov 2026)
+- Rico picked "discover and collect", as "surprises only, trays stay as is", and then a shared sticker book for the
+  whole app. Nothing is locked, added to a tray, or asked of her; things just turn up while she plays.
+- `App/Sources/Shared/StickerBook.swift`: one book, saved in its own folder (`Games/stickers/stickers.json`), so no
+  game touches another game's saves. A game lists its stickers on its `GameEntry` (`stickers:`) and calls
+  `StickerBook.shared.find(game:id:)` when she comes across one (cheap to call again). The first time, the
+  sticker pops up with stars and flies into the book button (`StickerToast` over the game's controls,
+  `StickerBookButton` next to the home button). The book opens from the home screen (top right) or in the game at
+  that game's page; missing stickers are soft grey shapes, a row of stars shows how many she has.
+- Garden (`GardenFinds.swift`): about one seed in four (`GardenSim.specialChance`) grows a special plant, stored as
+  `variant >= Plant.specialVariant` so old saves still load: pink sunflower, blue tulip, a daisy that glows at night,
+  pink lavender, purple carrot, golden tomato, white strawberry, giant pumpkin. They twinkle as they grow and count
+  when they bloom or ripen. Seven visitors come when the garden has something for them (bunny: ripe carrots;
+  frog: rain or a full birdbath; snail: rain; hedgehog: night or a ripe pumpkin; bluebird: birdhouse or birdbath;
+  owl: night, on the fence; hummingbird: lavender or a special flower), stay 10 to 18 s and wander off. Ones she
+  hasn't met come three times as often. Tapping one makes it hop, curl up, hide or flutter.
+

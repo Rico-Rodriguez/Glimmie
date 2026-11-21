@@ -3,6 +3,7 @@ import SwiftUI
 /// The home screen: a toy drawer with one big tile per game, laid out in rows and columns.
 struct DrawerView: View {
     let open: (String) -> Void
+    @State private var book = false
 
     var body: some View {
         ZStack {
@@ -11,6 +12,15 @@ struct DrawerView: View {
                 Title()
                     .padding(.top, 14)
                     .padding(.bottom, 2)
+                    .frame(maxWidth: .infinity)
+                    .overlay(alignment: .trailing) {
+                        // the sticker book: every game's surprises in one place
+                        if !StickerBook.pages.isEmpty {
+                            StickerBookButton(size: 66) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
+                                .padding(.trailing, DrawerLayout.sidePadding)
+                                .padding(.top, 10)
+                        }
+                    }
                 GeometryReader { geo in
                     let layout = DrawerLayout.best(count: GameRegistry.all.count, in: geo.size)
                     ScrollView(.vertical, showsIndicators: false) {
@@ -31,6 +41,11 @@ struct DrawerView: View {
                     }
                     .bounceOnlyWhenScrolling()
                 }
+            }
+            if book {
+                StickerBookView { withAnimation(.easeOut(duration: 0.2)) { book = false } }
+                    .transition(.opacity)
+                    .zIndex(2)
             }
         }
     }

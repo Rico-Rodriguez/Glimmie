@@ -369,7 +369,7 @@ enum GardenPlants {
         if ripe > 0 && pull <= 0.02 {
             let w = 10 + 10 * ripe
             let r = CGRect(x: base.x - w / 2, y: base.y - 5 * ripe, width: w, height: 9 * ripe + 2)
-            ctx.fill(Path(ellipseIn: r), with: .color(GRGB(0xFF8A2A).color))
+            ctx.fill(Path(ellipseIn: r), with: .color(p.kind.bloom(p.variant).color))
             ctx.fill(Path(ellipseIn: r.insetBy(dx: w * 0.25, dy: 1).offsetBy(dx: -2, dy: -1)), with: .color(.white.opacity(0.3)))
         }
     }
@@ -379,10 +379,10 @@ enum GardenPlants {
         let g = gdEase(CGFloat(p.growth))
         let len = 14 + 66 * g
         let w = 4 + 16 * g
-        carrotShape(ctx, top: base, length: len, width: w, angle: 0)
+        carrotShape(ctx, top: base, length: len, width: w, angle: 0, tint: p.specialTint)
     }
 
-    static func carrotShape(_ ctx: GraphicsContext, top: CGPoint, length len: CGFloat, width w: CGFloat, angle: CGFloat) {
+    static func carrotShape(_ ctx: GraphicsContext, top: CGPoint, length len: CGFloat, width w: CGFloat, angle: CGFloat, tint: GRGB? = nil) {
         var g = ctx
         g.translateBy(x: top.x, y: top.y)
         g.rotate(by: .radians(Double(angle)))
@@ -391,24 +391,25 @@ enum GardenPlants {
         path.addQuadCurve(to: CGPoint(x: w / 2, y: 0), control: CGPoint(x: 0, y: -w * 0.35))
         path.addCurve(to: CGPoint(x: 0, y: len), control1: CGPoint(x: w * 0.5, y: len * 0.4), control2: CGPoint(x: w * 0.1, y: len * 0.85))
         path.addCurve(to: CGPoint(x: -w / 2, y: 0), control1: CGPoint(x: -w * 0.1, y: len * 0.85), control2: CGPoint(x: -w * 0.5, y: len * 0.4))
-        let grad = Gradient(colors: [GRGB(0xFFA24A).color, GRGB(0xF07A1A).color, GRGB(0xC85A10).color])
+        let grad = tint.map { Gradient(colors: [$0.shade(0.2).color, $0.color, $0.shade(-0.3).color]) }
+            ?? Gradient(colors: [GRGB(0xFFA24A).color, GRGB(0xF07A1A).color, GRGB(0xC85A10).color])
         g.fill(path, with: .linearGradient(grad, startPoint: CGPoint(x: -w / 2, y: 0), endPoint: CGPoint(x: w / 2, y: 0)))
-        g.stroke(path, with: .color(GRGB(0xA8480C).color(0.6)), lineWidth: 1)
+        g.stroke(path, with: .color((tint?.shade(-0.5) ?? GRGB(0xA8480C)).color(0.6)), lineWidth: 1)
         for k in 1..<6 {
             let y = len * CGFloat(k) / 7
             let half = w * 0.5 * (1 - CGFloat(k) / 7.5) * 0.8
             var ring = Path()
             ring.move(to: CGPoint(x: -half, y: y))
             ring.addQuadCurve(to: CGPoint(x: half * 0.3, y: y + 1.5), control: CGPoint(x: -half * 0.3, y: y + 2.5))
-            g.stroke(ring, with: .color(GRGB(0xB05410).color(0.45)), lineWidth: 1)
+            g.stroke(ring, with: .color((tint?.shade(-0.4) ?? GRGB(0xB05410)).color(0.45)), lineWidth: 1)
         }
         g.fill(Path(ellipseIn: CGRect(x: -w * 0.32, y: len * 0.08, width: w * 0.18, height: len * 0.45)), with: .color(.white.opacity(0.22)))
     }
 
-    static func tomatoFruit(_ ctx: GraphicsContext, at p: CGPoint, r: CGFloat, ripe: CGFloat) {
+    static func tomatoFruit(_ ctx: GraphicsContext, at p: CGPoint, r: CGFloat, ripe: CGFloat, tint: GRGB? = nil) {
         let green = GRGB(0x86C04A)
         let orange = GRGB(0xF6A23A)
-        let red = GRGB(0xEE3A2C)
+        let red = tint ?? GRGB(0xEE3A2C)
         let c = ripe < 0.5 ? green.mix(orange, ripe * 2) : orange.mix(red, (ripe - 0.5) * 2)
         let rect = CGRect(x: p.x - r * 1.06, y: p.y - r, width: r * 2.12, height: r * 1.95)
         let grad = Gradient(colors: [c.shade(0.3).color, c.color, c.shade(-0.35).color])
@@ -486,16 +487,16 @@ enum GardenPlants {
                 vine.move(to: hang)
                 vine.addQuadCurve(to: CGPoint(x: fp.x, y: fp.y - 8), control: CGPoint(x: fp.x, y: hang.y))
                 ctx.stroke(vine, with: .color(GRGB(0x5C9A3C).color), lineWidth: 1.6)
-                tomatoFruit(ctx, at: fp, r: 4 + 9 * fruitK, ripe: ripe)
+                tomatoFruit(ctx, at: fp, r: 4 + 9 * fruitK, ripe: ripe, tint: p.specialTint)
             }
         }
     }
 
-    static func strawberryFruit(_ ctx: GraphicsContext, at p: CGPoint, r: CGFloat, ripe: CGFloat, angle: CGFloat = 0) {
+    static func strawberryFruit(_ ctx: GraphicsContext, at p: CGPoint, r: CGFloat, ripe: CGFloat, angle: CGFloat = 0, tint: GRGB? = nil) {
         var g = ctx
         g.translateBy(x: p.x, y: p.y)
         g.rotate(by: .radians(Double(angle)))
-        let c = GRGB(0xE9F2C8).mix(GRGB(0xE8263F), ripe)
+        let c = GRGB(0xE9F2C8).mix(tint ?? GRGB(0xE8263F), ripe)
         var path = Path()
         path.move(to: CGPoint(x: 0, y: -r * 0.7))
         path.addCurve(to: CGPoint(x: 0, y: r * 1.25), control1: CGPoint(x: r * 1.4, y: -r * 0.9), control2: CGPoint(x: r * 0.7, y: r * 0.9))
@@ -503,7 +504,8 @@ enum GardenPlants {
         let grad = Gradient(colors: [c.shade(0.28).color, c.color, c.shade(-0.35).color])
         g.fill(path, with: .radialGradient(grad, center: CGPoint(x: -r * 0.3, y: -r * 0.2), startRadius: 0, endRadius: r * 1.6))
         g.stroke(path, with: .color(c.shade(-0.5).color(0.45)), lineWidth: 0.8)
-        let seedColor = GRGB(0xFFE9A0).mix(GRGB(0xF6D35B), ripe)
+        // a white strawberry has red seeds
+        let seedColor = tint == nil ? GRGB(0xFFE9A0).mix(GRGB(0xF6D35B), ripe) : GRGB(0xFFE9A0).mix(GRGB(0xE8263F), ripe)
         for i in 0..<9 {
             let sx = (gdRand(i, 3) - 0.5) * r * 1.2
             let sy = (gdRand(i, 7) - 0.25) * r * 1.3
@@ -541,7 +543,7 @@ enum GardenPlants {
             vine.move(to: CGPoint(x: base.x, y: base.y - 20))
             vine.addQuadCurve(to: CGPoint(x: fp.x, y: fp.y - 6), control: CGPoint(x: fp.x * 0.6 + base.x * 0.4, y: base.y - 44))
             ctx.stroke(vine, with: .color(GRGB(0x5C9A3C).color), lineWidth: 1.6)
-            strawberryFruit(ctx, at: fp, r: 3 + 7 * fruitK, ripe: ripe, angle: s.x > 0 ? -0.25 : 0.25)
+            strawberryFruit(ctx, at: fp, r: 3 + 7 * fruitK, ripe: ripe, angle: s.x > 0 ? -0.25 : 0.25, tint: p.specialTint)
         }
         let angles: [CGFloat] = [-1.0, -0.42, 0.12, 0.62, 1.05]
         let hs: [CGFloat] = [0.66, 0.94, 1, 0.86, 0.6]
@@ -560,8 +562,8 @@ enum GardenPlants {
         }
     }
 
-    static func pumpkinFruit(_ ctx: GraphicsContext, at p: CGPoint, w: CGFloat, ripe: CGFloat) {
-        let c = GRGB(0x77A63E).mix(GRGB(0xF78A1E), ripe)
+    static func pumpkinFruit(_ ctx: GraphicsContext, at p: CGPoint, w: CGFloat, ripe: CGFloat, tint: GRGB? = nil) {
+        let c = GRGB(0x77A63E).mix(tint ?? GRGB(0xF78A1E), ripe)
         let hgt = w * 0.74
         let lobes: [CGFloat] = [-0.36, 0.36, -0.14, 0.14, 0]
         let widths: [CGFloat] = [0.5, 0.5, 0.52, 0.52, 0.46]
@@ -637,7 +639,9 @@ enum GardenPlants {
         let fruitK = gdEase((g - 0.7) / 0.26)
         let ripe = gdEase((g - 0.88) / 0.12)
         if fruitK > 0 && !(g >= 1 && p.left == 0) {
-            pumpkinFruit(ctx, at: CGPoint(x: base.x + 26, y: base.y + 2), w: 12 + 62 * fruitK, ripe: ripe)
+            // the special one grows into a giant
+            let giant: CGFloat = p.isSpecial ? 1.6 : 1
+            pumpkinFruit(ctx, at: CGPoint(x: base.x + 26 * giant, y: base.y + 2), w: (12 + 62 * fruitK) * giant, ripe: ripe, tint: p.specialTint)
         }
         let leaves: [(CGFloat, CGFloat, CGFloat)] = [(-0.5, 0.95, 26), (0.4, 0.75, 22), (-0.1, 1, 30), (0.9, 0.5, 19)]
         for (j, l) in leaves.enumerated() {
@@ -774,15 +778,18 @@ enum GardenPlants {
         var g = ctx
         g.translateBy(x: p.x, y: p.y)
         g.rotate(by: .radians(Double(rot)))
+        let tint: GRGB? = variant >= Plant.specialVariant ? kind.specialColor : nil
         switch kind {
-        case .tomato: tomatoFruit(g, at: .zero, r: 13 * s, ripe: 1)
-        case .strawberry: strawberryFruit(g, at: .zero, r: 11 * s, ripe: 1)
-        case .pumpkin: pumpkinFruit(g, at: CGPoint(x: 0, y: 20 * s), w: 48 * s, ripe: 1)
+        case .tomato: tomatoFruit(g, at: .zero, r: 13 * s, ripe: 1, tint: tint)
+        case .strawberry: strawberryFruit(g, at: .zero, r: 11 * s, ripe: 1, tint: tint)
+        case .pumpkin:
+            let giant: CGFloat = tint == nil ? 1 : 1.35
+            pumpkinFruit(g, at: CGPoint(x: 0, y: 20 * s * giant), w: 48 * s * giant, ripe: 1, tint: tint)
         case .carrot:
             for o in [-0.4, 0, 0.4] as [CGFloat] {
                 leaf(g, at: CGPoint(x: 0, y: -18 * s), angle: -.pi / 2 + o, length: 18 * s, width: 4 * s, color: GRGB(0x6DB548))
             }
-            carrotShape(g, top: CGPoint(x: 0, y: -18 * s), length: 46 * s, width: 15 * s, angle: 0)
+            carrotShape(g, top: CGPoint(x: 0, y: -18 * s), length: 46 * s, width: 15 * s, angle: 0, tint: tint)
         case .sunflower:
             var hg = g
             hg.scaleBy(x: s * 0.62, y: s * 0.62)
