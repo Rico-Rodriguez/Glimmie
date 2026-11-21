@@ -1,7 +1,27 @@
+import SceneKit
 import XCTest
 @testable import Glimmie
 
 final class PonyGroomingTests: XCTestCase {
+    func testSceneUsesSkinnedGeometryAndTurnsAroundTheSameMane() async throws {
+        try await MainActor.run {
+            let pony = try XCTUnwrap(PonyScene())
+            let root = pony.scene.rootNode
+            let body = try XCTUnwrap(root.childNode(withName: "pony-body", recursively: true))
+            let mane = try XCTUnwrap(root.childNode(withName: "lock-0", recursively: true))
+            let hairMesh = try XCTUnwrap(mane.geometry)
+            XCTAssertEqual(body.skinner?.bones.count, 3)
+            XCTAssertEqual(mane.parent, pony.neck)
+            let start = pony.camera.position
+            pony.turn(340)
+            pony.detail(true)
+            for frame in 0..<36 { pony.frame(time: 2 + Double(frame) / 30, dt: 1 / 30, reducedMotion: false) }
+            XCTAssertGreaterThan(abs(pony.camera.position.x - start.x) + abs(pony.camera.position.z - start.z), 1)
+            XCTAssertTrue(mane.geometry === hairMesh)
+            XCTAssertNotEqual(pony.head.eulerAngles.z, 0)
+        }
+    }
+
     func testStandingPonyMeshBundlesClosedTriangleData() throws {
         let url = try XCTUnwrap(GameFiles.url("pony", "mesh", game: "PonyGrooming"))
         let bytes = try Data(contentsOf: url)
