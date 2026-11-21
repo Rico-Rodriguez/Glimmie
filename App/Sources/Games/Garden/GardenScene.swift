@@ -1110,6 +1110,9 @@ enum GardenDecorPainter {
         case .birdhouse: birdhouse(c, peek: CGFloat(Double(t) - d.poke), t: t)
         case .bunny: bunny(c)
         case .flag: flag(c, t: t, wind: wind)
+        case .crystal: TreasureArt.crystals(c, glow: night)
+        case .rainbow: TreasureArt.rainbow(c)
+        case .unicorn: TreasureArt.unicorn(c)
         }
     }
 

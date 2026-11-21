@@ -1430,6 +1430,9 @@ final class GardenSim {
         case .flamingo, .flag:
             decor[i].tiltV += 4
             Sound.shared.play(.boing, volume: 0.4)
+        case .crystal, .rainbow, .unicorn:
+            decor[i].tiltV += 3
+            Sound.shared.play(.sparkle, volume: 0.5)
         }
     }
 

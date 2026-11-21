@@ -495,17 +495,24 @@ struct GardenView: View {
     // MARK: Trays
 
     private func trayView(_ t: GardenTray, _ map: GMap) -> some View {
-        let count = t == .seeds ? PlantKind.allCases.count : DecorKind.allCases.count
+        let count = t == .seeds ? PlantKind.allCases.count : DecorKind.available.count
+        // one row of up to 8; with bought extras the tray grows a second row (the extras sit in the bottom one)
+        let perRow = min(count, 8)
+        let rows = (count + perRow - 1) / perRow
+        let rowH: CGFloat = 128
+        let top: CGFloat = 640 - CGFloat(rows - 1) * rowH
         return ZStack {
             RoundedRectangle(cornerRadius: 34, style: .continuous)
                 .fill(.white.opacity(0.9))
                 .overlay(RoundedRectangle(cornerRadius: 34, style: .continuous).stroke(Theme.pink.opacity(0.5), lineWidth: 4))
                 .shadow(color: Theme.ink.opacity(0.25), radius: 10, y: 6)
-                .frame(width: CGFloat(count) * 104 + 30, height: 140)
-                .position(x: 512, y: 640)
+                .frame(width: CGFloat(perRow) * 104 + 30, height: 140 + CGFloat(rows - 1) * rowH)
+                .position(x: 512, y: 640 - CGFloat(rows - 1) * rowH / 2)
             ForEach(0..<count, id: \.self) { i in
+                let col = i % perRow, row = i / perRow
+                let inRow = row == rows - 1 ? count - row * perRow : perRow
                 trayItem(t, i, map)
-                    .position(x: 512 + (CGFloat(i) - CGFloat(count - 1) / 2) * 104, y: 640)
+                    .position(x: 512 + (CGFloat(col) - CGFloat(inRow - 1) / 2) * 104, y: top + CGFloat(row) * rowH)
             }
         }
         .opacity(carrying?.hasPrefix("tray") == true ? 0.3 : 1)
@@ -520,7 +527,7 @@ struct GardenView: View {
                 g.scaleBy(x: 1.1, y: 1.1)
                 GardenPainter.packet(g, kind: PlantKind.allCases[i])
             } else {
-                let k = DecorKind.allCases[i]
+                let k = DecorKind.available[i]
                 let s = min(0.62, 100 / k.size.height)
                 g.translateBy(x: 0, y: k.size.height * s * 0.5)
                 g.scaleBy(x: s, y: s)
@@ -538,7 +545,7 @@ struct GardenView: View {
                         carrying = key
                         hidden = key
                         Sound.shared.tap()
-                        let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.allCases[i])
+                        let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.available[i])
                         sim.pickUp(tool, at: p)
                     }
                     if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl), hand: p) }

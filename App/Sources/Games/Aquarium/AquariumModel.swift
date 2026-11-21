@@ -221,6 +221,23 @@ struct AquaFishSave: Codable, Equatable {
 
 enum AquaDecorKind: String, Codable, CaseIterable {
     case castle, chest, diver, bubbler, ship, rock, seaweed, coral, anemone, grass, shell, starfish
+    // extras from the treasure shop (see `Treasures`): in the tray only once bought
+    case crystal, rainbowCoral = "coral2", unicorn
+
+    /// The treasure shop id for an extra, nil for the free ones.
+    var treasure: String? {
+        switch self {
+        case .crystal: return "aquarium/crystal"
+        case .rainbowCoral: return "aquarium/coral"
+        case .unicorn: return "aquarium/unicorn"
+        default: return nil
+        }
+    }
+
+    /// What the decorations tray shows: every free piece, then the extras she has bought.
+    static var available: [AquaDecorKind] {
+        allCases.filter { k in k.treasure.map { Coins.shared.owns($0) } ?? true }
+    }
 
     /// Width and height of the drawing; its anchor is the middle of its bottom edge, on the sand.
     var size: CGSize {
@@ -237,6 +254,9 @@ enum AquaDecorKind: String, Codable, CaseIterable {
         case .grass: return CGSize(width: 110, height: 120)
         case .shell: return CGSize(width: 54, height: 44)
         case .starfish: return CGSize(width: 58, height: 34)
+        case .crystal: return TreasureArt.crystalSize
+        case .rainbowCoral: return TreasureArt.coralSize
+        case .unicorn: return TreasureArt.unicornSize
         }
     }
 
@@ -249,11 +269,13 @@ enum AquaDecorKind: String, Codable, CaseIterable {
         case .coral, .starfish: return 1.6
         case .anemone: return 1.4
         case .seaweed, .grass: return 1.25
+        case .unicorn, .crystal: return 2.2
+        case .rainbowCoral: return 1.6
         }
     }
 
     /// Plants and soft things bend with the water.
-    var sways: Bool { self == .seaweed || self == .anemone || self == .grass }
+    var sways: Bool { self == .seaweed || self == .anemone || self == .grass || self == .rainbowCoral }
 
     /// It puffs air bubbles.
     var bubbles: Bool { self == .chest || self == .diver || self == .bubbler || self == .castle }

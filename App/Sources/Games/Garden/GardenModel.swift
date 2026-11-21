@@ -175,6 +175,21 @@ struct Plant: Codable, Equatable {
 
 enum DecorKind: String, Codable, CaseIterable {
     case pinwheel, lantern, mushroom, flamingo, birdbath, birdhouse, bunny, flag
+    // extras from the treasure shop (see `Treasures`): in the tray only once bought
+    case crystal, rainbow, unicorn
+
+    /// The treasure shop id for an extra, nil for the free ones.
+    var treasure: String? {
+        switch self {
+        case .crystal, .rainbow, .unicorn: return "garden/\(rawValue)"
+        default: return nil
+        }
+    }
+
+    /// What the decorations tray shows: every free piece, then the extras she has bought.
+    static var available: [DecorKind] {
+        allCases.filter { k in k.treasure.map { Coins.shared.owns($0) } ?? true }
+    }
 
     /// Height of the piece above the ground, for touches and the drop.
     var size: CGSize {
@@ -187,6 +202,9 @@ enum DecorKind: String, Codable, CaseIterable {
         case .birdhouse: return CGSize(width: 64, height: 170)
         case .bunny: return CGSize(width: 60, height: 76)
         case .flag: return CGSize(width: 70, height: 140)
+        case .crystal: return TreasureArt.crystalSize
+        case .rainbow: return TreasureArt.rainbowSize
+        case .unicorn: return TreasureArt.unicornSize
         }
     }
 }
