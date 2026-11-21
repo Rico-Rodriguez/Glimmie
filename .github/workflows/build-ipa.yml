@@ -10,6 +10,10 @@ on:
         description: "Commit simulator screenshots to docs/screenshots on this branch"
         type: boolean
         default: false
+      only:
+        description: "Only take screenshots whose name starts with this (empty = all)"
+        type: string
+        default: ""
 
 concurrency:
   group: build-${{ github.ref }}
@@ -177,7 +181,8 @@ jobs:
           APP=simbuild/Build/Products/Debug-iphonesimulator/Glimmie.app
           xcrun simctl install "$UDID" "$APP"
           mkdir -p shots
-          shot() { name=$1; wait=$2; shift 2; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
+          ONLY="${{ inputs.only }}"
+          shot() { name=$1; wait=$2; shift 2; if [ -n "$ONLY" ] && [[ "$name" != "$ONLY"* ]]; then return; fi; xcrun simctl launch "$UDID" com.glimmie.closet "$@"; sleep "$wait"; xcrun simctl io "$UDID" screenshot "shots/$name.png"; xcrun simctl terminate "$UDID" com.glimmie.closet; }
           shot 1-drawer 6
           shot 1b-treasure-shop 6 -treasureShop -coinsDemo 30
           shot 2-dressup 6 -game dressup
@@ -259,14 +264,27 @@ jobs:
           shot aquarium-6-night 8 -game aquarium -aquaDemo -aquaNight
           shot aquarium-7-fish-tray 6 -game aquarium -aquaTray fish
           shot aquarium-8-decor-tray 6 -game aquarium -aquaTray decor
+          shot potion-1-lab 7 -game potionlab
+          shot potion-2-mix 8 -game potionlab -potionDemo mix
+          shot potion-3-pour 8 -game potionlab -potionDemo pour
+          shot potion-4-shake 7 -game potionlab -potionDemo shake
+          shot potion-5-stir 8 -game potionlab -potionDemo stir
+          shot potion-6-boil 9 -game potionlab -potionDemo boil
+          shot potion-7-dip 7 -game potionlab -potionDemo dip
+          shot potion-8-unicorn 8 -game potionlab -potionDemo unicorn
+          shot potion-9-rare 9 -game potionlab -potionDemo rare
+          shot potion-10-night 9 -game potionlab -potionDemo night
+          shot potion-11-hint 7 -game potionlab -potionDemo hint
           xcrun simctl shutdown "$UDID"
-          PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
-          xcrun simctl boot "$PHONE"
-          xcrun simctl bootstatus "$PHONE" -b
-          xcrun simctl install "$PHONE" "$APP"
-          xcrun simctl launch "$PHONE" com.glimmie.closet -game dressup
-          sleep 10
-          xcrun simctl io "$PHONE" screenshot shots/6-iphone-dressup.png
+          if [ -z "$ONLY" ]; then
+            PHONE=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k in sorted(d, reverse=True) for x in d[k] if x['name'].startswith('iPhone')))")
+            xcrun simctl boot "$PHONE"
+            xcrun simctl bootstatus "$PHONE" -b
+            xcrun simctl install "$PHONE" "$APP"
+            xcrun simctl launch "$PHONE" com.glimmie.closet -game dressup
+            sleep 10
+            xcrun simctl io "$PHONE" screenshot shots/6-iphone-dressup.png
+          fi
       - uses: actions/upload-artifact@v5
         if: always()
         with:
