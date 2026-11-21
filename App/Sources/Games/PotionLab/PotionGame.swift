@@ -310,22 +310,34 @@ struct PotionLabView: View {
                 .position(x: 62, y: 46)
             StickerBookButton(game: PotionSim.gameID) { book = true }
                 .position(x: PotionLabView.bookSpot.x, y: PotionLabView.bookSpot.y)
-            // the picture recipe for a rare potion she hasn't found yet
             Button {
                 Sound.shared.play(.sparkle, volume: 0.6)
                 Sound.shared.tap()
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { hint = sim.hint(after: nil) }
             } label: {
-                Image(systemName: "lightbulb.fill")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(Color(hex: 0xFFC93A))
-                    .frame(width: 72, height: 72)
-                    .background(Circle().fill(.white))
-                    .overlay(Circle().stroke(Color(hex: 0xFFC93A).opacity(0.5), lineWidth: 5))
+                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                    let recipes = PotionKind.allCases
+                    let found = recipes.filter { StickerBook.shared.has(game: PotionSim.gameID, id: $0.rawValue) }.count
+                    HStack(spacing: 9) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(Color(hex: 0xE09D12))
+                        Text("\(found)/\(recipes.count)")
+                            .font(.system(size: 23, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.ink)
+                    }
+                    .frame(width: 134, height: 72)
+                    .background(.white, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.lemon, lineWidth: 5))
                     .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Potion recipes")
+                    .accessibilityValue("\(found) of \(recipes.count) discovered")
+                }
             }
             .buttonStyle(Squish())
-            .position(x: 238, y: 46)
+            .position(x: 270, y: 46)
             Button {
                 Sound.shared.tap()
                 lightsOn.toggle()

@@ -1,33 +1,36 @@
+import UIKit
 import XCTest
 @testable import Glimmie
 
 final class UnicornStableTests: XCTestCase {
-    func testJumpingPuddlesCollectsAllSixStars() throws {
-        var ride = MeadowRide()
-        for _ in 0..<6 {
-            let jump = ride.needsJump
-            XCTAssertFalse(ride.move(jump: jump))
-        }
-        let stop = try XCTUnwrap(ride.stop)
-        XCTAssertEqual(stop.stars, 6)
-        XCTAssertEqual(stop.puddles, 0)
-        XCTAssertFalse(ride.move(jump: true))
-        XCTAssertEqual(ride.step, 6)
+    func testDirtySpotsNeedSoapAndThenRinsing() {
+        var care = StableCare()
+        XCTAssertFalse(care.use(.rinse, at: .shoulder))
+        XCTAssertTrue(care.use(.sponge, at: .shoulder))
+        XCTAssertFalse(care.dirt.contains(.shoulder))
+        XCTAssertTrue(care.soap.contains(.shoulder))
+        XCTAssertFalse(care.use(.sponge, at: .shoulder))
+        for spot in CareSpot.coat where spot != .shoulder { XCTAssertTrue(care.use(.sponge, at: spot)) }
+        XCTAssertFalse(care.washed)
+        for spot in CareSpot.coat { XCTAssertTrue(care.use(.rinse, at: spot)) }
+        XCTAssertTrue(care.washed)
     }
 
-    func testPuddlesNeverBlockTheRouteAndVisitorsCycle() throws {
-        var ride = MeadowRide()
-        for expected in MeadowRide.route {
-            for _ in 0..<6 { ride.move(jump: false) }
-            let stop = try XCTUnwrap(ride.stop)
-            XCTAssertEqual(stop.visitor, expected)
-            XCTAssertEqual(stop.stars, 3)
-            XCTAssertEqual(stop.puddles, 3)
-            ride.continueRide()
-            XCTAssertNil(ride.stop)
-            XCTAssertEqual(ride.stars, 0)
+    func testCareCompletesOnceAllThreeNeedsAreMetAndPersists() throws {
+        var care = StableCare()
+        XCTAssertFalse(care.use(.feed, at: .tail))
+        for spot in CareSpot.hair { XCTAssertTrue(care.use(.brush, at: spot)) }
+        XCTAssertFalse(care.use(.brush, at: .mane))
+        for spot in CareSpot.coat {
+            XCTAssertTrue(care.use(.sponge, at: spot))
+            XCTAssertTrue(care.use(.rinse, at: spot))
         }
-        XCTAssertEqual(ride.stretch, 0)
+        XCTAssertTrue(care.use(.feed, at: .muzzle))
+        XCTAssertFalse(care.complete)
+        XCTAssertTrue(care.use(.feed, at: .muzzle))
+        XCTAssertFalse(care.use(.feed, at: .muzzle))
+        XCTAssertTrue(care.complete)
+        XCTAssertEqual(try JSONDecoder().decode(StableCare.self, from: JSONEncoder().encode(care)), care)
     }
 
     func testCustomizedUnicornRoundTripsAndHasAStickerPage() throws {
@@ -35,5 +38,19 @@ final class UnicornStableTests: XCTestCase {
         let data = try JSONEncoder().encode(look)
         XCTAssertEqual(try JSONDecoder().decode(UnicornLook.self, from: data), look)
         XCTAssertEqual(UnicornGame.entry.stickers.map(\.id), MeadowVisitor.allCases.map(\.rawValue))
+    }
+
+    func testIllustratedScenesAndAnimatedPortraitAreBundled() throws {
+        let unicorn = try XCTUnwrap(UnicornIllustration.source("unicorn"))
+        for name in ["contented", "nibble"] {
+            let reaction = try XCTUnwrap(UnicornIllustration.source(name), name)
+            XCTAssertEqual(reaction.size, unicorn.size, name)
+        }
+        for name in ["stable", "meadow"] {
+            XCTAssertNotNil(UnicornIllustration.source(name), name)
+        }
+        let otherCoat = try XCTUnwrap(UnicornIllustration.sprite("unicorn", look: UnicornLook(coat: 0xADDCC6)))
+        XCTAssertEqual(otherCoat.size, unicorn.size)
+        XCTAssertNotEqual(otherCoat.pngData(), unicorn.pngData())
     }
 }

@@ -54,46 +54,50 @@ enum MeadowVisitor: String, CaseIterable {
     }
 }
 
-struct MeadowRide {
-    struct Stop {
-        let visitor: MeadowVisitor
-        let stars: Int
-        let puddles: Int
-    }
+enum CareTool: String, CaseIterable {
+    case brush, sponge, rinse, feed
+}
 
-    // Each stretch has three jumps. A missed jump splashes and still moves the ride forward.
-    static let jumps: Set<Int> = [1, 3, 4]
-    static let route: [MeadowVisitor] = [.bunny, .moonUnicorn, .butterfly, .rainbowUnicorn]
-    private(set) var step = 0
-    private(set) var stars = 0
-    private(set) var puddles = 0
-    private(set) var stop: Stop?
-    private(set) var stretch = 0
+enum CareSpot: String, CaseIterable, Codable {
+    case shoulder, flank, knee, forelock, mane, tail, muzzle
 
-    init(stretch: Int = 0) {
-        self.stretch = max(0, stretch) % Self.route.count
-    }
+    static let coat = [shoulder, flank, knee]
+    static let hair = [forelock, mane, tail]
+}
 
-    var needsJump: Bool { Self.jumps.contains(step) }
+struct StableCare: Codable, Equatable {
+    private(set) var burrs = Set(CareSpot.hair)
+    private(set) var dirt = Set(CareSpot.coat)
+    private(set) var soap: Set<CareSpot> = []
+    private(set) var bites = 0
 
-    @discardableResult
-    mutating func move(jump: Bool) -> Bool {
-        guard stop == nil else { return false }
-        let splash = needsJump && !jump
-        if splash { puddles += 1 } else { stars += 1 }
-        step += 1
-        if step == 6 {
-            stop = Stop(visitor: Self.route[stretch % Self.route.count], stars: stars, puddles: puddles)
+    static let snackBites = 2
+    var groomed: Bool { burrs.isEmpty }
+    var washed: Bool { dirt.isEmpty && soap.isEmpty }
+    var fed: Bool { bites >= Self.snackBites }
+    var complete: Bool { groomed && washed && fed }
+
+    func spots(for tool: CareTool) -> Set<CareSpot> {
+        switch tool {
+        case .brush: return burrs
+        case .sponge: return dirt
+        case .rinse: return soap
+        case .feed: return fed ? [] : [.muzzle]
         }
-        return splash
     }
 
-    mutating func continueRide() {
-        guard stop != nil else { return }
-        stretch = (stretch + 1) % Self.route.count
-        step = 0
-        stars = 0
-        puddles = 0
-        stop = nil
+    /// Returns true when this action changes the current care routine.
+    @discardableResult
+    mutating func use(_ tool: CareTool, at spot: CareSpot) -> Bool {
+        guard spots(for: tool).contains(spot) else { return false }
+        switch tool {
+        case .brush: burrs.remove(spot)
+        case .sponge:
+            dirt.remove(spot)
+            soap.insert(spot)
+        case .rinse: soap.remove(spot)
+        case .feed: bites += 1
+        }
+        return true
     }
 }
