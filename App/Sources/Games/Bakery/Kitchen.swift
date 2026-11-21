@@ -293,10 +293,10 @@ struct MixStepView: View {
             } else {
                 // one big touch layer: pick an ingredient up from its plate and bring it to the bowl
                 Color.clear
-                    .frame(width: 1024, height: 700)
+                    .frame(width: MixStepView.handLayer.width, height: MixStepView.handLayer.height)
                     .contentShape(Rectangle())
                     .gesture(handGesture)
-                    .position(x: 512, y: 484)
+                    .position(x: MixStepView.handLayer.midX, y: MixStepView.handLayer.midY)
             }
 
             if allIn && picked && !done && !stirring {
@@ -392,21 +392,30 @@ struct MixStepView: View {
 
     // MARK: Hands
 
+    /// Where the hands touch layer sits, in design points (it starts below the top bar).
+    static let handLayer = CGRect(x: 0, y: 134, width: 1024, height: 700)
+
+    /// A point in the touch layer -> design points (the plates and the bowl are placed in design points).
+    private func design(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: p.x + MixStepView.handLayer.minX, y: p.y + MixStepView.handLayer.minY)
+    }
+
     private var handGesture: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { v in
                 guard frozenAt == nil else { return }
                 let now = Date()
-                let b = toBowl(v.location)
+                let loc = design(v.location)
+                let b = toBowl(loc)
                 if touchStart == nil {
-                    touchStart = v.location
+                    touchStart = loc
                     if hands.touchesParkedEgg(b) {
                         knocked(hands.knock(now))
                         if hands.holding == .eggs { hands.grab(.eggs, at: CGPoint(x: b.x, y: b.y + HandsOnBowl.lift), now: now) }
                         holding = hands.holding?.rawValue
                         return
                     }
-                    if let i = slot(at: v.location), let w = Ingredient(rawValue: MixStepView.ingredients[i]),
+                    if let i = slot(at: loc), let w = Ingredient(rawValue: MixStepView.ingredients[i]),
                        !hands.finished.contains(w) {
                         if hands.holding == .eggs && hands.parked && w != .eggs { hands.holding = nil }
                         hands.grab(w, at: b, now: now)
@@ -424,7 +433,7 @@ struct MixStepView: View {
                 defer { touchStart = nil }
                 guard frozenAt == nil, let w = hands.holding else { return }
                 let moved = hypot(v.translation.width, v.translation.height)
-                if moved < 14, let i = slot(at: v.location), MixStepView.ingredients[i] == w.rawValue {
+                if moved < 14, let i = slot(at: design(v.location)), MixStepView.ingredients[i] == w.rawValue {
                     // a tap on the plate: put it back and show the way to the bowl
                     hands.holding = nil
                     holding = nil
