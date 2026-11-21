@@ -250,4 +250,11 @@ history before the game-drawer PR.
   frog: rain or a full birdbath; snail: rain; hedgehog: night or a ripe pumpkin; bluebird: birdhouse or birdbath;
   owl: night, on the fence; hummingbird: lavender or a special flower), stay 10 to 18 s and wander off. Ones she
   hasn't met come three times as often. Tapping one makes it hop, curl up, hide or flutter.
+- Aquarium (`AquariumFinds.swift`): about one bag in five (`AquaRare.chance`) is a rare colorway, stored as
+  `variant >= AquaRare.variant` (galaxy goldfish, blue clownfish, golden angelfish, pink tetras, mint puffer, opal betta,
+  golden guppies, teal seahorse); they twinkle and count once they're in the water. Visitors: a crab on the sand and a
+  glowing jellyfish when the lights are off, an octopus beside the castle, ship or rock, a sea turtle that swims
+  through when the glass is almost clean, and a school of baby fish just after a feed. Sometimes the chest opens on
+  a pearl (more likely until she has found it once).
+- Shared helpers: `Twinkles.draw` (the little stars around rare things).
 

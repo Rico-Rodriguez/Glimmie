@@ -367,3 +367,25 @@ struct StickerBookView: View {
         .buttonStyle(Squish())
     }
 }
+
+// MARK: - Twinkles
+
+/// Little four-point stars that come and go around something rare (a special plant, a rare fish).
+enum Twinkles {
+    static func draw(_ g: GraphicsContext, around p: CGPoint, radius: CGFloat, time t: CGFloat, count: Int, alpha: Double) {
+        for i in 0..<count {
+            let ph = t * 1.4 + CGFloat(i) * 2.1
+            let k = abs(sin(ph))
+            let a = CGFloat(i) * 2.4 + floor(ph / .pi) * 1.3
+            let c = CGPoint(x: p.x + cos(a) * radius, y: p.y + sin(a) * radius * 0.8)
+            let r = 4 + 6 * k
+            var s = Path()
+            s.move(to: CGPoint(x: c.x, y: c.y - r))
+            s.addQuadCurve(to: CGPoint(x: c.x + r, y: c.y), control: c)
+            s.addQuadCurve(to: CGPoint(x: c.x, y: c.y + r), control: c)
+            s.addQuadCurve(to: CGPoint(x: c.x - r, y: c.y), control: c)
+            s.addQuadCurve(to: CGPoint(x: c.x, y: c.y - r), control: c)
+            g.fill(s, with: .color(Color(.sRGB, red: 1, green: 0.953, blue: 0.627, opacity: alpha * Double(0.35 + 0.65 * k))))
+        }
+    }
+}

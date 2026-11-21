@@ -225,6 +225,7 @@ enum AquaPainter {
         var w = g
         w.clip(to: Path(AGeo.tank))
         for d in sim.decor where !d.held { AquaDecorPainter.draw(w, d, time: t) }
+        finds(w, sim, t, layer: 0)
         food(w, sim, under: true)
         bubbles(w, sim, back: true)
         let order = sim.fish.indices.filter { !sim.fish[$0].caught }.sorted { sim.fish[$0].z < sim.fish[$1].z }
@@ -232,11 +233,13 @@ enum AquaPainter {
             let f = sim.fish[i]
             AquaFishPainter.draw(w, f, time: t, pitch: sim.fishPitch(f))
         }
+        finds(w, sim, t, layer: 1)
         bubbles(w, sim, back: false)
         particlesIn(w, sim)
         food(w, sim, under: false)
         surface(w, sim, t)
         nightAndGlow(w, sim, order, t)
+        finds(w, sim, t, layer: 2)
         snail(w, sim, t)
         algae(w, sim)
         // outside
@@ -244,6 +247,31 @@ enum AquaPainter {
         glassAndFrame(g, sim)
         for d in sim.decor where d.held { AquaDecorPainter.draw(g, d, time: t) }
         tool(g, sim, t)
+    }
+
+    /// Surprises (see AquariumFinds): 0 on the sand by the decorations, 1 among the fish, 2 glowing over the dark.
+    private static func finds(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat, layer: Int) {
+        switch layer {
+        case 0:
+            if let pl = sim.pearl, let d = sim.decor.first(where: { $0.id == pl.id }), d.open > 0.15 {
+                AquaVisitorPainter.pearl(g, at: CGPoint(x: d.x, y: d.y - 40 - 6 * d.open), r: 9 * min(1, d.open * 1.5), glow: d.open)
+            }
+            for v in sim.visitors where v.kind == .crab || v.kind == .octopus {
+                AquaVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
+            }
+        case 1:
+            for f in sim.fish where f.variant >= AquaRare.variant && !f.caught {
+                Twinkles.draw(g, around: f.p, radius: (f.kind.length + f.kind.tailLength) * 0.45 * f.scale, time: t + CGFloat(f.id),
+                              count: 3, alpha: 0.9)
+            }
+            for v in sim.visitors where v.kind.passesBy {
+                AquaVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
+            }
+        default:
+            for v in sim.visitors where v.kind == .jellyfish {
+                AquaVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
+            }
+        }
     }
 
     private static func food(_ g: GraphicsContext, _ sim: AquariumSim, under: Bool) {

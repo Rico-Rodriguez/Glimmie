@@ -341,7 +341,6 @@ struct GardenView: View {
                 .position(x: 62, y: 60)
             StickerBookButton(game: GardenSim.gameID) { book = true }
                 .position(x: GardenView.bookSpot.x, y: GardenView.bookSpot.y)
-            StickerToast(game: GardenSim.gameID, target: GardenView.bookSpot)
             weatherBar
                 .position(x: 812, y: 60)
             // Which tool to suggest is checked a few times a second; the bounce itself runs at the display's
@@ -356,6 +355,7 @@ struct GardenView: View {
                 trayView(t, map)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            StickerToast(game: GardenSim.gameID, target: GardenView.bookSpot)
         }
     }
 

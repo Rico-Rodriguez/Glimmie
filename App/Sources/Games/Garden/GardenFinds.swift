@@ -348,22 +348,9 @@ enum GardenVisitorPainter {
         }
     }
 
-    /// Little four-point stars that come and go around a special plant.
+    /// Little four-point stars that come and go around a special plant (see `Twinkles`).
     static func twinkles(_ g: GraphicsContext, around p: CGPoint, radius: CGFloat, time t: CGFloat, count: Int, alpha: Double) {
-        for i in 0..<count {
-            let ph = t * 1.4 + CGFloat(i) * 2.1
-            let k = abs(sin(ph))
-            let a = CGFloat(i) * 2.4 + floor(ph / .pi) * 1.3
-            let c = CGPoint(x: p.x + cos(a) * radius, y: p.y + sin(a) * radius * 0.8)
-            let r = 4 + 6 * k
-            var s = Path()
-            s.move(to: CGPoint(x: c.x, y: c.y - r))
-            s.addQuadCurve(to: CGPoint(x: c.x + r, y: c.y), control: c)
-            s.addQuadCurve(to: CGPoint(x: c.x, y: c.y + r), control: c)
-            s.addQuadCurve(to: CGPoint(x: c.x - r, y: c.y), control: c)
-            s.addQuadCurve(to: CGPoint(x: c.x, y: c.y - r), control: c)
-            g.fill(s, with: .color(GRGB(0xFFF3A0).color(alpha * Double(0.35 + 0.65 * k))))
-        }
+        Twinkles.draw(g, around: p, radius: radius, time: t, count: count, alpha: alpha)
     }
 
     private static func eye(_ c: GraphicsContext, _ p: CGPoint, _ r: CGFloat) {

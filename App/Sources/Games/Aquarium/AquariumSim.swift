@@ -147,6 +147,10 @@ final class AquariumSim {
     var time: Double = 0
     var demo = false
     var lastFed: Double = 0
+    /// Animals dropping in, and a pearl in the open chest (see AquariumFinds).
+    var visitors: [AVisitor] = []
+    var nextVisit: Double = 8
+    var pearl: (id: Int, until: Double)?
     private var last: Date?
     private var lastSave: Double = 0
     private var nextID = 1
@@ -261,7 +265,9 @@ final class AquariumSim {
         let lim = AGeo.swim(half: half)
         let x = p?.x ?? CGFloat.random(in: lim.minX...lim.maxX)
         let y = p?.y ?? randomDepth(kind, x: x)
-        var f = AquaFish(id: nextID, kind: kind, variant: variant % max(1, kind.variants), p: CGPoint(x: x, y: y),
+        // a rare colorway keeps its mark (see AquaRare)
+        let rare = variant >= AquaRare.variant ? AquaRare.variant : 0
+        var f = AquaFish(id: nextID, kind: kind, variant: rare + (variant - rare) % max(1, kind.variants), p: CGPoint(x: x, y: y),
                          target: CGPoint(x: x, y: y))
         nextID += 1
         f.dir = Bool.random() ? 1 : -1
@@ -291,7 +297,7 @@ final class AquariumSim {
         let cx = max(AGeo.left + 70, min(AGeo.right - 70, x))
         let above = y < surfaceY(cx)
         let y0 = above ? surfaceY(cx) + 8 : min(y, AGeo.sand(cx) - 40)
-        let v = (nextID * 7) % max(1, kind.variants)
+        let v = AquariumSim.rollVariant((nextID * 7) % max(1, kind.variants))
         for k in 0..<n {
             let i = spawn(kind, variant: v, at: CGPoint(x: cx + CGFloat(k) * 14 - CGFloat(n - 1) * 7, y: y0 + CGFloat(k % 2) * 6))
             fish[i].v = CGVector(dx: CGFloat.random(in: -60...60), dy: above ? CGFloat.random(in: 140...220) : 40)
@@ -1034,6 +1040,7 @@ final class AquariumSim {
         stepDecor(dt)
         stepAlgae(dt)
         stepParticles(dt)
+        stepFinds(dt)
         AquaSound.shared.setLoop(.hum, volume: 0.3)
         AquaSound.shared.setLoop(.pump, volume: pump ? 0.32 : 0)
         if time - lastSave > 20 { lastSave = time; save() }
@@ -1169,6 +1176,7 @@ final class AquariumSim {
 
     /// A tap on a bubble pops it; a tap on a fish makes it happy. True if something was there.
     private func tapFishOrBubble(_ p: CGPoint) -> Bool {
+        if tapVisitor(p) { return true }
         if let b = bubbles.indices.last(where: { hypot(bubbles[$0].p.x - p.x, bubbles[$0].p.y - p.y) < bubbles[$0].r + 16 && !bubbles[$0].back }) {
             let q = bubbles[b].p
             particles.append(AquaParticle(kind: .ring, p: q, v: .zero, life: 0.3, size: bubbles[b].r * 2, color: ARGB(0xFFFFFF)))
@@ -1221,6 +1229,7 @@ final class AquariumSim {
             var d = decor[i]
             openChest(&d)
             decor[i] = d
+            maybePearl(i)
         case .shell:
             AquaSound.shared.play(.creak, volume: 0.35)
             particles.append(AquaParticle(kind: .sparkle, p: CGPoint(x: decor[i].x, y: decor[i].y - 22), v: .zero, life: 0.7, size: 16, color: ARGB(0xFFFFFF)))
