@@ -252,6 +252,9 @@ struct SpaView: View {
     @State private var hidden: String?
     @State private var hand = SpaHandState()
     @State private var started = false
+    /// The caddy tool she tapped: a tap on the bath makes it do that spot (see `ToolTap`).
+    @State private var picked: CaddySlot?
+    @State private var auto = AutoTool()
 
     var body: some View {
         GeometryReader { geo in
@@ -269,6 +272,16 @@ struct SpaView: View {
                 }
                 .contentShape(Rectangle())
                 .gesture(handGesture(map))
+
+                if let pk = picked {
+                    ToolTapLayer(space: "spa",
+                                 onDrag: { loc in
+                                     if auto.running { auto.cancel() }
+                                     useTool(pk, map.design(loc))
+                                 },
+                                 onEnd: { _ in endTool(pk) },
+                                 onTap: { loc in autoDo(pk, map.design(loc)) })
+                }
 
                 controls(map)
                     .frame(width: 1024, height: 834)
@@ -356,6 +369,7 @@ struct SpaView: View {
                 CaddyPlate(slot: slot, open: open, iconHidden: hidden == slot.rawValue)
                     .equatable()
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
+                    .picked(picked == slot && hidden != slot.rawValue, corner: 30)
                     .offset(x: bounce)
                     .position(slot.spot)
                     .gesture(caddyGesture(slot, map))
@@ -366,18 +380,11 @@ struct SpaView: View {
     private func caddyGesture(_ slot: CaddySlot, _ map: SMap) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("spa"))
             .onChanged { v in
-                guard let tool = slot.tool else { return }
-                let p = map.design(v.location)
-                if carrying == nil {
-                    carrying = slot.rawValue
-                    hidden = slot.rawValue
-                    if tray != nil { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil } }
-                    Sound.shared.tap()
-                    sim.pickUp(tool, finger: p, lifted: SpaView.lifted(p, tool))
-                }
-                sim.carry(finger: p, lifted: SpaView.lifted(p, tool))
+                guard slot.tool != nil else { return }
+                if auto.running { auto.cancel() }
+                useTool(slot, map.design(v.location))
             }
-            .onEnded { _ in
+            .onEnded { v in
                 if slot.tool == nil {
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
@@ -385,13 +392,46 @@ struct SpaView: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                     return
                 }
-                sim.release()
-                finishCarry(slot.rawValue)
+                endTool(slot)
+                // a tap on the caddy picks the tool (or puts it down)
+                if ToolTap.isTap(v.translation) {
+                    picked = picked == slot ? nil : slot
+                    Sound.shared.play(.pop, volume: 0.6)
+                }
             }
+    }
+
+    /// The caddy tool in her hand at p (design space): picked up first if it isn't yet.
+    private func useTool(_ slot: CaddySlot, _ p: CGPoint) {
+        guard let tool = slot.tool else { return }
+        if carrying == nil {
+            carrying = slot.rawValue
+            hidden = slot.rawValue
+            if tray != nil { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil } }
+            Sound.shared.tap()
+            sim.pickUp(tool, finger: p, lifted: SpaView.lifted(p, tool))
+        }
+        sim.carry(finger: p, lifted: SpaView.lifted(p, tool))
+    }
+
+    private func endTool(_ slot: CaddySlot) {
+        sim.release()
+        finishCarry(slot.rawValue)
+    }
+
+    /// The picked tool flies out of the caddy and does the spot she tapped by itself.
+    private func autoDo(_ slot: CaddySlot, _ spot: CGPoint) {
+        guard let tool = slot.tool else { return }
+        let f = FingerLift.finger(for: spot, lift: SpaView.lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        auto.run(from: slot.spot, to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
     }
 
     /// Where a held tool goes for her finger at p (design space), so her finger never covers what it works on.
     static func lifted(_ p: CGPoint, _ tool: SpaTool) -> CGPoint {
+        FingerLift.point(p, lift: lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+    }
+
+    static func lift(_ tool: SpaTool) -> CGFloat {
         let lift: CGFloat
         switch tool {
         case .wand, .mask: lift = FingerLift.tool                 // the ring, the brush tip
@@ -400,7 +440,7 @@ struct SpaView: View {
         case .soap: lift = FingerLift.carry(below: 50)
         case .cucumber: lift = FingerLift.item
         }
-        return FingerLift.point(p, lift: lift, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        return lift
     }
 
     private func finishCarry(_ key: String) {

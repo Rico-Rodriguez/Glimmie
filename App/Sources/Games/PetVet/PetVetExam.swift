@@ -44,6 +44,10 @@ struct VetExamView: View {
     @State private var finger: CGPoint = .zero
     @State private var lastTip: CGPoint?
     @State private var consumed = false
+    /// A tool she tapped on the shelf: a tap on the patient makes it do that spot by itself (see `ToolTap`).
+    @State private var picked: VetTool?
+    @State private var auto = AutoTool()
+    @State private var dragFrom: CGPoint?
     @State private var usedThisDrag = false
     @State private var reaction: VetFace?
     @State private var reactionUntil = Date.distantPast
@@ -91,6 +95,16 @@ struct VetExamView: View {
                     .frame(width: layout.patient.width * 0.62, height: layout.patient.height * 0.86)
                     .position(x: geo.size.width / 2, y: layout.origin.y + layout.patient.height * 0.55)
                     .onTapGesture { tickle() }
+
+                if let pk = picked {
+                    ToolTapLayer(space: "exam",
+                                 onDrag: { p in
+                                     if auto.running { auto.cancel() }
+                                     drag(pk, p)
+                                 },
+                                 onEnd: { p in drop(pk, p) },
+                                 onTap: { p in autoDo(pk, at: p) })
+                }
 
                 HStack {
                     shelf(Array(VetTool.allCases.prefix(10)))
@@ -192,8 +206,13 @@ struct VetExamView: View {
             ForEach(0..<(tools.count + 1) / 2, id: \.self) { row in
                 HStack(spacing: 10) {
                     ForEach(tools[(row * 2)..<min(tools.count, row * 2 + 2)], id: \.self) { t in
-                        VetToolButton(tool: t, needed: needed.contains(t), lifted: tool == t,
-                                      onDrag: { drag(t, $0) }, onEnd: { drop(t, $0) })
+                        VetToolButton(tool: t, needed: needed.contains(t), lifted: tool == t, picked: picked == t,
+                                      onDrag: { p in
+                                          if auto.running { auto.cancel() }
+                                          if tool == nil { dragFrom = p }
+                                          drag(t, p)
+                                      },
+                                      onEnd: { shelfEnd(t, $0) })
                     }
                 }
             }
@@ -230,6 +249,28 @@ struct VetExamView: View {
             Sound.shared.tap()
         }
         finger = p
+    }
+
+    /// Her finger leaves a tool she took off the shelf: a tap there picks it (or puts it down), a drag
+    /// uses it as usual.
+    private func shelfEnd(_ t: VetTool, _ p: CGPoint) {
+        let tap = dragFrom.map { ToolTap.isTap(CGSize(width: p.x - $0.x, height: p.y - $0.y)) } ?? false
+        dragFrom = nil
+        guard tap, tool == t else { drop(t, p); return }
+        tool = nil
+        lastTip = nil
+        consumed = false
+        effects.endDrag()
+        picked = picked == t ? nil : t
+        Sound.shared.play(.pop, volume: 0.6)
+    }
+
+    /// The picked tool glides to the spot she tapped and does it by itself.
+    private func autoDo(_ t: VetTool, at p: CGPoint) {
+        let f = FingerLift.finger(for: p, lift: VetExamView.tipLift(t), bottom: size.height, width: size.width)
+        auto.run(from: CGPoint(x: f.x + 70, y: f.y + 90), to: f,
+                 step: { q in drag(t, q) },
+                 end: { q in drop(t, q) })
     }
 
     private func drop(_ t: VetTool, _ p: CGPoint) {
@@ -753,6 +794,7 @@ private struct VetToolButton: View {
     let tool: VetTool
     let needed: Bool
     let lifted: Bool
+    var picked = false
     let onDrag: (CGPoint) -> Void
     let onEnd: (CGPoint) -> Void
 
@@ -775,6 +817,7 @@ private struct VetToolButton: View {
             .rotationEffect(.degrees(wiggle))
             .opacity(lifted ? 0.35 : 1)
             .scaleEffect(lifted ? 0.92 : 1)
+            .picked(picked && !lifted)
         }
         .contentShape(Rectangle())
         .gesture(
