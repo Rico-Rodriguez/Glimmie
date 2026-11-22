@@ -47,7 +47,7 @@ def tube(p, stations, samples=28):
 
 
 def legs():
-    for side, fore, hind in ((-.25, .43, -.76), (.28, .68, -.92)):
+    for side, fore, hind in ((-.25, .43, -.94), (.28, .68, -.73)):
         yield 'fore', fore, side
         yield 'hind', hind, side * 1.07
 
@@ -128,7 +128,7 @@ def solid_color(rgb):
 def coat_color(v):
     x, y, z = v.T
     warm = (.5 + np.sin(x*3.3 + y*5 + z*2.5)*.26 + np.sin(x*12-y*8+z*17)*.068)
-    fine = (np.sin(x*174 + y*29 + z*146) + np.sin(x*223 - y*53 + z*172))*.006
+    fine = (np.sin(x*117 + y*26 + z*109) + np.sin(x*157 - y*47 + z*143))*.011
     muzzle = np.clip((x - 1.29)/.28, 0, 1) * np.clip((2.13 - y)/.18, 0, 1)
     c = np.column_stack((.88 + warm*.111, .684 + warm*.145, .506 + warm*.183))
     c += fine[:, None]
@@ -147,6 +147,11 @@ def coat_color(v):
     c += (np.array((1.,.95,.84))-c) * blaze[:, None] * .61
     eye = np.exp(-((x-1.066)/.11)**2 - ((y-2.235)/.07)**2) * np.clip((side-.14)*12,0,1)
     c -= eye[:, None] * (.07,.084,.076)
+    throat = np.exp(-((x-.82)/.21)**2 - ((y-1.72)/.38)**2) * np.clip((.23-side)*3,0,1)
+    underside = np.clip((1.32-y)*4, 0, 1) * np.exp(-((x+.26)/.62)**4) * (1-stockings)
+    c -= (throat * .82 + underside * .37)[:, None] * (.089,.105,.112)
+    feather_streaks = (np.sin(x*181 + y*14 + z*223)*.6 + np.sin(x*261-z*95)*.4) * stockings
+    c += feather_streaks[:, None] * (.013,.017,.025)
     # Small, soft rings broken up by position on the coat, mostly on the barrel and haunch.
     rng = np.random.default_rng(4186)
     dapple = np.zeros(len(v))
@@ -156,8 +161,9 @@ def coat_color(v):
             cy = rng.uniform(1.17,1.78)
             center = (cx, cy, side * rng.uniform(.24,.48))
             radius = rng.uniform(.032,.082)
-            d = np.linalg.norm(v - center, axis=1) / radius
-            dapple = np.maximum(dapple, np.exp(-((d-.40)/.50)**2)*rng.uniform(.10,.31))
+            d = np.linalg.norm((v - center)*(.83, 1.06, .91), axis=1) / radius
+            d += np.sin(x*59+y*38+z*29)*.17
+            dapple = np.maximum(dapple, np.exp(-((d-.40)/.50)**2)*rng.uniform(.11,.37))
     c += (1-c)*dapple[:, None]*1.58
     return np.clip(c, 0, 1)
 

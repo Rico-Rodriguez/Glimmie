@@ -25,7 +25,7 @@ final class PonyGroomingTests: XCTestCase {
 
     func testDustPatchesFollowCoatAndTackAttachesToCorrectJoints() async throws {
         try await MainActor.run {
-            let pony = try XCTUnwrap(PonyScene())
+            let pony = try XCTUnwrap(PonyScene(grooming: PonyGroomingSave(count: PonyLock.all.count)))
             let root = pony.scene.rootNode
             let saddle = try XCTUnwrap(root.childNode(withName: "pony-saddle", recursively: true))
             XCTAssertTrue(saddle.parent === pony.neck.parent)
@@ -37,6 +37,15 @@ final class PonyGroomingTests: XCTestCase {
                 XCTAssertGreaterThan(try XCTUnwrap(patch.geometry?.elements.first).primitiveCount, 0)
                 XCTAssertEqual(patch.categoryBitMask, 4)
             }
+            let site = PonyDustSite.all[0].center
+            let hit = try XCTUnwrap(root.hitTestWithSegment(
+                from: SCNVector3(site.x, site.y, -3), to: SCNVector3(site.x, site.y, 0),
+                options: [SCNHitTestOption.categoryBitMask.rawValue: 3]).first)
+            XCTAssertEqual(hit.node.name, "pony-body")
+            XCTAssertTrue(pony.canBrush(hit))
+            for _ in 0..<18 { pony.brush(hit: hit, delta: SIMD3<Float>(0.03, -0.08, 0)) }
+            XCTAssertTrue(root.childNode(withName: "coat-dust-0", recursively: true)?.isHidden == true)
+            XCTAssertEqual(pony.spotsLeft, PonyDustSite.all.count - 1)
         }
     }
 

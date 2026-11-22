@@ -38,9 +38,9 @@ final class PonyScene {
             ?? PonyGroomingSave(count: count)
     }
 
-    init?() {
+    init?(grooming: PonyGroomingSave? = nil) {
         motion = Array(repeating: PonyLockMotion(), count: PonyLock.all.count)
-        save = Self.savedGrooming()
+        save = grooming ?? Self.savedGrooming()
         guard let url = GameFiles.url("pony", "mesh", game: "PonyGrooming"),
               let bytes = try? Data(contentsOf: url), let parts = PonyMesh.read(bytes),
               let coat = parts.first(where: { $0.name == "coat" }),
@@ -86,6 +86,7 @@ final class PonyScene {
     func setTangled(_ value: Bool) {
         guard save.tangled != value else { return }
         save.tangled = value
+        if value { save.locks = save.locks.map { min($0, 0.26) } }
         for i in locks.indices { redraw(i) }
         dirty = true
         flush()
