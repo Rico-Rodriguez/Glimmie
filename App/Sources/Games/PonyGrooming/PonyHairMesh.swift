@@ -16,25 +16,27 @@ struct PonyLock {
             let u = Float(i) / 15
             let variance = sin(Float(i) * 8.57)
             let x = 0.96 - u * 0.6
-            let y = 2.43 - u * 0.58
-            let root = SIMD3<Float>(x, y, side * (0.074 + Float(i % 3) * 0.024))
-            let length = 0.83 - u * 0.29 + variance * 0.066
-            let end = SIMD3<Float>(x - 0.27 + variance * 0.07, y - length,
-                                    side * (0.34 + u * 0.17 + variance * 0.025))
-            return PonyLock(root: root, end: end, width: 0.086 - u * 0.018,
+            let y = 2.415 - u * 0.55
+            let root = SIMD3<Float>(x, y, side * (0.064 + Float(i % 3) * 0.026))
+            let length = 0.92 - u * 0.22 + variance * 0.085 + side * 0.025
+            let end = SIMD3<Float>(x - 0.24 + variance * 0.08, y - length,
+                                    side * (0.342 + u * 0.146 + variance * 0.036))
+            let width = 0.077 - u * 0.014 + variance * 0.016
+            return PonyLock(root: root, end: end, width: width,
                             curl: variance, side: side, isTail: false)
         }
         let tail = (0..<6).map { i in
             let u = Float(i) / 5
-            let root = SIMD3<Float>(-1.17 - u * 0.07, 1.57 - u * 0.12, side * (0.06 + u * 0.08))
-            let end = SIMD3<Float>(-1.66 - u * 0.18, 0.20 + u * 0.17, side * (0.085 + u * 0.11))
-            return PonyLock(root: root, end: end, width: 0.092 - u * 0.026,
+            let root = SIMD3<Float>(-1.20 - u * 0.08, 1.62 - u * 0.10, side * (0.059 + u * 0.079))
+            let end = SIMD3<Float>(-1.70 - u * 0.22, 0.085 + u * 0.155, side * (0.07 + u * 0.17))
+            return PonyLock(root: root, end: end, width: 0.104 - u * 0.032,
                             curl: sin(u * 8.4), side: side, isTail: true)
         }
         let forelock = (0..<5).map { i in
             let u = Float(i) / 4
-            let root = SIMD3<Float>(0.982 + u * 0.06, 2.43 + u * 0.01, side * (0.037 + u * 0.023))
-            let end = SIMD3<Float>(1.153 + u * 0.16, 2.294 - u * 0.070, side * (0.15 + u * 0.028))
+            let root = SIMD3<Float>(0.971 + u * 0.06, 2.426 + u * 0.01, side * (0.026 + u * 0.025))
+            let end = SIMD3<Float>(1.158 + u * 0.145, 2.306 - u * 0.081 - side * 0.014,
+                                    side * (0.106 + u * 0.049))
             return PonyLock(root: root, end: end, width: 0.047 - u * 0.013, curl: u * 1.2,
                             side: side, isTail: false, isForelock: true)
         }
@@ -46,15 +48,16 @@ struct PonyLock {
         let peak = 3 * a * a * t
         let fall = 3 * a * t * t
         let control1 = root + SIMD3<Float>(isForelock ? 0.11 : -0.23, isForelock ? 0.022 : -0.06,
-                                           side * (isTail ? 0.03 : isForelock ? 0.16 : 0.31))
-        let control2 = end + SIMD3<Float>(isForelock ? -0.06 : 0.17, isForelock ? 0.078 : 0.21,
-                                          side * (isTail ? 0.17 : isForelock ? 0.025 : 0.085))
+                                           side * (isTail ? 0.055 : isForelock ? 0.15 : 0.30))
+        let control2 = end + SIMD3<Float>(isForelock ? -0.06 : isTail ? 0.11 : 0.20,
+                                          isForelock ? 0.08 : isTail ? 0.24 : 0.29,
+                                          side * (isTail ? 0.14 : isForelock ? 0.02 : 0.077))
         var center = root * (a * a * a)
         center += control1 * peak
         center += control2 * fall
         center += end * (t * t * t)
-        let wave: Float = ((1 - groomed) * 0.073 + 0.011) * (isForelock ? 0.25 : 1)
-        let wobble = sin(t * 11.5 + curl * 2.8) * wave * t
+        let wave: Float = (0.029 + (1 - groomed) * 0.052) * (isForelock ? 0.34 : 1)
+        let wobble = (sin(t * 10.2 + curl * 2.36) + sin(t * 17 + curl) * 0.23) * wave * t
         center.x += wobble
         center.z += wobble * side * 0.26
         if tangled {
@@ -73,22 +76,29 @@ final class PonyHairMesh {
     let lock: PonyLock
     private let origin: SIMD3<Float>
     private let material: SCNMaterial
-    private static let segments = 26
-    private static let sides = 9
+    private static let segments = 30
+    private static let sides = 12
     private static let colorTextures = (0..<4).map { variant in
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let size = CGSize(width: 96, height: 64)
+        let size = CGSize(width: 128, height: 96)
         return UIGraphicsImageRenderer(size: size, format: format).image { canvas in
-            for i in 0..<96 {
-                let wave = sin(Double(i) * 0.42)
-                let filament = sin(Double(i) * 2.083)
-                let shade = 1 + wave * 0.106 + filament * 0.067
-                let base = 0.58 + Double(variant) * 0.031
-                let color = UIColor(red: base * shade, green: (0.275 + Double(variant) * 0.017) * shade,
-                                    blue: (0.146 + Double(variant) * 0.011) * shade, alpha: 1)
-                color.setFill()
-                canvas.fill(CGRect(x: i, y: 0, width: 1, height: 64))
+            let tone = Double(variant)
+            for y in stride(from: 0, to: 96, by: 4) {
+                let t = Double(y) / 96
+                for i in 0..<128 {
+                    let thread = Double(i) * Double.pi / 64
+                    let wave = sin(thread * 8 + sin(t * 4 + tone) * 0.7)
+                    let filament = sin(thread * 33 + sin(t * 7) * 0.6)
+                    let sheen = sin(thread * 3 - t * 1.2 + tone) * 0.04
+                    let shade = 0.97 + wave * 0.11 + filament * 0.065 + sheen
+                    let root = 0.88 + 0.12 * min(t * 5, 1)
+                    let red = (0.48 + tone * 0.033) * shade * root
+                    let green = (0.224 + tone * 0.021) * shade * root
+                    let blue = (0.103 + tone * 0.013) * shade * root
+                    UIColor(red: red, green: green, blue: blue, alpha: 1).setFill()
+                    canvas.fill(CGRect(x: i, y: y, width: 1, height: 4))
+                }
             }
         }
     }
@@ -113,8 +123,8 @@ final class PonyHairMesh {
         material = SCNMaterial()
         material.lightingModel = .blinn
         material.diffuse.contents = Self.colorTextures[index % Self.colorTextures.count]
-        material.specular.contents = UIColor(red: 0.46, green: 0.29, blue: 0.19, alpha: 1)
-        material.shininess = 0.35
+        material.specular.contents = UIColor(red: 0.39, green: 0.27, blue: 0.18, alpha: 1)
+        material.shininess = 0.24
         material.isDoubleSided = true
         node.name = "lock-\(index)"
         node.categoryBitMask = 2
@@ -132,12 +142,14 @@ final class PonyHairMesh {
             let tangent = simd_normalize(centers[min(segments, row + 1)] - centers[max(0, row - 1)])
             let u = simd_normalize(simd_cross(tangent, SIMD3<Float>(0, 0, 1)))
             let v = simd_normalize(simd_cross(tangent, u))
-            let width = lock.width * (0.055 + 0.945 * pow(1 - t, 0.46))
+            let width = lock.width * (0.035 + 0.965 * pow(1 - t, 0.65))
             for sector in 0...sides {
                 let angle = Float(sector) / Float(sides) * 2 * .pi
-                let radial = u * cos(angle) + v * sin(angle) * 0.46
+                let twist = angle + sin(t * 5 + lock.curl) * 0.20
+                let pleat = 1 + cos(angle * 3 + t * 2) * 0.082
+                let radial = (u * cos(twist) + v * sin(twist) * 0.38) * pleat
                 let p = centers[row] - origin + radial * width
-                let n = simd_normalize(u * cos(angle) + v * sin(angle) / 0.46)
+                let n = simd_normalize(u * cos(twist) + v * sin(twist) / 0.38)
                 vertices.append(SCNVector3(p.x, p.y, p.z))
                 normals.append(SCNVector3(n.x, n.y, n.z))
                 texture.append(CGPoint(x: CGFloat(sector) / CGFloat(sides), y: CGFloat(t)))

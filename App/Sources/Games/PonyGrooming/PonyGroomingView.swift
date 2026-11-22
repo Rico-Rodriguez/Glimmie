@@ -6,8 +6,11 @@ import simd
     let exit: () -> Void
     @State private var brushing = true
     @State private var close = false
-    @State private var tangled = PonyScene.savedMane().tangled
-    @State private var halter = false
+    @State private var tangled = PonyScene.savedGrooming().tangled
+    @State private var outfit = PonyScene.savedGrooming().outfit
+    @State private var spotsLeft = PonyScene.savedGrooming().spotsLeft
+    @State private var groomingRound = 0
+    @State private var tackTray = false
     @State private var brushPoint: CGPoint?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -16,8 +19,9 @@ import simd
             let compact = proxy.size.height < 550
             ZStack {
                 if PonySceneHost.assetPresent {
-                    PonySceneHost(brushing: brushing, close: close, tangled: tangled, halter: halter,
-                                  reduceMotion: reduceMotion, brushPoint: $brushPoint)
+                    PonySceneHost(brushing: brushing && !tackTray, close: close, tangled: tangled, outfit: outfit,
+                                  groomingRound: groomingRound, reduceMotion: reduceMotion,
+                                  brushPoint: $brushPoint, spotsLeft: $spotsLeft)
                     if let brushPoint {
                         ZStack(alignment: .bottomTrailing) {
                             PetPropThumb(name: "brush")
@@ -40,10 +44,11 @@ import simd
                         HomeButton(action: exit)
                             .scaleEffect(compact ? 0.68 : 0.84)
                             .accessibilityLabel("Back to games")
+                        if !tackTray { coatStatus }
                         Spacer()
                         control(close ? "minus.magnifyingglass" : "plus.magnifyingglass",
-                                label: close ? "Show the whole pony" : "Zoom in on the mane",
-                                size: compact ? 48 : 62, selected: close) {
+                                label: close ? "Show the whole pony" : "Zoom in",
+                                size: compact ? 45 : 56, selected: close, showLabel: false) {
                             close.toggle()
                             Sound.shared.play(.whoosh, volume: 0.45)
                         }
@@ -51,8 +56,8 @@ import simd
                     }
                     .padding(.top, compact ? 0 : 9)
                     Spacer()
-                    tray(size: compact ? 48 : 68)
-                        .padding(.bottom, compact ? 9 : 19)
+                    tray(size: compact ? 42 : 60)
+                        .padding(.bottom, compact ? 10 : 23)
                 }
             }
         }
@@ -60,33 +65,77 @@ import simd
     }
 
     private func tray(size: CGFloat) -> some View {
-        HStack(spacing: size * 0.26) {
-            Button { selectBrush(true) } label: {
-                PetPropThumb(name: "brush")
-                    .frame(width: size * 0.75, height: size * 0.75)
-                    .frame(width: size, height: size)
-                    .background(.white, in: Circle())
-                    .overlay(Circle().strokeBorder(brushing ? Theme.pink : Theme.blush, lineWidth: brushing ? 4 : 2))
-            }
-            .buttonStyle(Squish())
-            .accessibilityLabel("Brush the mane or tail")
-            .accessibilityAddTraits(brushing ? .isSelected : [])
-            control("arrow.trianglehead.clockwise.rotate.90", label: "Turn the camera", size: size, selected: !brushing,
-                    fallback: "arrow.triangle.2.circlepath") { selectBrush(false) }
-            control("scribble.variable", label: "Optional tangles", size: size, selected: tangled) {
-                tangled.toggle()
-                Sound.shared.play(.pop, volume: 0.49)
-            }
-            control("link", label: "Mint halter", size: size, selected: halter) {
-                halter.toggle()
-                Sound.shared.play(.pop, volume: 0.49)
+        HStack(spacing: size * 0.37) {
+            if tackTray {
+                control("chevron.left", label: "Groom", size: size, selected: false) { toggleTray() }
+                control("link", label: "Halter", size: size, selected: outfit.halter, tint: Theme.mint) {
+                    outfit.halter.toggle()
+                    Sound.shared.play(.pop, volume: 0.49)
+                }
+                control("horse", label: "Saddle", size: size, selected: outfit.saddle != .bareback,
+                        tint: outfit.saddle == .lilac ? Theme.lilac : Theme.mint, fallback: "square.stack") {
+                    switch outfit.saddle {
+                    case .bareback: outfit.saddle = .mint
+                    case .mint: outfit.saddle = .lilac
+                    case .lilac: outfit.saddle = .bareback
+                    }
+                    Sound.shared.play(.pop, volume: 0.49)
+                }
+                .accessibilityValue(outfit.saddle.label)
+                control("gift.fill", label: "Ribbon", size: size, selected: outfit.ribbons, tint: Theme.lilac) {
+                    outfit.ribbons.toggle()
+                    Sound.shared.play(.pop, volume: 0.49)
+                }
+            } else {
+                tool(label: "Brush", size: size, selected: brushing) {
+                    selectBrush(true)
+                } icon: {
+                    PetPropThumb(name: "brush").frame(width: size * 0.84, height: size * 0.84)
+                }
+                .accessibilityHint("Brush the coat, mane, or tail")
+                control("arrow.triangle.2.circlepath", label: "Turn", size: size, selected: !brushing) { selectBrush(false) }
+                control("scribble.variable", label: "Tangles", size: size, selected: tangled) {
+                    tangled.toggle()
+                    Sound.shared.play(.pop, volume: 0.49)
+                }
+                control("suitcase.fill", label: "Tack", size: size, selected: false) { toggleTray() }
             }
         }
-        .padding(.horizontal, size * 0.30)
-        .padding(.vertical, size * 0.14)
+        .padding(.horizontal, size * 0.55)
+        .padding(.vertical, size * 0.15)
         .background(Color(hex: 0xFFF3DC), in: Capsule())
         .overlay(Capsule().strokeBorder(Color(hex: 0xB8D9C4), lineWidth: 3))
         .shadow(color: Theme.ink.opacity(0.24), radius: 9, y: 4)
+    }
+
+    @ViewBuilder private var coatStatus: some View {
+        if spotsLeft == 0 {
+            Button {
+                groomingRound += 1
+                spotsLeft = PonyDustSite.all.count
+                Sound.shared.play(.pop, volume: 0.45)
+            } label: {
+                badge("Coat clean · Brush again", symbol: "sparkles")
+            }
+            .buttonStyle(Squish())
+        } else {
+            badge(spotsLeft == 1 ? "1 dusty spot" : "\(spotsLeft) dusty spots", symbol: "sparkle")
+        }
+    }
+
+    private func badge(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(Color(hex: 0xFFF3DC), in: Capsule())
+    }
+
+    private func toggleTray() {
+        tackTray.toggle()
+        brushPoint = nil
+        Sound.shared.play(.pop, volume: 0.45)
     }
 
     private func selectBrush(_ selected: Bool) {
@@ -96,14 +145,32 @@ import simd
     }
 
     private func control(_ symbol: String, label: String, size: CGFloat, selected: Bool,
-                         fallback: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+                         tint: Color = Theme.mint, fallback: String? = nil, showLabel: Bool = true,
+                         action: @escaping () -> Void) -> some View {
+        tool(label: label, size: size, selected: selected, tint: tint, showLabel: showLabel, action: action) {
             Image(systemName: fallback.flatMap { UIImage(systemName: symbol) == nil ? $0 : nil } ?? symbol)
-                .font(.system(size: size * 0.36, weight: .semibold))
+                .font(.system(size: size * 0.38, weight: .semibold))
                 .foregroundStyle(Theme.ink)
-                .frame(width: size, height: size)
-                .background(.white, in: Circle())
-                .overlay(Circle().strokeBorder(selected ? Theme.pink : Theme.blush, lineWidth: selected ? 4 : 2))
+        }
+    }
+
+    private func tool<Icon: View>(label: String, size: CGFloat, selected: Bool, tint: Color = Theme.mint,
+                                  showLabel: Bool = true, action: @escaping () -> Void,
+                                  @ViewBuilder icon: () -> Icon) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                icon()
+                    .frame(width: size, height: size)
+                    .background(selected ? tint.opacity(0.7) : Color(hex: 0xFFFCF4), in: Circle())
+                    .overlay(Circle().strokeBorder(selected ? Color(hex: 0x6E9E8B) : Color(hex: 0xE7CEAA),
+                                                   lineWidth: selected ? 2.5 : 1.5))
+                if showLabel {
+                    Text(label)
+                        .font(.system(size: size < 50 ? 11 : 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(Squish())
         .accessibilityLabel(label)
@@ -115,9 +182,11 @@ import simd
     let brushing: Bool
     let close: Bool
     let tangled: Bool
-    let halter: Bool
+    let outfit: PonyTack
+    let groomingRound: Int
     let reduceMotion: Bool
     @Binding var brushPoint: CGPoint?
+    @Binding var spotsLeft: Int
 
     static var assetPresent: Bool { GameFiles.url("pony", "mesh", game: "PonyGrooming") != nil }
 
@@ -139,9 +208,14 @@ import simd
         driver.brushing = brushing
         driver.reducedMotion = reduceMotion
         driver.cursor = { brushPoint = $0 }
+        driver.coatStatus = { if spotsLeft != $0 { spotsLeft = $0 } }
         driver.model?.detail(close)
         driver.model?.setTangled(tangled)
-        driver.model?.setTack(halter)
+        driver.model?.setTack(outfit)
+        if driver.groomingRound != groomingRound {
+            driver.groomingRound = groomingRound
+            driver.model?.dustCoat()
+        }
     }
 
     static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) { coordinator.stop() }
@@ -151,6 +225,8 @@ import simd
         fileprivate var brushing = true
         fileprivate var reducedMotion = false
         fileprivate var cursor: ((CGPoint?) -> Void)?
+        fileprivate var coatStatus: ((Int) -> Void)?
+        fileprivate var groomingRound = 0
         private weak var view: SCNView?
         private var link: CADisplayLink?
         private var timestamp: CFTimeInterval?
@@ -173,7 +249,7 @@ import simd
             view.addGestureRecognizer(tap)
             view.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinch(_:))))
             view.isAccessibilityElement = true
-            view.accessibilityLabel = "Standing pony. Drag the brush through the mane and tail or turn the camera."
+            view.accessibilityLabel = "Standing pony. Brush the coat, mane, and tail. Drag the stable to turn."
             let display = CADisplayLink(target: self, selector: #selector(frame(_:)))
             display.preferredFramesPerSecond = 30
             display.add(to: .main, forMode: .common)
@@ -200,7 +276,7 @@ import simd
             case .began:
                 let native = incoming.translation(in: view)
                 let start = CGPoint(x: p.x - native.x, y: p.y - native.y)
-                isStroke = brushing && (hit(start, in: view) != nil || hit(p, in: view) != nil)
+                isStroke = brushing && (model.canBrush(hit(start, in: view)) || model.canBrush(hit(p, in: view)))
                 previousPoint = start
                 previousWorld = nil
                 fallthrough
@@ -245,8 +321,7 @@ import simd
         }
 
         private func stroke(at point: CGPoint, in view: SCNView, screenDelta: CGPoint) {
-            guard let result = hit(point, in: view), let name = result.node.name, name.hasPrefix("lock-"),
-                  let index = Int(name.dropFirst(5)), let model else {
+            guard let model, let result = hit(point, in: view), model.canBrush(result) else {
                 previousWorld = nil
                 return
             }
@@ -259,7 +334,8 @@ import simd
             let movement = previousWorld.map { world - $0 } ?? inferred
             previousWorld = world
             guard simd_length_squared(movement) > 0.000001 else { return }
-            model.brush(hit: result, index: index, delta: simd_length(movement) < 0.3 ? movement : inferred)
+            model.brush(hit: result, delta: simd_length(movement) < 0.3 ? movement : inferred)
+            coatStatus?(model.spotsLeft)
             let now = CACurrentMediaTime()
             if now - lastSound > 0.33 {
                 lastSound = now

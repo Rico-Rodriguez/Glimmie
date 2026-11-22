@@ -4,6 +4,42 @@ import simd
 @testable import Glimmie
 
 final class PonyGroomingTests: XCTestCase {
+    func testCoatBrushClearsOneFlankAndKeepsOlderHairSaves() throws {
+        let oldSave = Data(#"{"locks":[0.81,0.42],"tangled":true}"#.utf8)
+        var groom = try JSONDecoder().decode(PonyGroomingSave.self, from: oldSave).repaired(count: PonyLock.all.count)
+        let site = PonyDustSite.all[0]
+        let count = PonyDustSite.all.count
+        XCTAssertEqual(groom.spotsLeft, count)
+        XCTAssertEqual(groom.outfit, PonyTack())
+        XCTAssertFalse(groom.brushCoat(at: SIMD3<Float>(0, 0, 0), distance: 0.1))
+        for _ in 0..<8 { XCTAssertTrue(groom.brushCoat(at: site.center, distance: 0.075)) }
+        XCTAssertEqual(groom.spotsLeft, count - 1)
+        XCTAssertEqual(groom.coat[0], 0)
+        XCTAssertEqual(groom.coat[count / 2], 1)
+        XCTAssertEqual(groom.locks[0], 0.81)
+        XCTAssertTrue(groom.tangled)
+        groom.tack = PonyTack(halter: true, saddle: .lilac, ribbons: true)
+        let reopened = try JSONDecoder().decode(PonyGroomingSave.self, from: JSONEncoder().encode(groom))
+        XCTAssertEqual(reopened, groom)
+    }
+
+    func testDustPatchesFollowCoatAndTackAttachesToCorrectJoints() async throws {
+        try await MainActor.run {
+            let pony = try XCTUnwrap(PonyScene())
+            let root = pony.scene.rootNode
+            let saddle = try XCTUnwrap(root.childNode(withName: "pony-saddle", recursively: true))
+            XCTAssertTrue(saddle.parent === pony.neck.parent)
+            XCTAssertTrue(pony.head.childNode(withName: "pony-halter", recursively: false)?.isHidden == true)
+            XCTAssertNotNil(pony.tail.childNode(withName: "pony-ribbons", recursively: false))
+            for i in PonyDustSite.all.indices {
+                let patch = try XCTUnwrap(root.childNode(withName: "coat-dust-\(i)", recursively: true))
+                XCTAssertTrue(patch.parent === saddle.parent)
+                XCTAssertGreaterThan(try XCTUnwrap(patch.geometry?.elements.first).primitiveCount, 0)
+                XCTAssertEqual(patch.categoryBitMask, 4)
+            }
+        }
+    }
+
     func testOrbitStaysUprightThroughFullTurnsInBothViews() async throws {
         try await MainActor.run {
             let pony = try XCTUnwrap(PonyScene())

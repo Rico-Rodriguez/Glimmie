@@ -47,48 +47,66 @@ def tube(p, stations, samples=28):
 
 
 def legs():
-    for side, stagger in ((-.26, -.09), (.27, .08)):
-        yield 'fore', .59 + stagger, side
-        yield 'hind', -.82 - stagger, side * 1.08
+    for side, fore, hind in ((-.25, .43, -.76), (.28, .68, -.92)):
+        yield 'fore', fore, side
+        yield 'hind', hind, side * 1.07
 
 
 def skin(p):
-    shape = ellipsoid(p, (-.18, 1.36, 0), (1.06, .46, .40), -.015)
-    # Long lines of the barrel, at the transition between the shoulder and the haunch.
+    shape = ellipsoid(p, (-.19, 1.38, 0), (1.05, .462, .411), -.027)
     for center, axes, angle, softness in [
-        ((-.93, 1.39, 0), (.43, .44, .38), -.36, .17),
-        ((.54, 1.42, 0), (.36, .49, .34), -.33, .20),
-        ((.65, 1.76, 0), (.305, .53, .255), -.37, .18),
-        ((.89, 2.00, 0), (.232, .37, .203), -.43, .14),
-        ((.99, 2.22, 0), (.284, .30, .225), -.52, .12),
-        ((1.16, 2.11, 0), (.30, .231, .209), -.67, .11),
-        ((1.37, 1.98, 0), (.235, .166, .162), -.65, .075),
-        ((1.52, 1.90, 0), (.141, .132, .158), -.34, .065),
-        ((1.22, 1.98, 0), (.225, .145, .169), -.43, .08),
+        ((-.95, 1.44, 0), (.425, .455, .391), -.31, .18),
+        ((.52, 1.43, 0), (.39, .47, .35), -.32, .21),
+        ((.63, 1.71, 0), (.31, .51, .263), -.36, .18),
+        ((.86, 2.00, 0), (.242, .38, .211), -.41, .14),
+        ((.99, 2.21, 0), (.276, .292, .224), -.42, .13),
+        ((1.075, 2.094, 0), (.267, .252, .211), -.46, .14),
+        ((1.32, 1.963, 0), (.246, .159, .162), -.60, .09),
+        ((1.496, 1.86, 0), (.132, .134, .158), -.32, .075),
+        ((1.197, 1.939, 0), (.208, .136, .173), -.46, .09),
     ]:
         shape = union(shape, ellipsoid(p, center, axes, angle), softness)
 
     for kind, x, z in legs():
         if kind == 'fore':
-            line = [(x-.085,1.37,z*.73,.188), (x+.01,1.13,z*.92,.147),
-                    (x+.018,.84,z,.116), (x-.018,.52,z,.083), (x+.012,.23,z,.076), (x+.04,.12,z,.098)]
+            line = [(x-.10,1.40,z*.73,.206), (x+.005,1.16,z*.92,.153),
+                    (x+.024,.89,z,.104), (x+.014,.65,z,.092), (x+.003,.44,z,.072),
+                    (x+.017,.245,z,.079), (x+.047,.135,z,.090)]
         else:
-            line = [(x-.085,1.38,z*.76,.213), (x+.11,1.11,z,.163), (x+.10,.85,z,.116),
-                    (x-.135,.56,z,.083), (x-.075,.29,z,.072), (x+.01,.12,z,.092)]
+            line = [(x-.068,1.42,z*.76,.225), (x+.10,1.18,z*.91,.181),
+                    (x+.157,.975,z,.124), (x+.053,.775,z,.104), (x-.082,.604,z,.091),
+                    (x-.041,.365,z,.071), (x+.016,.212,z,.076), (x+.048,.133,z,.087)]
         shape = union(shape, tube(p, line, 22), .11)
+        # The feathering widens toward the coronet and overlaps the hoof like real hair.
+        for i in range(6):
+            theta = i * math.tau / 6
+            dz, dx = math.sin(theta), math.cos(theta)
+            feather = ellipsoid(p, (x+.036+dx*.054, .172+(i%2)*.016, z+dz*.056),
+                                (.053, .096, .051), -.25)
+            shape = union(shape, feather, .026)
 
-    for z in (-.135, .135):
-        ear = tube(p, [(.838,2.399,z*.83,.075), (.765,2.56,z*1.44,.068),
-                       (.736,2.664,z*1.59,.014)], 22)
-        shape = union(shape, ear, .046)
+    for side in (-1, 1):
+        z = side * .135
+        tilt = .022 if side < 0 else 0
+        ear = ellipsoid(p, (.802-tilt, 2.533, z*1.35), (.058, .151, .072), .34)
+        shape = union(shape, ear, .07)
+        inner = ellipsoid(p, (.837-tilt, 2.55, z*1.4), (.029, .111, .049), .34)
+        shape = -union(-shape, inner, .018)
+        nostril = ellipsoid(p, (1.582, 1.893, side*.121), (.043, .026, .029), -.37)
+        shape = -union(-shape, nostril, .013)
     return shape
 
 
 def hooves(p):
     out = np.inf
     for kind, x, z in legs():
-        x += .084 if kind == 'fore' else .053
-        hoof = ellipsoid(p, (x,.091,z), (.132,.135,.119), -.28)
+        x += .064 if kind == 'fore' else .062
+        dx, y, dz = p[0] - x, p[1], p[2] - z
+        taper = 1 + (.091 - y) * 1.8
+        toe = (dx + (y - .085) * .27) / (.114 * taper)
+        flank = dz / (.095 * taper)
+        rise = (y - .086) / .091
+        hoof = (np.power(abs(toe)**2.6 + abs(flank)**2.6 + abs(rise)**3, 1/2.6) - 1) * .091
         out = union(out, np.maximum(hoof, .019 - p[1]), 0)
     return out
 
@@ -109,19 +127,26 @@ def solid_color(rgb):
 
 def coat_color(v):
     x, y, z = v.T
-    warm = (1 + np.sin(x*5 + y*8 + z*4))*.5
-    muzzle = np.clip((x - 1.26)/.39, 0, 1) * np.clip((2.23 - y)/.22, 0, 1)
-    legs = np.clip((.66 - y)/.66, 0, 1)
-    c = np.column_stack((.96 + warm*.034, .823 + warm*.058, .642 + warm*.085))
-    c *= (1 - muzzle*.20 - legs*.135)[:, None]
+    warm = (.5 + np.sin(x*3.3 + y*5 + z*2.5)*.26 + np.sin(x*12-y*8+z*17)*.068)
+    fine = (np.sin(x*174 + y*29 + z*146) + np.sin(x*223 - y*53 + z*172))*.006
+    muzzle = np.clip((x - 1.29)/.28, 0, 1) * np.clip((2.13 - y)/.18, 0, 1)
+    c = np.column_stack((.88 + warm*.111, .684 + warm*.145, .506 + warm*.183))
+    c += fine[:, None]
+    c += (np.array((.49,.36,.29))-c) * muzzle[:, None] * .71
+    stockings = np.clip((.50-y)/.29, 0, 1)
+    c += (np.array((.996,.922,.780))-c) * stockings[:, None] * .89
     side = np.abs(z)
-    lip_y = 1.86 + (1.55 - x) * .37
+    lip_y = 1.805 + (1.53 - x) * .30
     lip = np.exp(-((lip_y-y)/.012)**2) * np.exp(-((x-1.51)/.125)**4)
     lip *= np.clip((side-.076)*15, 0, 1)
-    inner_ear = np.exp(-((x-.803)/.027)**2 - ((y-2.566)/.071)**2)
+    inner_ear = np.exp(-((x-.842)/.034)**2 - ((y-2.552)/.071)**2)
     inner_ear *= np.clip((side-.125)*18, 0, 1)
     c *= (1-lip*.31)[:, None]
-    c += (np.array((.76,.45,.40))-c)*inner_ear[:, None]*.69
+    c += (np.array((.76,.49,.43))-c)*inner_ear[:, None]*.82
+    blaze = np.exp(-(z/.091)**2) * np.clip((x-.94)*7,0,1) * np.clip((y-1.96)*8,0,1)
+    c += (np.array((1.,.95,.84))-c) * blaze[:, None] * .61
+    eye = np.exp(-((x-1.066)/.11)**2 - ((y-2.235)/.07)**2) * np.clip((side-.14)*12,0,1)
+    c -= eye[:, None] * (.07,.084,.076)
     # Small, soft rings broken up by position on the coat, mostly on the barrel and haunch.
     rng = np.random.default_rng(4186)
     dapple = np.zeros(len(v))
@@ -130,11 +155,17 @@ def coat_color(v):
             cx = rng.uniform(-1.19,.44)
             cy = rng.uniform(1.17,1.78)
             center = (cx, cy, side * rng.uniform(.24,.48))
-            radius = rng.uniform(.033,.081)
+            radius = rng.uniform(.032,.082)
             d = np.linalg.norm(v - center, axis=1) / radius
             dapple = np.maximum(dapple, np.exp(-((d-.40)/.50)**2)*rng.uniform(.10,.31))
-    c += (1-c)*dapple[:, None]*2.2
-    return c
+    c += (1-c)*dapple[:, None]*1.58
+    return np.clip(c, 0, 1)
+
+
+def hoof_color(v):
+    x, y, z = v.T
+    lines = .025 * np.sin(x*74 + y*6 + z*86) + .015 * np.sin(y*89 + x*9)
+    return np.column_stack((.47+lines, .36+lines, .292+lines))
 
 
 def mesh(field, low, high, pitch, color):
@@ -153,8 +184,8 @@ def mesh(field, low, high, pitch, color):
 
 def build():
     parts = [
-        ('coat', skin, (-1.42,.005,-.57), (1.73,2.76,.57), .018, coat_color),
-        ('hooves', hooves, (-1.12,.003,-.48), (.94,.23,.48), .013, solid_color((.42,.31,.275))),
+        ('coat', skin, (-1.44,.005,-.57), (1.72,2.76,.57), .016, coat_color),
+        ('hooves', hooves, (-1.14,.003,-.48), (.99,.22,.48), .010, hoof_color),
         ('horn', horn, (.94,2.38,-.10), (1.22,2.76,.10), .008, solid_color((.95,.67,.31))),
     ]
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
