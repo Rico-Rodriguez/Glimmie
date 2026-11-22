@@ -41,7 +41,6 @@ final class PonyGroomingTests: XCTestCase {
             let hit = try XCTUnwrap(root.hitTestWithSegment(
                 from: SCNVector3(site.x, site.y, -3), to: SCNVector3(site.x, site.y, 0),
                 options: [SCNHitTestOption.categoryBitMask.rawValue: 3]).first)
-            XCTAssertEqual(hit.node.name, "pony-body")
             XCTAssertTrue(pony.canBrush(hit))
             for _ in 0..<18 { pony.brush(hit: hit, delta: SIMD3<Float>(0.03, -0.08, 0)) }
             XCTAssertTrue(root.childNode(withName: "coat-dust-0", recursively: true)?.isHidden == true)

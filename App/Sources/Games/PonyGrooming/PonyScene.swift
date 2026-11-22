@@ -116,13 +116,13 @@ final class PonyScene {
 
     func canBrush(_ hit: SCNHitTestResult?) -> Bool {
         guard let name = hit?.node.name else { return false }
-        return name == "pony-body" || name.hasPrefix("lock-")
+        return isCoat(name) || name.hasPrefix("lock-")
     }
 
     func brush(hit: SCNHitTestResult, delta: SIMD3<Float>) {
         let distance = min(0.14, simd_length(delta))
         guard let name = hit.node.name else { return }
-        if name == "pony-body" {
+        if isCoat(name) {
             let local = hit.localCoordinates
             if save.brushCoat(at: SIMD3<Float>(local.x, local.y, local.z), distance: distance) {
                 showCoat()
@@ -158,6 +158,10 @@ final class PonyScene {
             patch.opacity = CGFloat(amount)
             patch.isHidden = amount == 0
         }
+    }
+
+    private func isCoat(_ name: String) -> Bool {
+        name == "pony-coat-contact" || name == "pony-body"
     }
 
     func flush() {
@@ -284,6 +288,19 @@ final class PonyScene {
         skin.skeleton = skeleton
         node.skinner = skin
         scene.rootNode.addChildNode(node)
+
+        // SceneKit can omit skinned triangles from hit tests. Use the same coat
+        // triangles for a colorless contact mesh that follows the torso.
+        let contact = SCNGeometry(sources: mesh.sources(for: .vertex), elements: mesh.elements)
+        let invisible = SCNMaterial()
+        invisible.lightingModel = .constant
+        invisible.colorBufferWriteMask = []
+        invisible.writesToDepthBuffer = false
+        contact.materials = [invisible]
+        let brushSurface = SCNNode(geometry: contact)
+        brushSurface.name = "pony-coat-contact"
+        brushSurface.castsShadow = false
+        skeleton.addChildNode(brushSurface)
     }
 
     private func addFace() {
