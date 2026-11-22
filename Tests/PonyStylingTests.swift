@@ -20,7 +20,12 @@ final class PonyStylingTests: XCTestCase {
         save.maneColors[1] = ""
         save.soles[0].append(0)
         XCTAssertNil(PonyStylingSave.received(try serialize(save)))
-        XCTAssertNil(PonyStylingSave.received(String(repeating: " ", count: 4097)))
+        XCTAssertNil(PonyStylingSave.received(String(repeating: " ", count: 40_001)))
+        save.soles = PonyStylingSave().soles
+        save.paintLayer = Data([255, 7]).base64EncodedString()
+        XCTAssertNil(PonyStylingSave.received(try serialize(save)))
+        save.paintLayer = (Data(Array(repeating: [UInt8(255), 0], count: 48).flatMap { $0 }) + Data([48, 0])).base64EncodedString()
+        XCTAssertEqual(PonyStylingSave.received(try serialize(save)), save)
     }
 
     @MainActor
@@ -47,10 +52,24 @@ final class PonyStylingTests: XCTestCase {
             """) as? String
         XCTAssertEqual(color, "#57b68f")
         _ = try await view.evaluateJavaScript("""
-            document.querySelector('button[aria-label="Color Mane ends"]').click()
+            (() => {
+                const pony = document.querySelector('.stable-pony');
+                const box = pony.getBoundingClientRect();
+                function touch(type, x, y) {
+                    pony.dispatchEvent(new PointerEvent(type, {
+                        pointerId: 7, bubbles: true, pointerType: 'touch',
+                        clientX: box.left + x * box.width, clientY: box.top + y * box.height
+                    }));
+                }
+                touch('pointerdown', .329, .52);
+                touch('pointermove', .344, .58);
+                touch('pointerup', .344, .58);
+                return true;
+            })()
             """)
         await fulfillment(of: [painted], timeout: 6)
         XCTAssertEqual(observer.save?.maneColors, ["#db5793", "#57b68f", "", ""])
+        XCTAssertNotNil(observer.save?.paintLayer)
     }
 
     private final class Observer: NSObject, WKNavigationDelegate, WKScriptMessageHandler {

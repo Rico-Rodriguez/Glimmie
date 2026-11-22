@@ -23,6 +23,7 @@ struct PonyStylingSave: Codable, Equatable {
     var bow = ""
     var padMarks = Array(repeating: "", count: 3)
     var scratched = false
+    var paintLayer: String?
 
     var isValid: Bool {
         [packed, brushed].allSatisfy { $0.count == 4 && $0.allSatisfy { (0...1).contains($0) } }
@@ -34,10 +35,24 @@ struct PonyStylingSave: Codable, Equatable {
             && ["", "mint", "lilac"].contains(padColor) && (!hasSaddle || !padColor.isEmpty)
             && (0...5).contains(girth) && ["", "lilac", "rose"].contains(bow)
             && padMarks.count == 3 && padMarks.allSatisfy(Self.motifs.contains)
+            && Self.validPaintLayer(paintLayer)
+    }
+
+    private static func validPaintLayer(_ encoded: String?) -> Bool {
+        guard let encoded else { return true }
+        guard encoded.utf8.count <= 32_768, let data = Data(base64Encoded: encoded),
+              data.count.isMultiple(of: 2) else { return false }
+        var pixels = 0
+        for offset in stride(from: 0, to: data.count, by: 2) {
+            let count = Int(data[offset])
+            guard count > 0, (data[offset + 1] & 7) <= 6 else { return false }
+            pixels += count
+        }
+        return pixels == 128 * 96
     }
 
     static func received(_ payload: String) -> Self? {
-        guard payload.utf8.count <= 4096,
+        guard payload.utf8.count <= 40_000,
               let value = try? JSONDecoder().decode(Self.self, from: Data(payload.utf8)), value.isValid else { return nil }
         return value
     }

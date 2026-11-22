@@ -21,55 +21,31 @@
     canvas.replaceWith(surface);
     const context=surface.getContext('2d', {willReadFrequently:true});
     if(!context) { surface.hidden=true; image.style.visibility=''; return; }
-    const smooth=(start,end,x)=>{
-      const a=Math.max(0,Math.min(1,(x-start)/(end-start)));
-      return a*a*(3-2*a);
-    };
-    const rim=(dx,dy,width,height,edge)=>1-smooth(edge,1,Math.hypot(dx/width,dy/height));
     function start() {
       const width=surface.width=Math.min(500,image.naturalWidth);
       const height=surface.height=Math.round(width*image.naturalHeight/image.naturalWidth);
       context.drawImage(image,0,0,width,height);
       const original=context.getImageData(0,0,width,height);
       const painted=context.createImageData(width,height);
-      const areas=new Int8Array(width*height).fill(-1);
-      const opacity=new Uint8Array(width*height);
-      const luma=new Float32Array(width*height);
-      const speckles=new Uint8Array(width*height);
-      for(let y=0;y<height;y++) {
-        for(let x=0;x<width;x++) {
-          const i=y*width+x, offset=i*4;
-          const [r,g,b]=[original.data[offset],original.data[offset+1],original.data[offset+2]];
-          if(!original.data[offset+3]) continue;
-          const u=x/width,v=y/height;
-          const light=luma[i]=(.30*r+.55*g+.15*b)/255;
-          const copper=smooth(.12,.26,(r-g)/255)*smooth(.16,.40,(r-b)/255);
-          let best=0;
-          for(let k=0;k<4;k++) {
-            const hair=rim(u-mane[k][0],v-mane[k][1],k===3 ? .076 : .074,k===3 ? .248 : .132,.30)*copper*.88;
-            const foot=rim(u-feet[k][0],v-feet[k][1]-.018,.051,.034,.59)*(1-smooth(.70,.88,light))*.98;
-            if(hair>best) { best=hair; areas[i]=k; }
-            if(foot>best) { best=foot; areas[i]=k+4; }
-          }
-          opacity[i]=Math.round(255*best);
-          speckles[i]=((Math.imul(x+13,73856093)^Math.imul(y+17,19349663))>>>0)%100<6;
-        }
-      }
+      const paint=motion.paint;
+      const palette=colors.map(entry=>rgb(entry[1]));
       image.style.visibility='hidden';
       motion.refresh=()=>{
         painted.data.set(original.data);
-        for(let i=0;i<areas.length;i++) {
-          const area=areas[i];
-          if(area<0 || !opacity[i]) continue;
-          const hoof=area>=4, index=area%4, offset=index*3, pixel=i*4;
-          const palette=hoof?motion.hoofPaint:motion.manePaint;
-          if(!palette[offset]&&!palette[offset+1]&&!palette[offset+2]) continue;
-          const light=luma[i], amount=opacity[i]/255, shine=hoof&&speckles[i]&&motion.sparkle[index] ? .78 : 0;
-          for(let c=0;c<3;c++) {
-            const tone=hoof ? palette[offset+c]*(.48+light*.79)+.08*light
-              : palette[offset+c]*(.45+light*.82)+Math.max(0,light-.53)*.43;
-            const tint=tone*(1-shine)+[1,.94,.68][c]*shine;
-            painted.data[pixel+c]=original.data[pixel+c]*(1-amount)+tint*255*amount;
+        for(let y=0;y<height;y++) {
+          for(let x=0;x<width;x++) {
+            const color=(Math.floor(y*paint.height/height)*paint.width+Math.floor(x*paint.width/width))*4;
+            const pigment=paint.texture[color], amount=paint.texture[color+3]/255;
+            if(!pigment || !amount) continue;
+            const i=(y*width+x)*4, hoof=paint.texture[color+1];
+            const light=(.30*original.data[i]+.55*original.data[i+1]+.15*original.data[i+2])/255;
+            const glitter=paint.texture[color+2] && ((Math.imul(x+13,73856093)^Math.imul(y+17,19349663))>>>0)%100<6;
+            for(let c=0;c<3;c++) {
+              const tint=hoof ? palette[pigment-1][c]*(.48+light*.79)+.08*light
+                : palette[pigment-1][c]*(.45+light*.82)+Math.max(0,light-.53)*.43;
+              const shade=glitter ? tint*.22+[1,.94,.68][c]*.78 : tint;
+              painted.data[i+c]=original.data[i+c]*(1-amount)+shade*255*amount;
+            }
           }
         }
         context.putImageData(painted,0,0);
@@ -94,6 +70,7 @@
     gl.attachShader(program, shader(gl.VERTEX_SHADER, `
       attribute vec2 uv;
       uniform float t, touch, lift, quiet;
+      uniform vec2 contact, pull;
       varying vec2 tex;
       void main() {
         tex = uv;
@@ -104,42 +81,44 @@
         float mid = smoothstep(.33,.53,p.x) * (1.0-smoothstep(.68,.79,p.x));
         float bent = (1.0-smoothstep(.031,.058,abs(p.x-lift))) * smoothstep(.61,.95,p.y);
         float ear = (1.0-smoothstep(.025,.052,abs(p.x-.185))) * (1.0-smoothstep(.025,.14,p.y));
-        p.x += bent*.023 + quiet * (head * sin(t*1.25)*.007 + mane*(sin(t*2.6+p.y*5.0)*.008 + touch*.021)
+        float reach=1.0-smoothstep(.015,.19,length((uv-contact)*vec2(1.0,.78)));
+        float strands=max(mane,tail);
+        p += pull * reach * max(strands*1.45, .12);
+        p.x += bent*.023 + quiet * (head * sin(t*1.25)*.007 + mane*sin(t*2.6+p.y*5.0)*.008
           + tail*sin(t*2.05+p.y*3.0)*.019 + ear*sin(t*4.5)*.006);
         p.y += -bent*.081 + quiet * (head*(sin(t*1.25)*.006 + touch*.017) - mid*sin(t*2.2)*.005);
         gl_Position = vec4(2.0*p.x-1.0,1.0-2.0*p.y,0,1);
       }`));
     gl.attachShader(program, shader(gl.FRAGMENT_SHADER, `
-      precision mediump float;
+      precision highp float;
       varying vec2 tex;
-      uniform sampler2D paint;
-      uniform vec2 hairSites[4], footSites[4];
-      uniform vec3 manePaint[4], hoofPaint[4];
-      uniform float sparkle[4];
-      float rim(vec2 center, vec2 width, float start) {
-        return 1.0-smoothstep(start,1.0,length((tex-center)/width));
+      uniform sampler2D paint, strokes;
+      uniform vec3 palette[7];
+      vec3 layer(vec2 pos, vec3 original, float light, float seed) {
+        vec4 dab=texture2D(strokes,pos);
+        int pigment=int(floor(dab.r*255.0+.5));
+        if(pigment==0) return original;
+        vec3 color=vec3(0.0);
+        for(int i=1;i<7;i++) {
+          if(pigment==i) color=palette[i];
+        }
+        vec3 hair=color*(.45+light*.82)+vec3(max(0.0,light-.53)*.43);
+        vec3 hoof=color*(.48+light*.79)+vec3(.08)*light;
+        hoof=mix(hoof,vec3(1.0,.94,.68),step(.935,seed)*dab.b*.78);
+        return mix(original,mix(hair,hoof,step(.002,dab.g)),dab.a);
       }
       void main() {
         vec4 base = texture2D(paint, tex);
         if (base.a < .001) { gl_FragColor=base; return; }
         vec3 original = base.rgb / base.a;
         float luminance = dot(original,vec3(.30,.55,.15));
-        float copper = smoothstep(.12,.26,original.r-original.g) * smoothstep(.16,.40,original.r-original.b);
-        vec3 coat = original;
-        for(int i=0;i<4;i++) {
-          vec2 center=hairSites[i];
-          vec2 width=i==3 ? vec2(.076,.248) : vec2(.074,.132);
-          float hair=rim(center,width,.30)*copper*step(.05,length(manePaint[i]));
-          vec3 tint=manePaint[i]*(.45+luminance*.82)+vec3(max(0.0,luminance-.53)*.43);
-          coat=mix(coat,tint,hair*.88);
-          float nail=rim(footSites[i]+vec2(.0,.018),vec2(.051,.034),.59)
-            *(1.0-smoothstep(.70,.88,luminance))*step(.05,length(hoofPaint[i]));
-          vec3 polish=hoofPaint[i]*(.48+luminance*.79)+vec3(.08)*luminance;
-          vec2 grain=floor(tex*vec2(325.0,255.0));
-          float seed=fract(sin(dot(grain,vec2(12.9898,78.233)))*137.123);
-          polish=mix(polish,vec3(1.0,.94,.68),step(.935,seed)*sparkle[i]*.78);
-          coat=mix(coat,polish,nail*.98);
-        }
+        vec2 grain=floor(tex*vec2(325.0,255.0));
+        float seed=fract(sin(dot(grain,vec2(12.9898,78.233)))*137.123);
+        vec2 count=vec2(128.0,96.0), cell=tex*count-.5;
+        vec2 origin=(floor(cell)+.5)/count, blend=fract(cell), offset=1.0/count;
+        vec3 top=mix(layer(origin,original,luminance,seed),layer(origin+vec2(offset.x,0.0),original,luminance,seed),blend.x);
+        vec3 bottom=mix(layer(origin+vec2(0.0,offset.y),original,luminance,seed),layer(origin+offset,original,luminance,seed),blend.x);
+        vec3 coat=mix(top,bottom,blend.y);
         gl_FragColor=vec4(coat*base.a,base.a);
       }`));
     gl.linkProgram(program);
@@ -157,11 +136,9 @@
     const uv = gl.getAttribLocation(program, 'uv');
     gl.enableVertexAttribArray(uv);
     gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 0, 0);
-    const uniforms = Object.fromEntries(['t','touch','lift','quiet'].map(k => [k, gl.getUniformLocation(program,k)]));
-    const paintUniforms = Object.fromEntries(['hairSites','footSites','manePaint','hoofPaint','sparkle'].map(
-      name=>[name,gl.getUniformLocation(program,name+'[0]')]));
-    gl.uniform2fv(paintUniforms.hairSites,new Float32Array(mane.flat()));
-    gl.uniform2fv(paintUniforms.footSites,new Float32Array(feet.flat()));
+    const uniforms = Object.fromEntries(['t','touch','lift','quiet','contact','pull'].map(k => [k, gl.getUniformLocation(program,k)]));
+    gl.uniform3fv(gl.getUniformLocation(program,'palette[0]'),new Float32Array([0,0,0,...colors.slice(0,6).flatMap(entry=>rgb(entry[1]))]));
+    gl.uniform1i(gl.getUniformLocation(program,'strokes'),1);
     gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -170,12 +147,20 @@
     function start() {
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D,gl.createTexture());
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
       image.style.visibility = 'hidden';
       canvas.dataset.renderer='webgl';
-      let frame = 0;
+      let frame = 0, revision = -1;
       function tick(now) {
+        if(!canvas.isConnected) return;
         requestAnimationFrame(tick);
-        if (now-frame < 32 || !canvas.clientWidth || document.hidden) return;
+        if (now-frame < (motion.held ? 15 : 32) || !canvas.clientWidth || document.hidden) return;
+        const delta=Math.min(.05,(now-frame)/1000);
         frame = now;
         const dpr = Math.min(devicePixelRatio, 2);
         const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
@@ -186,9 +171,19 @@
         gl.uniform1f(uniforms.touch, Math.max(0, (motion.touch - now) / 650));
         gl.uniform1f(uniforms.lift, motion.lift);
         gl.uniform1f(uniforms.quiet, +!calm.matches);
-        gl.uniform3fv(paintUniforms.manePaint,motion.manePaint);
-        gl.uniform3fv(paintUniforms.hoofPaint,motion.hoofPaint);
-        gl.uniform1fv(paintUniforms.sparkle,motion.sparkle);
+        for(let i=0;i<2;i++) {
+          const target=motion.held?motion.drag[i]:0;
+          motion.velocity[i]+=(target-motion.pull[i])*delta*180;
+          motion.velocity[i]*=Math.exp(-delta*13);
+          motion.pull[i]+=motion.velocity[i]*delta;
+        }
+        gl.uniform2fv(uniforms.contact,motion.contact);
+        gl.uniform2fv(uniforms.pull,motion.pull);
+        if(revision!==motion.paint.revision) {
+          const surface=motion.paint;
+          gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,surface.width,surface.height,0,gl.RGBA,gl.UNSIGNED_BYTE,surface.texture);
+          revision=surface.revision;
+        }
         gl.drawArrays(gl.TRIANGLES, 0, vertices.length / 2);
       }
       requestAnimationFrame(tick);
@@ -206,8 +201,8 @@
     const hoof = find('.stable-hoof'), chips = find('.hoof-chips');
     const stations = find('.stable-stations'), tools = find('.stable-tools'), swatches=find('.stable-colors');
     const saddle = find('.stable-saddle'), pad = find('.stable-pad'), ribbon = find('.stable-ribbon'), braid = find('.stable-braid');
-    const secondBraid=find('.second-braid'), motif=find('.pad-motif');
-    const motion = { touch: 0, lift: -1, manePaint:new Float32Array(12), hoofPaint:new Float32Array(12), sparkle:new Float32Array(4) };
+    const secondBraid=find('.second-braid'), motif=find('.pad-motif'), weave=find('.braid-preview');
+    const motion = {touch:0,lift:-1,held:false,contact:[0,0],drag:[0,0],pull:[0,0],velocity:[0,0]};
     const save = window.glimmieStableSave ?? {};
     const maneColors = save.maneColors ?? Array(4).fill('');
     const hoofColors = save.hoofColors ?? Array(4).fill('');
@@ -223,13 +218,14 @@
     let bow = save.bow ?? '', scratched = save.scratched ?? false;
     let gesture = null, hoofGesture = null;
 
-    maneColors.forEach((color,i)=>motion.manePaint.set(rgb(color),i*3));
-    hoofColors.forEach((color,i)=>motion.hoofPaint.set(rgb(color),i*3));
-    if (save.hoofGlitter) motion.sparkle.set(save.hoofGlitter.map(Number));
+    const hoofGlitter=save.hoofGlitter ?? Array(4).fill(false);
+    image.src = window.glimmiePonyTexture ?? art.pony;
+    motion.paint = new window.PonyPaintSurface(image,mane,feet,colors,save);
     function snapshot() {
       return JSON.stringify({
         packed, brushed, soles:sole, maneStep, maneProgress, braidStyle, crossed, maneColors, hoofColors,
-        hoofGlitter:Array.from(motion.sparkle, Boolean), padColor, hasSaddle, girth, bow, padMarks, scratched
+        hoofGlitter, padColor, hasSaddle, girth, bow, padMarks, scratched,
+        paintLayer: motion.paint.encode() ?? save.paintLayer
       });
     }
     let sent=snapshot();
@@ -242,7 +238,6 @@
 
     find('.stable-sign strong').textContent = 'Unicorn Stable';
     find('.stable-setting').src = art.stall;
-    image.src = window.glimmiePonyTexture ?? art.pony;
     saddle.src = art.saddle;
     ribbon.src = art.ribbon;
     if (art.braid) braid.src = secondBraid.src = art.braid;
@@ -301,17 +296,27 @@
       }
     }
 
-    function paintAt(i, hair) {
-      const hex=colors[tone][1], surface=hair?maneColors:hoofColors;
-      const spark=!hair && glitter && !!hex;
-      if(surface[i]===hex && (hair||motion.sparkle[i]===+spark)) return;
-      surface[i]=hex;
-      const points=hair?mane:feet, pigment=hair?motion.manePaint:motion.hoofPaint;
-      pigment.set(rgb(hex),i*3);
-      if(!hair) motion.sparkle[i]=+spark;
-      motion.refresh?.();
-      feedback(points[i]);
-      render();
+    let refreshFrame=0;
+    function dab(from,to,hair,only=-1) {
+      const [name,hex]=colors[tone];
+      const touched=motion.paint.stroke(from,to,hair,hex?tone+1:0,glitter,only);
+      if(touched<0) return false;
+      (hair?maneColors:hoofColors)[touched]=hex;
+      if(!hair) hoofGlitter[touched]=glitter && !!hex;
+      if(motion.refresh && !refreshFrame) {
+        refreshFrame=requestAnimationFrame(()=>{ refreshFrame=0; motion.refresh(); });
+      }
+      text(hex?name+' • Keep painting to build the color.':'The color rinses away as you brush.');
+      return true;
+    }
+
+    // A dab remains available through VoiceOver and the larger hoof controls.
+    function paintAt(i,hair) {
+      const point=hair?mane[i]:[feet[i][0],feet[i][1]+.018];
+      if(dab(point,point,hair,i)) {
+        feedback(point);
+        render();
+      }
     }
 
     function feedback(point) {
@@ -375,6 +380,41 @@
       render();
     }
 
+    function showStrands(anchor,end) {
+      weave.hidden=false;
+      const width=weave.width=Math.round(actor.clientWidth);
+      const height=weave.height=Math.round(actor.clientHeight);
+      const context=weave.getContext('2d');
+      const [x,y]=[anchor[0]*width,anchor[1]*height];
+      for(let i=2;i>=0;i--) {
+        const active=i===0, dx=(i-1)*width*.024;
+        const [ex,ey]=active?[end[0]*width,end[1]*height]:[x+dx*2,y+height*.16];
+        const pigment=active?(maneColors[crossed%3]||'#ad633b'):'#985029';
+        context.lineCap='round';
+        const curve=(displacement=0)=>{
+          context.beginPath();
+          context.moveTo(x+dx+displacement,y-height*.095);
+          context.bezierCurveTo(x+dx+displacement,y,ex-dx+displacement,ey-height*.036,ex+displacement*.60,ey);
+        };
+        const size=Math.max(4,width*.021);
+        const finish=context.createLinearGradient(x,y-height*.075,ex,ey);
+        finish.addColorStop(0,'#85502d38');
+        finish.addColorStop(.20,pigment);
+        finish.addColorStop(.82,pigment);
+        finish.addColorStop(1,'#a85c34a8');
+        context.strokeStyle=finish;
+        context.lineWidth=size;
+        curve();
+        context.stroke();
+        for(let fiber=-4;fiber<=4;fiber++) {
+          curve(fiber*size*.10);
+          context.strokeStyle=fiber%2===0?'#ffe0aa77':'#66341d66';
+          context.lineWidth=Math.max(.36,size*.062);
+          context.stroke();
+        }
+      }
+    }
+
     function chooseBraid(count) {
       braidStyle=count;
       crossed=0;
@@ -402,7 +442,7 @@
       if (padColor) tools.append(tool('Remove tack',()=>setPad(padColor)));
       coat.forEach((point,i)=>{
         if (brushed[i]>=1) return;
-        const stamp=mark(targets,point,'stable-dot dust'+(packed[i]?' packed':''),
+        const stamp=mark(targets,point,'stable-dot stroke-guide dust'+(packed[i]?' packed':''),
           packed[i]?'Loosen dried mud '+(i+1):'Brush loose dirt '+(i+1),()=>{
             if (packed[i] && coatTool==='Soft brush') return text('Loosen this patch with the curry comb first.');
             if (!packed[i] && coatTool==='Curry comb') return text('This dirt is loose. Switch to the soft brush.');
@@ -426,13 +466,13 @@
         palette();
         const labels=['Mane ends','Middle mane','Upper mane','Tail'];
         mane.forEach((point,i)=>{
-          const target=mark(targets,point,'stable-dot paint-mark','Color '+labels[i],()=>paintAt(i,true));
+          const target=mark(targets,point,'stable-dot hidden-dab','Color '+labels[i],()=>paintAt(i,true));
           target.style.setProperty('--mark-color',maneColors[i]||'#f6ecd988');
         });
-        text(colors[tone][1]?'Tap or sweep over a lock to add '+colors[tone][0]+'.':'Tap a lock to bring back its natural color.');
+        text(colors[tone][1]?'Paint anywhere along the mane and tail.':'Brush over the paint to rinse it away.');
       } else if(maneMode==='Comb' && maneStep<mane.length) {
         status.textContent='Comb the mane';
-        mark(targets,mane[maneStep],'stable-dot active-knot','Comb this tangle',()=>comb(.35));
+        mark(targets,mane[maneStep],'stable-dot stroke-guide active-knot','Comb this tangle',()=>comb(.35));
         text(maneStep===mane.length-1?'Comb down through the tail tangle.':'Comb down through the highlighted lock. Start near the ends.');
       } else if(maneMode==='Comb') {
         status.textContent='Mane combed';
@@ -444,8 +484,8 @@
           tool('Loose mane',()=>chooseBraid(0),{selected:braidStyle===0}));
         if(braidMode) {
           const side=crossed%2===0?'left':'right';
-          mark(targets,strandSites[crossed],'stable-dot target-arrow','Cross '+side+' strand',cross,side==='left'?'→':'←');
-          text('Tap the strand or pull it across the center.');
+          mark(targets,strandSites[crossed],'stable-dot stroke-guide target-arrow','Cross '+side+' strand',cross,side==='left'?'→':'←');
+          text('Grab the strand and pull it across the center.');
         } else text(crossed?'The braid is in place. You can color it or add a ribbon.':'Pick a braid to get started.');
       }
     }
@@ -464,11 +504,11 @@
         tools.append(hooves);
         feet.forEach((point,i)=>{
           const name='Paint hoof '+(i+1);
-          hooves.append(swatch(name,hoofColors[i]||'#a47d62',()=>paintAt(i,false),false,'hoof-tile',motion.sparkle[i]?'✦':(i+1)));
-          const target=mark(targets,point,'stable-dot paint-mark','Paint on pony hoof '+(i+1),()=>paintAt(i,false));
+          hooves.append(swatch(name,hoofColors[i]||'#a47d62',()=>paintAt(i,false),false,'hoof-tile',hoofGlitter[i]?'✦':(i+1)));
+          const target=mark(targets,point,'stable-dot hidden-dab','Paint on pony hoof '+(i+1),()=>paintAt(i,false));
           target.style.setProperty('--mark-color',hoofColors[i]||'#f6ecd988');
         });
-        text(colors[tone][1]?'Pick a color and tap a hoof. Mix colors however you like.':'Tap a hoof to wash off its color.');
+        text(colors[tone][1]?'Paint right on the hooves. You can mix colors on the same hoof.':'Brush over the paint to rinse it away.');
         return;
       }
       status.textContent=countHooves()+' of '+feet.length+' hooves clean';
@@ -482,7 +522,9 @@
       debris.forEach((point,i)=>{
         if (sole[lifted][i]<=0) return;
         const node=mark(chips,point,'hoof-chip'+(i===2?' hoof-chaff':''),
-          i===2?'Brush loose straw':'Pick pebble '+(i+1),()=>clearDebris(i,i===2?.35:1));
+          i===2?'Brush loose straw':'Pick pebble '+(i+1),event=>{
+            if(event.detail===0) clearDebris(i,i===2 ? .35 : 1);
+          });
         node.dataset.chip=i;
         node.style.setProperty('--remaining',sole[lifted][i]);
       });
@@ -554,8 +596,10 @@
       game.classList.toggle('is-hoof',lifted>=0);
       game.classList.toggle('is-mane',station==='Mane');
       pad.hidden=!padColor; saddle.hidden=!hasSaddle; ribbon.hidden=!bow;
-      braid.hidden=!(art.braid && crossed>=2);
-      secondBraid.hidden=!(art.braid && crossed>=4);
+      braid.hidden=crossed===0;
+      secondBraid.hidden=crossed<3;
+      braid.style.clipPath=crossed===1?'inset(0 0 50% 0)':'';
+      secondBraid.style.clipPath=crossed===3?'inset(0 0 50% 0)':'';
       const braidHue=['48deg','0deg','-21deg','100deg','185deg','245deg'];
       const hueFor=color=>color?'hue-rotate('+braidHue[colors.findIndex(entry=>entry[1]===color)]+') saturate(.72)':'';
       braid.style.filter=hueFor(maneColors[0]||maneColors[1]);
@@ -601,38 +645,54 @@
       return [(event.clientX-box.left)/box.width,(event.clientY-box.top)/box.height];
     }
     const close=(a,b,x,y)=>Math.hypot((a[0]-b[0])/x,(a[1]-b[1])/y)<=1;
+    const painting=()=>station==='Mane'&&maneMode==='Color'||station==='Hooves'&&hoofMode==='Paint';
+    function moveTool(point, name, color) {
+      brush.hidden=false;
+      const image=art[name];
+      if(brush.getAttribute('src')!==image) brush.src=image;
+      brush.style.left=point[0]*100+'%';
+      brush.style.top=point[1]*100+'%';
+      brush.style.setProperty('--tool-glow',color||'transparent');
+    }
+    function tug(point, delta) {
+      motion.contact=point;
+      motion.drag=delta.map(value=>Math.max(-.083,Math.min(.083,value)));
+      motion.held=true;
+    }
     actor.addEventListener('pointerdown',event=>{
-      if (station==='Coat'||station==='Mane'||(station==='Hooves'&&hoofMode==='Paint')) {
-        gesture={id:event.pointerId,point:at(event,actor)};
+      if(!(station==='Coat'||station==='Mane'||painting())) return;
+      if(gesture || (event.pointerType==='mouse'&&event.button!==0)) return;
+      const point=at(event,actor);
+      gesture={id:event.pointerId,point,painted:false,strand:null};
+      if(painting()) {
+        gesture.painted=dab(point,point,station==='Mane');
+        if(gesture.painted) moveTool(point,'brush',colors[tone][1]);
+      } else if(station==='Mane'&&maneMode==='Braid'&&braidMode&&close(point,strandSites[crossed],.10,.115)) {
+        gesture.strand=strandSites[crossed];
+        showStrands(gesture.strand,point);
       }
     });
     actor.addEventListener('pointermove',event=>{
-      if (!gesture||event.pointerId!==gesture.id) return;
+      if(!gesture||event.pointerId!==gesture.id) return;
       const p=at(event,actor), q=gesture.point;
       const dx=p[0]-q[0], dy=p[1]-q[1];
-      if (Math.hypot(dx,dy)<.008) return;
-      if (!actor.hasPointerCapture(event.pointerId)) actor.setPointerCapture(event.pointerId);
+      if(Math.hypot(dx,dy)<.004) return;
+      if(event.isTrusted&&!actor.hasPointerCapture(event.pointerId)) actor.setPointerCapture(event.pointerId);
       gesture.point=p;
       const middle=[(p[0]+q[0])/2,(p[1]+q[1])/2];
-      if ((station==='Mane'&&maneMode==='Color') || station==='Hooves') {
-        const hair=station==='Mane', points=hair?mane:feet;
-        const closest=points.reduce((best, point,i)=>{
-          const distance=Math.hypot(p[0]-point[0],p[1]-point[1]);
-          return distance<best.distance?{i,distance}:best;
-        },{i:-1,distance:hair ? .104 : .064});
-        if(closest.i>=0) paintAt(closest.i,hair);
+      if(painting()) {
+        if(dab(q,p,station==='Mane')) {
+          gesture.painted=true;
+          if(station==='Mane') tug(p,[dx*3.2,dy*3.2]);
+        }
+        moveTool(p,'brush',colors[tone][1]);
         return;
       }
-      if (station==='Coat'||maneMode==='Comb') {
-        brush.hidden=false;
-        const toolName=station==='Mane'?'comb':coatTool==='Curry comb'?'curry':'brush';
-        brush.src=art[toolName]||art.brush;
-        brush.style.left=p[0]*100+'%'; brush.style.top=p[1]*100+'%';
-      }
       if(station==='Coat') {
+        moveTool(p,coatTool==='Curry comb'?'curry':'brush');
         coat.forEach((center,i)=>{
           if(!close(middle,center,.093,.092)) return;
-          if(coatTool==='Soft brush' && dx>.004 && Math.abs(dy)<dx*1.7) {
+          if(coatTool==='Soft brush'&&dx>.002&&Math.abs(dy)<dx*1.7) {
             affectCoat(i,Math.min(.31,dx*7));
           } else if(coatTool==='Curry comb') {
             const a=Math.atan2(q[1]-center[1],q[0]-center[0]);
@@ -641,32 +701,66 @@
             if(Math.abs(arc)<1.15) affectCoat(i,Math.min(.20,Math.abs(arc)*.166));
           }
         });
-      } else if(maneMode==='Braid'&&braidMode) {
-        const from=strandSites[crossed], towardsCenter=crossed%2===0 ? p[0]>.345 : p[0]<.345;
-        if(close(q,from,.11,.12) && towardsCenter && Math.abs(dx)>.018) cross();
-      } else if(maneMode==='Comb'&&maneStep<mane.length && dy>.004 && Math.abs(dx)<dy*1.55 &&
-        close(middle,mane[maneStep],.10,.14)) comb(Math.min(.38,dy*8.2));
+      } else if(maneMode==='Braid'&&gesture.strand) {
+        showStrands(gesture.strand,p);
+        tug(gesture.strand,[p[0]-gesture.strand[0],p[1]-gesture.strand[1]]);
+      } else if(maneMode==='Comb') {
+        moveTool(p,'comb');
+        if(close(middle,mane[Math.min(maneStep,mane.length-1)],.105,.16)) {
+          tug(p,[dx*4.2,dy*4.2]);
+          if(maneStep<mane.length&&dy>.002&&Math.abs(dx)<dy*1.55) comb(Math.min(.38,dy*8.2));
+        }
+      }
     });
     for(const eventName of ['pointerup','pointercancel','lostpointercapture']) {
       actor.addEventListener(eventName,event=>{
-        if(gesture?.id===event.pointerId) { gesture=null; brush.hidden=true; persist(); }
+        if(gesture?.id!==event.pointerId) return;
+        const finished=gesture;
+        gesture=null;
+        brush.hidden=true;
+        weave.hidden=true;
+        motion.held=false;
+        if(finished.strand&&braidMode&&eventName==='pointerup') {
+          const [x,y]=at(event,actor), direction=crossed%2===0?1:-1;
+          if((x-.345)*direction>.006&&Math.abs(y-finished.strand[1])<.18) cross();
+        }
+        if(finished.painted) {
+          feedback(finished.point);
+          render();
+        } else persist();
       });
-      chips.addEventListener(eventName,()=>{ hoofGesture=null; persist(); });
+      chips.addEventListener(eventName,event=>{
+        if(hoofGesture?.id!==event.pointerId) return;
+        const drag=hoofGesture;
+        hoofGesture=null;
+        if(eventName==='pointerup'&&drag.flick) clearDebris(drag.i,1);
+        else {
+          drag.chip.style.removeProperty('--chip-x');
+          drag.chip.style.removeProperty('--chip-y');
+        }
+        persist();
+      });
     }
+
     chips.addEventListener('pointerdown',event=>{
       const chip=event.target.closest('[data-chip]');
-      if(chip) hoofGesture={id:event.pointerId,i:Number(chip.dataset.chip),point:at(event,chips)};
+      if(chip) hoofGesture={id:event.pointerId,i:Number(chip.dataset.chip),chip,point:at(event,chips),flick:false};
     });
     chips.addEventListener('pointermove',event=>{
       if(!hoofGesture||event.pointerId!==hoofGesture.id) return;
       const p=at(event,chips), q=hoofGesture.point, i=hoofGesture.i;
       const outward=(p[0]-q[0])*(q[0]-.50)+(p[1]-q[1])*(q[1]-.46);
-      if(i!==2 && outward>.013) {
-        hoofGesture=null; chips.setPointerCapture(event.pointerId); clearDebris(i,1);
+      if(i!==2 && hoofTool==='Hoof pick') {
+        if(event.isTrusted&&!chips.hasPointerCapture(event.pointerId)) chips.setPointerCapture(event.pointerId);
+        hoofGesture.chip.style.setProperty('--chip-x',(p[0]-q[0])*chips.clientWidth+'px');
+        hoofGesture.chip.style.setProperty('--chip-y',(p[1]-q[1])*chips.clientHeight+'px');
+        hoofGesture.flick=outward>.013;
       } else if(i===2 && Math.abs(p[0]-q[0])>.03 && Math.abs(p[1]-q[1])<.13) {
         hoofGesture.point=p;
-        if(!chips.hasPointerCapture(event.pointerId)) chips.setPointerCapture(event.pointerId);
+        if(event.isTrusted&&!chips.hasPointerCapture(event.pointerId)) chips.setPointerCapture(event.pointerId);
         clearDebris(i,Math.min(.36,Math.abs(p[0]-q[0])*5));
+      } else if(i!==2 && outward>.013) {
+        text('Use the hoof pick for pebbles.');
       }
     });
     document.addEventListener('visibilitychange',()=>{ if(document.hidden) persist(); });
