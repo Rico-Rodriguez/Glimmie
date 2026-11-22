@@ -6,21 +6,13 @@ import simd
     let exit: () -> Void
     @State private var brushing = true
     @State private var close = false
-    @State private var tangled: Bool
-    @State private var outfit: PonyTack
-    @State private var spotsLeft: Int
+    @State private var tangled = PonyScene.savedGrooming().tangled
+    @State private var outfit = PonyScene.savedGrooming().outfit
+    @State private var spotsLeft = PonyScene.savedGrooming().spotsLeft
     @State private var groomingRound = 0
     @State private var tackTray = false
     @State private var brushPoint: CGPoint?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    init(exit: @escaping () -> Void) {
-        self.exit = exit
-        let grooming = PonyScene.savedGrooming()
-        _tangled = State(initialValue: grooming.tangled)
-        _outfit = State(initialValue: grooming.outfit)
-        _spotsLeft = State(initialValue: grooming.spotsLeft)
-    }
 
     var body: some View {
         GeometryReader { proxy in
