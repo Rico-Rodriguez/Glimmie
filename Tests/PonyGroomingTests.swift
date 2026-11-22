@@ -1,5 +1,6 @@
 import SceneKit
 import XCTest
+import CoreGraphics
 import simd
 @testable import Glimmie
 
@@ -38,10 +39,16 @@ final class PonyGroomingTests: XCTestCase {
                 XCTAssertEqual(patch.categoryBitMask, 4)
             }
             let site = PonyDustSite.all[0].center
-            let hit = try XCTUnwrap(root.hitTestWithSegment(
-                from: SCNVector3(site.x, site.y, -3), to: SCNVector3(site.x, site.y, 0),
-                options: [SCNHitTestOption.categoryBitMask.rawValue: 3]).first)
-            XCTAssertTrue(pony.canBrush(hit))
+            let atFlank = try XCTUnwrap(pony.coatContact(from: SIMD3<Float>(site.x, site.y, -3),
+                                                        to: SIMD3<Float>(site.x, site.y, 0)))
+            XCTAssertEqual(atFlank.z, -0.438, accuracy: 0.015)
+            let local = pony.camera.simdConvertPosition(site, from: nil)
+            let viewport = CGSize(width: 1024, height: 768)
+            let scale = Float(viewport.height) / (2 * (-local.z) * tan(Float(19) * .pi / 180))
+            let point = CGPoint(x: viewport.width / 2 + CGFloat(scale * local.x),
+                                y: viewport.height / 2 - CGFloat(scale * local.y))
+            let hit = try XCTUnwrap(pony.brushHit(at: point, in: viewport, rendered: nil))
+            XCTAssertLessThan(PonyDustSite.all[0].distance(to: hit.world), 1)
             for _ in 0..<18 { pony.brush(hit: hit, delta: SIMD3<Float>(0.03, -0.08, 0)) }
             XCTAssertTrue(root.childNode(withName: "coat-dust-0", recursively: true)?.isHidden == true)
             XCTAssertEqual(pony.spotsLeft, PonyDustSite.all.count - 1)

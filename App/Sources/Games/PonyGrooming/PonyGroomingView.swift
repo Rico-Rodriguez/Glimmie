@@ -297,7 +297,7 @@ import simd
             case .began:
                 let native = incoming.translation(in: view)
                 let start = CGPoint(x: p.x - native.x, y: p.y - native.y)
-                isStroke = brushing && (model.canBrush(hit(start, in: view)) || model.canBrush(hit(p, in: view)))
+                isStroke = brushing && (hit(start, in: view) != nil || hit(p, in: view) != nil)
                 previousPoint = start
                 previousWorld = nil
                 fallthrough
@@ -335,19 +335,19 @@ import simd
             if pinch.state == .changed { model?.zoom(pinch.scale); pinch.scale = 1 }
         }
 
-        private func hit(_ point: CGPoint, in view: SCNView) -> SCNHitTestResult? {
-            view.hitTest(point, options: [SCNHitTestOption.categoryBitMask: 3,
-                                         SCNHitTestOption.ignoreHiddenNodes: true,
-                                         SCNHitTestOption.searchMode: SCNHitTestSearchMode.closest.rawValue]).first
+        private func hit(_ point: CGPoint, in view: SCNView) -> PonyBrushHit? {
+            let rendered = view.hitTest(point, options: [.categoryBitMask: 3,
+                                                         .ignoreHiddenNodes: true,
+                                                         .searchMode: SCNHitTestSearchMode.closest.rawValue]).first
+            return model?.brushHit(at: point, in: view.bounds.size, rendered: rendered)
         }
 
         private func stroke(at point: CGPoint, in view: SCNView, screenDelta: CGPoint) {
-            guard let model, let result = hit(point, in: view), model.canBrush(result) else {
+            guard let model, let result = hit(point, in: view) else {
                 previousWorld = nil
                 return
             }
-            let w = result.worldCoordinates
-            let world = SIMD3<Float>(w.x, w.y, w.z)
+            let world = result.world
             let basis = model.camera.simdWorldTransform
             let right = SIMD3<Float>(basis.columns.0.x, basis.columns.0.y, basis.columns.0.z)
             let up = SIMD3<Float>(basis.columns.1.x, basis.columns.1.y, basis.columns.1.z)

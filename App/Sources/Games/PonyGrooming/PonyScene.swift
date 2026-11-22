@@ -2,6 +2,19 @@ import SceneKit
 import UIKit
 import simd
 
+enum PonyBrushHit {
+    case coat(SIMD3<Float>)
+    case hair(Int, SCNHitTestResult)
+
+    var world: SIMD3<Float> {
+        switch self {
+        case .coat(let point): point
+        case .hair(_, let hit):
+            SIMD3<Float>(hit.worldCoordinates.x, hit.worldCoordinates.y, hit.worldCoordinates.z)
+        }
+    }
+}
+
 @MainActor
 final class PonyScene {
     static let folder = "UnicornStable"
@@ -13,6 +26,7 @@ final class PonyScene {
     let head = SCNNode()
     let tail = SCNNode()
     private let skeleton = SCNNode()
+    private let coatSurface: PonyCoatSurface
     private let tack = PonyTackRig()
     private var dust: [SCNNode] = []
     private var eyes: [SCNNode] = []
@@ -46,6 +60,7 @@ final class PonyScene {
               let coat = parts.first(where: { $0.name == "coat" }),
               let hooves = parts.first(where: { $0.name == "hooves" }),
               let horn = parts.first(where: { $0.name == "horn" }) else { return nil }
+        coatSurface = PonyCoatSurface(coat)
         buildRoom()
         scene.rootNode.addChildNode(skeleton)
         skeleton.addChildNode(neck)
@@ -77,6 +92,7 @@ final class PonyScene {
         placeRibbons()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 38
+        camera.camera?.projectionDirection = .vertical
         camera.camera?.zNear = 0.08
         camera.camera?.zFar = 45
         scene.rootNode.addChildNode(camera)
@@ -114,28 +130,50 @@ final class PonyScene {
     func zoom(_ amount: CGFloat) { requestedCamera.pinch(factor: Float(amount)) }
     func detail(_ detail: Bool) { requestedCamera.detail = detail ? 1 : 0 }
 
-    func canBrush(_ hit: SCNHitTestResult?) -> Bool {
-        guard let name = hit?.node.name else { return false }
-        return isCoat(name) || name.hasPrefix("lock-")
+    func brushHit(at point: CGPoint, in viewport: CGSize, rendered: SCNHitTestResult?) -> PonyBrushHit? {
+        guard viewport.width > 0, viewport.height > 0 else { return nil }
+        let radians = Float(camera.camera?.fieldOfView ?? 38) * .pi / 180
+        let halfHeight = tan(radians / 2)
+        let x = Float((2 * point.x - viewport.width) / viewport.height) * halfHeight
+        let y = Float(1 - 2 * point.y / viewport.height) * halfHeight
+        let start = camera.simdWorldPosition
+        let direction = camera.simdConvertVector(SIMD3<Float>(x, y, -1), to: nil)
+        let found = rendered.map {
+            let p = $0.worldCoordinates
+            return SIMD3<Float>(p.x, p.y, p.z)
+        }
+        if let rendered, rendered.node.name == "pony-body", let found { return .coat(found) }
+        let coat = coatContact(from: start, to: start + direction * 13)
+        if let coat, found.map({ simd_distance(start, coat) + 0.015 < simd_distance(start, $0) }) ?? true {
+            return .coat(coat)
+        }
+        guard let rendered, let name = rendered.node.name, name.hasPrefix("lock-"),
+              let index = Int(name.dropFirst(5)) else { return nil }
+        return .hair(index, rendered)
     }
 
-    func brush(hit: SCNHitTestResult, delta: SIMD3<Float>) {
+    func coatContact(from start: SIMD3<Float>, to end: SIMD3<Float>) -> SIMD3<Float>? {
+        // Intersect the same triangles as the coat in its rest pose. The barrel
+        // follows the torso node and remains accurate when SceneKit skips skin hits.
+        let localStart = skeleton.simdConvertPosition(start, from: nil)
+        let localEnd = skeleton.simdConvertPosition(end, from: nil)
+        return coatSurface.hit(from: localStart, to: localEnd).map { skeleton.simdConvertPosition($0, to: nil) }
+    }
+
+    func brush(hit: PonyBrushHit, delta: SIMD3<Float>) {
         let distance = min(0.14, simd_length(delta))
-        guard let name = hit.node.name else { return }
-        if isCoat(name) {
-            let local = hit.localCoordinates
-            if save.brushCoat(at: SIMD3<Float>(local.x, local.y, local.z), distance: distance) {
+        if case .coat(let world) = hit {
+            if save.brushCoat(at: skeleton.simdConvertPosition(world, from: nil), distance: distance) {
                 showCoat()
                 dirty = true
             }
             response = min(1, response + distance * 1.25)
             return
         }
-        guard name.hasPrefix("lock-"), let index = Int(name.dropFirst(5)) else { return }
-        guard locks.indices.contains(index) else { return }
+        guard case .hair(let index, let surface) = hit, locks.indices.contains(index) else { return }
         let mesh = locks[index]
         let localDelta = mesh.node.simdConvertVector(delta, from: nil)
-        let fraction = mesh.fraction(at: hit.localCoordinates, groomed: save.locks[index],
+        let fraction = mesh.fraction(at: surface.localCoordinates, groomed: save.locks[index],
                                      tangled: save.tangled, motion: motion[index])
         let progress = save.brush(index, distance: distance, downward: localDelta.y < -0.003)
         dirty = dirty || progress > 0
@@ -158,10 +196,6 @@ final class PonyScene {
             patch.opacity = CGFloat(amount)
             patch.isHidden = amount == 0
         }
-    }
-
-    private func isCoat(_ name: String) -> Bool {
-        name == "pony-coat-contact" || name == "pony-body"
     }
 
     func flush() {
@@ -289,18 +323,6 @@ final class PonyScene {
         node.skinner = skin
         scene.rootNode.addChildNode(node)
 
-        // SceneKit can omit skinned triangles from hit tests. Use the same coat
-        // triangles for a colorless contact mesh that follows the torso.
-        let contact = SCNGeometry(sources: mesh.sources(for: .vertex), elements: mesh.elements)
-        let invisible = SCNMaterial()
-        invisible.lightingModel = .constant
-        invisible.colorBufferWriteMask = []
-        invisible.writesToDepthBuffer = false
-        contact.materials = [invisible]
-        let brushSurface = SCNNode(geometry: contact)
-        brushSurface.name = "pony-coat-contact"
-        brushSurface.castsShadow = false
-        skeleton.addChildNode(brushSurface)
     }
 
     private func addFace() {
