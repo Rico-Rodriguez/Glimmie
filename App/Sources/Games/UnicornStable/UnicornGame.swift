@@ -8,7 +8,7 @@ enum UnicornGame {
         play: { exit in
             let args = ProcessInfo.processInfo.arguments
             if args.contains("-classicUnicorn") || args.contains("-unicornMeadow") { return AnyView(UnicornStableView(exit: exit)) }
-            return AnyView(PonyStylingView(exit: exit))
+            return AnyView(PonyStylingView(exit: exit) { close in AnyView(UnicornStableView(exit: close)) })
         },
         stickers: MeadowVisitor.allCases.map(\.sticker)
     )

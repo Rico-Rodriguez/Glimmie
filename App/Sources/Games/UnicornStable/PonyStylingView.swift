@@ -59,6 +59,18 @@ struct PonyStylingSave: Codable, Equatable {
                 save.girth = 3
             }
             if old.ribbons { save.bow = "lilac" }
+        } else {
+            struct ClassicSave: Decodable { var look: UnicornLook }
+            if let look = GameStorage.load(ClassicSave.self, game: UnicornGame.id, file: "stable.json")?.look {
+                save.braidStyle = look.braided ? 1 : 0
+                save.crossed = save.braidStyle * 2
+                if look.gear == .bow { save.bow = "lilac" }
+                if look.gear == .saddle {
+                    save.padColor = "mint"
+                    save.hasSaddle = true
+                    save.girth = 3
+                }
+            }
         }
         return save
     }
@@ -84,10 +96,20 @@ enum PonyStylingPage {
 
 @MainActor struct PonyStylingView: View {
     let exit: () -> Void
+    let classic: (@escaping () -> Void) -> AnyView
     @State private var failed = false
     @State private var attempt = 0
+    @State private var showsClassic = false
 
     var body: some View {
+        if showsClassic {
+            classic { showsClassic = false }
+        } else {
+            stable
+        }
+    }
+
+    private var stable: some View {
         ZStack(alignment: .topLeading) {
             Color(hex: 0xFFF4DF).ignoresSafeArea()
             if failed {
@@ -104,7 +126,7 @@ enum PonyStylingPage {
                 .foregroundStyle(Theme.ink)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                PonyStylingHost { failed = true }
+                PonyStylingHost(onFailure: { failed = true }, openClassic: { showsClassic = true })
                     .id(attempt)
             }
             HomeButton(action: exit)
@@ -118,8 +140,9 @@ enum PonyStylingPage {
 
 @MainActor private struct PonyStylingHost: UIViewRepresentable {
     var onFailure: () -> Void
+    var openClassic: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onFailure: onFailure) }
+    func makeCoordinator() -> Coordinator { Coordinator(onFailure: onFailure, openClassic: openClassic) }
 
     func makeUIView(context: Context) -> WKWebView {
         let controller = WKUserContentController()
@@ -148,6 +171,7 @@ enum PonyStylingPage {
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.onFailure = onFailure
+        context.coordinator.openClassic = openClassic
     }
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -159,15 +183,21 @@ enum PonyStylingPage {
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         static let channel = "unicornStable"
         var onFailure: () -> Void
+        var openClassic: () -> Void
         private var lastSound: TimeInterval = -.infinity
 
-        init(onFailure: @escaping () -> Void) { self.onFailure = onFailure }
+        init(onFailure: @escaping () -> Void, openClassic: @escaping () -> Void) {
+            self.onFailure = onFailure
+            self.openClassic = openClassic
+        }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == Self.channel, message.frameInfo.isMainFrame,
                   let event = message.body as? [String: String] else { return }
             if event["kind"] == "save", let payload = event["value"], let save = PonyStylingSave.received(payload) {
                 save.store()
+            } else if event["kind"] == "classicStable" {
+                openClassic()
             } else if event["kind"] == "sparkle" {
                 let now = ProcessInfo.processInfo.systemUptime
                 guard now - lastSound > 0.16 else { return }

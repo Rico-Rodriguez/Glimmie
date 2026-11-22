@@ -539,6 +539,12 @@
         text(padColor?'Place the saddle over the pad, or tie on a ribbon.':'Choose a saddle pad or tie on a ribbon.');
       }
       if(padColor && stampChoice!==null) text(stampChoice?'Tap the pad or a numbered spot to stamp it.':'Tap a spot to erase its stamp.');
+      if(bridge) {
+        tools.append(tool('Meadow & stickers',()=>{
+          persist();
+          bridge.postMessage({kind:'classicStable'});
+        }));
+      }
     }
 
     function render() {
