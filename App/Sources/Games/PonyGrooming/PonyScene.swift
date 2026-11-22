@@ -151,9 +151,16 @@ final class PonyScene {
         let detail = renderedCamera.detail
         let angle = renderedCamera.orbit
         let radius = (5.4 - detail * 2.51) / renderedCamera.zoom
-        let center = SCNVector3(detail * 0.54, 1.32 + detail * 0.56, 0)
-        camera.position = SCNVector3(center.x + sin(angle) * radius, center.y + radius * 0.13, cos(angle) * radius)
-        camera.look(at: center)
+        let center = SIMD3<Float>(detail * 0.54, 1.32 + detail * 0.56, 0)
+        let offset = SIMD3<Float>(sin(angle) * radius, radius * 0.13, cos(angle) * radius)
+        // SceneKit cameras face local -Z. Rebuild the basis from world up on every frame,
+        // so the last frame's orientation cannot introduce roll as the camera orbits.
+        let back = simd_normalize(offset)
+        let right = simd_normalize(simd_cross(SIMD3<Float>(0, 1, 0), back))
+        let up = simd_cross(back, right)
+        camera.simdTransform = simd_float4x4(columns: (
+            SIMD4<Float>(right, 0), SIMD4<Float>(up, 0), SIMD4<Float>(back, 0), SIMD4<Float>(center + offset, 1)
+        ))
     }
 
     private func redraw(_ i: Int) {

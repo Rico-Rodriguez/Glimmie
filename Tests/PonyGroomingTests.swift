@@ -1,8 +1,26 @@
 import SceneKit
 import XCTest
+import simd
 @testable import Glimmie
 
 final class PonyGroomingTests: XCTestCase {
+    func testOrbitStaysUprightThroughFullTurnsInBothViews() async throws {
+        try await MainActor.run {
+            let pony = try XCTUnwrap(PonyScene())
+            var previous = pony.camera.simdTransform.columns.1
+            for i in 0..<320 {
+                if i == 160 { pony.detail(true); pony.zoom(1.25) }
+                pony.turn(i < 160 ? 10 : -10)
+                pony.frame(time: Double(i) / 30, dt: 1 / 30, reducedMotion: false)
+                let transform = pony.camera.simdTransform
+                XCTAssertEqual(transform.columns.0.y, 0, accuracy: 0.00001)
+                XCTAssertGreaterThan(transform.columns.1.y, 0.98)
+                XCTAssertGreaterThan(simd_dot(previous, transform.columns.1), 0.99)
+                previous = transform.columns.1
+            }
+        }
+    }
+
     func testSceneUsesSkinnedGeometryAndTurnsAroundTheSameMane() async throws {
         try await MainActor.run {
             let pony = try XCTUnwrap(PonyScene())
