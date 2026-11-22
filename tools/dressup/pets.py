@@ -465,39 +465,6 @@ def anchors(k, a):
     return {'hat': list(HAT.get(k, (300, 134, 0, 1.0))), 'eyes': [ex, ey], 'wide': WIDE.get(k, 1.0)}
 
 
-def unicorn_rig(a):
-    """The shared foal with separately poseable parts and coat, mane and horn swatches."""
-    coat = a['fur']
-    coat_roles = {coat: 'c', outline(coat): 'c.o', shade(coat): 'c.s', light(coat): 'c.l'}
-
-    def recolor(shapes, roles):
-        return [dict(s, f=roles.get(s.get('f'), s.get('f')), s=roles.get(s.get('s'), s.get('s'))) for s in shapes]
-
-    parts = {name: recolor(shapes, coat_roles) for name, shapes in a['parts'].items()}
-    parts['torso'] = recolor(a['torso'], {**coat_roles, '#FFFFFF': 'c.l'})
-    parts['head'] = recolor(a['head'], coat_roles)
-    tail_roles = {'#D2C0FF': 'a', outline('#D2C0FF'): 'a.o', '#FF9EC0': 'a.l', outline('#FF9EC0'): 'a.s'}
-    parts['tail'] = recolor(a['parts']['tail'], tail_roles)
-    parts['horn'] = recolor(a['parts']['horn'], {'#FFD86E': 'skin', outline('#FFD86E'): 'skin.o'})
-
-    sweep = smooth_closed([(158, 174), (196, 141), (248, 123), (308, 133), (344, 167),
-                           (301, 171), (280, 215), (228, 206), (190, 232), (151, 247), (161, 214)], .89)
-    curl = smooth_closed([(358, 151), (407, 156), (450, 186), (454, 235), (430, 269),
-                          (465, 288), (441, 310), (403, 288), (406, 248), (404, 213), (369, 196)], .85)
-    parts['mane'] = [S(curl, 'a.s', 'a.o', 5), S(sweep, 'a', 'a.o', 5),
-                     S(smooth_open([(167, 199), (211, 170), (263, 151), (306, 155)]), None, 'a.l', 9),
-                     S(smooth_open([(397, 181), (430, 199), (434, 229), (419, 254)]), None, 'a.l', 6)]
-    parts['braid'] = parts['mane'][:1] + [
-        S(smooth_closed([(405 + i % 2 * 8, 239 + i * 20), (436, 240 + i * 20),
-                         (431, 269 + i * 20), (412 - i % 2 * 8, 264 + i * 20)], .9),
-          'a' if i % 2 == 0 else 'a.l', 'a.o', 4) for i in range(5)
-    ] + [S(rrect(403, 337, 34, 14, 6), '#B8A2F0', '#886AAE', 4)]
-    saddle = smooth_closed([(206, 419), (294, 407), (350, 436), (321, 477), (234, 472), (203, 453)], .78)
-    parts['saddle'] = [blob(saddle, '#C9B6FF'), S(smooth_open([(216, 442), (277, 433), (325, 446)]), None, '#FFFFFF', 6),
-                       flat(heart(273, 450, 16), '#FFF6FA')]
-    return parts
-
-
 def build():
     vet = AN.make_all()
     more = extra_animals()
@@ -509,5 +476,5 @@ def build():
         animals[k] = {'back': a['back'], 'torso': a['torso'], 'limbs': a['limbs'], 'head': a['head'], 'front': a['front'],
                       'blush': a['blush'], 'brows': a['brows'], 'eyes': a['eyes'], 'mouths': a['mouths'],
                       'eye': a['eye'], 'mouth': a['mouth'], 'fur': a['fur'], 'anchors': anchors(k, a)}
-    return {'size': [W, H], 'order': ORDER, 'animals': animals, 'unicornRig': unicorn_rig(allp['unicorn']), 'wear': wear(), 'slots': [s for s, _ in SLOTS],
+    return {'size': [W, H], 'order': ORDER, 'animals': animals, 'wear': wear(), 'slots': [s for s, _ in SLOTS],
             'thumbs': THUMB, 'props': care()}

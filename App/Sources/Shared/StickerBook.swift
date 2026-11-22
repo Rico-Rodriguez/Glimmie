@@ -37,8 +37,11 @@ final class StickerBook {
 
     private init() {
         let s = GameStorage.load(Save.self, game: StickerBook.folder, file: "stickers.json")
-        found = Set(s?.found ?? [])
-        unseen = Set(s?.unseen ?? [])
+        let savedFound = Set(s?.found ?? [])
+        let savedUnseen = Set(s?.unseen ?? [])
+        found = savedFound.filter { !GameStorage.isRetiredGameRecord($0) }
+        unseen = savedUnseen.filter { !GameStorage.isRetiredGameRecord($0) }
+        if found != savedFound || unseen != savedUnseen { save() }
     }
 
     static func key(_ game: String, _ id: String) -> String { "\(game)/\(id)" }

@@ -29,8 +29,6 @@ enum Treasures {
         Treasure(id: "aquarium/crystal", game: "aquarium", price: 8, size: TreasureArt.crystalSize) { TreasureArt.crystals($0, glow: 0.4) },
         Treasure(id: "aquarium/coral", game: "aquarium", price: 12, size: TreasureArt.coralSize) { TreasureArt.rainbowCoral($0, sway: 0) },
         Treasure(id: "aquarium/unicorn", game: "aquarium", price: 15, size: TreasureArt.unicornSize) { TreasureArt.unicorn($0) },
-        Treasure(id: "unicornstable/crown", game: "unicornstable", price: 8, size: CGSize(width: 96, height: 78)) { TreasureArt.stableGear($0, crown: true) },
-        Treasure(id: "unicornstable/wings", game: "unicornstable", price: 12, size: CGSize(width: 96, height: 78)) { TreasureArt.stableGear($0, crown: false) },
         Treasure(id: "dressup/h_moonband", game: "dressup", price: 10, size: CGSize(width: 110, height: 78)) { TreasureArt.moonBand($0) },
     ]
 
@@ -67,26 +65,6 @@ enum TreasureArt {
     private static func blob(_ g: GraphicsContext, _ p: Path, _ fill: Color, _ stroke: Color, _ w: CGFloat = 3) {
         g.fill(p, with: .color(fill))
         g.stroke(p, with: .color(stroke), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
-    }
-
-    static func stableGear(_ g: GraphicsContext, crown: Bool) {
-        if crown {
-            let points = [CGPoint(x: -42, y: -18), CGPoint(x: -47, y: -66), CGPoint(x: -21, y: -47),
-                          CGPoint(x: 0, y: -75), CGPoint(x: 21, y: -47), CGPoint(x: 47, y: -66), CGPoint(x: 42, y: -18)]
-            blob(g, poly(points), lemon, goldLine)
-            blob(g, oval(0, -39, 10, 13), pink, line)
-        } else {
-            for side in [CGFloat(-1), 1] {
-                let wing = Path { p in
-                    p.move(to: CGPoint(x: 0, y: -11))
-                    p.addCurve(to: CGPoint(x: side * 47, y: -73), control1: CGPoint(x: side * 33, y: -9), control2: CGPoint(x: side * 45, y: -38))
-                    p.addQuadCurve(to: CGPoint(x: side * 16, y: -45), control: CGPoint(x: side * 28, y: -65))
-                    p.addQuadCurve(to: CGPoint(x: 0, y: -11), control: CGPoint(x: side * 3, y: -42))
-                    p.closeSubpath()
-                }
-                blob(g, wing, mint, line)
-            }
-        }
     }
 
     static func moonBand(_ g: GraphicsContext) {

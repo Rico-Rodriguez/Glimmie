@@ -25,7 +25,10 @@ struct RootView: View {
                     .transition(.opacity)
             }
         }
-        .onAppear { _ = Sound.shared }
+        .onAppear {
+            GameStorage.removeRetiredGameSaves()
+            _ = Sound.shared
+        }
     }
 
     /// `-game <id>` on launch opens that game directly (used for simulator screenshots).

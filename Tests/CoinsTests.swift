@@ -61,14 +61,12 @@ final class CoinsTests: XCTestCase {
     func testTheFreeTraysStayWhole() {
         XCTAssertEqual(DecorKind.available.count, 8, "all the free garden decorations, no extras")
         XCTAssertEqual(AquaDecorKind.available.count, 12, "all the free tank decorations, no extras")
-        XCTAssertEqual(UnicornGear.available, [.none, .bow, .saddle])
         XCTAssertFalse(DressUpArt.shared.category("hat")?.availableItems.contains("h_moonband") ?? true)
     }
 
     func testEveryTreasureShowsUpInItsGameOnceBought() {
         let gameIDs = Set(GameRegistry.all.map(\.id))
         var inGames = Set(DecorKind.allCases.compactMap(\.treasure) + AquaDecorKind.allCases.compactMap(\.treasure))
-        inGames.formUnion(UnicornGear.allCases.compactMap(\.treasureID))
         inGames.formUnion(ArtCategory.treasureItems.values)
         XCTAssertEqual(Set(Treasures.all.map(\.id)).count, Treasures.all.count)
         for t in Treasures.all {
@@ -84,9 +82,6 @@ final class CoinsTests: XCTestCase {
         XCTAssertEqual(DecorKind.available.last, .unicorn)
         XCTAssertEqual(AquaDecorKind.available.count, 13)
         XCTAssertEqual(AquaDecorKind.available.last, .rainbowCoral)
-        XCTAssertTrue(Coins.shared.buy("unicornstable/crown", price: 8))
-        XCTAssertTrue(Coins.shared.buy("unicornstable/wings", price: 12))
-        XCTAssertEqual(UnicornGear.available, [.none, .bow, .saddle, .crown, .wings])
         XCTAssertTrue(Coins.shared.buy("dressup/h_moonband", price: 10))
         XCTAssertEqual(DressUpArt.shared.items["h_moonband"]?.category, "hat")
         XCTAssertTrue(DressUpArt.shared.category("hat")?.availableItems.contains("h_moonband") ?? false)

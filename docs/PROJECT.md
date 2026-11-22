@@ -58,7 +58,7 @@ history before the game-drawer PR.
 ## Play coins (shared by every game)
 - One purse for the whole app: `App/Sources/Shared/Coins.swift`, saved in `Application Support/Games/coins/purse.json`.
 - Rico, Nov 2026: shop customers pay her in play coins, and she spends them in a treasure shop on the home screen on
-  extras (unicorn gear, sparkly decorations, Dress Up pieces). Coins only add extras: every tray, tool and item that was
+  extras (sparkly decorations and Dress Up pieces). Coins only add extras: every tray, tool and item that was
   free stays free, nothing is locked behind coins, no real money, no timers.
 - Paying: `Coins.shared.earn(Coins.reward(stars: s), game: id, from: customerPoint)` (3 to 5 coins: every customer pays,
   a happier one a little more). Bakery pays when the treat is eaten, Ice Cream when the treat is eaten at the window,
@@ -68,8 +68,8 @@ history before the game-drawer PR.
   (`coin.wav`, and `till.wav` for the till; `python3 tools/coins/sounds.py`). The count goes up as each coin lands.
 - Buying: `Coins.shared.buy("<game>/<item>", price:)` (false if she hasn't enough), `Coins.shared.owns(id)`.
 - Treasure shop (`App/Sources/Shared/TreasureShop.swift`, items in `Treasures.swift`): tap the coin purse on the home
-  screen. Each extra has its game's tile and a price tag. Garden and Aquarium have three decorations each. Unicorn
-  Stable has a crown and wings, and Dress Up has a moon headband. Tap one
+  screen. Each extra has its game's tile and a price tag. Garden and Aquarium have three decorations each,
+  and Dress Up has a moon headband. Tap one
   she can afford and it's bought (green tick) and appears at the end of that game's decorations tray
   (for example, `DecorKind.available` and `ArtCategory.availableItems`). One she can't afford yet wiggles its tag. The drawings are in
   `TreasureArt`, shared by the shop and the games. To add an extra: an entry in `Treasures.all`, a drawing, and the
@@ -308,10 +308,3 @@ history before the game-drawer PR.
 - Saves `potionlab.json` (rack, the flask's volume and mixed color, what's in it, lamp, heat). Sounds:
   `python3 tools/potion/sounds.py`. Screenshot hooks: `-potionDemo mix | pour | shake | stir | boil | dip | unicorn | rare | night | hint`.
 - The screenshot workflow takes an `only` input (a name prefix like `potion`) to take just those screenshots.
-
-## Unicorn Stable
-
-- One customizable unicorn with separate coat, mane and horn colors. Appearance and current care progress live in `unicornstable/stable.json`. Older saves keep her appearance and start a new care round.
-- The stable uses the Pet Vet and Dress Up foal geometry, expression paths and care props. `tools/dressup/pets.py` packages articulated parts and paint roles in `dressup.json`. Head, mane, tail and hooves move independently, and care marks follow the same transforms as the body parts they sit on. The meadow and stable window use Dress Up scenery.
-- Pick a care tool and tap a highlighted spot, or drag the tool from its tray. Brush burrs out of the hair, lather and rinse each muddy spot, and feed two carrot bites. Completing a round awards three play coins.
-- Tap the meadow to stroll or visit marked spots. Each first visit adds a sticker and one play coin. Use `-game unicornstable -unicornMeadow` to launch in the meadow.

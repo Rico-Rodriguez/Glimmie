@@ -51,7 +51,8 @@ final class Coins {
     private init() {
         let s = GameStorage.load(Save.self, game: Coins.folder, file: "purse.json")
         balance = s?.balance ?? 0
-        owned = Set(s?.owned ?? [])
+        let savedItems = Set(s?.owned ?? [])
+        owned = savedItems.filter { !GameStorage.isRetiredGameRecord($0) }
         earned = s?.earned ?? 0
         demo = ProcessInfo.processInfo.arguments.contains("-coinsDemo")
         if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-coinsDemo"),
@@ -59,6 +60,7 @@ final class Coins {
            let n = Int(ProcessInfo.processInfo.arguments[i + 1]) {
             balance = n
         }
+        if owned != savedItems { save() }
     }
 
     /// A shop's pay for one served order: every customer pays, a happier one pays a little more (3 to 5 coins).
