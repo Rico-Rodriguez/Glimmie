@@ -45,24 +45,29 @@ final class PonyTackRig {
         let brass = finish(0xCE993D, gloss: 0.75)
         let muzzle = (0...32).map { i -> SIMD3<Float> in
             let t = Float(i) * .pi / 16
-            return SIMD3<Float>(1.412 + cos(t) * 0.081, 1.976 + cos(t) * 0.148, sin(t) * 0.18)
+            // The jaw is deeper below the noseband than above it. Use the sculpt's
+            // asymmetrical cross-section so the lower strap hugs the underside.
+            let radius = 0.1765 - 0.0575 * cos(t) + 0.0048 * cos(2 * t) + 0.0015 * cos(3 * t)
+            let rise = cos(t) * radius
+            return SIMD3<Float>(1.412 + 0.49 * rise, 1.954 + 0.872 * rise, sin(t) * radius)
         }
         line(muzzle, width: 0.020, material: leather, on: halter)
         for side in [-1 as Float, 1] {
-            let cheeks = [SIMD3<Float>(1.401, 1.982, side * 0.183),
-                          SIMD3<Float>(1.231, 2.072, side * 0.207),
-                          SIMD3<Float>(1.031, 2.145, side * 0.237),
-                          SIMD3<Float>(0.884, 2.185, side * 0.225),
-                          SIMD3<Float>(0.796, 2.363, side * 0.169),
-                          SIMD3<Float>(0.770, 2.433, side * 0.08)]
+            let cheeks = [SIMD3<Float>(1.412, 1.954, side * 0.170),
+                          SIMD3<Float>(1.231, 2.072, side * 0.214),
+                          SIMD3<Float>(1.031, 2.145, side * 0.271),
+                          SIMD3<Float>(0.884, 2.185, side * 0.260),
+                          SIMD3<Float>(0.796, 2.363, side * 0.194),
+                          SIMD3<Float>(0.746, 2.398, side * 0.138),
+                          SIMD3<Float>(0.731, 2.395, side * 0.076)]
             line(cheeks, width: 0.018, material: leather, on: halter)
             line(cheeks.map { $0 + SIMD3<Float>(0, 0.008, side * 0.018) },
                  width: 0.0026, material: stitch, on: halter)
             ring(at: cheeks[1], width: 0.027, height: 0.031, material: brass, on: halter)
             ring(at: cheeks[3], width: 0.022, height: 0.028, material: brass, on: halter)
         }
-        line([SIMD3<Float>(0.770, 2.433, -0.08), SIMD3<Float>(0.750, 2.451, 0),
-              SIMD3<Float>(0.770, 2.433, 0.08)], width: 0.019, material: leather, on: halter)
+        line([SIMD3<Float>(0.731, 2.395, -0.076), SIMD3<Float>(0.714, 2.395, 0),
+              SIMD3<Float>(0.731, 2.395, 0.076)], width: 0.019, material: leather, on: halter)
     }
 
     private func makeSaddle() {
