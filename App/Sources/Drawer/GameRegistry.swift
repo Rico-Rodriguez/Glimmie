@@ -38,7 +38,6 @@ enum GameRegistry {
         SpaGame.entry,
         AquariumGame.entry,
         PotionGame.entry,
-        UnicornGame.entry,
         SalonGame.entry,
         TidyGame.entry,
     ]

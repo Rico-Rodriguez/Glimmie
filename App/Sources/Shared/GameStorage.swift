@@ -2,6 +2,8 @@ import Foundation
 
 /// Each game's own save folder: Application Support/Games/<game id>/.
 enum GameStorage {
+    private static let retiredStableID = "unicornstable"
+
     static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("Games", isDirectory: true)
@@ -11,6 +13,17 @@ enum GameStorage {
         let url = root.appendingPathComponent(game, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    static func removeRetiredGameSaves(in root: URL = Self.root) {
+        // Older versions used different casing for their dedicated save folders.
+        for folder in [retiredStableID, "UnicornStable"] {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent(folder, isDirectory: true))
+        }
+    }
+
+    static func isRetiredGameRecord(_ id: String) -> Bool {
+        id.hasPrefix(retiredStableID + "/")
     }
 
     /// Reads a JSON file from a game's folder, or nil if it is missing or unreadable.
