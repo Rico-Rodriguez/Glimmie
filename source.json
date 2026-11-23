@@ -22,34 +22,10 @@
       ],
       "versions": [
         {
-          "version": "1.0.237",
-          "date": "2026-11-22T08:44:09Z",
-          "size": 207559610,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.237/Glimmie.ipa"
-        },
-        {
-          "version": "1.0.235",
-          "date": "2026-11-22T07:54:46Z",
-          "size": 207555978,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.235/Glimmie.ipa"
-        },
-        {
-          "version": "1.0.222",
-          "date": "2026-11-21T20:11:45Z",
-          "size": 207178742,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.222/Glimmie.ipa"
-        },
-        {
-          "version": "1.0.219",
-          "date": "2026-11-21T19:30:33Z",
-          "size": 218205128,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.219/Glimmie.ipa"
-        },
-        {
-          "version": "1.0.215",
-          "date": "2026-11-21T10:47:41Z",
-          "size": 207123874,
-          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.215/Glimmie.ipa"
+          "version": "1.0.240",
+          "date": "2026-11-23T05:20:33Z",
+          "size": 207029363,
+          "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.240/Glimmie.ipa"
         },
         {
           "version": "1.0.203",
@@ -82,10 +58,10 @@
           "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.195/Glimmie.ipa"
         }
       ],
-      "version": "1.0.237",
-      "versionDate": "2026-11-22T08:44:09Z",
-      "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.237/Glimmie.ipa",
-      "size": 207559610,
+      "version": "1.0.240",
+      "versionDate": "2026-11-23T05:20:33Z",
+      "downloadURL": "https://github.com/Rico-Rodriguez/Glimmie/releases/download/v1.0.240/Glimmie.ipa",
+      "size": 207029363,
       "appPermissions": {}
     }
   ],
