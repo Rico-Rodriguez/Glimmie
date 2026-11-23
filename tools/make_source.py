@@ -16,7 +16,12 @@ if os.path.exists('source.json'):
 # Keep each version to the fields Feather's own sample source uses (claration/feather app-repo.json).
 entry = {"version": version, "date": date, "size": size, "downloadURL": url}
 keep = ("version", "date", "size", "downloadURL")
-versions = [entry] + [{k: v[k] for k in keep if k in v} for v in old if v.get('version') != version][:9]
+# These builds include the retired game. Keep them out of the sideload feed.
+retired = {'1.0.215', '1.0.219', '1.0.222', '1.0.235', '1.0.237'}
+versions = [entry] + [
+    {k: v[k] for k in keep if k in v}
+    for v in old if v.get('version') not in retired | {version}
+][:9]
 
 source = {
     "name": "Glimmie",
