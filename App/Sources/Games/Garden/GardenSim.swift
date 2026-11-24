@@ -192,6 +192,7 @@ final class GardenSim {
     /// Animals dropping in (see GardenFinds).
     var visitors: [GVisitor] = []
     var nextVisit: Double = 7
+    var stamps: [GardenStamp] = []
     var basket: [String] = []
     var basketBounce: CGFloat = 0
     var basketBounceV: CGFloat = 0
@@ -238,6 +239,7 @@ final class GardenSim {
         case carrot(Int)
         case decor(Int)
     }
+    private var pickedThisStroke = Set<Int>()
     private var grab: Grab?
     private var grabStart = CGPoint.zero
     private var handP = CGPoint.zero
@@ -294,6 +296,7 @@ final class GardenSim {
             addDecor(d.kind, x: CGFloat(d.x), falling: false)
             decor[decor.count - 1].water = CGFloat(d.water)
         }
+        stamps = s.stamps ?? []
         basket = s.basket
         weather = s.weather
         rain = weather == .rain ? 1 : 0
@@ -309,7 +312,7 @@ final class GardenSim {
                    weeds: weeds.map { WeedSave(x: Double($0.x), growth: Double($0.growth), seed: $0.seed) },
                    decor: decor.map { DecorSave(kind: $0.kind, x: Double($0.x), water: Double($0.water)) },
                    basket: Array(basket.suffix(40)),
-                   weather: weather)
+                   weather: weather, stamps: stamps)
     }
 
     func save() {
@@ -663,6 +666,42 @@ final class GardenSim {
         if Int(time * 7.7) % 3 == 0 { GardenSound.shared.play(.seeds, volume: 0.35, gap: 0.25) }
     }
 
+    /// Direct sowing follows the six planting sites. A stroke can pass over existing plants safely.
+    func sowRow(_ kind: PlantKind, from a: CGPoint, to b: CGPoint) {
+        for i in plots.indices where plots[i].plant == nil {
+            let x = GGeo.plotX[i]
+            let dx = b.x - a.x
+            let t = abs(dx) < 1 ? 1 : min(1, max(0, (x - a.x) / dx))
+            let px = a.x + dx * t, py = a.y + (b.y - a.y) * t
+            guard abs(px - x) < 64, abs(py - surface(x)) < 86 else { continue }
+            if !hasHole(plot: i) { carveHole(plot: i) }
+            plant(kind, plot: i)
+            waterBed(at: x, amount: 0.20)
+        }
+    }
+
+    private func waterBed(at x: CGFloat, amount: CGFloat) {
+        for offset in -5...5 {
+            water(at: x + CGFloat(offset) * GGeo.col, amount: amount)
+        }
+    }
+
+    func waterPlant(at point: CGPoint) {
+        guard GGeo.inBed(point.x) else { return }
+        guard let plot = plots.indices.min(by: { abs(GGeo.plotX[$0] - point.x) < abs(GGeo.plotX[$1] - point.x) }) else { return }
+        let x = GGeo.plotX[plot]
+        let ground = surface(x)
+        let top = head(plot: plot)?.y ?? ground
+        guard point.y >= top - 80, point.y <= ground + 86 else { return }
+        waterBed(at: x, amount: 0.42)
+        plots[plot].popV += 3
+        for _ in 0..<12 {
+            particles.append(GParticle(kind: .water, p: CGPoint(x: x + CGFloat.random(in: -20...20), y: top - 48),
+                                       v: CGVector(dx: 0, dy: 160), life: 2, size: 3, color: GRGB(0x8AD8FF)))
+        }
+        GardenSound.shared.play(.splash, volume: 0.55, gap: 0.1)
+    }
+
     // MARK: Planting
 
     func plant(_ kind: PlantKind, plot i: Int) {
@@ -743,7 +782,7 @@ final class GardenSim {
 
     func water(at x: CGFloat, amount: CGFloat) {
         guard GGeo.inBed(x) else { return }
-        let c = GGeo.column(x)
+        let c = min(wet.count - 1, GGeo.column(x))
         wet[c] = min(1.15, wet[c] + amount)
         if c > 0 { wet[c - 1] = min(1.15, wet[c - 1] + amount * 0.5) }
         if c < GGeo.columns - 1 { wet[c + 1] = min(1.15, wet[c + 1] + amount * 0.5) }
@@ -780,7 +819,7 @@ final class GardenSim {
             plots[i].sad = weedy
             if p.growth < 1 {
                 if moist > 0.1 {
-                    var rate: Double = 1.0 / 26
+                    var rate: Double = 1.0 / 17
                     if weather == .sun { rate *= 1.35 }
                     if weather == .night { rate *= 0.7 }
                     if weedy { rate *= 0.5 }
@@ -1079,9 +1118,7 @@ final class GardenSim {
                 keep.append(f)
                 continue
             }
-            if f.toBasket, case .crop(let k, let v) = f.kind {
-                basket.append("\(k.rawValue):\(v)")
-                if basket.count > 60 { basket.removeFirst(basket.count - 60) }
+            if f.toBasket {
                 basketBounceV += 9
                 GardenSound.shared.play(.basket, volume: 0.9)
                 Sound.shared.play(.ding, volume: 0.35)
@@ -1113,6 +1150,8 @@ final class GardenSim {
         case .carrot: from = CGPoint(x: base.x, y: base.y + 10)
         default: break
         }
+        basket.append("\(p.kind.rawValue):\(p.variant)")
+        if basket.count > 60 { basket.removeFirst(basket.count - 60) }
         p.left -= 1
         let dur = 0.75 + Double(abs(GGeo.basket.x - from.x)) / 2400
         flyers.append(GFlyer(kind: .crop(p.kind, p.variant), p0: from,
@@ -1153,6 +1192,7 @@ final class GardenSim {
     // MARK: The bare hand
 
     func handBegan(_ p: CGPoint) {
+        pickedThisStroke.removeAll(keepingCapacity: true)
         handDown = true
         handP = p
         handLast = p
@@ -1190,8 +1230,8 @@ final class GardenSim {
     }
 
     func handMoved(_ p: CGPoint, dt: CGFloat = 1.0 / 60) {
-        let vx = (p.x - handLast.x) / max(dt, 0.001)
-        let vy = (p.y - handLast.y) / max(dt, 0.001)
+        let vx = (p.x - handP.x) / max(dt, 0.001)
+        let vy = (p.y - handP.y) / max(dt, 0.001)
         handV = CGVector(dx: vx, dy: vy)
         handLast = handP
         handP = p
@@ -1257,11 +1297,20 @@ final class GardenSim {
     /// A finger brushing through the garden pushes plants, startles bugs.
     private func brush(from a: CGPoint, to b: CGPoint) {
         let dx = b.x - a.x
+        let sweep = abs(b.x - grabStart.x) > 24
         for i in plots.indices {
             guard let pl = plots[i].plant else { continue }
             let x = GGeo.plotX[i]
             let base = surface(x)
             let top = base - GardenPlants.stemHeight(pl) - 30
+            if sweep && pl.kind != .carrot && pl.growth >= 1 && pl.left > 0 && !pickedThisStroke.contains(i) {
+                let t = abs(dx) > 1 ? min(1, max(0, (x - a.x) / dx)) : 1
+                let y = a.y + (b.y - a.y) * t
+                if abs(a.x + dx * t - x) < pl.kind.reach && y >= top && y <= base {
+                    pickedThisStroke.insert(i)
+                    harvest(i)
+                }
+            }
             if abs(b.x - x) < pl.kind.reach + 10 && b.y > top && b.y < base + 4 {
                 let leverage = (base - b.y) / max(40, base - top)
                 plots[i].bendV += dx * 0.05 * (0.4 + leverage)
