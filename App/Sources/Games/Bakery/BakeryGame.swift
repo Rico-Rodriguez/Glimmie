@@ -22,6 +22,7 @@ enum BakeryGame {
 struct BakeryGameView: View {
     let exit: () -> Void
     @StateObject private var store = BakeryStore()
+    @State private var dessertStation: ICStation?
     @State private var making: Treat?
     @State private var ready: Treat?
     @State private var startStep = 0
@@ -37,17 +38,30 @@ struct BakeryGameView: View {
                             onShop: { withAnimation(.easeInOut(duration: 0.35)) { making = nil } })
                     .transition(.opacity)
             } else {
-                ShopView(store: store, ready: $ready, order: $order, exit: exit) { kind in
+                ShopView(store: store, ready: $ready, order: $order, exit: exit, openStation: openStation) { kind in
                     BakerySound.shared.play(.plop)
                     Sound.shared.tap()
                     startStep = 0
                     withAnimation(.easeInOut(duration: 0.35)) { making = Treat(kind: kind) }
                 }
+                .opacity(dessertStation == nil ? 1 : 0)
+                .allowsHitTesting(dessertStation == nil)
+                .accessibilityHidden(dessertStation != nil)
                 .transition(.opacity)
+            }
+            if let station = dessertStation {
+                IceCreamView(station: station, bakery: store, exit: { openStation(nil) })
+                    .id(station)
+                    .transition(.opacity)
             }
         }
         .onAppear(perform: applyLaunchArguments)
         .onDisappear { store.save() }
+    }
+
+    private func openStation(_ station: ICStation?) {
+        Sound.shared.play(.whoosh, volume: 0.6)
+        withAnimation(.easeInOut(duration: 0.3)) { dessertStation = station }
     }
 
     /// Simulator screenshot hooks: -bakeryDecorate <cake|cupcake|iceCream>, -bakeryServe, -bakeryStep <n>.
@@ -64,6 +78,7 @@ struct BakeryGameView: View {
             if n > 0 { t = Treat.sample(k, seed: 2); t.toppings = []; if k == .cake { t.frosting = nil }; if k == .cupcake { t.frostStage = 0 } }
             making = t
         }
+        if args.contains("-iceDemo") { dessertStation = .soft }
         if args.contains("-bakeryServe") { ready = Treat.sample(.cake, seed: 9) }
         if args.contains("-bakeryRated") {
             // the exact order, served: three stars
@@ -81,6 +96,7 @@ struct ShopView: View {
     @Binding var ready: Treat?
     @Binding var order: BakeryOrder
     let exit: () -> Void
+    let openStation: (ICStation) -> Void
     let make: (TreatKind) -> Void
 
     private enum Phase { case arriving, waiting, eating, happy, leaving }
@@ -215,6 +231,10 @@ struct ShopView: View {
     private var topBar: some View {
         HStack(spacing: 18) {
             HomeButton { store.save(); exit() }
+            RoundButton(symbol: "snowflake", tint: Color(hex: 0x9B79E0)) { openStation(.soft) }
+                .accessibilityLabel("Soft Serve")
+            RoundButton(symbol: "cup.and.saucer.fill", tint: Color(hex: 0x46B7B0)) { openStation(.smoothie) }
+                .accessibilityLabel("Smoothie Bar")
             Spacer()
             CoinCounter(game: "bakery")
             ZStack(alignment: .bottomTrailing) {

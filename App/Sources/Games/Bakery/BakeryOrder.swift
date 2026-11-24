@@ -29,7 +29,7 @@ struct BakeryOrder: Equatable {
         let kind = TreatKind.allCases[r.int(TreatKind.allCases.count)]
         // frosting colors 0 and 1 are white and cream: hard to tell apart on a white card, so orders skip them
         return BakeryOrder(customer: customer, kind: kind,
-                           flavor: r.int(BakeryPalette.flavors.count),
+                           flavor: r.int(kind == .iceCream ? BakeryPalette.scoopFlavors.count : BakeryPalette.flavors.count),
                            frosting: 2 + r.int(BakeryPalette.frostings.count - 2),
                            cone: BakeryPalette.cones[r.int(BakeryPalette.cones.count)],
                            topping: toppings[r.int(toppings.count)])

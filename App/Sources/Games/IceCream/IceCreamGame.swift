@@ -1,62 +1,10 @@
 import SwiftUI
 
-// MARK: - Ice Cream & Smoothie Shop (a game in the drawer)
-//
-// An ice cream parlor with a serving window. Animal customers come to the window dreaming of one treat (the picture
-// card above them) and she makes it at three stations: the scoop cabinet (dig the dipper through a tub until the
-// ball is big, drop it on a cone), the soft-serve machine (hold a handle and the swirl coils up as the stand turns)
-// and the smoothie bar (fruit and ice into the blender, hold the button, then carry the jar to the glass and it
-// pours). Toppings from the shelf at the bottom: shake the sprinkles, squeeze sauce that runs down, whipped cream,
-// a cherry, a wafer, a straw. Ring the bell to serve. Nothing to read, no voice, nothing locked.
-//
-// Code: IceCreamSim (+ Soft, Blender) is the simulation, IceCreamBuild what's on the stand, IceCreamScene and
-// IceCreamTreatArt the drawing, this file the screen. Sounds: tools/icecream/sounds.py. Saves: shop.json.
-// The customers are the Bakery's animals (its art file), so the two shops share their regulars.
-
-enum IceCreamGame {
-    static let entry = GameEntry(
-        id: IceSim.gameID,
-        title: "Ice Cream",
-        tint: Color(hex: 0xFFB8D6),
-        icon: { AnyView(IceTileIcon()) },
-        play: { exit in AnyView(IceCreamView(exit: exit)) }
-    )
-}
-
-private struct IceTileIcon: View {
-    var body: some View {
-        Canvas { ctx, size in
-            var g = ctx
-            let k = size.width / 300
-            g.scaleBy(x: k, y: k)
-            var cone = ICBuild()
-            cone.base = .waffle
-            cone.scoops = [ICScoop(id: 1, flavor: .strawberry, swirl: nil, r: 44, dx: 0, h: 26),
-                           ICScoop(id: 2, flavor: .mint, swirl: nil, r: 40, dx: 4, h: 84)]
-            cone.cherry = ICBody(dx: 6, h: 132, vx: 0, vh: 0, resting: true)
-            var a = g
-            a.translateBy(x: 112, y: 150)
-            a.scaleBy(x: 0.82, y: 0.82)
-            ICArt.drawBuild(a, cone, at: .zero, time: 0)
-            var glass = ICBuild()
-            glass.base = .glass
-            glass.layers = [ICLayer(top: 0.5, color: ICColor(0xFFAA2E)), ICLayer(top: 0.9, color: ICColor(0xEE6A8C))]
-            glass.straw = ICStick(dx: 14, h: -118, angle: 0.22)
-            var b = g
-            b.translateBy(x: 216, y: 150)
-            b.scaleBy(x: 0.62, y: 0.62)
-            ICArt.drawBuild(b, glass, at: .zero, time: 0)
-        }
-    }
-}
-
-// MARK: - The screen
-
+// Bakery's soft-serve machine and smoothie bar share this serving window.
 final class IceHand {
     enum Mode { case none, held, lever, blend, tickle, bin(Int) }
     var mode: Mode = .none
     var active = false
-    var startAt = Date()
     var start = CGPoint.zero
     /// The lifted thing's offset from her finger, eased so it glides up instead of jumping.
     var offset = CGSize.zero
@@ -127,15 +75,26 @@ private struct ICDockPlate: View, Equatable {
 }
 
 struct IceCreamView: View {
+    let initialStation: ICStation
+    @ObservedObject var bakery: BakeryStore
     let exit: () -> Void
+
+    init(station: ICStation, bakery: BakeryStore, exit: @escaping () -> Void) {
+        initialStation = station
+        self.bakery = bakery
+        self.exit = exit
+        _station = State(initialValue: station)
+    }
 
     private enum Phase { case arriving, waiting, eating, happy, leaving }
 
     @State private var sim = IceSim()
-    @State private var station: ICStation = .scoop
+    @State private var station: ICStation
     @State private var hand = IceHand()
+    @GestureState private var handDown = false
+    @GestureState private var toppingDown = false
     @State private var tray = false
-    @State private var order = ICOrder.random(customer: Int.random(in: 0..<BakeryPalette.customers.count))
+    @State private var order = ICOrder.random(customer: 0, kind: .soft)
     @State private var picture = ICBuild()
     @State private var phase: Phase = .arriving
     @State private var custX: CGFloat = 520
@@ -143,14 +102,11 @@ struct IceCreamView: View {
     @State private var mouth = "smile"
     @State private var bob = false
     @State private var stars: Int?
-    @State private var hearts = 0
     @State private var floating = 0
     @State private var jarBounce = false
     @State private var carrying: ICTopping?
     @State private var started = false
     @State private var demoServe = false
-    /// A quick tap in a tub: the dipper scoops a ball there by itself and puts it on the treat (see `ToolTap`).
-    @State private var auto = AutoTool()
 
     static let toppings: [ICTopping] = ICTopping.allCases
 
@@ -178,7 +134,7 @@ struct IceCreamView: View {
                 .gesture(handGesture(map))
                 controls(map)
                     .frame(width: 1024, height: 834)
-                    .coinPurse(game: IceSim.gameID)
+                    .coinPurse(game: BakeryStore.game)
                     .scaleEffect(map.s)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
@@ -187,6 +143,19 @@ struct IceCreamView: View {
         .ignoresSafeArea()
         .onAppear(perform: start)
         .onDisappear { IceSound.shared.stopLoops() }
+        .onChange(of: handDown) { down in
+            if !down && hand.active {
+                sim.cancelInteraction()
+                hand.mode = .none
+                hand.active = false
+            }
+        }
+        .onChange(of: toppingDown) { down in
+            if !down && carrying != nil {
+                sim.cancelInteraction()
+                carrying = nil
+            }
+        }
         .task { await blinkLoop() }
     }
 
@@ -194,7 +163,8 @@ struct IceCreamView: View {
         guard !started else { return }
         started = true
         _ = IceSound.shared
-        hearts = sim.store.hearts
+        sim.setStation(initialStation)
+        order = ICOrder.random(customer: Int.random(in: 0..<BakeryPalette.customers.count), kind: kindFor(station))
         picture = order.picture()
         applyLaunchArguments()
         if !demoServe { arrive() }
@@ -204,6 +174,7 @@ struct IceCreamView: View {
 
     private func handGesture(_ map: ICMap) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("ice"))
+            .updating($handDown) { _, down, _ in down = true }
             .onChanged { v in
                 let p = map.design(v.location)
                 if !hand.active {
@@ -214,26 +185,24 @@ struct IceCreamView: View {
                 }
             }
             .onEnded { v in
+                guard hand.active else { return }
                 let p = map.design(v.location)
                 let dist = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y) / map.s
-                let tap = dist < 14 && Date().timeIntervalSince(hand.startAt) < 0.4
+                let tap = dist < 14
                 ended(p, tap: tap)
                 hand.active = false
             }
     }
 
     private func began(_ p: CGPoint) {
-        if auto.running { auto.cancel() }
-        hand.startAt = Date()
+        guard carrying == nil, sim.held == nil else {
+            hand.active = false
+            return
+        }
         hand.start = p
         tray = false
         switch sim.station {
-        case .scoop:
-            let cabinet = CGRect(x: 20, y: 370, width: 490, height: 300)
-            if cabinet.contains(p) {
-                grab(.scoop, at: p, from: ICGeo.well)
-                return
-            }
+        case .scoop: break
         case .soft:
             // the big flavor buttons: anywhere on one (and a little round it) works
             for (i, c) in ICGeo.softButtons.enumerated() where hypot(p.x - c.x, p.y - c.y) < ICGeo.softButtonR + 12 {
@@ -299,7 +268,8 @@ struct IceCreamView: View {
     private func ended(_ p: CGPoint, tap: Bool) {
         switch hand.mode {
         case .held:
-            if tap, case .scoop? = sim.held { autoScoop(at: p) } else { sim.release() }
+            moved(p)
+            sim.release()
         case .lever: sim.pressLever(nil)
         case .blend:
             sim.blending = false
@@ -308,17 +278,6 @@ struct IceCreamView: View {
         default: break
         }
         hand.mode = .none
-    }
-
-    /// The dipper rubs round in the tub she tapped until it has a ball, then carries it over the treat and
-    /// lets it drop on (or back to its well when there's no cone yet).
-    private func autoScoop(at p: CGPoint) {
-        let s = sim
-        let a = auto
-        a.run(from: p, to: p, step: { q in s.carry(to: q, finger: q) }, end: { q in
-            let over = CGPoint(x: s.S.x, y: s.S.y - 130)
-            a.run(from: q, to: over, step: { r in s.carry(to: r, finger: r) }, end: { _ in s.release() })
-        })
     }
 
     /// Where a held thing goes for her finger at p. The dipper works just ahead of her finger, held by its handle; pourers and carried things sit above.
@@ -342,23 +301,18 @@ struct IceCreamView: View {
 
     private func controls(_ map: ICMap) -> some View {
         ZStack {
-            HomeButton {
-                IceSound.shared.stopLoops()
-                exit()
-            }
-            .position(x: 62, y: 60)
-            HStack(spacing: 16) {
-                ForEach(ICStation.allCases, id: \.self) { s in
-                    stationButton(s)
-                }
-            }
-            .position(x: 316, y: 60)
+            RoundButton(symbol: "arrow.left") { exit() }
+                .accessibilityLabel("Back to Bakery")
+                .disabled(phase == .eating)
+                .position(x: 62, y: 60)
             RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x46B7B0), size: 64) {
                 Sound.shared.play(.whoosh, volume: 0.6)
                 sim.clearStand()
+                carrying = nil
+                tray = false
             }
             .position(x: 690, y: 60)
-            CoinCounter(game: IceSim.gameID, height: 64)
+            CoinCounter(game: BakeryStore.game, height: 64)
                 .position(x: 836, y: 58)
             heartJar.position(x: 960, y: 56)
             if phase == .waiting || phase == .happy {
@@ -372,61 +326,6 @@ struct IceCreamView: View {
             dock(map)
             if tray { baseTray.transition(.move(edge: .bottom).combined(with: .opacity)) }
         }
-    }
-
-    private func stationButton(_ s: ICStation) -> some View {
-        let on = station == s
-        let wantedHere = phase == .waiting && order.kind == kindFor(s)
-        return Button {
-            guard sim.held == nil else { return }
-            Sound.shared.tap()
-            Sound.shared.play(.pop, volume: 0.6)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { station = s }
-            sim.setStation(s)
-        } label: {
-            ZStack {
-                Circle().fill(.white)
-                Canvas { ctx, size in
-                    var g = ctx
-                    g.translateBy(x: size.width / 2, y: size.height / 2)
-                    var b = ICBuild()
-                    switch s {
-                    case .scoop:
-                        b.base = .waffle
-                        b.scoops = [ICScoop(id: 3, flavor: .strawberry, swirl: nil, r: 44, dx: 0, h: 26)]
-                        g.translateBy(x: 0, y: -12)
-                        g.scaleBy(x: 0.34, y: 0.34)
-                    case .soft:
-                        b.base = .waffle
-                        b.rope = ICBuild.sampleSwirl(.twist, floor: -8)
-                        g.translateBy(x: 0, y: -4)
-                        g.scaleBy(x: 0.3, y: 0.3)
-                    case .smoothie:
-                        b.base = .glass
-                        b.layers = [ICLayer(top: 0.85, color: ICColor(0xEE6A8C))]
-                        b.straw = ICStick(dx: 14, h: -118, angle: 0.22)
-                        g.translateBy(x: 0, y: -18)
-                        g.scaleBy(x: 0.3, y: 0.3)
-                    }
-                    ICArt.drawBuild(g, b, at: .zero, time: 0)
-                }
-            }
-            .frame(width: 78, height: 78)
-            .overlay(Circle().stroke(on ? Theme.pink : Theme.pink.opacity(0.25), lineWidth: on ? 6 : 3))
-            .scaleEffect(on ? 1.1 : 0.94)
-            .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
-            .overlay(alignment: .topTrailing) {
-                if wantedHere && !on {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 18, weight: .black))
-                        .foregroundStyle(Theme.pink)
-                        .padding(5)
-                        .background(Circle().fill(.white))
-                        .offset(x: 6, y: -6)
-                }
-            }
-        }
-        .buttonStyle(Squish())
     }
 
     private func kindFor(_ s: ICStation) -> ICKind {
@@ -445,7 +344,7 @@ struct IceCreamView: View {
                 .frame(width: 76, height: 76)
                 .background(Circle().fill(.white))
                 .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
-            Text("\(hearts)")
+            Text("\(bakery.hearts)")
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 9).padding(.vertical, 2)
@@ -479,14 +378,16 @@ struct IceCreamView: View {
 
     private func dock(_ map: ICMap) -> some View {
         ZStack {
-            ICDockPlate(topping: nil, open: tray, wanted: phase == .waiting && sim.build.base != order.base)
-                .equatable()
-                .position(x: 78, y: ICGeo.dockY)
-                .onTapGesture {
-                    Sound.shared.tap()
-                    Sound.shared.play(.pop, volume: 0.6)
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray.toggle() }
-                }
+            if station != .smoothie {
+                ICDockPlate(topping: nil, open: tray, wanted: phase == .waiting && sim.build.base != order.base)
+                    .equatable()
+                    .position(x: 78, y: ICGeo.dockY)
+                    .onTapGesture {
+                        Sound.shared.tap()
+                        Sound.shared.play(.pop, volume: 0.6)
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray.toggle() }
+                    }
+            }
             ForEach(Array(IceCreamView.toppings.enumerated()), id: \.offset) { i, t in
                 let spot = CGPoint(x: 188 + CGFloat(i) * 98, y: ICGeo.dockY)
                 ICDockPlate(topping: t, open: false, wanted: phase == .waiting && order.topping == t)
@@ -516,10 +417,11 @@ struct IceCreamView: View {
 
     private func toppingGesture(_ t: ICTopping, spot: CGPoint, map: ICMap) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("ice"))
+            .updating($toppingDown) { _, down, _ in down = true }
             .onChanged { v in
                 let p = map.design(v.location)
                 if carrying == nil {
-                    guard sim.held == nil else { return }
+                    guard !hand.active, sim.held == nil, sim.lever == nil, !sim.blending else { return }
                     carrying = t
                     tray = false
                     sim.dockHome[t] = spot
@@ -540,9 +442,11 @@ struct IceCreamView: View {
                     sim.held = nil
                     sim.autoTopping(t)
                 } else {
+                    let p = map.design(v.location)
+                    if let h = sim.held { sim.carry(to: IceCreamView.lifted(p, h), finger: p) }
                     sim.release()
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { if carrying == t { carrying = nil } }
+                carrying = nil
             }
     }
 
@@ -552,9 +456,9 @@ struct IceCreamView: View {
                 .fill(.white.opacity(0.95))
                 .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(Theme.pink.opacity(0.5), lineWidth: 4))
                 .shadow(color: Theme.ink.opacity(0.25), radius: 10, y: 6)
-                .frame(width: 4 * 108 + 24, height: 150)
+                .frame(width: 3 * 108 + 24, height: 150)
             HStack(spacing: 8) {
-                ForEach(ICBase.allCases, id: \.self) { b in
+                ForEach(ICBase.allCases.filter { $0 != .glass }, id: \.self) { b in
                     Button {
                         Sound.shared.tap()
                         sim.placeBase(b)
@@ -629,7 +533,9 @@ struct IceCreamView: View {
     private func serve() {
         IceSound.shared.play(.bell, volume: 0.8)
         Sound.shared.tap()
-        guard phase == .waiting, sim.held == nil, let b = sim.serve() else { return }
+        guard phase == .waiting, let b = sim.serve() else { return }
+        let s = order.stars(for: b)
+        if !demoServe { bakery.earnHearts(s) }
         phase = .eating
         eyes = "happy"
         mouth = "open"
@@ -643,15 +549,12 @@ struct IceCreamView: View {
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
-            let s = order.stars(for: b)
             sim.served = nil
-            sim.addHearts(s)
             // the customer pays at the window: coins hop out and fly into the purse
-            Coins.shared.earn(Coins.reward(stars: s), game: IceSim.gameID, from: CGPoint(x: ICGeo.customer.x, y: ICGeo.customer.y - 20))
+            Coins.shared.earn(Coins.reward(stars: s), game: BakeryStore.game, from: CGPoint(x: ICGeo.customer.x, y: ICGeo.customer.y - 20))
             withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
                 stars = s
                 phase = .happy
-                hearts = sim.store.hearts
             }
             eyes = s == 3 ? "star" : "happy"
             mouth = "open"
@@ -674,7 +577,7 @@ struct IceCreamView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             var next = Int.random(in: 0..<BakeryPalette.customers.count)
             if next == order.customer { next = (next + 1) % BakeryPalette.customers.count }
-            order = ICOrder.random(customer: next)
+            order = ICOrder.random(customer: next, kind: kindFor(station))
             picture = order.picture()
             phase = .arriving
             arrive()
@@ -701,13 +604,15 @@ struct IceCreamView: View {
         guard let i = args.firstIndex(of: "-iceDemo"), i + 1 < args.count else { return }
         sim.demo = true
         Coins.shared.demo = true
-        order = ICOrder.random(customer: 1, seed: 21)
+        order = ICOrder.random(customer: 1, seed: 21, kind: kindFor(station))
         picture = order.picture()
         let what = args[i + 1]
         let dt: CGFloat = 1.0 / 60
         func run(_ seconds: CGFloat) { for _ in 0..<Int(seconds * 60) { sim.step(dt: dt) } }
         switch what {
         case "scoop":
+            station = .scoop
+            sim.setStation(.scoop)
             sim.placeBase(.waffle)
             sim.dropScoop(flavor: .strawberry, swirl: nil, size: 1, dx: 0, fromY: 300)
             run(1.2)
@@ -753,6 +658,8 @@ struct IceCreamView: View {
             }
             sim.frozen = true
         case "sundae":
+            station = .scoop
+            sim.setStation(.scoop)
             sim.placeBase(.choco)
             for (k, f) in [ICFlavor.chocolate, .vanilla, .strawberry].enumerated() {
                 sim.dropScoop(flavor: f, swirl: k == 1 ? .blueberry : nil, size: 1 - CGFloat(k) * 0.15, dx: 0, fromY: 200)

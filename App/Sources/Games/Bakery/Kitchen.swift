@@ -196,7 +196,8 @@ struct FlavorJar: View {
     let sprite: String
     let flavor: Int
     var body: some View {
-        let f = BakeryPalette.flavors[flavor]
+        let flavors = sprite == "tub" ? BakeryPalette.scoopFlavors : BakeryPalette.flavors
+        let f = flavors[flavor]
         GeometryReader { geo in
             let s = geo.size.width / 160
             ZStack {
@@ -1130,13 +1131,13 @@ struct ScoopStepView: View {
     @State private var bounce = false
     @State private var burst = 0
 
-    private func spot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 660, y0: 250, dx: 108, dy: 150) }
+    private func spot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 640, y0: 208, dx: 105, dy: 123) }
 
     var body: some View {
         ZStack {
             StageTreat(treat: treat, bounce: bounce)
             SparkleBurst(count: 10, radius: 180).id(burst).position(KStage.design(CGPoint(x: 300, y: topY)))
-            ForEach(0..<BakeryPalette.flavors.count, id: \.self) { i in
+            ForEach(0..<BakeryPalette.scoopFlavors.count, id: \.self) { i in
                 PickPlate(selected: false, size: 96, tap: { scoop(i) }) {
                     FlavorJar(sprite: "tub", flavor: i).padding(6)
                 }
@@ -1150,13 +1151,26 @@ struct ScoopStepView: View {
                     .transition(.scale)
             }
             if let f = flying {
-                Sprite("scoop", color: BakeryPalette.flavors[f].color, box: CGRect(x: -110, y: -100, width: 220, height: 150))
+                Sprite("scoop", color: BakeryPalette.scoopFlavors[f].color, box: CGRect(x: -110, y: -100, width: 220, height: 150))
                     .frame(width: 205, height: 140)
                     .position(flyAt)
                     .allowsHitTesting(false)
             }
         }
         .onAppear { if !treat.scoops.isEmpty { done = true } }
+        .task(id: flying) {
+            guard let flavor = flying else { return }
+            do { try await Task.sleep(for: .milliseconds(400)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            treat.scoops.append(flavor)
+            flying = nil
+            BakerySound.shared.play(.scoop)
+            BakerySound.shared.play(.freeze, volume: 0.5)
+            bounceOnce($bounce)
+            burst += 1
+            withAnimation(.spring()) { done = true }
+        }
     }
 
     private var topY: CGFloat {
@@ -1174,22 +1188,14 @@ struct ScoopStepView: View {
         Sound.shared.tap()
         let art = BakeryArt.shared
         let target = KStage.design(CGPoint(x: 300, y: art.scoopY0 - CGFloat(treat.scoops.count) * art.scoopDY - 12))
+        done = false
         flying = i
         flyAt = spot(i)
         withAnimation(.easeIn(duration: 0.4)) { flyAt = target }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-            flying = nil
-            treat.scoops.append(i)
-            BakerySound.shared.play(.scoop)
-            BakerySound.shared.play(.freeze, volume: 0.5)
-            bounceOnce($bounce)
-            burst += 1
-            withAnimation(.spring()) { done = true }
-        }
     }
 
     private func undo() {
-        guard !treat.scoops.isEmpty else { return }
+        guard flying == nil, !treat.scoops.isEmpty else { return }
         Sound.shared.play(.whoosh, volume: 0.6)
         Sound.shared.tap()
         withAnimation(.spring(response: 0.3)) {

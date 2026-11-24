@@ -27,6 +27,10 @@ enum BakeryPalette {
         Flavor(color: RGB(hex: "#F3F0EC"), chips: 2, icon: "top_cookie"),      // cookies and cream
     ]
 
+    static let scoopFlavors = flavors + [
+        Flavor(color: RGB(hex: "#FFC55C"), chips: 0, icon: "top_orange"),      // mango
+    ]
+
     static let frostings: [RGB] = ["#FFFFFF", "#FFF3DC", "#FFB3CC", "#FF7AAE", "#D2C0FF", "#A98BE6",
                                    "#A9D8FF", "#7FB0F0", "#A8E8CF", "#FFE27A", "#FFC2A0", "#8A5A44"].map { RGB(hex: $0) }
 
@@ -139,6 +143,7 @@ struct SeededRandom {
 struct BakerySave: Codable {
     var hearts = 0
     var served: [Treat] = []
+    var importedIceCreamHearts: Bool?
 }
 
 final class BakeryStore: ObservableObject {
@@ -150,8 +155,10 @@ final class BakeryStore: ObservableObject {
 
     init() {
         let s = GameStorage.load(BakerySave.self, game: BakeryStore.game, file: "bakery.json") ?? BakerySave()
-        hearts = s.hearts
+        let needsImport = s.importedIceCreamHearts != true
+        hearts = s.hearts + (needsImport ? ICStorage.load().hearts : 0)
         served = s.served
+        if needsImport { save() }
     }
 
     /// Serves a treat; the customer's stars go into the heart jar.
@@ -162,8 +169,13 @@ final class BakeryStore: ObservableObject {
         save()
     }
 
+    func earnHearts(_ earned: Int) {
+        hearts += earned
+        save()
+    }
+
     func save() {
-        GameStorage.save(BakerySave(hearts: hearts, served: served), game: BakeryStore.game, file: "bakery.json")
+        GameStorage.save(BakerySave(hearts: hearts, served: served, importedIceCreamHearts: true), game: BakeryStore.game, file: "bakery.json")
     }
 }
 

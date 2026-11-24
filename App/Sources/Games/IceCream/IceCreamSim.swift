@@ -208,7 +208,6 @@ final class IceSim {
     var demo = false
     /// Screenshot hooks freeze the shop mid-action.
     var frozen = false
-    var store = ICStorage.load()
 
     init() {
         S.y = standTarget().y
@@ -284,10 +283,16 @@ final class IceSim {
 
     /// Clears the stand to start a new treat.
     func clearStand() {
+        cancelInteraction()
         build = ICBuild()
+        baseDrop = nil
+        parts.removeAll()
         resetSoft()
         profileDirty = true
-        if station == .smoothie { placeBase(.glass) }
+        if station == .smoothie {
+            resetBlender()
+            placeBase(.glass)
+        }
     }
 
     // MARK: Picking up and carrying
@@ -339,6 +344,17 @@ final class IceSim {
         }
         scoopIn = nil
         scraping = 0
+    }
+
+    func cancelInteraction() {
+        if held == .jar { releaseJar() }
+        held = nil
+        pressLever(nil)
+        blending = false
+        milkPour = 0
+        milkTilt = 0
+        stream.removeAll()
+        whipSession = nil
     }
 
     var dockHome: [ICTopping: CGPoint] = [:]
@@ -798,14 +814,15 @@ final class IceSim {
 
     /// Hands the treat to the customer; it slides off the stand.
     func serve() -> ICBuild? {
-        guard build.hasTreat else { return nil }
+        guard build.hasTreat, held == nil, lever == nil, !blending else { return nil }
         let b = build
         served = (b, S, time)
         bites = 0
+        parts.removeAll()
+        baseDrop = nil
         build = ICBuild()
         resetSoft()
         profileDirty = true
-        store.served += 1
         if station == .smoothie {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 guard let self = self, self.build.base == nil, self.station == .smoothie else { return }
@@ -813,11 +830,6 @@ final class IceSim {
             }
         }
         return b
-    }
-
-    func addHearts(_ n: Int) {
-        store.hearts += n
-        if !demo { ICStorage.save(store) }
     }
 
     /// Where the served treat is now (it slides to the customer's paws).
