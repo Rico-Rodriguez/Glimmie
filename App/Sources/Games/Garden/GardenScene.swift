@@ -37,14 +37,16 @@ struct GMap {
     /// A point of the buttons' frame (like a dock slot) in the world.
     func fromUI(_ p: CGPoint) -> CGPoint { design(CGPoint(x: uox + p.x * ui, y: uoy + p.y * ui)) }
 
+    var sideDock: Bool { size.width / max(ui, 0.001) >= 1680 }
+
     /// The garden, zoomed so the bed and its plants fill the screen: the bed and frame (x 56...968) as wide as
-    /// the screen allows, the front lawn (world 795) at the bottom of the screen, the top of the sky
-    /// cropped a little. Never more than 1.22x.
+    /// the screen allows, the front lawn (world 818) at the bottom of the screen, the top of the sky
+    /// cropped a little. Wide phones keep a tool shelf alongside the bed.
     static func garden(size: CGSize) -> GMap {
         let plain = GMap(size: size)
         let visW = size.width / plain.ui
-        let z = max(1, min(1.22, (visW - 12) / 912))
-        return GMap(size: size, zoom: z, anchor: CGPoint(x: 512, y: 795), at: CGPoint(x: 512, y: 834))
+        let z = max(1, min(plain.sideDock ? 1.30 : 1.22, (visW - 20) / 950))
+        return GMap(size: size, zoom: z, anchor: CGPoint(x: 512, y: 818), at: CGPoint(x: plain.sideDock ? 696 : 512, y: 834))
     }
 }
 
@@ -64,7 +66,7 @@ enum GardenPainter {
     }
 
     /// The fast layer: everything that moves or that she touches, drawn over the backdrop every frame.
-    static func draw(_ ctx: GraphicsContext, map: GMap, sim: GardenSim) {
+    static func draw(_ ctx: GraphicsContext, map: GMap, sim: GardenSim, planting: Bool = false) {
         var g = ctx
         g.translateBy(x: map.ox, y: map.oy)
         g.scaleBy(x: map.s, y: map.s)
@@ -86,7 +88,7 @@ enum GardenPainter {
         basket(g, sim, t)
         particles(g, sim, front: true)
         nightAndGlow(g, r, sim, t)
-        hints(g, sim, t)
+        hints(g, sim, t, planting: planting)
         tool(g, sim, t)
     }
 
@@ -903,7 +905,7 @@ enum GardenPainter {
         }
     }
 
-    private static func hints(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
+    private static func hints(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat, planting: Bool) {
         let pulse = 0.5 + 0.5 * sin(t * 4)
         var spots: [Int] = []
         switch sim.tool {
@@ -911,6 +913,7 @@ enum GardenPainter {
         case .seeds?: spots = sim.plots.indices.filter { sim.hasHole(plot: $0) }
         default: break
         }
+        if planting { spots = sim.plots.indices.filter { sim.plots[$0].plant == nil } }
         for i in spots {
             let x = GGeo.plotX[i]
             let y = sim.surface(x)

@@ -244,6 +244,14 @@ struct DecorSave: Codable, Equatable {
 }
 
 /// garden.json in the game's save folder.
+struct GardenStamp: Codable, Equatable {
+    let kind: PlantKind
+    let variant: Int
+    // Fractions of the printable area, so a design fits different screens.
+    var x: Double
+    var y: Double
+}
+
 struct GardenSave: Codable, Equatable {
     var plots: [Plant?]
     var soil: [Double]
@@ -252,6 +260,7 @@ struct GardenSave: Codable, Equatable {
     var decor: [DecorSave]
     var basket: [String]
     var weather: Weather
+    var stamps: [GardenStamp]? = nil
 }
 
 /// Fixed places in the garden scene (design points, 1024 x 834).

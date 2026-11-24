@@ -155,7 +155,12 @@ private enum GardenTray { case seeds, decor }
 private enum DockSlot: String {
     case shovel, can, seeds, decor
 
-    var spot: CGPoint {
+    func spot(_ map: GMap) -> CGPoint {
+        if map.sideDock {
+            let slots: [DockSlot] = [.shovel, .can, .seeds, .decor]
+            let row = slots.firstIndex(of: self) ?? 0
+            return CGPoint(x: 44, y: 242 + CGFloat(row) * 126)
+        }
         switch self {
         case .shovel: return CGPoint(x: 150, y: GGeo.dockY)
         case .can: return CGPoint(x: 274, y: GGeo.dockY)
@@ -222,6 +227,7 @@ private struct GardenDockPlate: View, Equatable {
 }
 
 final class GardenHandState {
+    var sowingFrom: CGPoint?
     var lastAt = Date()
     var startAt = Date()
     var active = false
@@ -242,6 +248,8 @@ struct GardenView: View {
     @State private var picked: DockSlot?
     @State private var auto = AutoTool()
     @State private var book = false
+    @State private var packet: PlantKind?
+    @State private var printing = false
 
     var body: some View {
         GeometryReader { geo in
@@ -249,23 +257,32 @@ struct GardenView: View {
             let map = GMap.garden(size: geo.size)
             ZStack {
                 // The sky, hills, fence and lawns change slowly, so they redraw at 30 fps in their own layer.
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: printing)) { _ in
                     Canvas(opaque: true) { ctx, _ in
                         GardenPainter.drawBackdrop(ctx, map: map, sim: sim)
                     }
                 }
                 .allowsHitTesting(false)
                 // Everything that moves, capped at 60 fps so 120 Hz screens do not double the work.
-                TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: printing)) { tl in
                     Canvas { ctx, _ in
                         sim.step(tl.date)
-                        GardenPainter.draw(ctx, map: map, sim: sim)
+                        GardenPainter.draw(ctx, map: map, sim: sim, planting: packet != nil)
                     }
                 }
                 .contentShape(Rectangle())
                 .gesture(handGesture(map))
 
-                if let pk = picked {
+                if let kind = packet {
+                    Color.clear.contentShape(Rectangle())
+                        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("garden"))
+                            .onChanged { value in
+                                let point = map.design(value.location)
+                                sim.sowRow(kind, from: hand.sowingFrom ?? map.design(value.startLocation), to: point)
+                                hand.sowingFrom = point
+                            }
+                            .onEnded { _ in hand.sowingFrom = nil })
+                } else if let pk = picked {
                     ToolTapLayer(space: "garden",
                                  onDrag: { loc in
                                      if auto.running { auto.cancel() }
@@ -280,6 +297,29 @@ struct GardenView: View {
                     .scaleEffect(map.ui)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
 
+                Button {
+                    auto.cancel()
+                    printing = true
+                } label: {
+                    VStack(spacing: 0) {
+                        Color.clear
+                        Text("Make a print").font(.system(size: 17 * map.s, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white).padding(.horizontal, 7)
+                            .background(Color(hex: 0x476849), in: Capsule())
+                    }
+                    .frame(width: 145 * map.s, height: 92 * map.s)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open basket and make a garden print")
+                .position(x: map.ox + GGeo.basket.x * map.s, y: map.oy + (GGeo.basket.y - 10) * map.s)
+
+                if printing {
+                    GardenPrintView(sim: sim) { printing = false }
+                        .padding(.horizontal, geo.safeAreaInsets.leading + 8)
+                        .background(Color(hex: 0xDAE4C9))
+                        .zIndex(2)
+                }
                 if book {
                     StickerBookView(game: GardenSim.gameID) { withAnimation(.easeOut(duration: 0.2)) { book = false } }
                         .transition(.opacity)
@@ -291,6 +331,7 @@ struct GardenView: View {
         .ignoresSafeArea()
         .onAppear(perform: start)
         .onDisappear {
+            auto.cancel()
             sim.save()
             GardenSound.shared.stopLoops()
         }
@@ -341,12 +382,31 @@ struct GardenView: View {
                 .position(x: 62, y: 60)
             StickerBookButton(game: GardenSim.gameID) { book = true }
                 .position(x: GardenView.bookSpot.x, y: GardenView.bookSpot.y)
+            if packet != nil || picked != nil {
+                let title = packet?.rawValue.capitalized ?? (picked == .can ? "Water a plant" : "Dig the soil")
+                PlayPrompt(title: title, actionSymbol: "xmark", action: {
+                    auto.cancel()
+                    packet = nil
+                    picked = nil
+                    hand.sowingFrom = nil
+                }) {
+                    if let packet {
+                        Canvas { ctx, size in
+                            var g = ctx
+                            g.translateBy(x: size.width / 2, y: size.height / 2)
+                            g.scaleBy(x: 0.48, y: 0.48)
+                            GardenPainter.packet(g, kind: packet)
+                        }
+                    } else { Image(systemName: "hand.tap.fill") }
+                }
+                .position(x: 420, y: 60)
+            }
             weatherBar
                 .position(x: 812, y: 60)
             // Which tool to suggest is checked a few times a second; the bounce itself runs at the display's
             // rate and pauses when nothing is suggested.
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-                let hint = sim.tool == nil && tray == nil ? suggested : nil
+                let hint = picked == nil && packet == nil && sim.tool == nil && tray == nil ? suggested : nil
                 TimelineView(.animation(minimumInterval: 1.0 / 60, paused: hint == nil)) { tl in
                     dock(map, hint: hint, time: tl.date.timeIntervalSinceReferenceDate)
                 }
@@ -404,8 +464,10 @@ struct GardenView: View {
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
                     .picked(picked == slot && hidden != slot.rawValue, corner: 30)
                     .offset(y: bounce)
-                    .position(slot.spot)
+                    .contentShape(Rectangle())
                     .gesture(dockGesture(slot, map))
+                    .accessibilityLabel(slot.rawValue.capitalized)
+                    .position(slot.spot(map))
             }
         }
     }
@@ -419,6 +481,9 @@ struct GardenView: View {
                     return
                 case .shovel, .can:
                     if auto.running { auto.cancel() }
+                    guard carrying != nil || !ToolTap.isTap(v.translation) else { return }
+                    packet = nil
+                    picked = nil
                     useTool(slot, p)
                 }
             }
@@ -427,10 +492,19 @@ struct GardenView: View {
                 case .seeds, .decor:
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
+                    auto.cancel()
+                    picked = nil
+                    packet = nil
+                    hand.sowingFrom = nil
                     let want: GardenTray = slot == .seeds ? .seeds : .decor
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                 case .shovel, .can:
-                    endTool(slot, map)
+                    if carrying != nil {
+                        endTool(slot, map)
+                        return
+                    }
+                    packet = nil
+                    tray = nil
                     // a tap on the dock picks the tool (or puts it down)
                     if ToolTap.isTap(v.translation) {
                         picked = picked == slot ? nil : slot
@@ -454,7 +528,7 @@ struct GardenView: View {
     }
 
     private func endTool(_ slot: DockSlot, _ map: GMap) {
-        sim.release(home: map.fromUI(slot.spot))
+        sim.release(home: map.fromUI(slot.spot(map)))
         finishCarry(slot.rawValue)
     }
 
@@ -462,10 +536,11 @@ struct GardenView: View {
     /// the can waters it from above.
     private func autoDo(_ slot: DockSlot, _ spot: CGPoint, _ map: GMap) {
         guard slot == .shovel || slot == .can else { return }
-        let tool: GardenTool = slot == .shovel ? .shovel : .can
-        let target = slot == .can ? CGPoint(x: spot.x + 80, y: spot.y - 160) : CGPoint(x: spot.x, y: spot.y + 10)
+        if slot == .can { sim.waterPlant(at: spot); return }
+        let tool = GardenTool.shovel
+        let target = CGPoint(x: spot.x, y: spot.y + 10)
         let f = FingerLift.finger(for: target, lift: GardenView.lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
-        auto.run(from: map.fromUI(slot.spot), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot, map) })
+        auto.run(from: map.fromUI(slot.spot(map)), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot, map) })
     }
 
     /// Where a carried tool goes for her finger at p (design space). Each tool is drawn around a
@@ -540,6 +615,7 @@ struct GardenView: View {
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("garden"))
                 .onChanged { v in
+                    guard carrying != nil || !ToolTap.isTap(v.translation) else { return }
                     let p = map.design(v.location)
                     if carrying == nil {
                         carrying = key
@@ -550,8 +626,18 @@ struct GardenView: View {
                     }
                     if let tl = sim.tool { sim.carry(to: GardenView.lifted(p, tl), hand: p) }
                 }
-                .onEnded { _ in
-                    sim.release(home: map.fromUI(t == .seeds ? DockSlot.seeds.spot : DockSlot.decor.spot))
+                .onEnded { value in
+                    if carrying == nil {
+                        if t == .seeds {
+                            packet = PlantKind.allCases[i]
+                            hand.sowingFrom = nil
+                        } else {
+                            sim.addDecor(DecorKind.available[i], x: map.design(value.location).x, falling: true)
+                        }
+                        Sound.shared.tap()
+                    } else {
+                        sim.release(home: map.fromUI(t == .seeds ? DockSlot.seeds.spot(map) : DockSlot.decor.spot(map)))
+                    }
                     carrying = nil
                     hidden = nil
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil }

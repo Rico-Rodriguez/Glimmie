@@ -14,6 +14,36 @@ final class GardenTests: XCTestCase {
         for _ in 0..<Int(seconds * 60) { sim.step(dt: 1.0 / 60) }
     }
 
+    func testSowingAcrossBedKeepsExistingCropsAndStartsEmptyPlots() {
+        let sim = freshSim()
+        let original = sim.plots[0].plant
+        sim.sowRow(.lavender, from: CGPoint(x: 80, y: GGeo.soilY), to: CGPoint(x: 945, y: GGeo.soilY))
+        XCTAssertEqual(sim.plots[0].plant, original)
+        for i in [1, 3, 5] {
+            XCTAssertEqual(sim.plots[i].plant?.kind, .lavender)
+            XCTAssertGreaterThan(sim.wetAt(GGeo.plotX[i]), 0.1)
+        }
+    }
+
+    func testSwipePicksEachRipePlantOnceAndKeepsThePrintOnReload() throws {
+        let sim = freshSim()
+        sim.decor = []
+        for i in [1, 2] { sim.plots[i].plant = Plant(kind: .tomato, growth: 1, left: 4) }
+        let start = CGPoint(x: 212, y: GGeo.soilY - 48)
+        let end = CGPoint(x: 490, y: start.y)
+        sim.handBegan(start)
+        sim.handMoved(end)
+        sim.handMoved(start)
+        sim.handEnded(start, tap: false)
+        XCTAssertEqual(sim.basket.count, 2)
+        XCTAssertEqual(sim.plots[1].plant?.left, 3)
+        sim.stamps = [GardenStamp(kind: .tomato, variant: 0, x: 0.25, y: 0.75)]
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let restored = GardenSim(save: try JSONDecoder().decode(GardenSave.self, from: data))
+        XCTAssertEqual(restored.stamps, sim.stamps)
+        XCTAssertEqual(restored.basket, sim.basket)
+    }
+
     func testDiggingMakesAHoleAndKeepsTheSoil() {
         let sim = freshSim()
         let before = sim.totalSoil
