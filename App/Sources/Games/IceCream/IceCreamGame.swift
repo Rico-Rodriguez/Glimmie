@@ -143,14 +143,14 @@ struct IceCreamView: View {
         .ignoresSafeArea()
         .onAppear(perform: start)
         .onDisappear { IceSound.shared.stopLoops() }
-        .onChange(of: handDown) { _, down in
+        .onChange(of: handDown) { down in
             if !down && hand.active {
                 sim.cancelInteraction()
                 hand.mode = .none
                 hand.active = false
             }
         }
-        .onChange(of: toppingDown) { _, down in
+        .onChange(of: toppingDown) { down in
             if !down && carrying != nil {
                 sim.cancelInteraction()
                 carrying = nil

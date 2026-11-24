@@ -531,7 +531,7 @@ struct MixStepView: View {
 
     // MARK: Flavor and stirring
 
-    private func flavorSpot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 660, y0: 210, dx: 108, dy: 123) }
+    private func flavorSpot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 660, y0: 250, dx: 108, dy: 150) }
 
     private var stirGesture: some Gesture {
         DragGesture(minimumDistance: 0)
@@ -1131,7 +1131,7 @@ struct ScoopStepView: View {
     @State private var bounce = false
     @State private var burst = 0
 
-    private func spot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 660, y0: 250, dx: 108, dy: 150) }
+    private func spot(_ i: Int) -> CGPoint { gridSpot(i, cols: 4, x0: 640, y0: 208, dx: 105, dy: 123) }
 
     var body: some View {
         ZStack {
