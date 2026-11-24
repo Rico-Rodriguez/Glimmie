@@ -20,12 +20,7 @@ enum GardenGame {
         title: "Garden",
         tint: Color(hex: 0xA8E07A),
         icon: { AnyView(GardenTileIcon()) },
-        play: { exit in
-            if PlaygroundLaunch.hasDemo(["-gardenDemo", "-gardenWeather", "-gardenTool"]) {
-                return AnyView(GardenView(exit: exit))
-            }
-            return AnyView(StreamGarden(exit: exit))
-        },
+        play: { exit in AnyView(GardenView(exit: exit)) },
         stickers: GardenFind.stickers
     )
 }

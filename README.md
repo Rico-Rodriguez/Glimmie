@@ -11,8 +11,6 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 
 ## Games
 
-Garden opens on a hillside where you dig streams to water crops. Bubble Spa opens at a mirror where you shape suds on your Dress Up doll. In Aquarium, build caves and move anemones to see how the fish respond. In Potion Lab, brew spells that make toys float, bounce or grow heavy. Each opens its original play area from the button at the top right.
-
 The home screen shows every game at once. Serve customers in Bakery and Pizza to earn play coins. Tap the purse on the home screen for the Treasure Shop. It sells decorations for Garden and Aquarium and a moon headband for Dress Up. The book button opens the sticker book for discoveries from Garden, Aquarium and Potion Lab.
 
 | Game | What it is |
