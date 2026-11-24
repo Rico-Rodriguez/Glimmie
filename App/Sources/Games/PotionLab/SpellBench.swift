@@ -52,6 +52,7 @@ final class SpellBench {
     var appliedAt = -10.0
     var applied = CGPoint.zero
     var poured: (BenchIngredient, Double)?
+    private var dropLanded = true
     var coatNext = false
     private var trailTime: CGFloat = 0
     private var lastContact = -10.0
@@ -80,8 +81,8 @@ final class SpellBench {
         }
         poured = (ingredient, sim.time)
         coatNext = false
-        dye(ingredient.color)
-        PotionSound.shared.play(.plop)
+        dropLanded = false
+        PotionSound.shared.play(.clink)
     }
 
     func brew() {
@@ -106,6 +107,17 @@ final class SpellBench {
         let dt = CGFloat(min(1.0/30,max(0,now.timeIntervalSince(lastDate ?? now))))
         lastDate = now
         sim.step(now)
+        if let (ingredient,start)=poured, !dropLanded, sim.time-start >= 0.52 {
+            dropLanded = true
+            let hit=CGPoint(x:500,y:sim.level+12)
+            dye(ingredient.color)
+            sim.addLiquid(at:hit,vol:620,color:ingredient.color,conc:1.15,density:0.3,v:CGVector(dx:50,dy:480))
+            for j in 0..<7 {
+                sim.inject(CGPoint(x:471+CGFloat(j*10),y:sim.level+20+CGFloat(j*4)),
+                           color:ingredient.color,amount:12,density:0.3,radius:2.5)
+            }
+            PotionSound.shared.play(.plop)
+        }
         sim.cues.removeAll(keepingCapacity:true)
         advance(dt)
     }

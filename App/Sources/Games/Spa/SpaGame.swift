@@ -258,6 +258,7 @@ struct SpaView: View {
     @State private var sim = SpaSim()
     @State private var styling = !ProcessInfo.processInfo.arguments.contains("-spaDemo")
     @State private var rinseFoam = false
+    @State private var styledOnce = false
     @State private var paint: BombKind?
     @State private var tray: SpaTray?
     @State private var carrying: String?
@@ -389,6 +390,7 @@ struct SpaView: View {
                 let moved = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y) / map.s
                 let tap = moved < 14 && Date().timeIntervalSince(hand.startAt) < 0.45
                 if styling {
+                    if sim.sculpture.held != nil { styledOnce = true }
                     sim.sculpture.held = nil
                     if rinseFoam { sim.release() }
                 } else { sim.handEnded(p, tap: tap) }
@@ -430,7 +432,7 @@ struct SpaView: View {
     private var mirrorControls: some View {
         ZStack {
             HomeButton(action: exit).position(x: 63, y: 60)
-            if sim.sculpture.tufts.count < 2 {
+            if !styledOnce {
                 Text("Pull the foam into a curl").font(.system(size:22,weight:.bold,design:.rounded))
                     .padding(10).foregroundStyle(Theme.ink).background(.ultraThinMaterial,in:Capsule())
                     .position(x:465,y:60).allowsHitTesting(false)

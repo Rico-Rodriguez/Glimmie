@@ -13,6 +13,8 @@ final class GardenSpring {
     private var fraction: CGFloat = 0
     private var reversed = false
     private var hollow = Path()
+    private var liquid = Path()
+    private var lastContour: CGFloat = -1
     var enabled = false
     var filling = false
     var previous: CGPoint?
@@ -59,11 +61,59 @@ final class GardenSpring {
     }
 
     private func rebuild() {
-        hollow = Path()
-        for i in dug {
-            let p = center(i)
-            hollow.addEllipse(in: CGRect(x: p.x-6, y: p.y-6, width: 12, height: 12))
+        var field = [Float](repeating:0,count:water.count)
+        for i in dug { field[i] = 1 }
+        hollow = contour(field, level:0.35)
+        lastContour = -1
+    }
+
+    /// Trace the free surface between neighboring samples. Rounding the traced
+    /// corners keeps both a diagonal cut and a nearly empty pool continuous.
+    private func contour(_ field: [Float], level: Float) -> Path {
+        let width=Self.width
+        var links=[Int:[Int]](), points=[Int:CGPoint]()
+        for y in 0..<Self.height-1 {
+            for x in 0..<width-1 {
+                let i=y*width+x
+                let inside = field[i]>=level
+                if (field[i+1]>=level)==inside && (field[i+width]>=level)==inside && (field[i+width+1]>=level)==inside { continue }
+                let corners=[i,i+1,i+width+1,i+width]
+                let keys=[2*i,2*(i+1)+1,2*(i+width),2*i+1]
+                var hits=[Int]()
+                for edge in 0..<4 {
+                    let a=corners[edge], b=corners[(edge+1)%4]
+                    guard (field[a]>=level) != (field[b]>=level) else { continue }
+                    let id=keys[edge]
+                    hits.append(id)
+                    if points[id]==nil {
+                        let s=CGFloat((level-field[a])/(field[b]-field[a]))
+                        let ca=center(a), cb=center(b)
+                        points[id]=CGPoint(x:ca.x+(cb.x-ca.x)*s,y:ca.y+(cb.y-ca.y)*s)
+                    }
+                }
+                for j in stride(from:0,to:hits.count,by:2) {
+                    links[hits[j],default:[]].append(hits[j+1])
+                    links[hits[j+1],default:[]].append(hits[j])
+                }
+            }
         }
+        var seen=Set<Int>(), path=Path()
+        for first in links.keys where !seen.contains(first) {
+            var next=first, loop=[CGPoint]()
+            while seen.insert(next).inserted, let point=points[next] {
+                loop.append(point)
+                guard let adjacent=links[next]?.first(where:{ !seen.contains($0) }) else { break }
+                next=adjacent
+            }
+            guard loop.count>2, let last=loop.last else { continue }
+            path.move(to:CGPoint(x:(last.x+loop[0].x)/2,y:(last.y+loop[0].y)/2))
+            for j in loop.indices {
+                let a=loop[j], b=loop[(j+1)%loop.count]
+                path.addQuadCurve(to:CGPoint(x:(a.x+b.x)/2,y:(a.y+b.y)/2),control:a)
+            }
+            path.closeSubpath()
+        }
+        return path
     }
 
     func advance(_ dt: CGFloat) {
@@ -99,18 +149,24 @@ final class GardenSpring {
     func draw(_ g: GraphicsContext, time: CGFloat) {
         guard enabled else { return }
         g.fill(hollow, with: .color(Color(hex: 0x48362D)))
-        var film = Path(), glints = Path()
+        if time-lastContour >= 1.0/20 || lastContour < 0 {
+            liquid = contour(water, level:0.09)
+            lastContour = time
+        }
+        var glints = Path()
         for i in dug where water[i] > 0.04 {
             let p = center(i), depth = CGFloat(water[i])*8
-            film.addRoundedRect(in: CGRect(x: p.x-5, y: p.y+4-depth, width: 10, height: depth+1),
-                                cornerSize: CGSize(width: 2, height: 2))
             if i >= Self.width, water[i-Self.width] < 0.08, sin(time*4+p.x*0.08) > 0 {
                 glints.move(to: CGPoint(x: p.x-3, y: p.y+4-depth))
                 glints.addLine(to: CGPoint(x: p.x+3, y: p.y+4-depth))
             }
         }
-        g.fill(film, with: .linearGradient(Gradient(colors: [Color(hex: 0x90ECDB), Color(hex: 0x3387A6)]),
-                                          startPoint: CGPoint(x: 0,y: 560), endPoint: CGPoint(x: 0,y: 700)))
+        let bounds=liquid.boundingRect
+        if !bounds.isEmpty {
+            g.fill(liquid, with:.linearGradient(Gradient(colors:[Color(hex:0x98E9D9),Color(hex:0x58C5CA),Color(hex:0x387DA6)]),
+                                           startPoint:CGPoint(x:0,y:bounds.minY),endPoint:CGPoint(x:0,y:bounds.maxY)),style:FillStyle(eoFill:true))
+            g.stroke(liquid,with:.color(.white.opacity(0.28)),lineWidth:1.2)
+        }
         g.stroke(glints, with: .color(.white.opacity(0.79)), lineWidth: 1.6)
         let source = center(Self.inlet)
         let lip = CGRect(x:source.x-37,y:source.y-31,width:20,height:15)
