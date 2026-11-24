@@ -85,6 +85,11 @@ enum GardenPainter {
         bugs(g, sim, t)
         visitors(g, sim, t, behind: false, flying: true)
         for d in sim.decor where d.held { GardenDecorPainter.draw(g, d, time: t, night: sim.night, wind: sim.windNow) }
+        if sim.spring.enabled {
+            let pool = CGRect(x:886, y:696, width:65, height:11)
+            g.fill(Path(ellipseIn:pool),with:.color(Color(hex:0x77BECC)))
+            g.stroke(Path(ellipseIn:pool.insetBy(dx:9+3*sin(t*2),dy:3)),with:.color(.white.opacity(0.62)),lineWidth:1.4)
+        }
         if let f = sim.spring.pumpkin { GardenPlants.drawCrop(g, kind: .pumpkin, variant: f.variant, at: f.position, size: 0.9, rot: f.angle) }
         basket(g, sim, t)
         particles(g, sim, front: true)

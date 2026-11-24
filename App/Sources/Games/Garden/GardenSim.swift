@@ -177,6 +177,7 @@ final class GardenSim {
 
     let spring = GardenSpring()
     private var storedChannels: [Int]?
+    private var caughtFruit = false
 
     // Soil
     var h: [CGFloat]
@@ -348,7 +349,14 @@ final class GardenSim {
         }
         fruit.angle += fruit.velocity.dx * dt / 27
         spring.pumpkin = fruit
-        if fruit.position.y > 705 { catchPumpkin() }
+        if fruit.position.y > 705 {
+            let landing = CGPoint(x:min(945,fruit.position.x),y:705)
+            splash(at:landing,v:fruit.velocity,n:18)
+            ripple(at:landing,small:false)
+            water(at:GGeo.plotX.last ?? 885,amount:0.3)
+            GardenSound.shared.play(.splash,volume:0.7)
+            spring.pumpkin = nil
+        }
     }
 
     private func catchPumpkin() {
@@ -1243,8 +1251,10 @@ final class GardenSim {
     // MARK: The bare hand
 
     func handBegan(_ p: CGPoint) {
+        caughtFruit = false
         if let f = spring.pumpkin, hypot(f.position.x-p.x, f.position.y-p.y) < 52 {
             catchPumpkin()
+            caughtFruit = true
             return
         }
         if spring.enabled && GardenSpring.area.contains(p) && p.y > surface(p.x)+10 {
@@ -1291,6 +1301,7 @@ final class GardenSim {
     }
 
     func handMoved(_ p: CGPoint, dt: CGFloat = 1.0 / 60) {
+        if caughtFruit { return }
         if spring.previous != nil {
             if spring.stroke(p) { GardenSound.shared.play(.pat, volume: 0.26, gap: 0.12) }
             return
@@ -1334,6 +1345,7 @@ final class GardenSim {
     }
 
     func handEnded(_ p: CGPoint, tap: Bool) {
+        if caughtFruit { caughtFruit = false; return }
         if spring.previous != nil { spring.previous = nil; return }
         handDown = false
         switch grab {

@@ -41,7 +41,7 @@ final class SpellBench {
         BenchToy(p:CGPoint(x:894,y:668),radius:32),
         BenchToy(p:CGPoint(x:956,y:678),radius:22)
     ]
-    enum Grab { case jar(BenchIngredient), toy(Int), cork, stir, clear, idle }
+    enum Grab { case jar(BenchIngredient), toy(Int), cork, stir, idle }
     var grab = Grab.idle
     var touch = CGPoint.zero
     var began = CGPoint.zero
@@ -212,7 +212,7 @@ final class SpellBench {
         touch=p
         switch grab {
         case .stir:
-            sim.spoonTarget=CGPoint(x:max(390,min(630,p.x+250)),y:max(350,min(600,p.y)))
+            sim.spoonTarget=CGPoint(x:max(390,min(630,512+(p.x-262)/0.77)),y:max(350,min(600,700+(p.y-700)/0.77)))
             let v = CGVector(dx:(p.x-before.x)/max(0.008,dt),dy:(p.y-before.y)/max(0.008,dt))
             sim.push(sim.spoonTarget,CGVector(dx:max(-360,min(360,v.dx)),dy:max(-360,min(360,v.dy))),radius:60)
         case .toy(let i):

@@ -287,6 +287,7 @@ struct AquaDecorSave: Codable, Equatable {
     var kind: AquaDecorKind
     var x: CGFloat
     var flip: Bool
+    var supported: Bool? = nil
 }
 
 struct AquaSave: Codable {

@@ -338,6 +338,15 @@ struct AquariumView: View {
                 .position(x: 62, y: 46)
             StickerBookButton(game: AquariumSim.gameID) { book = true }
                 .position(x: AquariumView.bookSpot.x, y: AquariumView.bookSpot.y)
+            if sim.reefStarted && sim.eelSpine.isEmpty && sim.huntKind == nil && sim.fishFound == 0 {
+                Button {
+                    picked = nil; tray = nil; auto.cancel()
+                    sim.startFishHunt()
+                } label: {
+                    Image(systemName:"magnifyingglass").font(.title2)
+                        .frame(width:52,height:52).background(.white,in:Circle())
+                }.buttonStyle(Squish()).position(x:716,y:46).accessibilityLabel("Find a fish")
+            }
             HStack(spacing: 16) {
                 toggle(symbol: lightsOn ? "sun.max.fill" : "moon.stars.fill", tint: lightsOn ? Color(hex: 0xFFB83D) : Color(hex: 0x7A7AF0), on: true) {
                     lightsOn.toggle()
@@ -388,6 +397,11 @@ struct AquariumView: View {
             }
             .accessibilityLabel("Find the \(kind.rawValue), \(sim.fishFound) of \(AquariumSim.huntGoal) found")
         } else {
+            if sim.reefStarted && sim.eelSpine.isEmpty && sim.fishFound == 0 {
+                PlayPrompt(title: "Bridge the rocks", actionSymbol: "plus", action: {
+                    tray = .decor
+                }) { Image(systemName: "mountain.2.fill").foregroundStyle(Theme.mint) }
+            } else {
             let title = sim.fishFound == AquariumSim.huntGoal ? "Feeding time! Play again" : "Fish hunt"
             PlayPrompt(title: title, actionSymbol: "play.fill", action: {
                 auto.cancel()
@@ -395,6 +409,7 @@ struct AquariumView: View {
                 sim.startFishHunt()
             }) { Image(systemName: "magnifyingglass").font(.title) }
             .disabled(sim.fish.isEmpty)
+            }
         }
     }
 
