@@ -43,5 +43,6 @@ jobs:
           path: |
             qa.log
             images/*.jpg
+            images/*.png
             images/manifest.json
 

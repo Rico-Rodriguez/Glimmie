@@ -32,6 +32,8 @@ final class TouchQA: XCTestCase {
             default:
                 point(68,204).tap(); point(166,204).tap()
                 swipe(204,479,328,533); point(686,653).tap()
+                sleep(1)
+                swipe(686,460,688,650)
             }
             sleep(2)
             XCTAssertEqual(app.state,.runningForeground)
@@ -40,4 +42,4 @@ final class TouchQA: XCTestCase {
         }
     }
 }
-private enum AGeoProxy { static let rim:CGFloat = 164 }
+private enum AGeoProxy { static let rim:CGFloat = 108 }
