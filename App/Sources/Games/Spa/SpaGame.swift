@@ -20,7 +20,10 @@ enum SpaGame {
         title: "Bubble Spa",
         tint: Color(hex: 0x9CDCF2),
         icon: { AnyView(SpaTileIcon()) },
-        play: { exit in AnyView(SpaView(exit: exit)) }
+        play: { exit in
+            if PlaygroundLaunch.hasDemo(["-spaDemo"]) { return AnyView(SpaView(exit: exit)) }
+            return AnyView(FoamStudio(exit: exit))
+        }
     )
 }
 

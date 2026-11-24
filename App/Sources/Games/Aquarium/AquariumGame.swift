@@ -21,7 +21,12 @@ enum AquariumGame {
         title: "Aquarium",
         tint: Color(hex: 0x7FD3F2),
         icon: { AnyView(AquariumTileIcon()) },
-        play: { exit in AnyView(AquariumView(exit: exit)) },
+        play: { exit in
+            if PlaygroundLaunch.hasDemo(["-aquaDemo", "-aquaNight", "-aquaTray", "-aquaTool"]) {
+                return AnyView(AquariumView(exit: exit))
+            }
+            return AnyView(ReefBuilder(exit: exit))
+        },
         stickers: AquaFind.stickers
     )
 }
