@@ -166,6 +166,14 @@ private enum CaddySlot: String, CaseIterable {
     }
 }
 
+private extension SMap {
+    // Wide phones have room beside the tub for four rows of paired tools.
+    func caddySpot(_ slot: CaddySlot) -> CGPoint {
+        guard wideCaddy, let i = CaddySlot.allCases.firstIndex(of: slot) else { return slot.spot }
+        return CGPoint(x: 952 + CGFloat(i % 2) * 108, y: 244 + CGFloat(i / 2) * 114)
+    }
+}
+
 /// One caddy button. It only redraws when what it shows changes.
 private struct CaddyPlate: View, Equatable {
     let slot: CaddySlot
@@ -238,6 +246,7 @@ private enum SpaIcons {
 }
 
 final class SpaHandState {
+    var lastPaint = CGPoint.zero
     var lastAt = Date()
     var startAt = Date()
     var active = false
@@ -247,6 +256,7 @@ struct SpaView: View {
     let exit: () -> Void
 
     @State private var sim = SpaSim()
+    @State private var paint: BombKind?
     @State private var tray: SpaTray?
     @State private var carrying: String?
     @State private var hidden: String?
@@ -280,26 +290,37 @@ struct SpaView: View {
                                      useTool(pk, map.design(loc))
                                  },
                                  onEnd: { _ in endTool(pk) },
-                                 onTap: { loc in autoDo(pk, map.design(loc)) })
+                                 onTap: { loc in autoDo(pk, map.design(loc), map) })
                 }
 
+                let controlWidth: CGFloat = map.wideCaddy ? 1130 : 1024
                 controls(map)
-                    .frame(width: 1024, height: 834)
-                    .scaleEffect(map.s)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                    .frame(width: controlWidth, height: 834)
+                    .scaleEffect(map.ui)
+                    .position(x: geo.size.width / 2 + (controlWidth - 1024) * map.ui / 2, y: geo.size.height / 2)
             }
             .coordinateSpace(name: "spa")
         }
         .ignoresSafeArea()
         .onAppear(perform: start)
-        .onDisappear { SpaSound.shared.stopLoops() }
+        .onDisappear {
+            auto.cancel()
+            SpaSound.shared.stopLoops()
+        }
     }
 
     private func start() {
         guard !started else { return }
         started = true
         _ = SpaSound.shared
-        applyLaunchArguments()
+        if ProcessInfo.processInfo.arguments.contains("-spaDemo") {
+            applyLaunchArguments()
+        } else {
+            sim.vol = SGeo.maxDepth * 0.78
+            sim.soap = 20
+            sim.spawnThing(.toy(.duck), at: CGPoint(x: 510, y: sim.level - 18), held: false)
+            sim.spawnThing(.toy(.boat), at: CGPoint(x: 680, y: sim.level - 12), held: false)
+        }
     }
 
     // MARK: Her finger
@@ -315,10 +336,27 @@ struct SpaView: View {
                     hand.lastAt = now
                     if tray != nil { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil } }
                     sim.handBegan(p)
+                    if let paint, sim.hand == .swish { sim.paintWater(p, dye: paint) }
+                    hand.lastPaint = p
                 } else {
                     let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(hand.lastAt)))
                     hand.lastAt = now
                     sim.handMoved(p, dt: dt)
+                    if let paint, sim.hand == .swish {
+                        let dx = p.x - hand.lastPaint.x, dy = p.y - hand.lastPaint.y
+                        let distance = hypot(dx, dy)
+                        if distance >= 14 {
+                            let steps = min(16, Int(distance / 14))
+                            for step in 1...steps {
+                                let fraction = CGFloat(step) / CGFloat(steps)
+                                sim.paintWater(CGPoint(x: hand.lastPaint.x + dx * fraction,
+                                                       y: hand.lastPaint.y + dy * fraction), dye: paint)
+                            }
+                            hand.lastPaint = p
+                        }
+                    } else {
+                        hand.lastPaint = p
+                    }
                 }
             }
             .onEnded { v in
@@ -336,17 +374,50 @@ struct SpaView: View {
         ZStack {
             HomeButton(action: exit)
                 .position(x: 62, y: 60)
+            TimelineView(.periodic(from: .now, by: 0.2)) { _ in activityPrompt }
+                .position(x: map.wideCaddy ? 865 : 512, y: 46)
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-                let hint = sim.tool == nil && tray == nil && carrying == nil ? suggested : nil
+                let hint = paint == nil && !sim.starRound && picked == nil && sim.tool == nil && tray == nil && carrying == nil ? suggested : nil
                 TimelineView(.animation(minimumInterval: 1.0 / 60, paused: hint == nil)) { tl in
                     caddy(map, hint: hint, time: tl.date.timeIntervalSinceReferenceDate)
                 }
             }
+            paintPalette.position(x: map.wideCaddy ? 958 : 500, y: map.wideCaddy ? 708 : 795)
             if let t = tray {
                 trayView(t, map)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+    }
+
+    private var paintPalette: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "paintpalette.fill").foregroundStyle(Theme.ink)
+            ForEach([BombKind.rose, .sunshine, .ocean, .mint], id: \.rawValue) { dye in
+                Button {
+                    auto.cancel()
+                    picked = nil
+                    tray = nil
+                    sim.stopStarRound()
+                    paint = paint == dye ? nil : dye
+                    Sound.shared.tap()
+                } label: {
+                    Circle().fill(dye.color.c())
+                        .overlay(Circle().stroke(.white, lineWidth: 3))
+                        .overlay {
+                            if paint == dye { Image(systemName: "checkmark").foregroundStyle(Theme.ink) }
+                        }
+                        .frame(width: 42, height: 42)
+                        .frame(width: 62, height: 64)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(dye.rawValue) bath crayon")
+            }
+        }
+        .font(.system(size: 24, weight: .bold))
+        .padding(.horizontal, 14)
+        .background(.regularMaterial, in: Capsule())
     }
 
     /// What would be fun next: it bounces gently.
@@ -357,22 +428,48 @@ struct SpaView: View {
         return nil
     }
 
+    @ViewBuilder private var activityPrompt: some View {
+        if let tool = picked {
+            PlayPrompt(title: "\(tool.rawValue.capitalized) - Tap a spot", actionSymbol: "xmark", action: {
+                auto.cancel()
+                picked = nil
+            }) { Image(systemName: "hand.tap.fill").font(.title) }
+            .accessibilityHint("Put the tool away")
+        } else if paint != nil {
+            PlayPrompt(title: "Draw in the water", actionSymbol: "xmark", action: { paint = nil }) {
+                Image(systemName: "scribble.variable").font(.title)
+            }
+        } else {
+            let active = sim.starRound
+            let title = active ? "Pop the stars  \(sim.starsPopped)/\(SpaSim.starGoal)"
+                : (sim.starsPopped == SpaSim.starGoal ? "Rainbow bath! Play again" : "Star bubbles")
+            PlayPrompt(title: title, actionSymbol: active ? "xmark" : "play.fill", action: {
+                auto.cancel()
+                tray = nil
+                if sim.starRound { sim.stopStarRound() } else { sim.startStarRound() }
+            }) { Image(systemName: "sparkles").font(.title).foregroundStyle(.purple) }
+        }
+    }
+
     private func caddy(_ map: SMap, hint: CaddySlot?, time: Double) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .fill(Color(hex: 0xFFFFFF, alpha: 0.45))
-                .frame(width: 108, height: 770)
-                .position(x: 950, y: 423)
+                .frame(width: map.wideCaddy ? 218 : 108, height: map.wideCaddy ? 466 : 770)
+                .position(x: map.wideCaddy ? 1006 : 950, y: map.wideCaddy ? 415 : 423)
             ForEach(CaddySlot.allCases, id: \.rawValue) { slot in
                 let bounce: CGFloat = hint == slot ? CGFloat(abs(sin(time * 4))) * -12 : 0
                 let open = (tray == .bombs && slot == .bombs) || (tray == .toys && slot == .toys) || (tray == .masks && slot == .masks)
                 CaddyPlate(slot: slot, open: open, iconHidden: hidden == slot.rawValue)
                     .equatable()
+                    .frame(width: map.wideCaddy ? 104 : 86, height: map.wideCaddy ? 108 : 86)
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
                     .picked(picked == slot && hidden != slot.rawValue, corner: 30)
                     .offset(x: bounce)
-                    .position(slot.spot)
+                    .contentShape(Rectangle())
                     .gesture(caddyGesture(slot, map))
+                    .accessibilityLabel(slot.rawValue.capitalized)
+                    .position(map.caddySpot(slot))
             }
         }
     }
@@ -380,21 +477,32 @@ struct SpaView: View {
     private func caddyGesture(_ slot: CaddySlot, _ map: SMap) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("spa"))
             .onChanged { v in
+                paint = nil
                 guard slot.tool != nil else { return }
                 if auto.running { auto.cancel() }
+                guard !ToolTap.isTap(v.translation) else { return }
+                if carrying == nil {
+                    picked = nil
+                    sim.stopStarRound()
+                }
                 useTool(slot, map.design(v.location))
             }
             .onEnded { v in
                 if slot.tool == nil {
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
+                    auto.cancel()
+                    picked = nil
+                    sim.stopStarRound()
                     let want: SpaTray = slot == .bombs ? .bombs : (slot == .toys ? .toys : .masks)
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                     return
                 }
-                endTool(slot)
+                if carrying != nil { endTool(slot) }
                 // a tap on the caddy picks the tool (or puts it down)
                 if ToolTap.isTap(v.translation) {
+                    sim.stopStarRound()
+                    tray = nil
                     picked = picked == slot ? nil : slot
                     Sound.shared.play(.pop, volume: 0.6)
                 }
@@ -420,10 +528,10 @@ struct SpaView: View {
     }
 
     /// The picked tool flies out of the caddy and does the spot she tapped by itself.
-    private func autoDo(_ slot: CaddySlot, _ spot: CGPoint) {
+    private func autoDo(_ slot: CaddySlot, _ spot: CGPoint, _ map: SMap) {
         guard let tool = slot.tool else { return }
         let f = FingerLift.finger(for: spot, lift: SpaView.lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
-        auto.run(from: slot.spot, to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
+        auto.run(from: map.fromUI(map.caddySpot(slot)), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot) })
     }
 
     /// Where a held tool goes for her finger at p (design space), so her finger never covers what it works on.
@@ -460,15 +568,15 @@ struct SpaView: View {
         }
     }
 
-    private func trayY(_ t: SpaTray) -> CGFloat {
+    private func trayY(_ t: SpaTray, _ map: SMap) -> CGFloat {
         let slot: CaddySlot = t == .bombs ? .bombs : (t == .toys ? .toys : .masks)
-        return slot.spot.y
+        return map.caddySpot(slot).y
     }
 
     private func trayView(_ t: SpaTray, _ map: SMap) -> some View {
         let n = trayCount(t)
         let w = CGFloat(n) * 98 + 24
-        let y = trayY(t)
+        let y = trayY(t, map)
         return ZStack {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .fill(.white.opacity(0.92))
@@ -551,6 +659,7 @@ struct SpaView: View {
                         if t == .bombs { sim.dropIn(.bomb(BombKind.allCases[i])) }
                         if t == .toys { sim.dropIn(.toy(ToyKind.tray[i])) }
                         Sound.shared.tap()
+                        tray = nil
                         return
                     }
                     if t == .masks { sim.release() } else { sim.handEnded(p, tap: false) }

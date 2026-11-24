@@ -155,8 +155,9 @@ private enum AquaTray { case fish, decor }
 private enum AquaSlot: String, CaseIterable {
     case food, sponge, net, fish, decor
 
-    var spot: CGPoint {
+    func spot(_ map: AMap) -> CGPoint {
         let i = CGFloat(AquaSlot.allCases.firstIndex(of: self) ?? 0)
+        if map.sideDock { return CGPoint(x: 1120, y: 164 + i * 132) }
         return CGPoint(x: 264 + i * 124, y: AGeo.dockY)
     }
 }
@@ -269,10 +270,11 @@ struct AquariumView: View {
                                  onTap: { loc in autoDo(pk, map.design(loc), map) })
                 }
 
+                let controlWidth: CGFloat = map.sideDock ? 1180 : 1024
                 controls(map)
-                    .frame(width: 1024, height: 834)
+                    .frame(width: controlWidth, height: 834)
                     .scaleEffect(map.ui)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                    .position(x: map.uox + controlWidth * map.ui / 2, y: geo.size.height / 2)
 
                 if book {
                     StickerBookView(game: AquariumSim.gameID) { withAnimation(.easeOut(duration: 0.2)) { book = false } }
@@ -285,6 +287,7 @@ struct AquariumView: View {
         .ignoresSafeArea()
         .onAppear(perform: start)
         .onDisappear {
+            auto.cancel()
             sim.save()
             AquaSound.shared.stopLoops()
         }
@@ -346,8 +349,10 @@ struct AquariumView: View {
             }
             .position(x: 880, y: 46)
             // Which tool to suggest is checked a few times a second; the bounce itself runs only while one is suggested.
+            TimelineView(.periodic(from: .now, by: 0.2)) { _ in activityPrompt }
+                .position(x: 512, y: 46)
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-                let hint = sim.tool == nil && tray == nil ? suggested : nil
+                let hint = sim.huntKind == nil && picked == nil && sim.tool == nil && tray == nil ? suggested : nil
                 TimelineView(.animation(minimumInterval: 1.0 / 60, paused: hint == nil)) { tl in
                     dock(map, hint: hint, time: tl.date.timeIntervalSinceReferenceDate)
                 }
@@ -357,6 +362,38 @@ struct AquariumView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             StickerToast(game: AquariumSim.gameID, target: AquariumView.bookSpot)
+        }
+    }
+
+    @ViewBuilder private var activityPrompt: some View {
+        if let tool = picked {
+            let title = tool == .food ? "Tap to sprinkle" : (tool == .net ? "Tap or sweep a fish" : "Rub the glass")
+            PlayPrompt(title: title, actionSymbol: "xmark", action: {
+                auto.cancel()
+                picked = nil
+            }) { Image(systemName: "hand.tap.fill").font(.title) }
+            .accessibilityHint("Put the tool away")
+        } else if let kind = sim.huntKind {
+            PlayPrompt(title: "Find this fish  \(sim.fishFound)/\(AquariumSim.huntGoal)", actionSymbol: "xmark",
+                       action: { sim.stopFishHunt() }) {
+                Canvas { ctx, size in
+                    var g = ctx
+                    g.translateBy(x: size.width / 2, y: size.height / 2)
+                    let scale = min(0.72, 46 / max(kind.length + kind.tailLength, kind.height))
+                    g.scaleBy(x: scale, y: scale)
+                    let variant = sim.fish.first { $0.kind == kind && !$0.caught }?.variant ?? 0
+                    AquaFishPainter.drawLocal(g, kind: kind, variant: variant, phase: 0, amp: 0.2, gulp: 0, puff: 0, time: 0)
+                }
+            }
+            .accessibilityLabel("Find the \(kind.rawValue), \(sim.fishFound) of \(AquariumSim.huntGoal) found")
+        } else {
+            let title = sim.fishFound == AquariumSim.huntGoal ? "Feeding time! Play again" : "Fish hunt"
+            PlayPrompt(title: title, actionSymbol: "play.fill", action: {
+                auto.cancel()
+                tray = nil
+                sim.startFishHunt()
+            }) { Image(systemName: "magnifyingglass").font(.title) }
+            .disabled(sim.fish.isEmpty)
         }
     }
 
@@ -395,8 +432,10 @@ struct AquariumView: View {
                     .opacity(hidden == slot.rawValue ? 0.35 : 1)
                     .picked(picked == slot && hidden != slot.rawValue, corner: 30)
                     .offset(y: bounce)
-                    .position(slot.spot)
+                    .contentShape(Rectangle())
                     .gesture(dockGesture(slot, map))
+                    .accessibilityLabel(slot.rawValue.capitalized)
+                    .position(slot.spot(map))
             }
         }
     }
@@ -410,6 +449,11 @@ struct AquariumView: View {
                     return
                 case .food, .sponge, .net:
                     if auto.running { auto.cancel() }
+                    guard !ToolTap.isTap(v.translation) else { return }
+                    if carrying == nil {
+                        picked = nil
+                        sim.stopFishHunt()
+                    }
                     useTool(slot, p)
                 }
             }
@@ -418,12 +462,17 @@ struct AquariumView: View {
                 case .fish, .decor:
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
+                    auto.cancel()
+                    picked = nil
+                    sim.stopFishHunt()
                     let want: AquaTray = slot == .fish ? .fish : .decor
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { tray = tray == want ? nil : want }
                 case .food, .sponge, .net:
-                    endTool(slot, map)
+                    if carrying != nil { endTool(slot, map) }
                     // a tap on the dock picks the tool (or puts it down)
                     if ToolTap.isTap(v.translation) {
+                        sim.stopFishHunt()
+                        tray = nil
                         picked = picked == slot ? nil : slot
                         Sound.shared.play(.pop, volume: 0.6)
                     }
@@ -449,30 +498,44 @@ struct AquariumView: View {
     }
 
     private func endTool(_ slot: AquaSlot, _ map: AMap) {
-        sim.release(home: map.fromUI(slot.spot))
+        sim.release(home: map.fromUI(slot.spot(map)))
         finishCarry(slot.rawValue)
     }
 
     /// The picked tool flies off the dock and does the spot she tapped by itself.
     private func autoDo(_ slot: AquaSlot, _ spot: CGPoint, _ map: AMap) {
         guard slot == .food || slot == .sponge || slot == .net else { return }
+        if slot == .food {
+            sim.feed(at: spot)
+            return
+        }
+        if slot == .net {
+            guard AGeo.tank.contains(spot) else { return }
+            // Start the scoop on the fish while it is still under the tap.
+            auto.run(from: spot, to: spot, step: { p in
+                let x = max(AGeo.left + 1, min(AGeo.right - 1, p.x))
+                let y = max(AGeo.waterY, min(AGeo.bottomY - 1, p.y))
+                useTool(slot, CGPoint(x: x, y: y))
+            }, end: { _ in endTool(slot, map) })
+            return
+        }
         let f = FingerLift.finger(for: spot, lift: AquariumView.lift(tool(for: slot)), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
-        auto.run(from: map.fromUI(slot.spot), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot, map) })
+        auto.run(from: map.fromUI(slot.spot(map)), to: f, step: { useTool(slot, $0) }, end: { _ in endTool(slot, map) })
     }
 
     /// Where a carried thing goes for her finger at p (design space). Things drawn around their middle are lifted
     /// until their lowest part still clears her finger.
     static func lifted(_ p: CGPoint, _ tool: AquaTool) -> CGPoint {
-        FingerLift.point(p, lift: lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+        if tool == .food, AGeo.tank.contains(p) {
+            return CGPoint(x: p.x, y: AGeo.waterY - 16)
+        }
+        return FingerLift.point(p, lift: lift(tool), bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
     }
-
-    /// From the middle of the net's hoop to the middle of its grip, in the net's drawing.
-    static let netGrip: CGFloat = 134
 
     static func lift(_ tool: AquaTool) -> CGFloat {
         let lift: CGFloat
         switch tool {
-        case .net: lift = AquariumView.netGrip                 // her finger on the pink grip, the hoop out ahead
+        case .net: lift = 0
         case .sponge: lift = FingerLift.grip                   // her finger at its corner, the sponge up and to the left
         case .food: lift = FingerLift.pour
         case .fish: lift = FingerLift.carry(below: 50)
@@ -542,6 +605,7 @@ struct AquariumView: View {
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("aquarium"))
                 .onChanged { v in
+                    guard !ToolTap.isTap(v.translation) else { return }
                     let p = map.design(v.location)
                     if carrying == nil {
                         carrying = key
@@ -552,8 +616,15 @@ struct AquariumView: View {
                     }
                     if let tl = sim.tool { sim.carry(to: AquariumView.lifted(p, tl), hand: p) }
                 }
-                .onEnded { _ in
-                    sim.release(home: map.fromUI(t == .fish ? AquaSlot.fish.spot : AquaSlot.decor.spot))
+                .onEnded { v in
+                    if carrying == nil {
+                        let x = map.design(v.startLocation).x
+                        if t == .fish { sim.addFish(FishKind.allCases[i], x: x, y: AGeo.waterY - 18) }
+                        else { sim.addDecor(AquaDecorKind.available[i], x: x, falling: true, y: AGeo.waterY) }
+                        Sound.shared.tap()
+                    } else {
+                        sim.release(home: map.fromUI(t == .fish ? AquaSlot.fish.spot(map) : AquaSlot.decor.spot(map)))
+                    }
                     carrying = nil
                     hidden = nil
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil }

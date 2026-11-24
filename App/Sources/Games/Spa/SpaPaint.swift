@@ -8,21 +8,29 @@ import SwiftUI
 
 struct SMap {
     let size: CGSize
+    let ui: CGFloat
+    let wideCaddy: Bool
     let s: CGFloat
     let ox: CGFloat
     let oy: CGFloat
 
     init(size: CGSize) {
         self.size = size
-        let h = DesignCanvas<EmptyView>.designHeight
-        let scale = max(0.1, size.height / h)
-        let w = max(1024, size.width / scale)
-        s = min(scale, size.width / w)
-        ox = size.width / 2 - 512 * s
-        oy = size.height / 2 - 417 * s
+        ui = max(0.001, min(size.width / 1024, size.height / 834))
+        wideCaddy = size.width / ui >= 1300
+        // On wide screens the controls have their own column. Frame the mirror through
+        // the feet of the tub, using the extra height for the water and the toys.
+        s = ui * (wideCaddy ? 1.10 : 1)
+        ox = size.width / 2 - (wideCaddy ? 545 : 512) * s
+        oy = size.height / 2 - (wideCaddy ? 438 : 417) * s
     }
 
     func design(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - ox) / s, y: (p.y - oy) / s) }
+    func fromUI(_ point: CGPoint) -> CGPoint {
+        design(CGPoint(x: size.width / 2 + (point.x - 512) * ui,
+                       y: size.height / 2 + (point.y - 417) * ui))
+    }
+
     var visible: CGRect { CGRect(x: -ox / s, y: -oy / s, width: size.width / s, height: size.height / s) }
 }
 
@@ -654,6 +662,10 @@ enum SpaPainter {
             let fade = Double(min(1, (b.life - b.age) / 0.6 + 0.3))
             var bg = g
             bg.opacity = fade
+            if b.star {
+                bg.fill(Path(ellipseIn: rect), with: .color(Color(hex: 0x97499A).opacity(0.8)))
+                bg.fill(Twinkle().path(in: rect.insetBy(dx: 15, dy: 15)), with: .color(Color(hex: 0xFFEB87)))
+            }
             bg.fill(Path(ellipseIn: rect), with: .radialGradient(Gradient(colors: [Color.white.opacity(0.02), Color.white.opacity(0.22)]),
                                                                   center: b.p, startRadius: b.r * 0.4, endRadius: b.r))
             bg.stroke(Path(ellipseIn: rect), with: .conicGradient(film, center: b.p, angle: .radians(Double(b.phase) + sim.time * 0.7)), lineWidth: max(1.4, b.r * 0.1))

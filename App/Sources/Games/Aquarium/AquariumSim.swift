@@ -131,6 +131,36 @@ final class AquariumSim {
     static let maxFish = 24
 
     var fish: [AquaFish] = []
+    private(set) var huntKind: FishKind?
+    private(set) var fishFound = 0
+    static let huntGoal = 3
+
+    func startFishHunt() {
+        fishFound = 0
+        chooseHuntFish()
+    }
+
+    func stopFishHunt() { huntKind = nil }
+
+    private func chooseHuntFish() {
+        let present = FishKind.allCases.filter { kind in fish.contains { $0.kind == kind && !$0.caught } }
+        huntKind = present.filter { $0 != huntKind }.randomElement() ?? present.first
+    }
+
+    private func findFish(_ index: Int) {
+        guard fish[index].kind == huntKind else { return }
+        fishFound += 1
+        if fishFound == Self.huntGoal {
+            huntKind = nil
+            for k in 0..<12 {
+                let x = fish[index].p.x + CGFloat(k - 6) * 8
+                addFlake(at: CGPoint(x: x, y: surfaceY(x) - 12), v: .zero)
+            }
+            AquaSound.shared.play(.chime)
+        } else {
+            chooseHuntFish()
+        }
+    }
     var food: [AquaFood] = []
     var bubbles: [AquaBubble] = []
     var particles: [AquaParticle] = []
@@ -443,7 +473,7 @@ final class AquariumSim {
                 addBubble(mouth(f), r: CGFloat.random(in: 1.5...3))
             }
             fish[i] = f
-            eat(i)
+            if feeding { eat(i) }
         }
     }
 
@@ -483,10 +513,11 @@ final class AquariumSim {
 
     private func nearestFood(to p: CGPoint, within: CGFloat) -> Int? {
         var best: Int?
-        var bd = within
+        var bd = within * within
         for j in food.indices where food[j].state != .air {
             if food[j].state == .settled && food[j].age > 10 { continue }
-            let d = hypot(food[j].p.x - p.x, food[j].p.y - p.y)
+            let dx = food[j].p.x - p.x, dy = food[j].p.y - p.y
+            let d = dx * dx + dy * dy
             if d < bd { bd = d; best = j }
         }
         return best
@@ -514,8 +545,26 @@ final class AquariumSim {
 
     // MARK: Food
 
+    private static let flakeLimit = 48
+
+    /// A pinch enters at the surface in the tapped column, even when she taps a fish deep down.
+    func feed(at point: CGPoint) {
+        guard point.x >= AGeo.left, point.x <= AGeo.right,
+              point.y >= AGeo.rimY - 30, point.y <= AGeo.bottomY else { return }
+        let x = max(AGeo.left + 24, min(AGeo.right - 24, point.x))
+        let excess = food.count + 5 - Self.flakeLimit
+        if excess > 0 { food.removeFirst(excess) }
+        for offset in [-16, -8, 0, 8, 16] {
+            let dx = CGFloat(offset)
+            addFlake(at: CGPoint(x: x + dx, y: surfaceY(x) - 10 - abs(dx)),
+                     v: CGVector(dx: dx * 1.4, dy: 45))
+        }
+        disturb(x, 2.5, width: 2)
+        AquaSound.shared.play(.shake, volume: 0.55, gap: 0.12)
+    }
+
     func addFlake(at p: CGPoint, v: CGVector) {
-        guard food.count < 90 else { return }
+        guard food.count < Self.flakeLimit else { return }
         food.append(AquaFood(p: p, v: v, floatFor: CGFloat.random(in: 0.8...2.4), hue: Int.random(in: 0..<4),
                              rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -3...3), seed: CGFloat.random(in: 0...6)))
         lastFed = time
@@ -1031,6 +1080,7 @@ final class AquariumSim {
         guard dt > 0 else { return }
         time += Double(dt)
         night += ((lightsOn ? 0 : 1) - night) * min(1, dt * 1.6)
+        if let kind = huntKind, !fish.contains(where: { $0.kind == kind && !$0.caught }) { chooseHuntFish() }
         stepHand(dt)
         stepTool(dt)
         stepSurface(dt)
@@ -1176,6 +1226,11 @@ final class AquariumSim {
 
     /// A tap on a bubble pops it; a tap on a fish makes it happy. True if something was there.
     private func tapFishOrBubble(_ p: CGPoint) -> Bool {
+        if let kind = huntKind, let i = fishAt(p), fish[i].kind == kind {
+            tapFish(i)
+            findFish(i)
+            return true
+        }
         if tapVisitor(p) { return true }
         if let b = bubbles.indices.last(where: { hypot(bubbles[$0].p.x - p.x, bubbles[$0].p.y - p.y) < bubbles[$0].r + 16 && !bubbles[$0].back }) {
             let q = bubbles[b].p
@@ -1281,9 +1336,29 @@ final class AquariumSim {
         switch t {
         case .food: AquaSound.shared.play(.shake, volume: 0.5)
         case .sponge: AquaSound.shared.play(.pick, volume: 0.5)
-        case .net: AquaSound.shared.play(.swish, volume: 0.4)
+        case .net:
+            AquaSound.shared.play(.swish, volume: 0.4)
+            if AGeo.inWater(p) { scoop(at: p) }
         case .fish: AquaSound.shared.play(.bag, volume: 0.6)
         case .decor: AquaSound.shared.play(.pick, volume: 0.5)
+        }
+    }
+
+    private func scoop(at point: CGPoint) {
+        guard caught == nil else { return }
+        var nearest = fishAt(point)
+        if nearest == nil {
+            var best: CGFloat = 48 * 48
+            for i in fish.indices where !fish[i].caught {
+                let dx = fish[i].p.x - point.x, dy = fish[i].p.y - point.y
+                let distance = dx * dx + dy * dy
+                if distance < best { best = distance; nearest = i }
+            }
+        }
+        if let i = nearest {
+            fish[i].caught = true
+            caught = fish[i].id
+            AquaSound.shared.play(.blub, volume: 0.6)
         }
     }
 
@@ -1338,7 +1413,7 @@ final class AquariumSim {
         let prev = toolP
         let wasWet = AGeo.inWater(prev)
         // things in the water drag behind her finger a little
-        let follow = min(1, dt * (wasWet && t == .net ? 12 : 30))
+        let follow: CGFloat = t == .net || t == .food ? 1 : min(1, dt * 30)
         toolP.x += (finger.x - toolP.x) * follow
         toolP.y += (finger.y - toolP.y) * follow
         let vx = (toolP.x - prev.x) / dt
@@ -1358,9 +1433,9 @@ final class AquariumSim {
         switch t {
         case .food:
             // turned over above the water and shaken: flakes tumble out of the cap
-            target = over ? 2.55 + sin(CGFloat(time) * 14) * 0.06 * shake : 0
-            if over && tilt > 1.9 {
-                foodAcc += dt * (3.5 + shake * 20)
+            target = over ? 1.98 + sin(CGFloat(time) * 14) * 0.06 * shake : 0
+            if over {
+                foodAcc += dt * (4 + min(1, shake) * 6)
                 while foodAcc > 1 {
                     foodAcc -= 1
                     addFlake(at: CGPoint(x: toolP.x + CGFloat.random(in: -6...6) * FingerLift.spread * 2, y: toolP.y + 4),
@@ -1387,18 +1462,7 @@ final class AquariumSim {
             }
         case .net:
             target = max(-0.5, min(0.5, toolV.dx * -0.0008))
-            if caught == nil && wet && hypot(toolV.dx, toolV.dy) > 40 {
-                for i in fish.indices where !fish[i].caught {
-                    // the hoop scoops well past her fingertip (see `FingerLift.spread`)
-                    let r = (30 + fish[i].kind.length * 0.3) * FingerLift.spread
-                    if hypot(fish[i].p.x - toolP.x, fish[i].p.y - toolP.y) < r {
-                        fish[i].caught = true
-                        caught = fish[i].id
-                        AquaSound.shared.play(.blub, volume: 0.6)
-                        break
-                    }
-                }
-            }
+            if wet { scoop(at: toolP) }
             if let id = caught, let i = fish.firstIndex(where: { $0.id == id }) {
                 fish[i].p = CGPoint(x: toolP.x, y: toolP.y + 8)
                 fish[i].v = toolV
