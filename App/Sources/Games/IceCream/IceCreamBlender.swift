@@ -327,6 +327,21 @@ extension IceSim {
         jarP = target
     }
 
+    func resetBlender() {
+        releaseJar()
+        chunks.removeAll()
+        jarVolume = 0
+        jarPaint = ICPaint()
+        jarFruit = [CGFloat](repeating: 0, count: ICFruit.allCases.count)
+        jarP = ICGeo.jarHome
+        jarTilt = 0
+        jarOnBase = true
+        motor = 0
+        slosh = 0
+        sloshV = 0
+        spills.removeAll()
+    }
+
     func releaseJar() {
         jarTiltV = 0
         pourRate = 0

@@ -193,6 +193,35 @@ final class IceCreamTests: XCTestCase {
         }
     }
 
+    func testSpecialtyOrdersOnlyAskForTreatsAtTheirStation() {
+        for kind in [ICKind.soft, .smoothie] {
+            for seed in 0..<30 {
+                let order = ICOrder.random(customer: 0, seed: seed, kind: kind)
+                XCTAssertEqual(order.kind, kind)
+                XCTAssertEqual(order.base == .glass, kind == .smoothie)
+                XCTAssertEqual(order.stars(for: order.picture()), 3)
+            }
+        }
+    }
+
+    func testResetClearsTheGlassAndBlenderWhilePouring() {
+        let sim = freshSim()
+        sim.setStation(.smoothie)
+        sim.addToGlass(IceSim.milk, 0.5, fruit: nil)
+        sim.jarVolume = 0.4
+        sim.jarPaint.add(ICFruit.mango.juice, 1)
+        sim.pickUp(.jar, at: sim.jarP)
+        XCTAssertNil(sim.serve(), "a drink cannot be served while the jar is held")
+
+        sim.clearStand()
+
+        XCTAssertEqual(sim.build.base, .glass)
+        XCTAssertEqual(sim.build.fill, 0)
+        XCTAssertEqual(sim.jarVolume, 0)
+        XCTAssertTrue(sim.jarOnBase)
+        XCTAssertNil(sim.held)
+    }
+
     func testServingClearsTheStand() {
         let sim = freshSim()
         sim.placeBase(.waffle)

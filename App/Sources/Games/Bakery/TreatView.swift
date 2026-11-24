@@ -54,7 +54,8 @@ enum TreatPainter {
             art.draw("cone_\(t.cone)", liner(t.liner), in: ctx)
             for (k, s) in t.scoops.prefix(4).enumerated() {
                 let p = CGPoint(x: 300, y: art.scoopY0 - CGFloat(k) * art.scoopDY)
-                let fl = flavor(s)
+                let flavors = BakeryPalette.scoopFlavors
+                let fl = flavors[clamp(s, flavors.count)]
                 art.draw("scoop", fl.color, at: p, in: ctx)
                 if fl.chips == 1 { art.draw("scoop_chips", fl.color, at: p, in: ctx) }
                 if fl.chips == 2 { art.draw("scoop_bits", fl.color, at: p, in: ctx) }

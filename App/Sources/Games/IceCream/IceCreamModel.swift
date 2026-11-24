@@ -230,10 +230,10 @@ struct ICOrder: Equatable {
 
     enum Part: CaseIterable { case base, flavor, topping }
 
-    static func random(customer: Int, seed: Int = Int.random(in: 0..<1_000_000)) -> ICOrder {
+    static func random(customer: Int, seed: Int = Int.random(in: 0..<1_000_000), kind requested: ICKind? = nil) -> ICOrder {
         var r = ICRandom(seed)
         let kinds: [ICKind] = [.scoops, .soft, .smoothie]
-        let kind = kinds[r.int(3)]
+        let kind = requested ?? kinds[r.int(kinds.count)]
         switch kind {
         case .scoops:
             let n = 1 + r.int(2)
@@ -350,7 +350,6 @@ struct ICSave: Codable, Equatable {
 
 enum ICStorage {
     static func load() -> ICSave { GameStorage.load(ICSave.self, game: IceSim.gameID, file: "shop.json") ?? ICSave() }
-    static func save(_ s: ICSave) { GameStorage.save(s, game: IceSim.gameID, file: "shop.json") }
 }
 
 // MARK: - Sounds
