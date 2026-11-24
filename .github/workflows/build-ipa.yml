@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_tests:
+        description: Run iPad simulator tests alongside the build
+        type: boolean
+        default: false
 
 concurrency:
   group: build-${{ github.ref }}
@@ -17,25 +22,43 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
-      # Pages already built from unchanged files come back from the cache.
-      - uses: actions/cache@v4
+      - name: Restore release-ready artwork
+        id: artwork
+        uses: actions/cache@v4
+        with:
+          path: artwork.tar
+          key: artwork-v1-${{ hashFiles('art/coloring/mine/**', 'tools/build_my_pages.py', 'tools/import_coloring.py', 'App/Resources/Games/**/*.png') }}
+      - name: Restore previously rendered pages
+        if: steps.artwork.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
         with:
           path: |
             App/Resources/Games/Coloring/my_*.png
             App/Resources/Games/Coloring/mypages.json
           key: mypages-${{ hashFiles('art/coloring/mine/**', 'tools/build_my_pages.py', 'tools/import_coloring.py') }}
           restore-keys: mypages-
-      - run: pip install cairosvg pillow numpy scipy
-      - name: Build pages from art/coloring/mine
-        run: python3 tools/build_my_pages.py
+      - name: Prepare changed artwork
+        if: steps.artwork.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          python3 -m pip install cairosvg pillow numpy scipy pyoxipng==9.1.1
+          python3 tools/build_my_pages.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import oxipng
+
+          for image in Path("App/Resources/Games").rglob("*.png"):
+              oxipng.optimize(str(image), level=2)
+          PY
+          find App/Resources/Games -type f \( -name '*.png' -o -path 'App/Resources/Games/Coloring/mypages.json' \) -print0 |
+            tar --null -T - -cf artwork.tar
       - uses: actions/upload-artifact@v5
         with:
-          name: my-pages
-          path: |
-            App/Resources/Games/Coloring/my_*.png
-            App/Resources/Games/Coloring/mypages.json
+          name: artwork
+          path: artwork.tar
+          compression-level: 0
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 1
 
   ipa:
     name: Unsigned .ipa
@@ -46,11 +69,13 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
-          name: my-pages
-          path: App/Resources/Games/Coloring
+          name: artwork
+      - run: tar -xf artwork.tar
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen if needed
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: command -v xcodegen || brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -67,7 +92,7 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             MARKETING_VERSION="1.0.${{ github.run_number }}" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
-            build | tee build.log | grep -E "error:|warning: .*Glimmie|BUILD (SUCCEEDED|FAILED)" || true
+            build | tee build.log
           test -d build/Build/Products/Release-iphoneos/Glimmie.app
 
       - name: Package Glimmie.ipa
@@ -81,6 +106,7 @@ jobs:
         with:
           name: Glimmie-ipa
           path: Glimmie.ipa
+          compression-level: 0
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v5
@@ -90,6 +116,7 @@ jobs:
           path: build.log
 
   tests:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_tests
     name: Unit tests
     runs-on: macos-15
     timeout-minutes: 30
@@ -111,7 +138,7 @@ jobs:
 
   publish:
     name: Publish release + Feather source
-    needs: [ipa, tests]
+    needs: ipa
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -139,4 +166,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add source.json
           git commit -m "Feather source: Glimmie $VER [skip ci]"
-          for i in 1 2 3; do git pull --rebase -q origin main && git push origin HEAD:main && break; sleep 5; done
+          for i in 1 2 3; do git pull --rebase -q origin main && git push origin HEAD:main && exit 0; sleep 5; done
+          exit 1

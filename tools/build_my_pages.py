@@ -33,9 +33,9 @@ MINE = os.path.join(ROOT, "art", "coloring", "mine")
 OUT = ic.OUT
 INDEX = os.path.join(OUT, "mypages.json")
 EXTS = (".svg", ".png", ".jpg", ".jpeg")
-# Bump when the same source file should come out as different pixels. The Actions cache
+# Bump when the generated image or its encoding changes. The Actions cache
 # restores an older mypages.json by prefix; a matching file hash would otherwise skip the rebuild.
-PIPELINE = 2
+PIPELINE = 3
 
 
 def slug(s):
@@ -63,6 +63,19 @@ def raster_ink(path, long_side=2400):
     return d[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
 
 
+def save_page_png(image, path, *, ink):
+    # Four bits retain antialiased edges. Rounding to the nearest multiple of 17
+    # keeps values 0..144 below the fill threshold and 145..255 above it.
+    levels = bytes(range(0, 256, 17))
+    indexed = image.point([(v + 8) // 17 for v in range(256)], mode="P")
+    if ink:
+        indexed.putpalette(bytes(3 * len(levels)))  # black ink at each opacity
+        indexed.info["transparency"] = levels
+    else:
+        indexed.putpalette(bytes(v for v in levels for _ in range(3)))
+    indexed.save(path, format="PNG", bits=4, optimize=True)
+
+
 def build_one(job):
     pid, path = job
     try:
@@ -76,8 +89,9 @@ def build_one(job):
             finally:
                 ic.ink_of = orig
         a = Image.fromarray(alpha)
-        Image.merge("LA", (Image.new("L", a.size, 0), a)).save(os.path.join(OUT, f"{pid}.png"), optimize=True)
-        Image.fromarray(255 - alpha).resize((400, 300), Image.LANCZOS).save(os.path.join(OUT, f"{pid}_t.png"), optimize=True)
+        save_page_png(a, os.path.join(OUT, f"{pid}.png"), ink=True)
+        thumb = Image.fromarray(255 - alpha).resize((400, 300), Image.LANCZOS)
+        save_page_png(thumb, os.path.join(OUT, f"{pid}_t.png"), ink=False)
         return pid, None
     except Exception as e:  # a broken file shouldn't stop the other 899
         return pid, str(e)
@@ -110,7 +124,10 @@ def main():
                 h = hashlib.sha1(f.read()).hexdigest()
             hashes[pid] = h
             ids.append(pid)
-            if old.get(pid) != h or not os.path.exists(os.path.join(OUT, f"{pid}.png")):
+            if old.get(pid) != h or any(
+                not os.path.isfile(os.path.join(OUT, pid + suffix))
+                for suffix in (".png", "_t.png")
+            ):
                 todo.append((pid, path))
         if ids:
             cats.append({"id": f"my_{slug(folder)}", "icon": "folder.fill", "color": pastel(folder), "pages": ids, "cover": ids[0]})
@@ -140,6 +157,8 @@ def main():
                 os.remove(os.path.join(OUT, name))
     with open(INDEX, "w") as f:
         json.dump({"pipeline": PIPELINE, "categories": cats, "hashes": hashes}, f, indent=1)
+    if failed:
+        sys.exit(f"Failed to render {len(failed)} coloring pages")
 
 
 if __name__ == "__main__":
