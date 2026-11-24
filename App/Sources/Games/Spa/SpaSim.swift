@@ -373,6 +373,8 @@ final class SpaSim {
     var beads: [SBead] = []
     let sculpture = FoamSculpture()
     var suds: [SSud] = []
+    private var sneezeAt: Double = -10
+    private var rinseUntil: Double = -10
     var happyUntil: Double = 0
     var blinkAt: Double = 2
     var bob: CGFloat = 0
@@ -492,6 +494,7 @@ final class SpaSim {
         stepPuffs(d)
         stepSteam(d)
         sculpture.advance(d)
+        stepRinse()
         stepHer(d)
         sounds()
     }
@@ -1099,10 +1102,46 @@ final class SpaSim {
     // MARK: Her
 
     func expression() -> Expression {
-        if cucumbers[0] && cucumbers[1] { return .blink }
+        if time-sneezeAt < 0.22 || (cucumbers[0] && cucumbers[1]) { return .blink }
         if time < happyUntil { return .happy }
         if time > blinkAt && time < blinkAt + 0.14 { return .blink }
         return .normal
+    }
+
+    func sneezeFoam() {
+        sneezeAt = time
+        sculpture.shake()
+        giggle()
+        for i in 0..<7 {
+            let dx = CGFloat(i-3)
+            bubbles.append(SBubble(p:SGeo.fromDoll(CGPoint(x:300+dx*12,y:225)),
+                                   v:CGVector(dx:dx*44,dy:-100-abs(dx)*20),r:5+abs(dx),
+                                   life:1.3+abs(dx)*0.2,phase:dx))
+        }
+        play(.blow,0.48,gap:0.2)
+    }
+
+    func rinseHairstyle() {
+        sculpture.held = nil
+        rinseUntil = time+1.2
+        play(.splash,0.5)
+    }
+
+    private func stepRinse() {
+        let remaining = rinseUntil-time
+        guard remaining>0 else { return }
+        let progress = CGFloat(1-remaining/1.2)
+        let y = -25+progress*600
+        for x in stride(from:CGFloat(0),through:600,by:32) {
+            sculpture.moveRinse(at:CGPoint(x:x,y:y))
+        }
+        if drops.count < 190 {
+            for _ in 0..<3 {
+                let at = SGeo.fromDoll(CGPoint(x:CGFloat.random(in:100...500),y:y-20))
+                drops.append(SDrop(p:at,v:CGVector(dx:15,dy:270),r:2.2,kind:.spray))
+            }
+        }
+        if remaining < 0.06 { happyUntil = time+1.2 }
     }
 
     func giggle() {

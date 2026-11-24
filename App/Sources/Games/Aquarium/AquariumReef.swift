@@ -50,6 +50,13 @@ extension AquariumSim {
     }
 
     func drawReef(_ g: GraphicsContext, time t: CGFloat) {
+        if reefStarted && eelSpine.isEmpty && !decor.contains(where: { $0.held }),
+           let left = decor.first(where: { $0.kind == .pillar && !$0.falling }),
+           let right = decor.first(where: { $0.kind == .pillar && $0.x-left.x >= 80 && $0.x-left.x <= 152 }),
+           let seat = bridge(at:(left.x+right.x)/2) {
+            let ledge=Path(roundedRect:CGRect(x:seat.x-78,y:seat.y-20,width:156,height:19),cornerRadius:8)
+            g.stroke(ledge,with:.color(.white.opacity(0.45+0.18*sin(t*2))),style:StrokeStyle(lineWidth:2,dash:[7,7]))
+        }
         for slab in decor where slab.kind == .slate {
             if let seat = bridge(at: slab.x), slab.held {
                 g.stroke(Path(roundedRect:CGRect(x:seat.x-79,y:seat.y-18,width:158,height:20),cornerRadius:8),

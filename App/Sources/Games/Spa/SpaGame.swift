@@ -347,7 +347,7 @@ struct SpaView: View {
                     if styling {
                         let point = SGeo.toDoll(p)
                         if hypot(point.x-300,point.y-359) < 23 && !rinseFoam {
-                            sim.sculpture.shake(); sim.giggle()
+                            sim.sneezeFoam()
                         } else {
                             sim.sculpture.begin(point)
                             if rinseFoam { sim.pickUp(.shower, finger: p, lifted: CGPoint(x:p.x,y:p.y-57)) }
@@ -430,6 +430,11 @@ struct SpaView: View {
     private var mirrorControls: some View {
         ZStack {
             HomeButton(action: exit).position(x: 63, y: 60)
+            if sim.sculpture.tufts.count < 2 {
+                Text("Pull the foam into a curl").font(.system(size:22,weight:.bold,design:.rounded))
+                    .padding(10).foregroundStyle(Theme.ink).background(.ultraThinMaterial,in:Capsule())
+                    .position(x:465,y:60).allowsHitTesting(false)
+            }
             PlayPrompt(title: "Bath toys", actionSymbol: "arrow.right", action: {
                 sim.sculpture.held = nil
                 sim.release()
@@ -456,9 +461,17 @@ struct SpaView: View {
                     rinseFoam.toggle()
                     sim.sculpture.rinsing = rinseFoam
                 } label: {
-                    Image(systemName: "shower.fill").font(.system(size: 34))
-                        .frame(width:72,height:64).background(rinseFoam ? Theme.sky : .white,in: Capsule())
-                }.accessibilityLabel("Rinse the foam")
+                    Canvas { ctx,size in
+                        var g=ctx
+                        g.translateBy(x:size.width/2,y:size.height/2)
+                        ThingPainter.duck(g,body:RGB(hex:"#FFD459"),scale:0.49)
+                    }.frame(width:72,height:64).background(rinseFoam ? Theme.sky : .white,in: Capsule())
+                }.accessibilityLabel("Duck shower")
+                if rinseFoam {
+                    Button("Rinse all") { sim.rinseHairstyle() }
+                        .font(.system(size:17,weight:.bold,design:.rounded))
+                        .padding(10).background(.white,in:Capsule())
+                }
             }.buttonStyle(Squish()).position(x: 945, y: 437)
         }
     }

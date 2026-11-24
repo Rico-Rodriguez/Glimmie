@@ -63,7 +63,9 @@ enum SpellBenchArt {
     static func draw(_ g: GraphicsContext, _ b: SpellBench) {
         let t=CGFloat(b.sim.time)
         var flask=g
-        flask.translateBy(x:-250,y:0)
+        flask.translateBy(x:262,y:700)
+        flask.scaleBy(x:0.77,y:0.77)
+        flask.translateBy(x:-512,y:-700)
         PotionPainter.benchFlask(flask,b.sim,liquid:b.liquid,time:t)
         for ingredient in BenchIngredient.allCases {
             jar(g,ingredient,selected:b.chosen.contains(ingredient),time:t)
@@ -89,6 +91,9 @@ enum SpellBenchArt {
             bead(g,ingredient,center:CGPoint(x:center.x+CGFloat(j*19)-CGFloat((b.brewed.count-1)*9),y:center.y+6),scale:0.44)
         }
         if case .jar(let ingredient)=b.grab { bead(g,ingredient,center:b.touch,scale:1.15) }
+        for (j,ingredient) in b.chosen.enumerated() {
+            bead(g,ingredient,center:CGPoint(x:239+CGFloat(j)*46,y:754),scale:1)
+        }
         let age=CGFloat(b.sim.time-b.appliedAt)
         if age>=0 && age<0.8 {
             for i in 0..<14 {
@@ -103,7 +108,9 @@ enum SpellBenchArt {
     static func jar(_ g: GraphicsContext,_ ingredient: BenchIngredient,selected: Bool,time:CGFloat) {
         let c=ingredient.center
         let art: PIngredient = ingredient == .berry ? .berries : (ingredient == .bean ? .petals : .frost)
-        PotionPainter.drawIngredient(g,art,center:c,angle:0,scale:0.9,fill:0.82,time:time)
+        PotionPainter.jar(g,art,center:c,angle:0,scale:0.9,time:time) { jar, spot in
+            bead(jar,ingredient,center:spot,scale:0.46)
+        }
         let badge=CGRect(x:c.x-23,y:c.y-4,width:46,height:38)
         g.fill(Path(roundedRect:badge,cornerRadius:12),with:.color(selected ? Theme.lemon : Theme.cream))
         g.stroke(Path(roundedRect:badge,cornerRadius:12),with:.color(Color(hex:0xA2774E)),lineWidth:2)
@@ -191,8 +198,13 @@ enum SpellBenchArt {
     }
 
     static func bell(_ g:GraphicsContext,_ b:SpellBench) {
+        let anchor = CGPoint(x:SpellBench.bell.x,y:SpellBench.bell.y-98)
+        var bracket = Path()
+        bracket.move(to:CGPoint(x:725,y:253)); bracket.addLine(to:CGPoint(x:725,y:219))
+        bracket.addQuadCurve(to:anchor,control:CGPoint(x:717,y:208))
+        g.stroke(bracket,with:.color(Color(hex:0x86663C)),style:StrokeStyle(lineWidth:8,lineCap:.round))
         var c=g
-        c.translateBy(x:SpellBench.bell.x,y:SpellBench.bell.y-98)
+        c.translateBy(x:anchor.x,y:anchor.y)
         c.rotate(by:.radians(Double(b.bellAngle)))
         var string=Path(); string.move(to:.zero); string.addLine(to:CGPoint(x:0,y:74))
         c.stroke(string,with:.color(Color(hex:0x815732)),lineWidth:3)

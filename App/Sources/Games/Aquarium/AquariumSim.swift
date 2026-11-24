@@ -275,14 +275,15 @@ final class AquariumSim {
         night = s.night ? 1 : 0
         pump = s.pump
         reefStarted = s.reefStarted ?? false
-        for i in decor.indices where decor[i].kind == .slate {
+        for i in decor.indices where decor[i].kind == .slate && s.decor[i].supported == true {
             if let seat = bridge(at: decor[i].x) { decor[i].y = seat.y }
         }
     }
 
     func makeSave() -> AquaSave {
         AquaSave(fish: fish.map { AquaFishSave(kind: $0.kind, variant: $0.variant) },
-                 decor: decor.filter { !$0.held }.map { AquaDecorSave(kind: $0.kind, x: $0.x, flip: $0.flip) },
+                 decor: decor.filter { !$0.held }.map { AquaDecorSave(kind: $0.kind, x: $0.x, flip: $0.flip,
+                     supported: $0.kind == .slate ? (!$0.falling && $0.y < AGeo.sand($0.x)-35) : nil) },
                  algae: algae.map { Float($0) }, night: !lightsOn, pump: pump, reefStarted: reefStarted)
     }
 
@@ -1163,6 +1164,7 @@ final class AquariumSim {
         case .maybeDecor(let id):
             if hypot(p.x - handStartP.x, p.y - handStartP.y) > 10, let i = decorIndex(id) {
                 grab = .decor(id: id)
+                decorTarget = CGPoint(x:decor[i].x,y:decor[i].y)
                 decor[i].held = true
                 decor[i].falling = false
                 AquaSound.shared.play(.pick, volume: 0.5)
@@ -1196,7 +1198,11 @@ final class AquariumSim {
         switch grab {
         case .decor(let id):
             guard decorIndex(id) != nil else { break }
-            decorTarget = FingerLift.point(h, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+            if let i = decorIndex(id), decor[i].kind == .slate || decor[i].kind == .pillar {
+                decorTarget = CGPoint(x:h.x,y:h.y+decor[i].kind.size.height/2)
+            } else {
+                decorTarget = FingerLift.point(h, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight, width: 1024)
+            }
         case .water:
             // a finger resting on the glass: the fish come to see it
             if handStill > 0.35 {

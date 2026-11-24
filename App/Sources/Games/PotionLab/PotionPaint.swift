@@ -728,7 +728,8 @@ enum PotionPainter {
         return p
     }()
 
-    static func jar(_ g: GraphicsContext, _ ing: PIngredient, center: CGPoint, angle: CGFloat, scale: CGFloat, time t: CGFloat) {
+    static func jar(_ g: GraphicsContext, _ ing: PIngredient, center: CGPoint, angle: CGFloat, scale: CGFloat, time t: CGFloat,
+                    contents: ((GraphicsContext, CGPoint) -> Void)? = nil) {
         var l = g
         l.translateBy(x: center.x, y: center.y)
         l.rotate(by: .radians(Double(angle)))
@@ -745,6 +746,7 @@ enum PotionPainter {
             let col = CGFloat(k % 5), row = CGFloat(k / 5)
             let x = -26 + col * 13 + (row.truncatingRemainder(dividingBy: 2)) * 6
             let y = flipped ? -40 + row * 13 : 44 - row * 13
+            if let contents { contents(inner,CGPoint(x:x,y:y)); continue }
             let pc = PPiece(kind: ing, p: CGPoint(x: x, y: y), v: .zero, ang: CGFloat(k) * 1.3, spin: 0, seed: k, trail: ing == .hair ? (0..<10).map { CGPoint(x: x - 10 + CGFloat($0) * 2.5, y: y + sin(CGFloat($0) * 0.9 + CGFloat(k)) * 5) } : [])
             if ing == .hair && k > 4 { continue }
             PieceArt.draw(inner, pc, alpha: 1)

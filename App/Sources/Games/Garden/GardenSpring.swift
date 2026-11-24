@@ -20,9 +20,13 @@ final class GardenSpring {
 
     func prepare(_ saved: [Int]?) {
         enabled = true
-        if let saved { dug = Set(saved.filter { (0..<water.count).contains($0) }) }
-        for y in 2...5 { for x in 16...22 { dug.insert(y * Self.width + x) } }
-        for x in 22...24 { dug.insert(4 * Self.width + x) }
+        if let saved {
+            dug = Set(saved.filter { (0..<water.count).contains($0) })
+            dug.insert(Self.inlet)
+        } else {
+            for y in 2...5 { for x in 16...22 { dug.insert(y * Self.width + x) } }
+            for x in 22...24 { dug.insert(4 * Self.width + x) }
+        }
         rebuild()
         for i in dug where i % Self.width <= 22 && i / Self.width >= 3 { water[i] = 0.9 }
     }
@@ -109,6 +113,9 @@ final class GardenSpring {
                                           startPoint: CGPoint(x: 0,y: 560), endPoint: CGPoint(x: 0,y: 700)))
         g.stroke(glints, with: .color(.white.opacity(0.79)), lineWidth: 1.6)
         let source = center(Self.inlet)
+        let lip = CGRect(x:source.x-37,y:source.y-31,width:20,height:15)
+        g.fill(Path(ellipseIn:lip),with:.color(Color(hex:0xAE8870)))
+        g.fill(Path(ellipseIn:lip.insetBy(dx:3,dy:3)),with:.color(Color(hex:0x41352D)))
         for i in 0..<5 {
             let phase = (time*1.8+CGFloat(i)/5).truncatingRemainder(dividingBy: 1)
             let x = source.x-22 + 21*phase
