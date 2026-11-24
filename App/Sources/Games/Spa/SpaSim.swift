@@ -220,6 +220,7 @@ struct SAir {
 
 /// A soap bubble in the air.
 struct SBubble {
+    var star = false
     var p: CGPoint
     var v: CGVector
     var r: CGFloat
@@ -317,6 +318,44 @@ final class SpaSim {
     var drops: [SDrop] = []
     var air: [SAir] = []
     var bubbles: [SBubble] = []
+    private(set) var starsPopped = 0
+    private(set) var starRound = false
+    static let starGoal = 5
+
+    func startStarRound() {
+        starsPopped = 0
+        starRound = true
+        if vol < 60 { vol = SGeo.maxDepth * 0.55 }
+        replaceStarBubble()
+    }
+
+    func stopStarRound() {
+        starRound = false
+        bubbles.removeAll { $0.star }
+    }
+
+    private func replaceStarBubble() {
+        guard starRound, !bubbles.contains(where: { $0.star }) else { return }
+        let lanes: [CGFloat] = [560, 710, 465, 645, 510]
+        let x = lanes[starsPopped]
+        bubbles.append(SBubble(star: true, p: CGPoint(x: x, y: surfaceY(x) - 54),
+                               v: CGVector(dx: CGFloat.random(in: -28...28), dy: -62),
+                               r: 38, life: 12, phase: CGFloat.random(in: 0...6)))
+    }
+
+    private func touchBubble(_ i: Int) {
+        let bubble = bubbles[i]
+        popBubble(i)
+        guard starRound, bubble.star else { return }
+        starsPopped += 1
+        pops.append(SPop(p: bubble.p, r: 40, sparkle: true))
+        if starsPopped == Self.starGoal {
+            starRound = false
+            dropIn(.bomb(.rainbow))
+            giggle()
+            play(.chime, 0.85)
+        }
+    }
     var puffs: [SPuff] = []
     var glitter: [SGlitter] = []
     var puddles: [SPuddle] = []
@@ -988,6 +1027,7 @@ final class SpaSim {
             if pop { popBubble(i, loud: b.age < b.life + 1) }
             i -= 1
         }
+        replaceStarBubble()
         for j in pops.indices { pops[j].age += d }
         pops.removeAll { $0.age > ($0.sparkle ? 0.9 : 0.22) }
     }
@@ -1208,7 +1248,7 @@ final class SpaSim {
         hand = .none
         // pop a bubble
         if let i = bubbles.indices.reversed().first(where: { hypot(bubbles[$0].p.x - p.x, bubbles[$0].p.y - p.y) < bubbles[$0].r + 16 }) {
-            popBubble(i)
+            touchBubble(i)
             hand = .pop
             return
         }
@@ -1270,7 +1310,7 @@ final class SpaSim {
         handP = p
         // swiping across bubbles pops them
         if let i = bubbles.indices.reversed().first(where: { hypot(bubbles[$0].p.x - p.x, bubbles[$0].p.y - p.y) < bubbles[$0].r + 8 }) {
-            popBubble(i)
+            touchBubble(i)
         }
         switch hand {
         case .thing(let id):
@@ -1288,12 +1328,39 @@ final class SpaSim {
         }
     }
 
+    /// A bath crayon leaves a bank of colored suds at the surface and a soft plume at the finger.
+    func paintWater(_ point: CGPoint, dye: BombKind) {
+        guard hasWater, inTub(point), point.y >= surfaceY(point.x) - 26 else { return }
+        let color = dye.color
+        let center = SGeo.col(point.x)
+        for offset in -5...5 {
+            let i = center + offset
+            guard tint.indices.contains(i) else { continue }
+            let amount = 0.38 * (1 - CGFloat(abs(offset)) / 6)
+            addFoam(i, amount, tint: color)
+            tint[i] = tint[i].mix(color, Double(amount / (amount + tintA[i])))
+            tintA[i] = min(0.9, tintA[i] + amount)
+        }
+        if puffs.count < 70 {
+            puffs.append(SPuff(p: point, v: CGVector(dx: 0, dy: 14), r: 22, a: 0.8, color: color))
+        }
+        disturb(point.x, 48, width: 24)
+    }
+
     private func swish(_ p: CGPoint, v: CGVector, dt: CGFloat) {
         guard hasWater, inTub(p) else { return }
         let surf = surfaceY(p.x)
         guard p.y > surf - 24 else { return }
         let speed = hypot(v.dx, v.dy)
         let c = SGeo.col(p.x)
+        // Push floating toys in the direction of the stroke. The impulse fades with distance.
+        for i in things.indices where !things[i].held && !things[i].isBomb {
+            let delta = abs(things[i].p.x - p.x)
+            let near = max(0, 1 - delta / 155)
+            if near > 0 && abs(things[i].p.y - surf) < 70 {
+                things[i].v.dx += max(-1200, min(1200, v.dx)) * near * min(dt, 0.08) * 3
+            }
+        }
         // her hand pushes the water: up ahead of it, down behind it
         let dir: Int = v.dx > 0 ? 1 : -1
         let push = max(-1, min(1, v.dx / 900))

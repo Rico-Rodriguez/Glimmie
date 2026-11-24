@@ -12,6 +12,42 @@ final class SpaTests: XCTestCase {
         for _ in 0..<Int(seconds * 60) { sim.step(dt: 1.0 / 60) }
     }
 
+    func testOnlyTouchedStarsCountTowardRainbowBathBomb() throws {
+        let sim = fresh()
+        sim.startStarRound()
+        let first = try XCTUnwrap(sim.bubbles.firstIndex { $0.star })
+        sim.popBubble(first)
+        sim.step(dt: 1.0 / 60)
+        XCTAssertEqual(sim.starsPopped, 0)
+        for count in 1...SpaSim.starGoal {
+            let point = try XCTUnwrap(sim.bubbles.first { $0.star }?.p)
+            sim.handBegan(point)
+            sim.handEnded(point, tap: true)
+            sim.step(dt: 1.0 / 60)
+            XCTAssertEqual(sim.starsPopped, count)
+        }
+        XCTAssertFalse(sim.starRound)
+        XCTAssertTrue(sim.things.contains {
+            if case .bomb(.rainbow) = $0.kind { return true }
+            return false
+        })
+    }
+
+    func testPaintingColorsWetColumnsAndSwipingPushesTheBoat() {
+        let sim = fresh()
+        sim.vol = 150
+        let point = CGPoint(x: 550, y: sim.level + 15)
+        sim.paintWater(point, dye: .mint)
+        XCTAssertGreaterThan(sim.foam[SGeo.col(point.x)], 0)
+        XCTAssertGreaterThan(sim.tintA[SGeo.col(point.x)], 0)
+        XCTAssertEqual(sim.tintA[SGeo.col(200)], 0)
+
+        sim.spawnThing(.toy(.boat), at: CGPoint(x: 630, y: sim.level), held: false)
+        sim.handBegan(CGPoint(x: 500, y: point.y))
+        sim.handMoved(point, dt: 1.0 / 60)
+        XCTAssertGreaterThan(sim.things[0].v.dx, 0)
+    }
+
     func testTheTapFillsTheTubAndThePlugDrainsIt() {
         let sim = fresh()
         XCTAssertEqual(sim.vol, 0)

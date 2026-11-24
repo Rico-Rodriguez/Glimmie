@@ -17,6 +17,44 @@ final class AquariumTests: XCTestCase {
         for _ in 0..<Int(seconds * 60) { sim.step(dt: 1.0 / 60) }
     }
 
+    func testFishHuntMatchesPresentSpeciesAndFeedsTheTank() throws {
+        let sim = freshSim()
+        sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 300, y: 350))
+        sim.spawn(.puffer, variant: 0, at: CGPoint(x: 600, y: 350))
+        sim.startFishHunt()
+        let wrong = try XCTUnwrap(sim.fish.first { $0.kind != sim.huntKind })
+        sim.handBegan(wrong.p)
+        sim.handEnded(wrong.p, tap: true)
+        XCTAssertEqual(sim.fishFound, 0)
+        for count in 1...AquariumSim.huntGoal {
+            let target = try XCTUnwrap(sim.fish.first { $0.kind == sim.huntKind })
+            sim.handBegan(target.p)
+            sim.handEnded(target.p, tap: true)
+            XCTAssertEqual(sim.fishFound, count)
+            XCTAssertNotEqual(sim.huntKind, target.kind)
+        }
+        XCTAssertNil(sim.huntKind)
+        XCTAssertEqual(sim.food.count, 12)
+    }
+
+    func testFeedTapDropsAtSurfaceEvenWhenTankIsBusy() {
+        let sim = freshSim()
+        for _ in 0..<20 { sim.feed(at: CGPoint(x: 300, y: 500)) }
+        sim.feed(at: CGPoint(x: 700, y: 500))
+        XCTAssertEqual(sim.food.count, 48)
+        XCTAssertTrue(sim.food.suffix(5).allSatisfy { abs($0.p.x - 700) <= 16 && $0.p.y < AGeo.waterY })
+    }
+
+    func testStationaryNetImmediatelyScoopsTheTouchedFish() {
+        let sim = freshSim()
+        let p = CGPoint(x: 350, y: 420)
+        sim.spawn(.goldfish, variant: 0, at: p)
+        sim.pickUp(.net, at: p)
+        XCTAssertEqual(sim.caught, sim.fish[0].id)
+        sim.release(home: p)
+        XCTAssertFalse(sim.fish[0].caught)
+    }
+
     func testFoodFloatsThenSinksAndFishEatIt() {
         let sim = freshSim()
         sim.addFlake(at: CGPoint(x: 300, y: 60), v: .zero)

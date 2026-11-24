@@ -36,13 +36,17 @@ struct AMap {
     /// A point of the buttons' frame (like a dock slot) in the world.
     func fromUI(_ p: CGPoint) -> CGPoint { design(CGPoint(x: uox + p.x * ui, y: uoy + p.y * ui)) }
 
-    /// The tank zoomed in to fill the screen: its frame (x 30...994) as wide as the screen allows and the bottom
-    /// of its frame (world 704) just above the dock, with the cabinet behind the dock. At most 1.18x.
+    var sideDock: Bool { size.width / max(ui, 0.001) >= 1450 }
+
+    /// Fit the glass between the header and the dock so neither covers swimming fish.
     static func tank(size: CGSize) -> AMap {
         let plain = AMap(size: size)
-        let visW = size.width / plain.ui
-        let z = max(1, min(1.18, (visW - 8) / 964))
-        return AMap(size: size, zoom: z, anchor: CGPoint(x: 512, y: 704), at: CGPoint(x: 512, y: 704 + (724 - 704) * (z - 1) / 0.18))
+        let availableWidth = size.width / max(plain.ui, 0.001) - 16
+        let frameTop: CGFloat = 88
+        let frameBottom: CGFloat = plain.sideDock ? 818 : 710
+        let scale = min(availableWidth / 964, (frameBottom - frameTop) / (704 - (AGeo.rimY - 30)))
+        return AMap(size: size, zoom: max(0.1, scale),
+                    anchor: CGPoint(x: 512, y: 704), at: CGPoint(x: plain.sideDock ? 470 : 512, y: frameBottom))
     }
 }
 
@@ -236,8 +240,8 @@ enum AquaPainter {
         finds(w, sim, t, layer: 1)
         bubbles(w, sim, back: false)
         particlesIn(w, sim)
-        food(w, sim, under: false)
         surface(w, sim, t)
+        food(g, sim, under: false)
         nightAndGlow(w, sim, order, t)
         finds(w, sim, t, layer: 2)
         snail(w, sim, t)
@@ -282,14 +286,12 @@ enum AquaPainter {
             guard low == under else { continue }
             any = true
             let c = cos(f.rot), s = sin(f.rot)
-            let w: CGFloat = 3.2, h: CGFloat = 2.2
-            var p = Path()
-            p.move(to: CGPoint(x: f.p.x + c * w - s * h, y: f.p.y + s * w + c * h))
-            p.addLine(to: CGPoint(x: f.p.x - c * w - s * h, y: f.p.y - s * w + c * h))
-            p.addLine(to: CGPoint(x: f.p.x - c * w + s * h, y: f.p.y - s * w - c * h))
-            p.addLine(to: CGPoint(x: f.p.x + c * w + s * h * 0.6, y: f.p.y + s * w - c * h))
-            p.closeSubpath()
-            paths[f.hue].addPath(p)
+            let w: CGFloat = 4.7, h: CGFloat = 3.3
+            paths[f.hue].move(to: CGPoint(x: f.p.x + c * w - s * h, y: f.p.y + s * w + c * h))
+            paths[f.hue].addLine(to: CGPoint(x: f.p.x - c * w - s * h, y: f.p.y - s * w + c * h))
+            paths[f.hue].addLine(to: CGPoint(x: f.p.x - c * w + s * h, y: f.p.y - s * w - c * h))
+            paths[f.hue].addLine(to: CGPoint(x: f.p.x + c * w + s * h * 0.6, y: f.p.y + s * w - c * h))
+            paths[f.hue].closeSubpath()
         }
         guard any else { return }
         let colors: [UInt32] = [0xFF6A4A, 0xFFC94A, 0x7AC25A, 0xE8823A]
@@ -504,13 +506,17 @@ enum AquaPainter {
         posts.addRect(CGRect(x: AGeo.left - 16, y: AGeo.bottomY, width: AGeo.width + 32, height: 14))
         g.fill(posts, with: .linearGradient(Gradient(colors: [frame.shade(0.2).color, frame.color, frame.shade(-0.25).color]),
                                             startPoint: CGPoint(x: 0, y: AGeo.rimY), endPoint: CGPoint(x: 0, y: AGeo.bottomY + 14)))
-        let lid = Path(roundedRect: CGRect(x: AGeo.left - 22, y: AGeo.rimY - 30, width: AGeo.width + 44, height: 26), cornerRadius: 8)
+        var lid = Path()
+        var lamp = Path()
+        for x in [AGeo.left - 22, AGeo.right - 152] {
+            lid.addRoundedRect(in: CGRect(x: x, y: AGeo.rimY - 30, width: 174, height: 26), cornerSize: CGSize(width: 8, height: 8))
+            lamp.addRect(CGRect(x: x + 18, y: AGeo.rimY - 6, width: 138, height: 4))
+        }
         g.fill(lid, with: .linearGradient(Gradient(colors: [frame.shade(0.3).color, frame.color]),
                                           startPoint: CGPoint(x: 0, y: AGeo.rimY - 30), endPoint: CGPoint(x: 0, y: AGeo.rimY - 4)))
         g.stroke(lid, with: .color(frame.shade(-0.4).color), lineWidth: 1.5)
         g.stroke(posts, with: .color(frame.shade(-0.4).color(0.8)), lineWidth: 1.2)
         // the lamp strip under the lid
-        let lamp = Path(CGRect(x: AGeo.left + 10, y: AGeo.rimY - 6, width: AGeo.width - 20, height: 4))
         g.fill(lamp, with: .color(ARGB(0xFFF6D8).mix(ARGB(0x6A7AA8), CGFloat(n)).color))
     }
 
