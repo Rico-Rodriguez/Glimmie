@@ -115,8 +115,8 @@ enum SpellBenchArt {
         g.fill(Path(roundedRect:badge,cornerRadius:12),with:.color(selected ? Theme.lemon : Theme.cream))
         g.stroke(Path(roundedRect:badge,cornerRadius:12),with:.color(Color(hex:0xA2774E)),lineWidth:2)
         bead(g,ingredient,center:CGPoint(x:c.x,y:c.y+15),scale:0.78)
-        g.draw(Text(ingredient.label).font(.system(size:15,weight:.bold,design:.rounded)).foregroundColor(Theme.cream),
-               at:CGPoint(x:c.x,y:279))
+        g.draw(Text(ingredient.label).font(.system(size:14,weight:.bold,design:.rounded)).foregroundColor(Theme.ink),
+               at:CGPoint(x:c.x,y:280))
     }
 
     static func bead(_ g: GraphicsContext,_ ing: BenchIngredient,center:CGPoint,scale:CGFloat) {

@@ -60,7 +60,8 @@ final class CoinsTests: XCTestCase {
 
     func testTheFreeTraysStayWhole() {
         XCTAssertEqual(DecorKind.available.count, 8, "all the free garden decorations, no extras")
-        XCTAssertEqual(AquaDecorKind.available.count, 12, "all the free tank decorations, no extras")
+        XCTAssertEqual(AquaDecorKind.available.count, 14, "includes both free reef building pieces")
+        XCTAssertTrue(AquaDecorKind.available.contains(.pillar) && AquaDecorKind.available.contains(.slate))
         XCTAssertFalse(DressUpArt.shared.category("hat")?.availableItems.contains("h_moonband") ?? true)
     }
 
@@ -80,7 +81,7 @@ final class CoinsTests: XCTestCase {
         XCTAssertTrue(Coins.shared.buy("aquarium/coral", price: 12))
         XCTAssertEqual(DecorKind.available.count, 9)
         XCTAssertEqual(DecorKind.available.last, .unicorn)
-        XCTAssertEqual(AquaDecorKind.available.count, 13)
+        XCTAssertEqual(AquaDecorKind.available.count, 15)
         XCTAssertEqual(AquaDecorKind.available.last, .rainbowCoral)
         XCTAssertTrue(Coins.shared.buy("dressup/h_moonband", price: 10))
         XCTAssertEqual(DressUpArt.shared.items["h_moonband"]?.category, "hat")

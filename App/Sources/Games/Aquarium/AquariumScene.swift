@@ -228,8 +228,9 @@ enum AquaPainter {
         // inside the water
         var w = g
         w.clip(to: Path(AGeo.tank))
+        for d in sim.decor where !d.held && d.kind != .pillar && d.kind != .slate { AquaDecorPainter.draw(w, d, time: t) }
         sim.drawReef(w, time: t)
-        for d in sim.decor where !d.held { AquaDecorPainter.draw(w, d, time: t) }
+        for d in sim.decor where !d.held && (d.kind == .pillar || d.kind == .slate) { AquaDecorPainter.draw(w, d, time: t) }
         finds(w, sim, t, layer: 0)
         food(w, sim, under: true)
         bubbles(w, sim, back: true)

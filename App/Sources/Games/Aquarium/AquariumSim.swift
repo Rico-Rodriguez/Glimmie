@@ -369,7 +369,13 @@ final class AquariumSim {
             var feeding = false
 
             if f.appetite >= 1, let j = nearestFood(to: f.p, within: k == .seahorse ? 240 : 460) {
-                goal = food[j].p
+                let flake = food[j].p
+                let nose = mouth(f)
+                // Steer the mouth onto the flake. Aiming the body's center there makes
+                // a long fish orbit sinking food with its nose just outside bite range.
+                let side: CGFloat = abs(flake.x-f.p.x) > half ? (flake.x>f.p.x ? 1 : -1) : f.dir
+                goal = CGPoint(x:flake.x-side*abs(nose.x-f.p.x),y:flake.y-(nose.y-f.p.y))
+                if abs(flake.x-f.p.x) < half*1.6 { f.dir = flake.x >= f.p.x ? 1 : -1 }
                 speed = min(k.topSpeed, k.cruise * 2.6 + 30)
                 urgent = true
                 feeding = true
@@ -405,7 +411,7 @@ final class AquariumSim {
             var dx = goal.x - f.p.x
             var dy = goal.y - f.p.y
             let dist = max(1, hypot(dx, dy))
-            let arrive = urgent ? 1 : min(1, dist / 90)
+            let arrive = feeding ? min(1,dist/38) : (urgent ? 1 : min(1,dist/90))
             dx = dx / dist * speed * arrive
             dy = dy / dist * speed * arrive * (k == .seahorse ? 1 : 0.6)
 
@@ -472,7 +478,9 @@ final class AquariumSim {
             if f.p.y > floorY { f.p.y = floorY; f.v.dy = -abs(f.v.dy) * 0.3 }
 
             // Turning round: it faces the way it swims (a resting fish keeps its side).
-            if f.v.dx > 9 { f.dir = 1 } else if f.v.dx < -9 { f.dir = -1 }
+            if !feeding || dist > half*1.6 {
+                if f.v.dx > 9 { f.dir = 1 } else if f.v.dx < -9 { f.dir = -1 }
+            }
             f.facing += (f.dir - f.facing) * min(1, dt * (urgent ? 9 : 5.5))
             // Tail beat: faster and wider when it pushes harder.
             let speedNow = hypot(f.v.dx, f.v.dy)
