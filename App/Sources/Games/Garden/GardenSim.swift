@@ -175,6 +175,9 @@ final class GardenSim {
     static let gameID = "garden"
     static let gravity: CGFloat = 1700
 
+    let spring = GardenSpring()
+    private var storedChannels: [Int]?
+
     // Soil
     var h: [CGFloat]
     var wet: [CGFloat]
@@ -288,6 +291,7 @@ final class GardenSim {
     }
 
     private func restore(_ s: GardenSave) {
+        storedChannels = s.channels
         h = s.soil.map { CGFloat($0) }
         wet = s.wet.map { CGFloat($0) }
         for i in 0..<min(plots.count, s.plots.count) { plots[i].plant = s.plots[i] }
@@ -312,12 +316,51 @@ final class GardenSim {
                    weeds: weeds.map { WeedSave(x: Double($0.x), growth: Double($0.growth), seed: $0.seed) },
                    decor: decor.map { DecorSave(kind: $0.kind, x: Double($0.x), water: Double($0.water)) },
                    basket: Array(basket.suffix(40)),
-                   weather: weather, stamps: stamps)
+                   weather: weather, stamps: stamps, channels: spring.enabled ? spring.dug.sorted() : storedChannels)
     }
 
     func save() {
         guard !demo else { return }
         GardenStorage.save(makeSave())
+    }
+
+    func openSpring() {
+        guard !demo, !spring.enabled else { return }
+        spring.prepare(storedChannels)
+        if storedChannels == nil, plots[1].plant == nil {
+            plant(.pumpkin, plot: 1)
+            plots[1].plant?.growth = 0.42
+        }
+    }
+
+    func rootDepth(_ i: Int) -> CGFloat { surface(GGeo.plotX[i]) + 48 }
+
+    private func rollPumpkin(_ dt: CGFloat) {
+        guard var fruit = spring.pumpkin else { return }
+        fruit.velocity.dy += 860 * dt
+        fruit.position.y += fruit.velocity.dy * dt
+        fruit.position.x += fruit.velocity.dx * dt
+        let floor = surface(fruit.position.x) - 22
+        if fruit.position.y > floor && fruit.position.x < 900 {
+            fruit.position.y = floor
+            fruit.velocity.dy *= -0.32
+            fruit.velocity.dx = min(250, fruit.velocity.dx + 70 * dt)
+        }
+        fruit.angle += fruit.velocity.dx * dt / 27
+        spring.pumpkin = fruit
+        if fruit.position.y > 705 { catchPumpkin() }
+    }
+
+    private func catchPumpkin() {
+        guard let fruit = spring.pumpkin else { return }
+        basket.append("pumpkin:\(fruit.variant)")
+        basket = Array(basket.suffix(60))
+        let duration = 0.48
+        flyers.append(GFlyer(kind: .crop(.pumpkin, fruit.variant), p0: fruit.position,
+                             v0: GFlyer.aim(from: fruit.position, to: GGeo.basket, dur: duration),
+                             start: time, dur: duration, spin: 6, toBasket: true))
+        spring.pumpkin = nil
+        GardenSound.shared.play(.pluck)
     }
 
     // MARK: Soil helpers
@@ -400,6 +443,7 @@ final class GardenSim {
         stepWeather(dt)
         stepTool(dt)
         stepSoil(dt)
+        if spring.enabled { spring.advance(dt); rollPumpkin(dt) }
         stepPlants(dt)
         stepWeeds(dt)
         stepParticles(dt)
@@ -814,12 +858,14 @@ final class GardenSim {
                 continue
             }
             let x = GGeo.plotX[i]
+            let irrigated = spring.irrigates(x: x, y: rootDepth(i))
+            if irrigated { water(at: x, amount: dt * 2) }
             let moist = wetAt(x, span: 5)
             let weedy = weeds.contains { abs($0.x - x) < 80 && $0.growth > 0.3 }
             plots[i].sad = weedy
             if p.growth < 1 {
                 if moist > 0.1 {
-                    var rate: Double = 1.0 / 17
+                    var rate: Double = irrigated ? 0.65 : 1.0 / 17
                     if weather == .sun { rate *= 1.35 }
                     if weather == .night { rate *= 0.7 }
                     if weedy { rate *= 0.5 }
@@ -846,6 +892,11 @@ final class GardenSim {
                 }
             } else {
                 plots[i].dry = 0
+            }
+            if irrigated && p.kind == .pumpkin && p.growth == 1 && spring.pumpkin == nil {
+                spring.pumpkin = (CGPoint(x: x+18, y: surface(x)-32), CGVector(dx: 100, dy: -125), 0, p.variant)
+                p.left = 0
+                p.growth = 0.28
             }
             plots[i].plant = p
 
@@ -1192,6 +1243,16 @@ final class GardenSim {
     // MARK: The bare hand
 
     func handBegan(_ p: CGPoint) {
+        if let f = spring.pumpkin, hypot(f.position.x-p.x, f.position.y-p.y) < 52 {
+            catchPumpkin()
+            return
+        }
+        if spring.enabled && GardenSpring.area.contains(p) && p.y > surface(p.x)+10 {
+            spring.previous = nil
+            _ = spring.stroke(p)
+            GardenSound.shared.play(.pat, volume: 0.5)
+            return
+        }
         pickedThisStroke.removeAll(keepingCapacity: true)
         handDown = true
         handP = p
@@ -1230,6 +1291,10 @@ final class GardenSim {
     }
 
     func handMoved(_ p: CGPoint, dt: CGFloat = 1.0 / 60) {
+        if spring.previous != nil {
+            if spring.stroke(p) { GardenSound.shared.play(.pat, volume: 0.26, gap: 0.12) }
+            return
+        }
         let vx = (p.x - handP.x) / max(dt, 0.001)
         let vy = (p.y - handP.y) / max(dt, 0.001)
         handV = CGVector(dx: vx, dy: vy)
@@ -1269,6 +1334,7 @@ final class GardenSim {
     }
 
     func handEnded(_ p: CGPoint, tap: Bool) {
+        if spring.previous != nil { spring.previous = nil; return }
         handDown = false
         switch grab {
         case .weed(let w)?:

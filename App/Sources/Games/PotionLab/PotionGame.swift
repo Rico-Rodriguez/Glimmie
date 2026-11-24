@@ -25,7 +25,7 @@ enum PotionGame {
         title: "Potions",
         tint: Color(hex: 0xC9A6FF),
         icon: { AnyView(PotionTileIcon()) },
-        play: { exit in AnyView(PotionLabView(exit: exit)) },
+        play: { exit in AnyView(SpellBenchView(exit: exit)) },
         stickers: PotionFind.stickers
     )
 }

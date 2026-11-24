@@ -300,6 +300,7 @@ struct AquariumView: View {
         lightsOn = sim.lightsOn
         pump = sim.pump
         applyLaunchArguments()
+        sim.openReef()
     }
 
     // MARK: Hand

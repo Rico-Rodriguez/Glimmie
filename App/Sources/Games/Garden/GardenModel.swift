@@ -261,6 +261,7 @@ struct GardenSave: Codable, Equatable {
     var basket: [String]
     var weather: Weather
     var stamps: [GardenStamp]? = nil
+    var channels: [Int]? = nil
 }
 
 /// Fixed places in the garden scene (design points, 1024 x 834).

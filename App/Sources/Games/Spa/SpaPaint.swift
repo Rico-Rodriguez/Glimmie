@@ -14,12 +14,18 @@ struct SMap {
     let ox: CGFloat
     let oy: CGFloat
 
-    init(size: CGSize) {
+    init(size: CGSize, styling: Bool = false) {
         self.size = size
         ui = max(0.001, min(size.width / 1024, size.height / 834))
         wideCaddy = size.width / ui >= 1300
         // On wide screens the controls have their own column. Frame the mirror through
         // the feet of the tub, using the extra height for the water and the toys.
+        if styling {
+            s = ui * 2.25
+            ox = size.width / 2 - 330*s
+            oy = size.height / 2 - 372*s
+            return
+        }
         s = ui * (wideCaddy ? 1.10 : 1)
         ox = size.width / 2 - (wideCaddy ? 545 : 512) * s
         oy = size.height / 2 - (wideCaddy ? 438 : 417) * s
@@ -343,6 +349,7 @@ enum SpaPainter {
             blobs.append((CGPoint(x: s.d.x, y: s.d.y + w), s.r))
         }
         foamBlobs(g, blobs, color: RGB(1, 1, 1))
+        sim.sculpture.draw(g, time: CGFloat(sim.time))
         // drops of water on her skin
         for b in sim.beads {
             let r = CGRect(x: b.d.x - b.r, y: b.d.y - b.r * 1.15, width: b.r * 2, height: b.r * 2.3)

@@ -220,7 +220,7 @@ struct AquaFishSave: Codable, Equatable {
 // MARK: Decorations
 
 enum AquaDecorKind: String, Codable, CaseIterable {
-    case castle, chest, diver, bubbler, ship, rock, seaweed, coral, anemone, grass, shell, starfish
+    case castle, chest, diver, bubbler, ship, rock, seaweed, coral, anemone, grass, shell, starfish, pillar, slate
     // extras from the treasure shop (see `Treasures`): in the tray only once bought
     case crystal, rainbowCoral = "coral2", unicorn
 
@@ -247,6 +247,8 @@ enum AquaDecorKind: String, Codable, CaseIterable {
         case .diver: return CGSize(width: 70, height: 128)
         case .bubbler: return CGSize(width: 50, height: 22)
         case .ship: return CGSize(width: 230, height: 150)
+        case .pillar: return CGSize(width: 66, height: 65)
+        case .slate: return CGSize(width: 168, height: 24)
         case .rock: return CGSize(width: 150, height: 96)
         case .seaweed: return CGSize(width: 90, height: 250)
         case .coral: return CGSize(width: 110, height: 110)
@@ -263,7 +265,7 @@ enum AquaDecorKind: String, Codable, CaseIterable {
     /// How dense it is compared with water: heavy things sink fast, plants drift down slowly.
     var density: CGFloat {
         switch self {
-        case .rock, .ship, .castle: return 2.6
+        case .rock, .ship, .castle, .pillar, .slate: return 2.6
         case .chest, .diver: return 2.2
         case .bubbler, .shell: return 2.0
         case .coral, .starfish: return 1.6
@@ -293,6 +295,7 @@ struct AquaSave: Codable {
     var algae: [Float]
     var night: Bool
     var pump: Bool
+    var reefStarted: Bool? = nil
 }
 
 enum AquaStorage {

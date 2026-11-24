@@ -85,6 +85,7 @@ enum GardenPainter {
         bugs(g, sim, t)
         visitors(g, sim, t, behind: false, flying: true)
         for d in sim.decor where d.held { GardenDecorPainter.draw(g, d, time: t, night: sim.night, wind: sim.windNow) }
+        if let f = sim.spring.pumpkin { GardenPlants.drawCrop(g, kind: .pumpkin, variant: f.variant, at: f.position, size: 0.9, rot: f.angle) }
         basket(g, sim, t)
         particles(g, sim, front: true)
         nightAndGlow(g, r, sim, t)
@@ -305,6 +306,7 @@ enum GardenPainter {
             shine.addEllipse(in: CGRect(x: rect.minX + w * 0.18, y: rect.minY + w * 0.1, width: w * 0.45, height: w * 0.26))
         }
         c.fill(shine, with: .color(.white.opacity(0.28)))
+        sim.spring.draw(c, time: t)
         // Roots of everything growing.
         for i in sim.plots.indices {
             guard let p = sim.plots[i].plant else { continue }

@@ -228,6 +228,7 @@ enum AquaPainter {
         // inside the water
         var w = g
         w.clip(to: Path(AGeo.tank))
+        sim.drawReef(w, time: t)
         for d in sim.decor where !d.held { AquaDecorPainter.draw(w, d, time: t) }
         finds(w, sim, t, layer: 0)
         food(w, sim, under: true)

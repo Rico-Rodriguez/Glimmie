@@ -130,6 +130,8 @@ final class AquariumSim {
     static let gravity: CGFloat = 1600
     static let maxFish = 24
 
+    var reefStarted = false
+    var eelSpine: [CGPoint] = []
     var fish: [AquaFish] = []
     private(set) var huntKind: FishKind?
     private(set) var fishFound = 0
@@ -272,12 +274,16 @@ final class AquariumSim {
         lightsOn = !s.night
         night = s.night ? 1 : 0
         pump = s.pump
+        reefStarted = s.reefStarted ?? false
+        for i in decor.indices where decor[i].kind == .slate {
+            if let seat = bridge(at: decor[i].x) { decor[i].y = seat.y }
+        }
     }
 
     func makeSave() -> AquaSave {
         AquaSave(fish: fish.map { AquaFishSave(kind: $0.kind, variant: $0.variant) },
                  decor: decor.filter { !$0.held }.map { AquaDecorSave(kind: $0.kind, x: $0.x, flip: $0.flip) },
-                 algae: algae.map { Float($0) }, night: !lightsOn, pump: pump)
+                 algae: algae.map { Float($0) }, night: !lightsOn, pump: pump, reefStarted: reefStarted)
     }
 
     func save() {
@@ -379,6 +385,10 @@ final class AquariumSim {
                     f.gulp = max(f.gulp, 0.5 + 0.5 * sin(CGFloat(time) * 9 + CGFloat(f.id)))
                     if k == .seahorse || k == .puffer { f.dir = c.x > f.p.x ? 1 : -1 }
                 }
+            } else if k == .clownfish, let home = decor.last(where: { $0.kind == .anemone && !$0.held }) {
+                let peek = sin(CGFloat(time)*0.9+CGFloat(f.id))
+                goal = CGPoint(x:home.x+37*peek,y:home.y-49-13*peek)
+                speed = k.cruise*1.65
             } else {
                 f.curious = nil
                 if time > f.nextThink || hypot(goal.x - f.p.x, goal.y - f.p.y) < 24 {
@@ -417,6 +427,17 @@ final class AquariumSim {
             if n > 0 && !urgent {
                 dx += ((cx / n - f.p.x) * 0.5 + (ax / n - f.v.dx) * 0.6)
                 dy += ((cy / n - f.p.y) * 0.4 + (ay / n - f.v.dy) * 0.4)
+            }
+            if k.schools {
+                for stone in decor where stone.kind == .pillar || stone.kind == .slate {
+                    let rx = stone.kind.size.width/2+18, ry = stone.kind.size.height/2+13
+                    let ox = (f.p.x-stone.x)/rx, oy = (f.p.y-stone.y+stone.kind.size.height/2)/ry
+                    let radial = hypot(ox,oy)
+                    if radial < 1.45 {
+                        dx += ox*(1.45-radial)*speed
+                        dy += oy*(1.45-radial)*speed*2
+                    }
+                }
             }
             // Turn before the glass, not into it.
             let edge: CGFloat = 70
@@ -783,7 +804,8 @@ final class AquariumSim {
                 d.x += d.vx * dt
                 d.y += d.vy * dt
                 d.x = max(AGeo.left + halfW * 0.6, min(AGeo.right - halfW * 0.6, d.x))
-                let ground = AGeo.sand(d.x)
+                let seat = d.kind == .slate ? bridge(at: d.x) : nil
+                let ground = seat?.y ?? AGeo.sand(d.x)
                 if d.y >= ground {
                     let impact = d.vy
                     d.y = ground
@@ -794,7 +816,10 @@ final class AquariumSim {
                     land(d, impact: impact)
                 }
             } else {
-                d.y = AGeo.sand(d.x)
+                let seat = d.kind == .slate ? bridge(at: d.x) : nil
+                let ground = seat?.y ?? AGeo.sand(d.x)
+                if ground > d.y+3 { d.falling = true }
+                else { d.y = ground }
                 d.rotV += (-30 * d.rot - 8 * d.rotV) * dt
                 d.rot += d.rotV * dt
             }
@@ -1088,6 +1113,7 @@ final class AquariumSim {
         stepFood(dt)
         stepBubbles(dt)
         stepDecor(dt)
+        updateReef(dt)
         stepAlgae(dt)
         stepParticles(dt)
         stepFinds(dt)

@@ -371,6 +371,7 @@ final class SpaSim {
     var maskDry = [CGFloat](repeating: 0, count: SGeo.maskCols * SGeo.maskRows)
     var cucumbers = [false, false]
     var beads: [SBead] = []
+    let sculpture = FoamSculpture()
     var suds: [SSud] = []
     var happyUntil: Double = 0
     var blinkAt: Double = 2
@@ -490,6 +491,7 @@ final class SpaSim {
         stepBubbles(d)
         stepPuffs(d)
         stepSteam(d)
+        sculpture.advance(d)
         stepHer(d)
         sounds()
     }
@@ -1138,6 +1140,7 @@ final class SpaSim {
 
     /// Water washing over her (doll coordinates): it rinses suds and mask off and leaves drops.
     func rinse(at d: CGPoint, amount: CGFloat) {
+        if !sculpture.tufts.isEmpty { sculpture.moveRinse(at: d) }
         let before = suds.count
         suds.removeAll { hypot($0.d.x - d.x, $0.d.y - d.y) < 40 * FingerLift.spread && CGFloat.random(in: 0...1) < amount * 6 }
         if suds.count < before { for _ in 0..<(before - suds.count) { addBead(CGPoint(x: d.x + CGFloat.random(in: -20...20), y: d.y)) } }

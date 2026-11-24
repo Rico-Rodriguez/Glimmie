@@ -25,6 +25,7 @@ enum AquaDecorPainter {
         case .diver: diver(g)
         case .bubbler: bubbler(g)
         case .ship: ship(g)
+        case .pillar, .slate: reefStone(g, slab: k == .slate, seed: seed)
         case .rock: rock(g)
         case .seaweed: seaweed(g, t: t, sway: sway, seed: seed)
         case .coral: coral(g)

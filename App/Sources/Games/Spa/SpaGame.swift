@@ -256,6 +256,8 @@ struct SpaView: View {
     let exit: () -> Void
 
     @State private var sim = SpaSim()
+    @State private var styling = !ProcessInfo.processInfo.arguments.contains("-spaDemo")
+    @State private var rinseFoam = false
     @State private var paint: BombKind?
     @State private var tray: SpaTray?
     @State private var carrying: String?
@@ -268,7 +270,7 @@ struct SpaView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let map = SMap(size: geo.size)
+            let map = SMap(size: geo.size, styling: styling)
             ZStack {
                 TimelineView(.animation(minimumInterval: 1.0 / 20)) { _ in
                     Canvas(opaque: true) { ctx, _ in SpaPainter.drawBackdrop(ctx, map: map) }
@@ -294,7 +296,10 @@ struct SpaView: View {
                 }
 
                 let controlWidth: CGFloat = map.wideCaddy ? 1130 : 1024
-                controls(map)
+                Group {
+                    if styling { mirrorControls }
+                    else { controls(map) }
+                }
                     .frame(width: controlWidth, height: 834)
                     .scaleEffect(map.ui)
                     .position(x: geo.size.width / 2 + (controlWidth - 1024) * map.ui / 2, y: geo.size.height / 2)
@@ -318,6 +323,10 @@ struct SpaView: View {
         } else {
             sim.vol = SGeo.maxDepth * 0.78
             sim.soap = 20
+            sim.sculpture.begin(CGPoint(x: 228,y: 199))
+            sim.sculpture.move(CGPoint(x: 201,y: 168))
+            sim.sculpture.advance(0.02)
+            sim.sculpture.held = nil
             sim.spawnThing(.toy(.duck), at: CGPoint(x: 510, y: sim.level - 18), held: false)
             sim.spawnThing(.toy(.boat), at: CGPoint(x: 680, y: sim.level - 12), held: false)
         }
@@ -335,12 +344,28 @@ struct SpaView: View {
                     hand.startAt = now
                     hand.lastAt = now
                     if tray != nil { withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { tray = nil } }
+                    if styling {
+                        let point = SGeo.toDoll(p)
+                        if hypot(point.x-300,point.y-359) < 23 && !rinseFoam {
+                            sim.sculpture.shake(); sim.giggle()
+                        } else {
+                            sim.sculpture.begin(point)
+                            if rinseFoam { sim.pickUp(.shower, finger: p, lifted: CGPoint(x:p.x,y:p.y-57)) }
+                            else { SpaSound.shared.play(.squish, volume: 0.45, gap: 0.12) }
+                        }
+                        return
+                    }
                     sim.handBegan(p)
                     if let paint, sim.hand == .swish { sim.paintWater(p, dye: paint) }
                     hand.lastPaint = p
                 } else {
                     let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(hand.lastAt)))
                     hand.lastAt = now
+                    if styling {
+                        sim.sculpture.move(SGeo.toDoll(p))
+                        if rinseFoam { sim.carry(finger: p, lifted: CGPoint(x:p.x,y:p.y-57)) }
+                        return
+                    }
                     sim.handMoved(p, dt: dt)
                     if let paint, sim.hand == .swish {
                         let dx = p.x - hand.lastPaint.x, dy = p.y - hand.lastPaint.y
@@ -363,7 +388,10 @@ struct SpaView: View {
                 let p = map.design(v.location)
                 let moved = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y) / map.s
                 let tap = moved < 14 && Date().timeIntervalSince(hand.startAt) < 0.45
-                sim.handEnded(p, tap: tap)
+                if styling {
+                    sim.sculpture.held = nil
+                    if rinseFoam { sim.release() }
+                } else { sim.handEnded(p, tap: tap) }
                 hand.active = false
             }
     }
@@ -382,11 +410,56 @@ struct SpaView: View {
                     caddy(map, hint: hint, time: tl.date.timeIntervalSinceReferenceDate)
                 }
             }
+            Button {
+                auto.cancel()
+                picked = nil; tray = nil
+                sim.release()
+                styling = true
+            } label: {
+                Image(systemName: "bubbles.and.sparkles.fill").font(.title)
+                    .frame(width:62,height:62).background(.white,in: Circle())
+            }.position(x: 153,y: 60).accessibilityLabel("Style bubble hair")
             paintPalette.position(x: map.wideCaddy ? 958 : 500, y: map.wideCaddy ? 708 : 795)
             if let t = tray {
                 trayView(t, map)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+        }
+    }
+
+    private var mirrorControls: some View {
+        ZStack {
+            HomeButton(action: exit).position(x: 63, y: 60)
+            PlayPrompt(title: "Bath toys", actionSymbol: "arrow.right", action: {
+                sim.sculpture.held = nil
+                sim.release()
+                styling = false
+            }) { Image(systemName: "bathtub.fill") }
+            .position(x: 854, y: 59)
+            VStack(spacing: 14) {
+                ForEach([BombKind.rose, .sunshine, .ocean, .mint], id: \.rawValue) { dye in
+                    Button {
+                        paint = dye
+                        rinseFoam = false
+                        sim.sculpture.rinsing = false
+                        sim.sculpture.tint = dye.color
+                        SpaSound.shared.play(.plop, volume: 0.5)
+                    } label: {
+                        Canvas { g, size in
+                            let c = CGPoint(x:size.width/2,y:size.height/2)
+                            SpaPainter.foamBlobs(g, [(c,20),(CGPoint(x:c.x-16,y:c.y+5),12),(CGPoint(x:c.x+15,y:c.y+8),13)], color:dye.color)
+                        }.frame(width: 72,height: 64)
+                        .background(paint == dye && !rinseFoam ? Theme.lemon : .white, in: Capsule())
+                    }.accessibilityLabel("\(dye.rawValue) foam")
+                }
+                Button {
+                    rinseFoam.toggle()
+                    sim.sculpture.rinsing = rinseFoam
+                } label: {
+                    Image(systemName: "shower.fill").font(.system(size: 34))
+                        .frame(width:72,height:64).background(rinseFoam ? Theme.sky : .white,in: Capsule())
+                }.accessibilityLabel("Rinse the foam")
+            }.buttonStyle(Squish()).position(x: 945, y: 437)
         }
     }
 

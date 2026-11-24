@@ -329,6 +329,15 @@ enum PotionPainter {
 
     // MARK: Flask
 
+    static func benchFlask(_ g: GraphicsContext, _ sim: PotionSim, liquid: PotionLiquid, time: CGFloat) {
+        burner(g, sim, time)
+        tripod(g, front: false)
+        flask(g, sim, liquid: liquid, t: time)
+        tripod(g, front: true)
+        drops(g, sim)
+        motes(g, sim, time)
+    }
+
     private static func flask(_ g: GraphicsContext, _ sim: PotionSim, liquid: PotionLiquid, t: CGFloat) {
         // the back of the glass
         g.fill(PotionGeometry.exterior, with: .color(.white.opacity(0.10)))

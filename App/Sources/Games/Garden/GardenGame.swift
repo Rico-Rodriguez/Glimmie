@@ -250,6 +250,7 @@ struct GardenView: View {
     @State private var book = false
     @State private var packet: PlantKind?
     @State private var printing = false
+    @State private var fillingStream = false
 
     var body: some View {
         GeometryReader { geo in
@@ -343,6 +344,7 @@ struct GardenView: View {
         _ = GardenSound.shared
         weather = sim.weather
         applyLaunchArguments()
+        sim.openSpring()
     }
 
     static let bookSpot = CGPoint(x: 152, y: 60)
@@ -400,6 +402,13 @@ struct GardenView: View {
                     } else { Image(systemName: "hand.tap.fill") }
                 }
                 .position(x: 420, y: 60)
+            }
+            if packet == nil && picked == nil && !sim.demo {
+                PlayPrompt(title: sim.spring.filling ? "Patch the banks" : "Dig a stream", actionSymbol: "arrow.triangle.2.circlepath", action: {
+                    sim.spring.filling.toggle()
+                    fillingStream = sim.spring.filling
+                }) { Image(systemName: fillingStream ? "hand.raised.fill" : "drop.fill") }
+                .position(x: 416, y: 60)
             }
             weatherBar
                 .position(x: 812, y: 60)
