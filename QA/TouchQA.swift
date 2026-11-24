@@ -15,7 +15,7 @@ final class TouchQA: XCTestCase {
                 point(x,y).press(forDuration:0.18,thenDragTo:point(xx,yy))
             }
             func capture(_ name:String) {
-                let photo=XCTAttachment(screenshot:app.screenshot())
+                let photo=XCTAttachment(screenshot:XCUIScreen.main.screenshot())
                 photo.name=name; photo.lifetime = .keepAlways
                 add(photo)
             }
