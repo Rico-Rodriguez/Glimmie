@@ -50,6 +50,17 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+  TouchQA:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [QA]
+    dependencies:
+      - target: Glimmie
+    settings:
+      base:
+        TEST_TARGET_NAME: Glimmie
+        PRODUCT_BUNDLE_IDENTIFIER: com.glimmie.touchqa
+        GENERATE_INFOPLIST_FILE: YES
   GlimmieTests:
     type: bundle.unit-test
     platform: iOS
@@ -73,11 +84,13 @@ schemes:
       targets:
         Glimmie: all
         GlimmieTests: [test]
+        TouchQA: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - GlimmieTests
+        - TouchQA
     archive:
       config: Release
