@@ -351,8 +351,12 @@ enum SpaPainter {
         )
     }
 
+    private static var tubWindowRect: CGRect {
+        CGRect(x: 378, y: SGeo.lipY + 14, width: SGeo.tubR - 390, height: SGeo.tubBottom - SGeo.lipY - 26)
+    }
+
     private static var tubWindowPath: Path {
-        Path(roundedRect: CGRect(x: 378, y: SGeo.lipY + 14, width: SGeo.tubR - 390, height: SGeo.tubBottom - SGeo.lipY - 26), cornerRadius: 42)
+        Path(roundedRect: tubWindowRect, cornerRadius: 42)
     }
 
     static func drawTubBack(_ g: GraphicsContext, sim: SpaSim) {
@@ -447,7 +451,7 @@ enum SpaPainter {
         )
         g.stroke(outer, with: .color(porcelainOutline), lineWidth: 4)
         g.stroke(tubWindowPath, with: .color(porcelainOutline.opacity(0.75)), lineWidth: 3)
-        g.stroke(tubWindowPath.insetBy(dx: -3, dy: -3), with: .color(.white.opacity(0.8)), lineWidth: 2)
+        g.stroke(Path(roundedRect: tubWindowRect.insetBy(dx: -3, dy: -3), cornerRadius: 45), with: .color(.white.opacity(0.8)), lineWidth: 2)
 
         // Scalloped porcelain valance along the front-left apron & base
         var scallops = Path()

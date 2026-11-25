@@ -7,6 +7,33 @@ import SwiftUI
 // grids as small bitmaps (`PizzaGrids`, lit from the top left so they look wet and glossy), cheese shreds from their
 // bitmap, toppings, bubbles, char spots, cuts, the oven with real-looking fire, steam, flour and the held tool.
 
+struct GMap {
+    let size: CGSize
+    let s: CGFloat
+    let ox: CGFloat
+    let oy: CGFloat
+    let ui: CGFloat
+    let uox: CGFloat
+    let uoy: CGFloat
+
+    init(size: CGSize, zoom: CGFloat = 1, anchor: CGPoint = CGPoint(x: 512, y: 417), at: CGPoint = CGPoint(x: 512, y: 417)) {
+        self.size = size
+        let h = DesignCanvas<EmptyView>.designHeight
+        let scale = max(0.1, size.height / h)
+        let w = max(1024, size.width / scale)
+        ui = min(scale, size.width / w)
+        uox = size.width / 2 - 512 * ui
+        uoy = size.height / 2 - 417 * ui
+        s = ui * zoom
+        ox = uox + at.x * ui - anchor.x * s
+        oy = uoy + at.y * ui - anchor.y * s
+    }
+
+    func design(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - ox) / s, y: (p.y - oy) / s) }
+    var visible: CGRect { CGRect(x: -ox / s, y: -oy / s, width: size.width / s, height: size.height / s) }
+    func fromUI(_ p: CGPoint) -> CGPoint { design(CGPoint(x: uox + p.x * ui, y: uoy + p.y * ui)) }
+}
+
 enum PizzaPainter {
     // MARK: colors
 

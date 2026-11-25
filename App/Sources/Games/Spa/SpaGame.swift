@@ -324,15 +324,16 @@ struct SpaView: View {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 showBook = true
                             }
+                        },
+                        trailing: {
+                            RoundButton(symbol: "arrow.counterclockwise", tint: Theme.sky, size: GameChromeLayout.buttonSize) {
+                                Sound.shared.play(.whoosh, volume: 0.6)
+                                Sound.shared.tap()
+                                sim.resetBath()
+                            }
+                            .accessibilityLabel("Fresh Bath")
                         }
-                    ) {
-                        RoundButton(symbol: "arrow.counterclockwise", tint: Theme.sky, size: GameChromeLayout.buttonSize) {
-                            Sound.shared.play(.whoosh, volume: 0.6)
-                            Sound.shared.tap()
-                            sim.resetBath()
-                        }
-                        .accessibilityLabel("Fresh Bath")
-                    }
+                    )
 
                     StickerToast(game: SpaSim.gameID, target: GameChromeLayout.stickerTarget)
                 }

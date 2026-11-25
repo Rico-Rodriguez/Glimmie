@@ -1297,7 +1297,7 @@ final class AquariumSim {
     }
 
     func tapDockNet(from origin: CGPoint = CGPoint(x: 608, y: AGeo.dockY)) {
-        guard let i = fish.indices.first(where: { !$0.caught }) else {
+        guard let i = fish.indices.first(where: { !fish[$0].caught }) else {
             AquaSound.shared.play(.swish, volume: 0.45)
             return
         }

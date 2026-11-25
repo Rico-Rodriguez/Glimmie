@@ -307,8 +307,11 @@ final class GardenSim {
     }
 
     private static func flatSoil(count n: Int) -> [CGFloat] {
-        (0..<n).map { i in
-            GGeo.soilY + sin(CGFloat(i) * 0.21) * 1.1 + sin(CGFloat(i) * 0.07 + 1.3) * 1.2
+        (0..<n).map { i -> CGFloat in
+            let fi = CGFloat(i)
+            let waveA: CGFloat = sin(fi * 0.21) * 1.1
+            let waveB: CGFloat = sin(fi * 0.07 + 1.3) * 1.2
+            return GGeo.soilY + waveA + waveB
         }
     }
 

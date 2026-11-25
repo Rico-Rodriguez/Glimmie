@@ -238,24 +238,25 @@ struct PotionLabView: View {
                         onExit: exit,
                         onStickerBook: {
                             withAnimation(.easeOut(duration: 0.2)) { showStickerBook = true }
-                        }
-                    ) {
-                        RoundButton(symbol: "sparkles", tint: Theme.lilac, size: GameChromeLayout.buttonSize) {
-                            Sound.shared.play(.sparkle, volume: 0.65)
-                            Sound.shared.tap()
-                            withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
-                                showSpellbook = true
+                        },
+                        trailing: {
+                            RoundButton(symbol: "sparkles", tint: Theme.lilac, size: GameChromeLayout.buttonSize) {
+                                Sound.shared.play(.sparkle, volume: 0.65)
+                                Sound.shared.tap()
+                                withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                                    showSpellbook = true
+                                }
+                            }
+                            RoundButton(
+                                symbol: sim.moonlit ? "moon.stars.fill" : "sun.max.fill",
+                                tint: sim.moonlit ? Theme.lilac : Theme.lemon,
+                                size: GameChromeLayout.buttonSize
+                            ) {
+                                Sound.shared.tap()
+                                sim.toggleMoonlit()
                             }
                         }
-                        RoundButton(
-                            symbol: sim.moonlit ? "moon.stars.fill" : "sun.max.fill",
-                            tint: sim.moonlit ? Theme.lilac : Theme.lemon,
-                            size: GameChromeLayout.buttonSize
-                        ) {
-                            Sound.shared.tap()
-                            sim.toggleMoonlit()
-                        }
-                    }
+                    )
 
                     StickerToast(game: PotionSim.gameID, target: GameChromeLayout.stickerTarget)
 

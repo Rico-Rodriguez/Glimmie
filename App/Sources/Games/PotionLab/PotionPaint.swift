@@ -1231,7 +1231,7 @@ enum IngredientIconPainter {
             // Vivid 5-band pastel rainbow arch + fluffy white cloud puffs.
             let cols: [Color] = [Color(hex: 0xFF7CB4), Color(hex: 0xFFBC6A), Color(hex: 0xFFE672), Color(hex: 0x8CE2A8), Color(hex: 0x86C8FF)]
             for (i, col) in cols.enumerated() {
-                let rad = CGFloat(21 - i * 3.4) * s
+                let rad = (21 - CGFloat(i) * 3.4) * s
                 var arc = Path()
                 arc.addArc(center: CGPoint(x: 0, y: 10 * s), radius: rad, startAngle: .degrees(185), endAngle: .degrees(355), clockwise: false)
                 ctx.stroke(arc, with: .color(col), style: StrokeStyle(lineWidth: 4.2 * s, lineCap: .round))
