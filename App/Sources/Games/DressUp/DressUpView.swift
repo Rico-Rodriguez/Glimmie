@@ -22,11 +22,25 @@ struct DressUpView: View {
     @State private var showBook = false
     /// Her skirt and hair swing (a class: it changes every frame).
     @State private var motion = DollMotion()
+    @AppStorage(PinnedFairySpec.defaultsKey) private var pinnedFairyID = ""
 
     private let art = DressUpArt.shared
     /// The part of the 600x900 art canvas shown on the stage: hat tips at the top, soles at the bottom.
     static let stageBox = CGRect(x: 30, y: 14, width: 540, height: 760)
     static let stageScale: CGFloat = 1.06
+
+    /// Fits `LiveDollView` cleanly within the stage column so it never clips behind the wardrobe tray.
+    static func fittedDollSize(in stageSize: CGSize) -> CGSize {
+        let maxW = max(1, min(stageSize.width - 16, stageBox.width * stageScale))
+        let maxH = max(1, min(stageSize.height - 28, stageBox.height * stageScale))
+        let s = min(maxW / stageBox.width, maxH / stageBox.height, stageScale)
+        return CGSize(width: stageBox.width * s, height: stageBox.height * s)
+    }
+
+    private var isStageCovered: Bool {
+        showGallery || studio != nil || showPets || showStory || beauty != nil
+            || battle?.phase == .intro || battle?.phase == .runway || showBook
+    }
 
     var body: some View {
         ZStack {
@@ -34,7 +48,7 @@ struct DressUpView: View {
                 .ignoresSafeArea()
                 .id(store.current.bg)
                 .transition(.opacity)
-            SceneLife(bg: store.current.bg)
+            SceneLife(bg: store.current.bg, paused: isStageCovered)
                 .ignoresSafeArea()
                 .id("life." + store.current.bg)
             DesignCanvas {
@@ -124,7 +138,7 @@ struct DressUpView: View {
                 .zIndex(3)
             }
             if showStory {
-                StoryStage(me: store.current, friends: store.gallery,
+                StoryStage(me: store.current, friends: store.gallery, store: store,
                            close: { withAnimation(.spring(response: 0.4)) { showStory = false } })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(3)
@@ -164,29 +178,44 @@ struct DressUpView: View {
     }
 
     private var stage: some View {
-        ZStack(alignment: .bottom) {
-            Ellipse()
-                .fill(Theme.ink.opacity(0.18))
-                .frame(width: 250, height: 40)
-                .offset(y: -6)
-            // Frame her from hat tip to shoe soles so she fills the stage and stands on the floor.
-            LiveDollView(look: store.current, expression: expression, box: Self.stageBox, motion: motion,
-                         windy: ["bg_park", "bg_beach", "bg_garden", "bg_snow", "bg_sunset", "bg_forest", "bg_rainbow"].contains(store.current.bg))
-                .frame(width: Self.stageBox.width * Self.stageScale, height: Self.stageBox.height * Self.stageScale)
-                .offset(y: hop ? -26 : 0)
-                .contentShape(Rectangle())
-                .onTapGesture { cheer() }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 6)
-                        .onChanged { motion.drag($0.location) }
-                        .onEnded { _ in motion.endDrag() }
-                )
-            TwinkleBurst()
-                .id(burst)
-                .offset(y: -420)
-            if danceID > 0 {
-                MusicNotes().id(danceID).offset(y: -380)
+        GeometryReader { geo in
+            let dollSize = Self.fittedDollSize(in: geo.size)
+            ZStack(alignment: .bottom) {
+                Ellipse()
+                    .fill(Theme.ink.opacity(0.18))
+                    .frame(width: min(250, dollSize.width * 0.44), height: 40)
+                    .offset(y: -6)
+                // Frame her from hat tip to shoe soles so she fills the stage without overflowing into the tray.
+                LiveDollView(look: store.current, expression: expression, box: Self.stageBox, motion: motion,
+                             windy: ["bg_park", "bg_beach", "bg_garden", "bg_snow", "bg_sunset", "bg_forest", "bg_rainbow"].contains(store.current.bg),
+                             paused: isStageCovered)
+                    .frame(width: dollSize.width, height: dollSize.height)
+                    .offset(y: hop ? -26 : 0)
+                    .contentShape(Rectangle())
+                    .onTapGesture { cheer() }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 6)
+                            .onChanged { motion.drag($0.location) }
+                            .onEnded { _ in motion.endDrag() }
+                    )
+                if let fairy = PinnedFairySpec.spec(for: pinnedFairyID) {
+                    PinnedFairyCompanionView(spec: fairy, paused: isStageCovered)
+                        .frame(width: 112, height: 112)
+                        .position(
+                            x: min(geo.size.width - 66, geo.size.width * 0.5 + dollSize.width * 0.36),
+                            y: max(156, geo.size.height - dollSize.height * 0.72)
+                        )
+                }
+                if burst > 0 {
+                    TwinkleBurst()
+                        .id(burst)
+                        .offset(y: -420)
+                }
+                if danceID > 0 {
+                    MusicNotes().id(danceID).offset(y: -380)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
         }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .overlay(alignment: .top) {
@@ -258,7 +287,7 @@ struct DressUpView: View {
                     }
                     .scaleEffect(galleryBounce ? 1.25 : 1)
                     .overlay(alignment: .topTrailing) {
-                        if !store.gallery.isEmpty {
+                        if store.hasGalleryItems {
                             ZStack {
                                 Circle().fill(Color(hex: 0xF45C9A))
                                 Image(systemName: "sparkle")
@@ -406,9 +435,10 @@ struct DressUpView: View {
         Sound.shared.play(.fanfare, volume: 0.8)
         Sound.shared.tap()
         let photo = store.saveToGallery()
+        let earned = store.awardGallerySaveCoins(for: photo, from: CGPoint(x: 260, y: 420))
         withAnimation(.easeOut(duration: 0.08)) { flash = true }
-        // then decorate it in the sticker studio
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+        // Let earned Play Coins fly into the purse before opening the sticker studio.
+        DispatchQueue.main.asyncAfter(deadline: .now() + (earned > 0 ? 1.15 : 0.9)) {
             withAnimation(.spring(response: 0.45)) { studio = photo }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {

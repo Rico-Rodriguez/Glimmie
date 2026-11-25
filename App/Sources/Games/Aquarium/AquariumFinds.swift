@@ -180,7 +180,7 @@ extension AquariumSim {
                 )
             )
         }
-        if time - lastChestCoinAt >= 6 {
+        if time - lastChestCoinAt >= AquariumSim.coinCooldown {
             lastChestCoinAt = time
             Coins.shared.earn(3, game: AquariumSim.gameID, from: origin)
         }

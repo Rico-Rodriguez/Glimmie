@@ -542,4 +542,163 @@ final class ColoringTests: XCTestCase {
             XCTAssertGreaterThan(colored(paper, 360...640, 360...440), 0.05, "\(shape) stamp should mark the paper")
         }
     }
+
+    func testSnapshotLZ4CompressionShrinksAndRestoresLosslessly() {
+        let paper = ColoringPaper(lineArt: squareArt())
+        let rawBytes = ColoringPaper.width * ColoringPaper.height * 4
+
+        let blankSnap = paper.snapshot()
+        XCTAssertTrue(blankSnap.compressed)
+        XCTAssertLessThan(blankSnap.byteCount, rawBytes / 20, "blank LZ4 snapshot should shrink dramatically")
+
+        let pink = PaintColor.hex(0xFF6FB5)
+        let blue = PaintColor.hex(0x3C8DFF)
+        paper.fill(at: CGPoint(x: 800, y: 600), style: .glitter, color: pink)
+        stroke(paper, .crayon, 0x3C8DFF, [CGPoint(x: 450, y: 350), CGPoint(x: 1100, y: 820)], size: 48, pressure: 0.85)
+        let paintedSnap = paper.snapshot()
+        XCTAssertTrue(paintedSnap.compressed)
+        XCTAssertLessThan(paintedSnap.byteCount, rawBytes / 4, "painted LZ4 snapshot should be far smaller than 7.68 MB raw RGBA")
+
+        let sampleCoords = [(100, 100), (450, 350), (800, 600), (920, 700), (1100, 820), (1300, 950)]
+        let expected = sampleCoords.map { paper.pixel($0.0, $0.1) }
+
+        paper.fill(at: CGPoint(x: 100, y: 100), style: .solid, color: blue)
+        XCTAssertEqual(paper.pixel(100, 100), blue.packed)
+
+        paper.restore(paintedSnap)
+        for ((x, y), px) in zip(sampleCoords, expected) {
+            XCTAssertEqual(paper.pixel(x, y), px, "LZ4 restore must be 100% lossless at (\(x),\(y))")
+        }
+
+        paper.restore(blankSnap)
+        XCTAssertEqual(paper.pixel(800, 600), PaintColor.white.packed)
+        XCTAssertEqual(paper.pixel(100, 100), PaintColor.white.packed)
+    }
+
+    func testHasEditsGuardsBlankPageCoinFarm() {
+        let prevDemo = StickerBook.shared.demo
+        StickerBook.shared.demo = true
+        defer { StickerBook.shared.demo = prevDemo }
+
+        let studio = readyStudio()
+        defer {
+            if let saved = ColoringGallery.shared.items.first(where: { $0.id == studio.artworkID }) {
+                ColoringGallery.shared.delete(saved)
+            }
+        }
+
+        XCTAssertFalse(studio.hasEdits, "new blank page starts unedited")
+        XCTAssertTrue(studio.completeArtwork().isEmpty, "blank page must not unlock completion stickers")
+        XCTAssertFalse(ColoringGallery.shared.items.contains { $0.id == studio.artworkID })
+
+        // Filling blank white paper with white changes nothing and keeps hasEdits false.
+        studio.tool = .fill
+        studio.fillStyle = .solid
+        studio.color = .white
+        studio.touchBegan(CGPoint(x: 800, y: 600))
+        XCTAssertFalse(studio.hasEdits)
+
+        // A real color fill marks hasEdits true, and undoing it reverts hasEdits to false.
+        studio.color = PaintColor.hex(0xFF6FB5)
+        studio.touchBegan(CGPoint(x: 800, y: 600))
+        XCTAssertTrue(studio.hasEdits)
+        studio.undoLast()
+        XCTAssertFalse(studio.hasEdits)
+
+        // A cancelled stroke (pinch zoom) must not leave hasEdits true.
+        studio.tool = .marker
+        studio.touchBegan(CGPoint(x: 500, y: 500))
+        XCTAssertTrue(studio.hasEdits)
+        studio.cancelStroke()
+        XCTAssertFalse(studio.hasEdits)
+
+        // Adding a sticker marks hasEdits true, and clearAll resets it back to false.
+        studio.addSticker("star")
+        XCTAssertTrue(studio.hasEdits)
+        studio.clearAll()
+        XCTAssertFalse(studio.hasEdits)
+        XCTAssertTrue(studio.completeArtwork().isEmpty, "cleared blank page must not unlock completion rewards")
+
+        // Painting again enables completion saves and sticker unlocks cleanly.
+        studio.tool = .marker
+        studio.color = PaintColor.hex(0x3C8DFF)
+        studio.touchBegan(CGPoint(x: 500, y: 500))
+        studio.touchMoved([StrokeSample(point: CGPoint(x: 700, y: 500), pressure: 0.6, tilt: 0)])
+        studio.touchEnded()
+        XCTAssertTrue(studio.hasEdits)
+        _ = studio.completeArtwork()
+        XCTAssertTrue(ColoringGallery.shared.items.contains { $0.id == studio.artworkID })
+        XCTAssertTrue(StickerBook.shared.has(game: ColoringGallery.gameID, id: ColoringFind.firstMasterpiece.rawValue))
+    }
+
+    func testGlitterSensorsGateOnFlakesPresence() {
+        let studio = readyStudio()
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            return XCTFail("no window scene in the test host")
+        }
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let canvas = ColoringCanvasView(frame: window.bounds)
+        canvas.studio = studio
+        studio.redraw = { [weak canvas] in canvas?.setNeedsShow() }
+        window.addSubview(canvas)
+        window.makeKeyAndVisible()
+        defer {
+            canvas.removeFromSuperview()
+            window.isHidden = true
+        }
+
+        XCTAssertFalse(canvas.isDisplayLinkRunning, "idle canvas with no glitter must not run CADisplayLink")
+        XCTAssertFalse(canvas.isMotionRunning, "idle canvas with no glitter must not run CMMotionManager")
+
+        // Solid fill leaves flakes empty, so display link and motion remain stopped.
+        studio.tool = .fill
+        studio.fillStyle = .solid
+        studio.color = PaintColor.hex(0xFF6FB5)
+        studio.touchBegan(CGPoint(x: 800, y: 600))
+        XCTAssertFalse(canvas.isDisplayLinkRunning)
+        XCTAssertFalse(canvas.isMotionRunning)
+
+        // Glitter fill activates the display link for twinkling flakes.
+        studio.fillStyle = .glitter
+        studio.touchBegan(CGPoint(x: 800, y: 600))
+        XCTAssertFalse(studio.paper?.flakes.isEmpty ?? true)
+        XCTAssertTrue(canvas.isDisplayLinkRunning, "glitter flakes must activate CADisplayLink")
+
+        // Clearing the page immediately stops the display link and motion updates.
+        studio.clearAll()
+        XCTAssertTrue(studio.paper?.flakes.isEmpty ?? false)
+        XCTAssertFalse(canvas.isDisplayLinkRunning, "clearing glitter must immediately stop CADisplayLink")
+        XCTAssertFalse(canvas.isMotionRunning, "clearing glitter must immediately stop CMMotionManager")
+    }
+
+    func testColoringTreasureHooksUnlockBonusStickersAndStarlightRainbow() {
+        Coins.shared.resetForTests(balance: 60)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(ColoringStickers.all.count, 24)
+        XCTAssertEqual(ColoringStickers.available, ColoringStickers.all)
+        XCTAssertFalse(ColoringPaper.hasRainbowStarlight)
+
+        // Painting rainbow without the treasure adds no glitter flakes.
+        let plainPaper = ColoringPaper(lineArt: nil)
+        stroke(plainPaper, .rainbow, 0, [CGPoint(x: 200, y: 300), CGPoint(x: 700, y: 300)], size: 48)
+        XCTAssertTrue(plainPaper.flakes.isEmpty)
+
+        // Buying starStamp unlocks the two extra bonus vector stickers cleanly.
+        XCTAssertTrue(Coins.shared.buy("coloring/starStamp", price: 10))
+        XCTAssertEqual(ColoringStickers.all.count, 24, "baseline sticker list stays intact")
+        XCTAssertEqual(ColoringStickers.available.count, 26)
+        for bonusID in ColoringStickers.bonusStarStamp {
+            XCTAssertTrue(ColoringStickers.available.contains(bonusID))
+            XCTAssertNotNil(ColoringVectorStickers.sticker(for: bonusID), "bonus sticker \(bonusID) must render as vector art")
+        }
+
+        // Buying rainbowBrush enables starlight shimmer flakes on rainbow strokes.
+        XCTAssertTrue(Coins.shared.buy("coloring/rainbowBrush", price: 12))
+        XCTAssertTrue(ColoringPaper.hasRainbowStarlight)
+        let starlightPaper = ColoringPaper(lineArt: nil)
+        stroke(starlightPaper, .rainbow, 0, [CGPoint(x: 200, y: 300), CGPoint(x: 700, y: 300)], size: 48)
+        XCTAssertFalse(starlightPaper.flakes.isEmpty)
+    }
 }

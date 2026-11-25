@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - A look (what the doll is wearing)
 //
@@ -197,10 +198,73 @@ struct Look: Codable, Equatable, Identifiable {
         }
         return l
     }
+
+    // MARK: Cross-app doll palette bridge
+
+    static let skinHexKey = "glimmie.doll.skinHex"
+    static let hairHexKey = "glimmie.doll.hairHex"
+    static let eyeHexKey = "glimmie.doll.eyeHex"
+
+    /// Writes `#RRGGBB` hex strings into UserDefaults so Hair Salon's "My Doll" button matches her doll.
+    func syncDollDefaults(_ defaults: UserDefaults = .standard, art: DressUpArt = .shared) {
+        let skinRGB = art.skin[safe: skin] ?? RGB(hex: "#FFDCCB")
+        let hairRGB = mixed["hair"].map(RGB.init(hex:)) ?? art.hair[safe: hair] ?? RGB(hex: "#C98A55")
+        let eyeRGB = mixed["eye"].map(RGB.init(hex:)) ?? art.eye[safe: eye] ?? RGB(hex: "#5C9BEB")
+        defaults.set(skinRGB.hexString, forKey: Self.skinHexKey)
+        defaults.set(hairRGB.hexString, forKey: Self.hairHexKey)
+        defaults.set(eyeRGB.hexString, forKey: Self.eyeHexKey)
+    }
+
+    /// Deterministic fingerprint of the look's visual styling, used to guard duplicate coin rewards.
+    var styleSignature: String {
+        let pickSig = picks.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let colorSig = colors.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let patSig = patterns.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let mixSig = mixed.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        let petSig = pet.map { "\($0.kind):\($0.wear.count):\($0.dye ?? -1)" } ?? "none"
+        let paintedNails = nails.filter(\.hasArt).count
+        return "\(skin)|\(hair)|\(eye)|\(bg)|\(pickSig)|\(colorSig)|\(patSig)|\(mixSig)|\(petSig)|m\(makeup.count)|n\(paintedNails)"
+    }
 }
 
 extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+/// A rendered Backyard Playhouse scene snapshot saved into Dress Up's gallery.
+struct PlayhousePhoto: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var fileName: String
+    var saved = Date()
+
+    var fileURL: URL {
+        GameStorage.folder(LookStore.game).appendingPathComponent(fileName)
+    }
+
+    func loadImage() -> UIImage? {
+        guard let data = try? Data(contentsOf: fileURL) else { return nil }
+        return UIImage(data: data)
+    }
+}
+
+/// Prevents empty-save coin spamming while rewarding genuinely styled looks and scenes.
+struct DressUpCoinGuard {
+    var cooldown: TimeInterval
+    private(set) var lastSignature: String?
+    private(set) var lastAwardedAt: Date = .distantPast
+
+    init(cooldown: TimeInterval = 5.0) {
+        self.cooldown = cooldown
+    }
+
+    mutating func canReward(signature: String, now: Date = Date()) -> Bool {
+        guard !signature.isEmpty else { return false }
+        if signature == lastSignature { return false }
+        if now.timeIntervalSince(lastAwardedAt) < cooldown { return false }
+        lastSignature = signature
+        lastAwardedAt = now
+        return true
+    }
 }
 
 // MARK: - Saving
@@ -208,19 +272,36 @@ extension Array {
 final class LookStore: ObservableObject {
     static let game = "dressup"
     static let maxSaved = 60
+    static let maxPlayhousePhotos = 40
+    static let galleryCoinReward = 2
+    static let playhouseCoinReward = 3
 
-    @Published var current: Look { didSet { scheduleSave() } }
+    @Published var current: Look {
+        didSet {
+            current.syncDollDefaults()
+            scheduleSave()
+        }
+    }
     @Published private(set) var gallery: [Look]
+    @Published private(set) var playhousePhotos: [PlayhousePhoto]
     /// Colors she mixed, newest first (at most 12).
     @Published var mixes: [String] { didSet { GameStorage.save(mixes, game: Self.game, file: "mixes.json") } }
 
+    var hasGalleryItems: Bool { !gallery.isEmpty || !playhousePhotos.isEmpty }
+
     private var pending: DispatchWorkItem?
+    private var galleryCoinGuard = DressUpCoinGuard(cooldown: 5.0)
+    private var playhouseCoinGuard = DressUpCoinGuard(cooldown: 5.0)
 
     init() {
         let art = DressUpArt.shared
-        current = (GameStorage.load(Look.self, game: Self.game, file: "current.json") ?? .starter).sanitized(art)
+        let loaded = (GameStorage.load(Look.self, game: Self.game, file: "current.json") ?? .starter).sanitized(art)
+        current = loaded
         gallery = (GameStorage.load([Look].self, game: Self.game, file: "gallery.json") ?? []).map { $0.sanitized(art) }
+        let savedScenes = GameStorage.load([PlayhousePhoto].self, game: Self.game, file: "playhouse_gallery.json") ?? []
+        playhousePhotos = savedScenes.filter { FileManager.default.fileExists(atPath: $0.fileURL.path) }
         mixes = (GameStorage.load([String].self, game: Self.game, file: "mixes.json") ?? []).filter(Look.isHex)
+        loaded.syncDollDefaults(art: art)
     }
 
     private func scheduleSave() {
@@ -240,7 +321,51 @@ final class LookStore: ObservableObject {
         gallery.insert(l, at: 0)
         if gallery.count > Self.maxSaved { gallery.removeLast(gallery.count - Self.maxSaved) }
         GameStorage.save(gallery, game: Self.game, file: "gallery.json")
+        current.syncDollDefaults()
         return l
+    }
+
+    /// Awards Play Coins for saving a newly styled look to the gallery.
+    @discardableResult
+    func awardGallerySaveCoins(for look: Look, from origin: CGPoint = CGPoint(x: 260, y: 420), now: Date = Date()) -> Int {
+        guard galleryCoinGuard.canReward(signature: look.styleSignature, now: now) else { return 0 }
+        Coins.shared.earn(Self.galleryCoinReward, game: Self.game, from: origin)
+        return Self.galleryCoinReward
+    }
+
+    /// Saves a rendered Backyard Playhouse scene PNG into Dress Up's gallery.
+    @discardableResult
+    func savePlayhouseSnapshot(_ image: UIImage) -> PlayhousePhoto? {
+        guard let data = image.pngData() else { return nil }
+        let id = UUID()
+        let photo = PlayhousePhoto(id: id, fileName: "playhouse_\(id.uuidString).png", saved: Date())
+        do {
+            try data.write(to: photo.fileURL, options: .atomic)
+        } catch {
+            return nil
+        }
+        playhousePhotos.insert(photo, at: 0)
+        if playhousePhotos.count > Self.maxPlayhousePhotos {
+            let evicted = playhousePhotos.suffix(from: Self.maxPlayhousePhotos)
+            for old in evicted { try? FileManager.default.removeItem(at: old.fileURL) }
+            playhousePhotos.removeLast(playhousePhotos.count - Self.maxPlayhousePhotos)
+        }
+        GameStorage.save(playhousePhotos, game: Self.game, file: "playhouse_gallery.json")
+        return photo
+    }
+
+    /// Awards Play Coins for snapping a Backyard Playhouse scene.
+    @discardableResult
+    func awardPlayhouseSnapCoins(signature: String, from origin: CGPoint = CGPoint(x: 512, y: 360), now: Date = Date()) -> Int {
+        guard playhouseCoinGuard.canReward(signature: signature, now: now) else { return 0 }
+        Coins.shared.earn(Self.playhouseCoinReward, game: Self.game, from: origin)
+        return Self.playhouseCoinReward
+    }
+
+    func deletePlayhousePhoto(_ photo: PlayhousePhoto) {
+        playhousePhotos.removeAll { $0.id == photo.id }
+        try? FileManager.default.removeItem(at: photo.fileURL)
+        GameStorage.save(playhousePhotos, game: Self.game, file: "playhouse_gallery.json")
     }
 
     /// Puts a decorated photo back in its place in the gallery.

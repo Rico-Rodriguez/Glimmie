@@ -256,6 +256,7 @@ final class GardenSim {
     private var lastToolP = CGPoint.zero
     private var seedTimer: CGFloat = 0
     private var digSound: Double = 0
+    private var weedClearGraceUntil: Double = -10
     var returning: (tool: GardenTool, from: CGPoint, to: CGPoint, start: Double, tilt: CGFloat)?
 
     // Bare hand
@@ -263,6 +264,7 @@ final class GardenSim {
         case weed(Int)
         case carrot(Int)
         case decor(Int)
+        case basketFeed
     }
     private var pickedThisStroke = Set<Int>()
     private var grab: Grab?
@@ -512,6 +514,7 @@ final class GardenSim {
         load = 0
         autoShovelActive = false
         digSound = 0
+        weedClearGraceUntil = -10
         returning = nil
         overReturnBadge = false
         for i in plots.indices { plots[i].digWork = 0 }
@@ -629,11 +632,15 @@ final class GardenSim {
         let moved = hypot(tip.x - prev.x, tip.y - prev.y)
         if GGeo.inBed(tip.x) {
             let surf = surface(tip.x)
-            // Pop weeds in one generous scoop near the soil.
+            // Always prioritize clearing weeds before any plot uproot, with a brief post-weed grace window.
             if tip.y > surf - 36,
-               let wi = weeds.firstIndex(where: { abs($0.x - tip.x) < 30 * FingerLift.spread }) {
+               let wi = weeds.indices.min(by: { abs(weeds[$0].x - tip.x) < abs(weeds[$1].x - tip.x) }),
+               abs(weeds[wi].x - tip.x) < 36 * FingerLift.spread {
                 popWeed(wi, v: CGVector(dx: toolV.dx * 0.35 + CGFloat.random(in: -90...90), dy: -620))
+                weedClearGraceUntil = time + 0.6
+                for k in plots.indices { plots[k].digWork = 0 }
             }
+            let weedNearby = weeds.contains { abs($0.x - tip.x) < 56 }
             if tip.y > surf - 8 {
                 let c = GGeo.column(tip.x)
                 var took: CGFloat = 0
@@ -670,15 +677,19 @@ final class GardenSim {
                     deposit(spill * 0.5, at: tip.x - 28)
                     deposit(spill * 0.5, at: tip.x + 28)
                 }
-                // Check each plot: single decisive manual scoop uproots a plant, or unearths a buried surprise on an empty plot.
-                for i in plots.indices where abs(GGeo.plotX[i] - tip.x) < 38 {
+                for i in plots.indices {
+                    let dx = abs(GGeo.plotX[i] - tip.x)
                     if plots[i].plant != nil && !autoShovelActive {
-                        plots[i].digWork += max(moved, dt * 45)
-                        plots[i].bendV += (tip.x - prev.x) * 0.025
-                        if plots[i].digWork >= 22 {
-                            uproot(i)
+                        if !weedNearby && time >= weedClearGraceUntil && dx < 22 {
+                            plots[i].digWork += max(moved, dt * 45)
+                            plots[i].bendV += (tip.x - prev.x) * 0.025
+                            if plots[i].digWork >= 28 {
+                                uproot(i)
+                            }
+                        } else {
+                            plots[i].digWork = max(0, plots[i].digWork - dt * 50)
                         }
-                    } else if plots[i].plant == nil && plots[i].surpriseReady {
+                    } else if plots[i].plant == nil && plots[i].surpriseReady && dx < 38 {
                         plots[i].digWork += max(moved, dt * 60)
                         if plots[i].digWork >= 10 {
                             unearthSurprise(plot: i)
@@ -1466,6 +1477,13 @@ final class GardenSim {
         return nil
     }
 
+    private func blockingPlantHit(_ p: CGPoint) -> Int? {
+        guard let i = plantHit(p), let pl = plots[i].plant else { return nil }
+        if pl.growth >= 1 && pl.left > 0 { return i }
+        if abs(p.x - GGeo.plotX[i]) < 26 { return i }
+        return nil
+    }
+
     func handBegan(_ p: CGPoint) {
         pickedThisStroke.removeAll(keepingCapacity: true)
         handDown = true
@@ -1498,10 +1516,18 @@ final class GardenSim {
                 return
             }
         }
-        // 3. Foreground plants, visitors, basket, and bouquet vase never get stolen by background decor.
-        if plantHit(p) != nil
+        // 2b. Dragging harvest from basket to a visitor.
+        if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 62 {
+            if !basket.isEmpty {
+                grab = .basketFeed
+                basketBounceV += 6
+            }
+            return
+        }
+        // 3. Foreground ripe plants, plant stems, visitors, and bouquet vase beat background decor,
+        // while short decor peeking beside a growing plant remains reachable.
+        if blockingPlantHit(p) != nil
             || visitorHit(p) != nil
-            || hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 72
             || hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 48)) < 64 {
             return
         }
@@ -1550,6 +1576,8 @@ final class GardenSim {
             decor[d].vy = 0
             decor[d].tiltV += (p.x - handLast.x) * 0.05
             overReturnBadge = isOverReturnBadge(p)
+        case .basketFeed?:
+            break
         case nil:
             brush(from: handLast, to: p)
         }
@@ -1591,6 +1619,15 @@ final class GardenSim {
                 }
             }
             overReturnBadge = false
+        case .basketFeed?:
+            if tap {
+                basketBounceV += 12
+                GardenSound.shared.play(.basket, volume: 0.75)
+                Sound.shared.tap()
+                sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
+            } else {
+                _ = feedVisitorFromBasket(at: p)
+            }
         case nil:
             if tap { tapAt(p) }
         }
@@ -1661,7 +1698,7 @@ final class GardenSim {
 
     private func tapAt(_ p: CGPoint) {
         // Woven harvest basket
-        if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 72 {
+        if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 62 {
             basketBounceV += 12
             GardenSound.shared.play(.basket, volume: 0.75)
             Sound.shared.tap()
@@ -1728,16 +1765,30 @@ final class GardenSim {
 
     @discardableResult
     func placeDecorOnFreeSpot(_ k: DecorKind) -> Int {
-        let candidates: [CGFloat] = [124, 240, 356, 472, 588, 704, 820, 916, 182, 298, 414, 530, 646, 762]
+        // Open gap slots sit between plot stems and beside the cedar bed so short decor never hides behind tall plants.
+        let candidates: [CGFloat] = [180, 308, 436, 564, 692, 856, 928, 72, 212, 340, 468, 596, 724, 892]
         let bestX = candidates.max { a, b in
-            let distA = decor.map { abs($0.x - a) }.min() ?? 999
-            let distB = decor.map { abs($0.x - b) }.min() ?? 999
-            return distA < distB
-        } ?? 512
+            scoreDecorSpot(a, for: k) < scoreDecorSpot(b, for: k)
+        } ?? 856
         let idx = addDecor(k, x: bestX, falling: true)
         Sound.shared.play(.pop, volume: 0.6)
         Sound.shared.tap()
         return idx
+    }
+
+    private func scoreDecorSpot(_ x: CGFloat, for k: DecorKind) -> CGFloat {
+        let decorClear = min(150, decor.map { abs($0.x - x) }.min() ?? 150)
+        var plantPenalty: CGFloat = 0
+        for i in plots.indices {
+            guard let pl = plots[i].plant else { continue }
+            let dx = abs(GGeo.plotX[i] - x)
+            let span = pl.kind.reach + 14
+            if dx < span {
+                let tallPlant = pl.kind.height >= k.size.height
+                plantPenalty += tallPlant ? 240 : 120
+            }
+        }
+        return decorClear - plantPenalty
     }
 
     @discardableResult
@@ -1802,6 +1853,10 @@ final class GardenSim {
         case .crystal, .rainbow, .unicorn:
             decor[i].tiltV += 3
             Sound.shared.play(.sparkle, volume: 0.5)
+        case .lotus:
+            decor[i].tiltV += 2.6
+            sparkle(at: CGPoint(x: decor[i].x, y: decor[i].y - 68), count: 8)
+            Sound.shared.play(.sparkle, volume: 0.55)
         }
     }
 

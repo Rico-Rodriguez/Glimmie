@@ -1,3 +1,4 @@
+import Compression
 import UIKit
 
 // MARK: - Colors
@@ -430,17 +431,44 @@ final class ColoringPaper {
         flakes = []
     }
 
-    /// The pixels, with any wet paint dried first (for undo).
-    func snapshot() -> Data {
-        settle()
-        return Data(bytes: px, count: w * h * 4)
+    struct Snapshot: Equatable {
+        let data: Data
+        let compressed: Bool
+
+        var byteCount: Int { data.count }
     }
 
-    func restore(_ data: Data) {
-        guard data.count == w * h * 4 else { return }
+    /// The pixels, with any wet paint dried first (for undo), LZ4-compressed to keep the undo stack light.
+    func snapshot() -> Snapshot {
+        settle()
+        let byteCount = w * h * 4
+        let dst = UnsafeMutablePointer<UInt8>.allocate(capacity: byteCount)
+        defer { dst.deallocate() }
+        let encodedSize = px.withMemoryRebound(to: UInt8.self, capacity: byteCount) { src in
+            compression_encode_buffer(dst, byteCount, src, byteCount, nil, COMPRESSION_LZ4)
+        }
+        if encodedSize > 0 && encodedSize < byteCount {
+            return Snapshot(data: Data(bytes: dst, count: encodedSize), compressed: true)
+        }
+        return Snapshot(data: Data(bytes: px, count: byteCount), compressed: false)
+    }
+
+    func restore(_ snapshot: Snapshot) {
+        let byteCount = w * h * 4
         drying = false
-        data.withUnsafeBytes { raw in
-            if let base = raw.baseAddress { memcpy(px, base, w * h * 4) }
+        if snapshot.compressed {
+            let decodedSize = px.withMemoryRebound(to: UInt8.self, capacity: byteCount) { dst in
+                snapshot.data.withUnsafeBytes { raw in
+                    guard let src = raw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+                    return compression_decode_buffer(dst, byteCount, src, raw.count, nil, COMPRESSION_LZ4)
+                }
+            }
+            guard decodedSize == byteCount else { return }
+        } else {
+            guard snapshot.data.count == byteCount else { return }
+            snapshot.data.withUnsafeBytes { raw in
+                if let base = raw.baseAddress { memcpy(px, base, byteCount) }
+            }
         }
     }
 

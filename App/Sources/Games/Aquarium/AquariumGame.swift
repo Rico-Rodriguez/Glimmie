@@ -89,6 +89,7 @@ final class AquaSound {
     static let looping: Set<AquaSFX> = [.hum, .pump]
     private var players: [AquaSFX: [AVAudioPlayer]] = [:]
     private var loops: [AquaSFX: AVAudioPlayer] = [:]
+    private var missing: Set<AquaSFX> = []
     private var last: [AquaSFX: Date] = [:]
     private let queue = DispatchQueue(label: "aquarium.sound", qos: .userInitiated)
     private var loopLevel: [AquaSFX: Float] = [:]
@@ -96,31 +97,54 @@ final class AquaSound {
 
     private init() {
         _ = Sound.shared
-        for s in AquaSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Aquarium") else { continue }
-            if AquaSound.looping.contains(s) {
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.numberOfLoops = -1
-                p?.volume = 0
-                p?.prepareToPlay()
-                loops[s] = p
-            } else {
-                players[s] = (0..<3).compactMap { _ in
-                    let p = try? AVAudioPlayer(contentsOf: url)
-                    p?.prepareToPlay()
-                    return p
-                }
-            }
+    }
+
+    private func soundURL(for s: AquaSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Aquarium")
+            ?? GameFiles.url(s.rawValue, "wav", game: "Aquarium")
+    }
+
+    private func ensurePool(for s: AquaSFX) -> [AVAudioPlayer] {
+        if let existing = players[s] { return existing }
+        guard !missing.contains(s), let url = soundURL(for: s) else {
+            missing.insert(s)
+            return []
         }
+        let pool = (0..<3).compactMap { _ -> AVAudioPlayer? in
+            let p = try? AVAudioPlayer(contentsOf: url)
+            p?.prepareToPlay()
+            return p
+        }
+        if pool.isEmpty {
+            missing.insert(s)
+        } else {
+            players[s] = pool
+        }
+        return pool
+    }
+
+    private func ensureLoop(for s: AquaSFX) -> AVAudioPlayer? {
+        if let existing = loops[s] { return existing }
+        guard !missing.contains(s), let url = soundURL(for: s),
+              let p = try? AVAudioPlayer(contentsOf: url) else {
+            missing.insert(s)
+            return nil
+        }
+        p.numberOfLoops = -1
+        p.volume = 0
+        p.prepareToPlay()
+        loops[s] = p
+        return p
     }
 
     func play(_ s: AquaSFX, volume: Float = 0.9, gap: Double = 0) {
         let now = Date()
         if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
         last[s] = now
-        guard let pool = players[s], !pool.isEmpty else { return }
         let v = volume * Float.random(in: 0.85...1)
         queue.async {
+            let pool = self.ensurePool(for: s)
+            guard !pool.isEmpty else { return }
             let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
             p.volume = v
             p.currentTime = 0
@@ -129,7 +153,6 @@ final class AquaSound {
     }
 
     func setLoop(_ s: AquaSFX, volume: Float) {
-        guard let p = loops[s] else { return }
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.08
         loopLevel[s] = v
@@ -138,23 +161,24 @@ final class AquaSound {
         guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
         loopSent[s] = on ? v : 0
         queue.async {
-            p.volume = on ? v : 0
             if on {
+                guard let p = self.ensureLoop(for: s) else { return }
+                p.volume = v
                 if !p.isPlaying { p.play() }
-            } else if p.isPlaying {
-                p.pause()
+            } else if let p = self.loops[s] {
+                p.volume = 0
+                if p.isPlaying { p.pause() }
             }
         }
     }
 
     func stopLoops() {
-        for s in loops.keys {
+        for s in AquaSound.looping {
             loopLevel[s] = 0
             loopSent[s] = 0
         }
-        let all = Array(loops.values)
         queue.async {
-            for p in all {
+            for p in self.loops.values {
                 p.pause()
                 p.volume = 0
             }
@@ -348,21 +372,10 @@ struct AquariumView: View {
             },
             trailing: {
                 HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill((lightsOn ? Theme.lemon : Theme.lilac).opacity(0.45))
-                            .frame(width: GameChromeLayout.buttonSize + 12, height: GameChromeLayout.buttonSize + 12)
-                            .blur(radius: 4)
-                        RoundButton(
-                            symbol: lightsOn ? "sun.max.fill" : "moon.stars.fill",
-                            tint: lightsOn ? Color(hex: 0xF5A623) : Color(hex: 0x8D7BF6),
-                            size: GameChromeLayout.buttonSize
-                        ) {
-                            Sound.shared.tap()
-                            lightsOn.toggle()
-                            sim.setLights(lightsOn)
-                        }
-                        .accessibilityLabel(lightsOn ? "Tank Lights On" : "Tank Lights Off")
+                    AquaDayNightButton(lightsOn: lightsOn, size: GameChromeLayout.buttonSize) {
+                        Sound.shared.tap()
+                        lightsOn.toggle()
+                        sim.setLights(lightsOn)
                     }
 
                     RoundButton(
@@ -480,6 +493,8 @@ struct AquariumView: View {
     private var catalogDrawer: some View {
         let fishList = FishKind.allCases
         let decorList = AquaDecorKind.available
+        let itemCount = catalogTab == .fish ? fishList.count : decorList.count
+        let overflows = itemCount * 92 > 572
 
         return GameTrayCard(cornerRadius: 28, paddingH: 14, paddingV: 10) {
             HStack(spacing: 10) {
@@ -492,23 +507,47 @@ struct AquariumView: View {
                     .fill(Theme.blush)
                     .frame(width: 3, height: 64)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        if catalogTab == .fish {
-                            ForEach(Array(fishList.enumerated()), id: \.offset) { idx, kind in
-                                catalogFishTile(kind, key: "fish_\(idx)")
+                ScrollViewReader { proxy in
+                    HStack(spacing: 4) {
+                        if overflows {
+                            drawerChevron(systemName: "chevron.left") {
+                                Sound.shared.tap()
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                    proxy.scrollTo(0, anchor: .leading)
+                                }
                             }
-                        } else {
-                            ForEach(Array(decorList.enumerated()), id: \.offset) { idx, kind in
-                                catalogDecorTile(kind, key: "decor_\(idx)")
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                if catalogTab == .fish {
+                                    ForEach(Array(fishList.enumerated()), id: \.offset) { idx, kind in
+                                        catalogFishTile(kind, key: "fish_\(idx)")
+                                            .id(idx)
+                                    }
+                                } else {
+                                    ForEach(Array(decorList.enumerated()), id: \.offset) { idx, kind in
+                                        catalogDecorTile(kind, key: "decor_\(idx)")
+                                            .id(idx)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                            .padding(.horizontal, 2)
+                        }
+                        .frame(maxWidth: overflows ? 572 : 632, maxHeight: 88)
+                        .scrollDisabled(carrying != nil)
+
+                        if overflows {
+                            drawerChevron(systemName: "chevron.right") {
+                                Sound.shared.tap()
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                    proxy.scrollTo(max(0, itemCount - 1), anchor: .trailing)
+                                }
                             }
                         }
                     }
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 2)
                 }
-                .frame(maxWidth: 640, maxHeight: 88)
-                .scrollDisabled(carrying != nil)
 
                 Button {
                     Sound.shared.tap()
@@ -529,6 +568,20 @@ struct AquariumView: View {
         }
         .position(x: 512, y: AGeo.drawerY)
         .opacity(carrying?.hasPrefix("cat_") == true ? 0.25 : 1)
+    }
+
+    private func drawerChevron(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundStyle(Theme.pink)
+                .frame(width: 26, height: 64)
+                .background(
+                    Capsule()
+                        .fill(Theme.blush.opacity(0.38))
+                )
+        }
+        .buttonStyle(Squish())
     }
 
     private func catalogTabButton(_ tab: AquaCatalogTab) -> some View {
@@ -598,10 +651,10 @@ struct AquariumView: View {
                 sim.addFish(kind, x: x, y: AGeo.waterY - 18)
             }
             .simultaneousGesture(
-                DragGesture(minimumDistance: 12, coordinateSpace: .named("aquarium"))
+                DragGesture(minimumDistance: 10, coordinateSpace: .named("aquarium"))
                     .onChanged { v in
                         if carrying == nil {
-                            guard v.translation.height < -14, abs(v.translation.height) > abs(v.translation.width) * 1.1 else { return }
+                            guard v.translation.height < -10, abs(v.translation.height) >= abs(v.translation.width) * 0.45 else { return }
                             carrying = dragKey
                             hidden = dragKey
                             Sound.shared.tap()
@@ -648,10 +701,10 @@ struct AquariumView: View {
                 sim.addDecor(kind, x: x, falling: true, y: AGeo.waterY)
             }
             .simultaneousGesture(
-                DragGesture(minimumDistance: 12, coordinateSpace: .named("aquarium"))
+                DragGesture(minimumDistance: 10, coordinateSpace: .named("aquarium"))
                     .onChanged { v in
                         if carrying == nil {
-                            guard v.translation.height < -14, abs(v.translation.height) > abs(v.translation.width) * 1.1 else { return }
+                            guard v.translation.height < -10, abs(v.translation.height) >= abs(v.translation.width) * 0.45 else { return }
                             carrying = dragKey
                             hidden = dragKey
                             Sound.shared.tap()
@@ -777,6 +830,65 @@ struct AquariumView: View {
                 hidden = AquaSlot.food.rawValue
             }
         }
+    }
+}
+
+private struct AquaDayNightButton: View {
+    let lightsOn: Bool
+    let size: CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill((lightsOn ? Theme.lemon : Theme.lilac).opacity(0.45))
+                    .frame(width: size + 12, height: size + 12)
+                    .blur(radius: 4)
+
+                ZStack {
+                    // Split day/night circle so kids immediately discover Night Mode from the top bar.
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: lightsOn
+                                    ? [Color(hex: 0xFFC84A), Color(hex: 0xF5A623)]
+                                    : [Color(hex: 0x6C5CE7), Color(hex: 0x4834B8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    Canvas { ctx, sz in
+                        var corner = Path()
+                        corner.move(to: CGPoint(x: sz.width * 0.22, y: sz.height))
+                        corner.addLine(to: CGPoint(x: sz.width, y: sz.height * 0.22))
+                        corner.addLine(to: CGPoint(x: sz.width, y: sz.height))
+                        corner.closeSubpath()
+                        ctx.fill(
+                            corner,
+                            with: .color(lightsOn ? Color(hex: 0x5A48C8).opacity(0.92) : Color(hex: 0xFFB833).opacity(0.92))
+                        )
+                    }
+                    .clipShape(Circle())
+
+                    Image(systemName: lightsOn ? "sun.max.fill" : "moon.stars.fill")
+                        .font(.system(size: size * 0.38, weight: .bold))
+                        .foregroundStyle(.white)
+                        .offset(x: -size * 0.13, y: -size * 0.12)
+
+                    Image(systemName: lightsOn ? "moon.stars.fill" : "sun.max.fill")
+                        .font(.system(size: size * 0.23, weight: .bold))
+                        .foregroundStyle(lightsOn ? Color(hex: 0xFFF2A8) : .white)
+                        .offset(x: size * 0.20, y: size * 0.19)
+                }
+                .frame(width: size, height: size)
+                .overlay(Circle().stroke(.white, lineWidth: 3.5))
+                .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 3)
+            }
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(lightsOn ? "Tank Lights On" : "Tank Lights Off")
     }
 }
 

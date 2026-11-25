@@ -29,6 +29,7 @@ enum ICArt {
         guard let base = b.base else { return }
         baseBack(g, base, S)
         if base == .glass { glassInside(g, b, S, t) }
+        if b.snowLevel > 0.02 { bingsuSnow(g, b, S, time: t) }
         rope(g, b, S, front: false)
         for s in b.scoops {
             scoop(g, s, at: CGPoint(x: S.x + s.dx + s.wob, y: S.y - s.h), seed: s.id)
@@ -36,6 +37,9 @@ enum ICArt {
         rope(g, b, S, front: true)
         baseFront(g, base, S, b)
         for sc in b.sauces { sauce(g, sc, b, S) }
+        for piece in b.bingsuPieces {
+            bingsuPiece(g, piece, at: CGPoint(x: S.x + piece.dx, y: S.y - piece.h))
+        }
         if !b.whip.isEmpty { whip(g, b.whip, S) }
         for k in b.sprinkles where k.onTop {
             sprinkle(g, CGPoint(x: S.x + k.dx, y: S.y - k.dy), rot: k.rot, color: ICPalette.candy[k.color % ICPalette.candy.count])
@@ -68,6 +72,25 @@ enum ICArt {
         return p
     }
 
+    static func bowlPath(_ S: CGPoint) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: S.x - 68, y: S.y))
+        p.addLine(to: CGPoint(x: S.x + 68, y: S.y))
+        p.addCurve(
+            to: CGPoint(x: S.x + 30, y: S.y + 62),
+            control1: CGPoint(x: S.x + 66, y: S.y + 38),
+            control2: CGPoint(x: S.x + 48, y: S.y + 58)
+        )
+        p.addQuadCurve(to: CGPoint(x: S.x - 30, y: S.y + 62), control: CGPoint(x: S.x, y: S.y + 68))
+        p.addCurve(
+            to: CGPoint(x: S.x - 68, y: S.y),
+            control1: CGPoint(x: S.x - 48, y: S.y + 58),
+            control2: CGPoint(x: S.x - 66, y: S.y + 38)
+        )
+        p.closeSubpath()
+        return p
+    }
+
     static func glassPath(_ S: CGPoint, inset: CGFloat = 0) -> Path {
         var p = Path()
         p.move(to: CGPoint(x: S.x - 54 + inset, y: S.y - 2))
@@ -87,6 +110,9 @@ enum ICArt {
         case .glass:
             let back = glassPath(S)
             g.fill(back, with: .color(ICColor(0xE8F6FF).color(0.35)))
+        case .bowl:
+            g.fill(ellipse(CGPoint(x: S.x, y: S.y), 65, 14), with: .color(ICColor(0xDFF6F0).color))
+            g.stroke(ellipse(CGPoint(x: S.x, y: S.y), 65, 14), with: .color(outline(ICColor(0x88D4C2)).opacity(0.6)), lineWidth: 2)
         }
     }
 
@@ -154,7 +180,305 @@ enum ICArt {
             let rim = Path(roundedRect: CGRect(x: S.x - 59, y: S.y - 5, width: 118, height: 11), cornerRadius: 5.5)
             g.fill(rim, with: .color(ICColor(0xFFE3EE).color))
             g.stroke(rim, with: .color(outline(ICColor(0xFF8FB8))), lineWidth: 2.5)
+        case .bowl:
+            let celadon = ICColor(0x9BE1CE)
+            let edge = outline(ICColor(0x7CC5B2))
+            // Ceramic pedestal foot
+            let foot = Path(roundedRect: CGRect(x: S.x - 28, y: S.y + 58, width: 56, height: 18), cornerRadius: 7)
+            g.fill(foot, with: .linearGradient(Gradient(colors: [celadon.color, celadon.shade(-0.18).color]),
+                                               startPoint: CGPoint(x: S.x - 28, y: S.y + 58), endPoint: CGPoint(x: S.x + 28, y: S.y + 76)))
+            g.stroke(foot, with: .color(edge), lineWidth: 2.6)
+            // Rounded footed bingsu bowl body
+            let p = bowlPath(S)
+            g.fill(p, with: .linearGradient(
+                Gradient(colors: [celadon.shade(0.26).color, celadon.color, celadon.shade(-0.14).color]),
+                startPoint: CGPoint(x: S.x - 64, y: S.y + 6),
+                endPoint: CGPoint(x: S.x + 64, y: S.y + 52)
+            ))
+            var inside = g
+            inside.clip(to: p)
+            // Subtle blush scallop trim + pastel snowflakes around bowl waist
+            var trim = Path()
+            for k in -3...3 {
+                let cx = S.x + CGFloat(k) * 20
+                trim.addEllipse(in: CGRect(x: cx - 10, y: S.y + 18, width: 20, height: 16))
+            }
+            inside.fill(trim, with: .color(ICColor(0xFFF6F9).color(0.75)))
+            inside.fill(Path(CGRect(x: S.x - 70, y: S.y + 42, width: 140, height: 28)), with: .color(celadon.shade(-0.24).color(0.16)))
+            g.stroke(p, with: .color(edge), lineWidth: 3)
+            // Glossy ceramic rim + highlight
+            let rim = Path(roundedRect: CGRect(x: S.x - 71, y: S.y - 5, width: 142, height: 12), cornerRadius: 6)
+            g.fill(rim, with: .color(ICColor(0xDDF7EF).color))
+            g.stroke(rim, with: .color(edge), lineWidth: 2.6)
+            g.fill(ellipse(CGPoint(x: S.x - 36, y: S.y + 17), 16, 5), with: .color(.white.opacity(0.45)))
         case .glass:
+            break
+        }
+    }
+
+    // MARK: Korean Bingsu Snow & Toppings
+
+    static let rainbowBingsuTreasureID = "bakery/rainbowBingsu"
+    static var hasRainbowBingsu: Bool { Coins.shared.owns(rainbowBingsuTreasureID) }
+
+    private static func bingsuSnow(_ g: GraphicsContext, _ b: ICBuild, _ S: CGPoint, time t: CGFloat) {
+        let level = icClamp(b.snowLevel)
+        let rainbow = hasRainbowBingsu
+        // Pastel bingsu spoon (or sparkling rainbow-gem treasure spoon) tucked beside the snow dome once there's a fluffy mound
+        if level >= 0.35 {
+            var sp = g
+            sp.translateBy(x: S.x + 26, y: S.y - 18)
+            sp.rotate(by: .radians(0.48))
+            var handle = Path()
+            handle.move(to: CGPoint(x: 0, y: 12))
+            handle.addLine(to: CGPoint(x: 0, y: -116))
+            if rainbow {
+                let goldEdge = StorybookArt.outline(for: 0xE6A92E)
+                sp.stroke(handle, with: .color(goldEdge), style: StrokeStyle(lineWidth: 15, lineCap: .round))
+                sp.stroke(
+                    handle,
+                    with: .linearGradient(
+                        Gradient(colors: [Theme.pink, Theme.peach, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac]),
+                        startPoint: CGPoint(x: 0, y: -116),
+                        endPoint: CGPoint(x: 0, y: 12)
+                    ),
+                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                )
+                sp.stroke(handle.offsetBy(dx: -2, dy: 0), with: .color(.white.opacity(0.65)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+
+                // Golden bezel + faceted pastel rainbow-gem topper at the spoon tip
+                let gemCenter = CGPoint(x: 0, y: -118)
+                let bezel = ellipse(gemCenter, 12, 10)
+                StorybookArt.fillAndStroke(sp, bezel, fill: Color(hex: 0xFFE382), stroke: goldEdge, width: 2.2)
+
+                var gem = Path()
+                gem.move(to: CGPoint(x: 0, y: -127))
+                gem.addLine(to: CGPoint(x: 9, y: -118))
+                gem.addLine(to: CGPoint(x: 0, y: -109))
+                gem.addLine(to: CGPoint(x: -9, y: -118))
+                gem.closeSubpath()
+                sp.fill(
+                    gem,
+                    with: .linearGradient(
+                        Gradient(colors: [Theme.pink, Theme.lemon, Theme.sky, Theme.lilac]),
+                        startPoint: CGPoint(x: -9, y: -127),
+                        endPoint: CGPoint(x: 9, y: -109)
+                    )
+                )
+                sp.stroke(gem, with: .color(.white.opacity(0.85)), lineWidth: 1.5)
+                sp.fill(ellipse(CGPoint(x: -2.8, y: -120.5), 3.2, 2.2), with: .color(.white.opacity(0.9)))
+                let gemGlint = 0.65 + 0.35 * sin(Double(t) * 4.5)
+                StorybookArt.sparkle(sp, at: CGPoint(x: 11, y: -125), radius: 5.5, color: .white, opacity: gemGlint)
+                StorybookArt.sparkle(sp, at: CGPoint(x: -11, y: -111), radius: 4.2, color: Theme.lemon, opacity: gemGlint)
+            } else {
+                let pink = ICColor(0xFFA8C9)
+                sp.stroke(handle, with: .color(outline(pink)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                sp.stroke(handle, with: .color(pink.color), style: StrokeStyle(lineWidth: 9.5, lineCap: .round))
+                sp.stroke(handle.offsetBy(dx: -2, dy: 0), with: .color(.white.opacity(0.5)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                let tip = ellipse(CGPoint(x: 0, y: -118), 9, 6)
+                sp.fill(tip, with: .color(pink.shade(0.2).color))
+                sp.stroke(tip, with: .color(outline(pink)), lineWidth: 2)
+            }
+        }
+
+        let rx = ICBuild.snowRadius(level: level)
+        let peak = ICBuild.snowPeak(level: level)
+        var dome = Path()
+        let steps = 28
+        for i in 0...steps {
+            let u = -1 + 2 * CGFloat(i) / CGFloat(steps)
+            let dx = u * rx
+            let h = ICBuild.snowHeight(at: dx, level: level) ?? 0
+            let fluff = (i == 0 || i == steps) ? 0 : sin(CGFloat(i) * 1.9) * 2.4
+            let pt = CGPoint(x: S.x + dx, y: S.y - h - fluff)
+            if i == 0 { dome.move(to: pt) } else { dome.addLine(to: pt) }
+        }
+        dome.addLine(to: CGPoint(x: S.x + rx, y: S.y + 12))
+        dome.addLine(to: CGPoint(x: S.x - rx, y: S.y + 12))
+        dome.closeSubpath()
+
+        g.fill(dome, with: .radialGradient(
+            Gradient(colors: [Color.white, ICColor(0xF6FBFF).color, ICColor(0xDCECF8).color]),
+            center: CGPoint(x: S.x - rx * 0.28, y: S.y - peak * 0.65),
+            startRadius: 4,
+            endRadius: max(rx, peak) * 1.35
+        ))
+
+        // Feathery folded nun-kkot milk-snow ribbon strokes
+        var inside = g
+        inside.clip(to: dome)
+        if rainbow {
+            // Subtle iridescent pastel snow aurora washed softly across the dome
+            inside.fill(
+                dome,
+                with: .linearGradient(
+                    Gradient(colors: [
+                        Theme.pink.opacity(0.18),
+                        Theme.lemon.opacity(0.14),
+                        Theme.mint.opacity(0.16),
+                        Theme.sky.opacity(0.18),
+                        Theme.lilac.opacity(0.18),
+                    ]),
+                    startPoint: CGPoint(x: S.x - rx, y: S.y - peak),
+                    endPoint: CGPoint(x: S.x + rx, y: S.y)
+                )
+            )
+        }
+        for k in 0..<5 {
+            let frac = 0.22 + CGFloat(k) * 0.16
+            let y = S.y - peak * frac
+            let span = rx * (1 - frac * 0.55)
+            var wisp = Path()
+            wisp.move(to: CGPoint(x: S.x - span * 0.85, y: y + 6))
+            wisp.addCurve(
+                to: CGPoint(x: S.x + span * 0.85, y: y + 4),
+                control1: CGPoint(x: S.x - span * 0.25, y: y - 10),
+                control2: CGPoint(x: S.x + span * 0.3, y: y + 14)
+            )
+            inside.stroke(wisp, with: .color(ICColor(0xCBE3F5).color(0.48)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+            inside.stroke(wisp.offsetBy(dx: 0, dy: -2.5), with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+        }
+        inside.fill(ellipse(CGPoint(x: S.x - rx * 0.34, y: S.y - peak * 0.62), rx * 0.26, peak * 0.14), with: .color(.white.opacity(0.65)))
+        g.stroke(dome, with: .color(ICColor(0xA6C6DF).color(0.85)), lineWidth: 2.6)
+
+        // Tiny cool sparkle glints on the fluffy snow
+        if level > 0.45 {
+            let glint = 0.55 + 0.35 * sin(t * 3.4)
+            StorybookArt.sparkle(g, at: CGPoint(x: S.x - rx * 0.48, y: S.y - peak * 0.58), radius: 5.5, color: .white, opacity: Double(glint))
+            StorybookArt.sparkle(g, at: CGPoint(x: S.x + rx * 0.38, y: S.y - peak * 0.34), radius: 4.5, color: ICColor(0xD8F0FF).color, opacity: Double(glint))
+        }
+
+        // Gentle iridescent snow sparkles floating around the Bingsu dome
+        if rainbow && level > 0.25 {
+            let sparkles: [(CGFloat, CGFloat, CGFloat, Color, Double)] = [
+                (-0.96, 0.48, 6.2, Theme.pink, 0.0),
+                (-0.68, 0.94, 5.2, Theme.lemon, 1.1),
+                (0.04, 1.08, 6.8, Theme.mint, 2.2),
+                (0.76, 0.88, 5.5, Theme.sky, 3.3),
+                (0.98, 0.42, 6.0, Theme.lilac, 4.4),
+                (-0.22, 0.56, 4.8, .white, 5.1),
+            ]
+            let dt = Double(t)
+            for (fx, fy, rad, col, ph) in sparkles {
+                let tw = 0.5 + 0.5 * sin(dt * 3.6 + ph)
+                let bob = CGFloat(sin(dt * 2.2 + ph)) * 3.0
+                let pos = CGPoint(x: S.x + rx * fx, y: S.y - peak * fy + bob)
+                StorybookArt.sparkle(g, at: pos, radius: rad * CGFloat(0.7 + 0.4 * tw), color: col, opacity: 0.45 + 0.5 * tw)
+            }
+        }
+    }
+
+    static func bingsuPiece(_ g: GraphicsContext, _ piece: ICBingsuPiece, at p: CGPoint) {
+        var w = g
+        w.translateBy(x: p.x, y: p.y)
+        w.rotate(by: .radians(Double(piece.rot)))
+        w.scaleBy(x: piece.scale, y: piece.scale)
+        drawBingsuChunk(w, piece.topping, seed: piece.seed)
+    }
+
+    static func drawBingsuChunk(_ g: GraphicsContext, _ t: ICTopping, seed: Int) {
+        switch t {
+        case .redBean:
+            let pat = ICColor(0x7B3243)
+            let mound = ellipse(CGPoint(x: 0, y: 0), 21, 13)
+            g.fill(mound, with: .radialGradient(
+                Gradient(colors: [pat.shade(0.28).color, pat.color, pat.shade(-0.28).color]),
+                center: CGPoint(x: -6, y: -5),
+                startRadius: 2,
+                endRadius: 24
+            ))
+            g.stroke(mound, with: .color(outline(pat)), lineWidth: 2.2)
+            // Plump glossy whole azuki beans nestled in the sweet paste
+            let beans: [(CGFloat, CGFloat, Double)] = [(-10, -2, -0.4), (0, -5, 0.2), (10, -1, 0.5), (-5, 4, 0.3), (6, 4, -0.3)]
+            for (bx, by, rot) in beans {
+                var bg = g
+                bg.translateBy(x: bx, y: by)
+                bg.rotate(by: .radians(rot))
+                let bean = ellipse(.zero, 5.2, 3.4)
+                bg.fill(bean, with: .color(pat.shade(-0.18).color))
+                bg.stroke(bean, with: .color(outline(pat)), lineWidth: 1.1)
+                bg.fill(ellipse(CGPoint(x: -1.4, y: -1.1), 1.8, 0.9), with: .color(.white.opacity(0.5)))
+            }
+        case .mangoCubes:
+            let gold = ICColor(0xFFB62F)
+            let rect = Path(roundedRect: CGRect(x: -10, y: -9, width: 20, height: 18), cornerRadius: 5)
+            g.fill(rect, with: .linearGradient(
+                Gradient(colors: [gold.shade(0.38).color, gold.color, gold.shade(-0.18).color]),
+                startPoint: CGPoint(x: -10, y: -9),
+                endPoint: CGPoint(x: 10, y: 9)
+            ))
+            g.stroke(rect, with: .color(outline(gold)), lineWidth: 2)
+            g.fill(ellipse(CGPoint(x: -3.5, y: -4.2), 4.5, 2.2), with: .color(.white.opacity(0.6)))
+        case .strawberries:
+            let red = ICColor(0xED3B5B)
+            var berry = Path()
+            berry.move(to: CGPoint(x: 0, y: 12))
+            berry.addCurve(to: CGPoint(x: 0, y: -11), control1: CGPoint(x: -15, y: 3), control2: CGPoint(x: -11, y: -14))
+            berry.addCurve(to: CGPoint(x: 0, y: 12), control1: CGPoint(x: 11, y: -14), control2: CGPoint(x: 15, y: 3))
+            berry.closeSubpath()
+            g.fill(berry, with: .radialGradient(
+                Gradient(colors: [red.shade(0.25).color, red.color, red.shade(-0.18).color]),
+                center: CGPoint(x: -3, y: -4),
+                startRadius: 1,
+                endRadius: 15
+            ))
+            // Creamy pale sliced strawberry heart interior
+            var core = Path()
+            core.move(to: CGPoint(x: 0, y: 6))
+            core.addCurve(to: CGPoint(x: 0, y: -6), control1: CGPoint(x: -7, y: 1), control2: CGPoint(x: -5, y: -7))
+            core.addCurve(to: CGPoint(x: 0, y: 6), control1: CGPoint(x: 5, y: -7), control2: CGPoint(x: 7, y: 1))
+            core.closeSubpath()
+            g.fill(core, with: .color(ICColor(0xFFE6EC).color(0.9)))
+            g.fill(ellipse(CGPoint(x: 0, y: -1), 2.5, 3.2), with: .color(ICColor(0xFF9EB4).color(0.65)))
+            g.stroke(berry, with: .color(outline(red)), lineWidth: 2)
+            for k in 0..<5 {
+                let a = CGFloat(k) / 5 * 2 * .pi + CGFloat(seed)
+                g.fill(circle(CGPoint(x: cos(a) * 6.2, y: sin(a) * 5.2), 1), with: .color(ICColor(0xFFE996).color))
+            }
+        case .injeolmi:
+            let dust = ICColor(0xDFB674)
+            let cube = Path(roundedRect: CGRect(x: -11, y: -9, width: 22, height: 18), cornerRadius: 5.5)
+            g.fill(cube, with: .linearGradient(
+                Gradient(colors: [dust.shade(0.32).color, dust.color, dust.shade(-0.16).color]),
+                startPoint: CGPoint(x: -11, y: -9),
+                endPoint: CGPoint(x: 11, y: 9)
+            ))
+            g.stroke(cube, with: .color(outline(dust)), lineWidth: 2)
+            // Roasted soybean powder (konggaru) flecks
+            for k in 0..<7 {
+                let fx = (icRand(seed, k + 3) - 0.5) * 15
+                let fy = (icRand(seed, k + 17) - 0.5) * 11
+                g.fill(circle(CGPoint(x: fx, y: fy), 1.1), with: .color(dust.shade(-0.34).color(0.65)))
+            }
+            g.fill(ellipse(CGPoint(x: -3.5, y: -4.2), 4.5, 2), with: .color(ICColor(0xFFF6DF).color(0.65)))
+        default:
+            break
+        }
+    }
+
+    static func bingsuCluster(_ g: GraphicsContext, _ t: ICTopping) {
+        switch t {
+        case .redBean:
+            var c = g
+            c.scaleBy(x: 1.25, y: 1.25)
+            drawBingsuChunk(c, .redBean, seed: 3)
+        case .mangoCubes, .injeolmi:
+            let offsets: [(CGFloat, CGFloat, Double)] = [(-11, 7, -0.22), (11, 6, 0.25), (0, -8, 0.08)]
+            for (idx, (dx, dy, rot)) in offsets.enumerated() {
+                var c = g
+                c.translateBy(x: dx, y: dy)
+                c.rotate(by: .radians(rot))
+                drawBingsuChunk(c, t, seed: idx + 5)
+            }
+        case .strawberries:
+            let offsets: [(CGFloat, CGFloat, Double)] = [(-11, 5, -0.28), (11, 5, 0.28), (0, -7, 0)]
+            for (idx, (dx, dy, rot)) in offsets.enumerated() {
+                var c = g
+                c.translateBy(x: dx, y: dy)
+                c.rotate(by: .radians(rot))
+                drawBingsuChunk(c, .strawberries, seed: idx + 9)
+            }
+        default:
             break
         }
     }
@@ -408,6 +732,7 @@ enum ICArt {
 
     private static func sauce(_ g: GraphicsContext, _ s: ICSauce, _ b: ICBuild, _ S: CGPoint) {
         let col = s.topping.sauceColor ?? ICColor(0x5A2F1F)
+        let isMilk = s.topping == .condensedMilk
         var i = 0
         let n = ICBuild.columns
         while i < n {
@@ -432,18 +757,25 @@ enum ICArt {
                 for q in top.dropFirst() { p.addLine(to: q) }
                 for q in bottom.reversed() { p.addLine(to: q) }
                 p.closeSubpath()
+                if isMilk {
+                    g.stroke(p, with: .color(ICColor(0xE2C894).color(0.7)), lineWidth: 2)
+                }
                 g.fill(p, with: .color(col.color))
                 // drip ends
                 for k in stride(from: 1, to: bottom.count - 1, by: 1) {
                     let a = bottom[k - 1].y, m = bottom[k].y, c = bottom[k + 1].y
                     if m > a && m >= c && m - top[k].y > 14 {
+                        if isMilk {
+                            g.stroke(circle(CGPoint(x: bottom[k].x, y: m - 1), 3.8), with: .color(ICColor(0xE2C894).color(0.7)), lineWidth: 1.4)
+                        }
                         g.fill(circle(CGPoint(x: bottom[k].x, y: m - 1), 3.6), with: .color(col.color))
                     }
                 }
                 var shine = Path()
                 shine.move(to: CGPoint(x: top[0].x, y: top[0].y + 3))
                 for q in top.dropFirst() { shine.addLine(to: CGPoint(x: q.x, y: q.y + 3)) }
-                g.stroke(shine, with: .color(col.shade(0.5).color(0.55)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                g.stroke(shine, with: .color((isMilk ? ICColor(0xFFFFFF) : col.shade(0.5)).color(isMilk ? 0.8 : 0.55)),
+                         style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
             }
             i = j + 1
         }
@@ -644,25 +976,35 @@ enum ICArt {
 
     /// Squeeze bottle, upside down, nozzle (the tip) at the origin.
     static func bottle(_ g: GraphicsContext, _ t: ICTopping) {
+        let isMilk = t == .condensedMilk
         let c = t.sauceColor ?? ICColor(0x5A2F1F)
+        let edgeColor = isMilk ? outline(ICColor(0xD4B882)) : outline(c)
         var nozzle = Path()
         nozzle.move(to: CGPoint(x: -3, y: 0))
         nozzle.addLine(to: CGPoint(x: 3, y: 0))
         nozzle.addLine(to: CGPoint(x: 12, y: -26))
         nozzle.addLine(to: CGPoint(x: -12, y: -26))
         nozzle.closeSubpath()
-        let capC = ICColor(0xFFFFFF)
+        let capC = isMilk ? ICColor(0x88CCF4) : ICColor(0xFFFFFF)
         g.fill(nozzle, with: .color(capC.color))
-        g.stroke(nozzle, with: .color(outline(c)), lineWidth: 2)
+        g.stroke(nozzle, with: .color(edgeColor), lineWidth: 2)
         let body = Path(roundedRect: CGRect(x: -27, y: -136, width: 54, height: 112), cornerRadius: 20)
-        g.fill(body, with: .linearGradient(Gradient(colors: [c.shade(0.3).color, c.color, c.shade(-0.2).color]),
+        g.fill(body, with: .linearGradient(Gradient(colors: [c.shade(0.3).color, c.color, c.shade(isMilk ? -0.1 : -0.2).color]),
                                            startPoint: CGPoint(x: -27, y: 0), endPoint: CGPoint(x: 27, y: 0)))
-        g.stroke(body, with: .color(outline(c)), lineWidth: 2.5)
-        // label with a picture: a cocoa bean heart or a strawberry
+        g.stroke(body, with: .color(edgeColor), lineWidth: 2.5)
+        // label with a picture: cocoa heart, strawberry, or sweet milk droplet
         let label = Path(roundedRect: CGRect(x: -20, y: -100, width: 40, height: 44), cornerRadius: 10)
-        g.fill(label, with: .color(.white.opacity(0.92)))
+        g.fill(label, with: .color(isMilk ? ICColor(0x98D6F8).color : .white.opacity(0.92)))
         if t == .berrySauce {
             fruit(g, .strawberry, at: CGPoint(x: 0, y: -78), r: 13, rot: 0, seed: 3)
+        } else if isMilk {
+            var drop = Path()
+            drop.move(to: CGPoint(x: 0, y: -93))
+            drop.addCurve(to: CGPoint(x: 0, y: -65), control1: CGPoint(x: 15, y: -76), control2: CGPoint(x: 13, y: -65))
+            drop.addCurve(to: CGPoint(x: 0, y: -93), control1: CGPoint(x: -13, y: -65), control2: CGPoint(x: -15, y: -76))
+            drop.closeSubpath()
+            g.fill(drop, with: .color(.white))
+            g.stroke(drop, with: .color(outline(ICColor(0x88CCF4))), lineWidth: 1.8)
         } else {
             var h = Path()
             let cx: CGFloat = 0, cy: CGFloat = -80

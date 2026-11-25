@@ -412,4 +412,297 @@ final class DressUpTests: XCTestCase {
         XCTAssertEqual(world.lift, FingerLift.pour)
         world.release()
     }
+
+    func testSharedDressUpBundleDecodesOnce() {
+        _ = DressUpArt.shared
+        _ = PetArt.shared
+        XCTAssertEqual(DressUpBundle.decodeCount, 1)
+        XCTAssertGreaterThan(DressUpArt.shared.items.count, 150)
+        XCTAssertEqual(PetArt.shared.animals.count, 20)
+    }
+
+    func testProceduralPatternsBuildAndBoundCleanly() {
+        let expected = ["dots", "stripes", "hearts", "stars", "checks", "flowers", "tinydots"]
+        XCTAssertEqual(art.patternNames, expected)
+        let sampleBounds = CGRect(x: 200, y: 500, width: 200, height: 220)
+        for name in expected {
+            XCTAssertTrue(DressUpPatterns.isProcedural(name), name)
+            XCTAssertNotNil(art.patterns[name], name)
+            XCTAssertFalse(art.patterns[name]?.isEmpty ?? true, name)
+            XCTAssertFalse(DressUpPatterns.path(for: name, in: sampleBounds).isEmpty, name)
+        }
+    }
+
+    func testHanbokAndJewelFairyPiecesLoadMixAndRoundTrip() throws {
+        let expectedPieces: [(String, String)] = [
+            ("t_jeogori", "top"),
+            ("b_chima", "bottom"),
+            ("n_norigae", "neck"),
+            ("h_jokduri", "hat"),
+            ("h_daenggi", "hat"),
+            ("d_jewelfairy", "dress"),
+            ("h_hearttiara", "hat"),
+            ("w_jewelwings", "back"),
+            ("p_starwand", "hold"),
+            ("p_heartcompact", "hold"),
+        ]
+        for (id, cat) in expectedPieces {
+            let item = try XCTUnwrap(art.items[id], id)
+            XCTAssertEqual(item.category, cat, id)
+            XCTAssertTrue(art.category(cat)?.items.contains(id) ?? false, "\(cat) missing \(id)")
+            for layer in item.layers {
+                for shape in layer.shapes {
+                    XCTAssertFalse(shape.path.isEmpty, id)
+                }
+            }
+        }
+
+        XCTAssertTrue(LiveDollPainter.wings.contains("w_jewelwings"))
+        XCTAssertTrue(LiveDollPainter.sparkly.isSuperset(of: DressUpCulturalOutfits.sparklyIDs))
+
+        let hanbok = try XCTUnwrap(OutfitSet.all.first { $0.id == "hanbok" })
+        let fairy = try XCTUnwrap(OutfitSet.all.first { $0.id == "jewelFairy" })
+        let wearingHanbok = hanbok.apply(to: Look.starter).sanitized()
+        XCTAssertEqual(wearingHanbok.picks["top"], "t_jeogori")
+        XCTAssertEqual(wearingHanbok.picks["bottom"], "b_chima")
+        XCTAssertEqual(wearingHanbok.picks["neck"], "n_norigae")
+        XCTAssertEqual(wearingHanbok.picks["hat"], "h_jokduri")
+
+        let wearingFairy = fairy.apply(to: Look.starter).sanitized()
+        XCTAssertEqual(wearingFairy.picks["dress"], "d_jewelfairy")
+        XCTAssertEqual(wearingFairy.picks["hat"], "h_hearttiara")
+        XCTAssertEqual(wearingFairy.picks["back"], "w_jewelwings")
+        XCTAssertEqual(wearingFairy.picks["hold"], "p_starwand")
+
+        // Mix-and-match: Hanbok + fairy wings + heart compact + daenggi saves and reloads intact.
+        var mix = wearingHanbok
+        mix.wear("w_jewelwings", in: "back")
+        mix.wear("p_heartcompact", in: "hold")
+        mix.wear("h_daenggi", in: "hat")
+        let encoded = try JSONEncoder().encode(mix)
+        let decoded = try JSONDecoder().decode(Look.self, from: encoded).sanitized()
+        XCTAssertEqual(decoded.picks["top"], "t_jeogori")
+        XCTAssertEqual(decoded.picks["bottom"], "b_chima")
+        XCTAssertEqual(decoded.picks["back"], "w_jewelwings")
+        XCTAssertEqual(decoded.picks["hold"], "p_heartcompact")
+        XCTAssertEqual(decoded.picks["hat"], "h_daenggi")
+    }
+
+    func testDollDefaultsSyncBridgeAndSalonCompatibility() throws {
+        let suiteName = "glimmie.dressup.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var look = Look.starter
+        look.skin = min(4, art.skin.count - 1)
+        look.hair = min(9, art.hair.count - 1)
+        look.eye = min(7, art.eye.count - 1)
+        look.syncDollDefaults(defaults, art: art)
+
+        XCTAssertEqual(defaults.string(forKey: Look.skinHexKey), art.skin[look.skin].hexString)
+        XCTAssertEqual(defaults.string(forKey: Look.hairHexKey), art.hair[look.hair].hexString)
+        XCTAssertEqual(defaults.string(forKey: Look.eyeHexKey), art.eye[look.eye].hexString)
+
+        // Verify Hair Salon's exact nearest-index reader recovers every index cleanly.
+        XCTAssertEqual(
+            SalonDollDefaults.nearestIndex(hex: defaults.string(forKey: Look.skinHexKey), in: art.skin, fallback: 0),
+            look.skin
+        )
+        XCTAssertEqual(
+            SalonDollDefaults.nearestIndex(hex: defaults.string(forKey: Look.hairHexKey), in: art.hair, fallback: 0),
+            look.hair
+        )
+        XCTAssertEqual(
+            SalonDollDefaults.nearestIndex(hex: defaults.string(forKey: Look.eyeHexKey), in: art.eye, fallback: 0),
+            look.eye
+        )
+
+        // Custom mixed hair color also propagates cleanly.
+        look.mixed["hair"] = "#FF6FA8"
+        look.syncDollDefaults(defaults, art: art)
+        XCTAssertEqual(defaults.string(forKey: Look.hairHexKey), "#FF6FA8")
+    }
+
+    func testPinnedFairySpecsCoverAllTwelveFairies() throws {
+        let suiteName = "glimmie.dressup.fairy.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let expectedIDs = [
+            "heart", "star", "berry", "cloud", "ribbon", "moon",
+            "melody", "peach", "dewdrop", "honey", "blossom", "silk",
+        ]
+        XCTAssertEqual(PinnedFairySpec.allIDs, expectedIDs)
+        XCTAssertNil(PinnedFairySpec.pinned(from: defaults))
+
+        for id in expectedIDs {
+            defaults.set(id, forKey: PinnedFairySpec.defaultsKey)
+            let spec = PinnedFairySpec.pinned(from: defaults)
+            XCTAssertEqual(spec?.id, id, id)
+        }
+        defaults.set("unknown_fairy", forKey: PinnedFairySpec.defaultsKey)
+        XCTAssertNil(PinnedFairySpec.pinned(from: defaults))
+    }
+
+    func testStageDollFittingAndGalleryCoinGuard() {
+        // 1024x834 landscape leaves 526pt for the stage column beside the 480+18pt wardrobe tray.
+        let fitted = DressUpView.fittedDollSize(in: CGSize(width: 526, height: 834))
+        XCTAssertLessThanOrEqual(fitted.width, 526)
+        XCTAssertLessThanOrEqual(fitted.height, 834)
+        let expectedAspect = DressUpView.stageBox.width / DressUpView.stageBox.height
+        XCTAssertEqual(fitted.width / fitted.height, expectedAspect, accuracy: 0.001)
+
+        var guarder = DressUpCoinGuard(cooldown: 5.0)
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        XCTAssertTrue(guarder.canReward(signature: "look-a", now: t0))
+        XCTAssertFalse(guarder.canReward(signature: "look-a", now: t0.addingTimeInterval(20)))
+        XCTAssertFalse(guarder.canReward(signature: "look-b", now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(guarder.canReward(signature: "look-b", now: t0.addingTimeInterval(6)))
+
+        Coins.shared.resetForTests(balance: 0)
+        let store = LookStore()
+        var look = Look.starter.sanitized()
+        let firstAward = store.awardGallerySaveCoins(for: look, now: t0)
+        XCTAssertEqual(firstAward, LookStore.galleryCoinReward)
+        XCTAssertEqual(Coins.shared.balance, LookStore.galleryCoinReward)
+        XCTAssertEqual(store.awardGallerySaveCoins(for: look, now: t0.addingTimeInterval(10)), 0)
+        look.wear("d_jewelfairy", in: "dress")
+        XCTAssertEqual(store.awardGallerySaveCoins(for: look, now: t0.addingTimeInterval(10)), LookStore.galleryCoinReward)
+    }
+
+    func testPlayhouseKeepyUppyBalloonXylophoneFreezeAndTeaParty() throws {
+        let stage = CGSize(width: 1024, height: 616)
+        var state = PlayhouseState()
+        let doll = PlayhouseActor(look: Look.starter.sanitized(), x: 0.50, y: 0.90)
+        let pet = PlayhouseActor(pet: PetLook(kind: "kitty"), x: 0.72, y: 0.92)
+        state.actors = [doll, pet]
+
+        // 1. Keepy Uppy Balloon spawns, falls under gravity, and bounces on tap.
+        state.spawnOrBoostBalloon(stageSize: stage)
+        let spawned = try XCTUnwrap(state.balloon)
+        for _ in 0..<25 { state.step(dt: 1.0 / 60.0, stageSize: stage) }
+        let afterGravity = try XCTUnwrap(state.balloon)
+        XCTAssertGreaterThan(afterGravity.vy, spawned.vy)
+        XCTAssertTrue(state.tapBalloon(at: CGPoint(x: afterGravity.x, y: afterGravity.y)))
+        XCTAssertLessThan(state.balloon?.vy ?? 0, 0)
+
+        // 2. Dipping balloon near an unfrozen doll auto-bops upward!
+        state.balloon = KeepyUppyBalloon(x: stage.width * 0.50, y: stage.height * 0.56, vx: 0, vy: 120, colorIndex: 0)
+        let bopEvents = state.step(dt: 1.0 / 60.0, stageSize: stage)
+        XCTAssertTrue(bopEvents.actorBoppedIDs.contains(doll.id))
+        XCTAssertLessThan(state.balloon?.vy ?? 0, 0)
+
+        // 3. Magic Xylophone toggles freeze poses cleanly, and frozen actors stay frozen!
+        XCTAssertFalse(state.isAnyFrozen)
+        let didFreeze = state.triggerXylophone(bar: 0, stageSize: stage)
+        XCTAssertTrue(didFreeze)
+        XCTAssertTrue(state.isAnyFrozen)
+        XCTAssertNotNil(state.actors[0].freezePose)
+        XCTAssertNotNil(state.actors[1].freezePose)
+        XCTAssertNotEqual(state.actors[0].freezePose, state.actors[1].freezePose)
+
+        // Wait out bop cooldown before verifying that freeze state itself blocks auto-bopping.
+        state.balloon = nil
+        for _ in 0..<40 { state.step(dt: 1.0 / 60.0, stageSize: stage) }
+
+        // While frozen, balloon does not get auto-bopped by frozen doll.
+        state.balloon = KeepyUppyBalloon(x: stage.width * 0.50, y: stage.height * 0.56, vx: 0, vy: 120, colorIndex: 1)
+        let frozenEvents = state.step(dt: 1.0 / 60.0, stageSize: stage)
+        XCTAssertTrue(frozenEvents.actorBoppedIDs.isEmpty)
+
+        // Second xylophone tap unfreezes everyone!
+        let didFreezeAgain = state.triggerXylophone(bar: 3, stageSize: stage)
+        XCTAssertFalse(didFreezeAgain)
+        XCTAssertFalse(state.isAnyFrozen)
+        XCTAssertTrue(state.actors.allSatisfy { !$0.isFrozen })
+
+        // 4. Backyard Tea Party serves 4 treats and handles nibbles cleanly.
+        state.setOutTeaParty()
+        XCTAssertEqual(state.treats.count, 4)
+        let cake = try XCTUnwrap(state.treats.first { $0.kind == .strawberryCake })
+        let teapot = try XCTUnwrap(state.treats.first { $0.kind == .teapot })
+        let eater = state.nibbleTreat(cake.id, nearActor: doll.id, stageSize: stage)
+        XCTAssertEqual(eater, doll.id)
+        XCTAssertEqual(state.treats.first { $0.id == cake.id }?.bitesLeft, 2)
+        state.nibbleTreat(cake.id, nearActor: doll.id, stageSize: stage)
+        state.nibbleTreat(cake.id, nearActor: doll.id, stageSize: stage)
+        XCTAssertNil(state.treats.first { $0.id == cake.id })
+        // Teapot pours sips without disappearing.
+        XCTAssertEqual(state.nibbleTreat(teapot.id, nearActor: pet.id, stageSize: stage), pet.id)
+        XCTAssertNotNil(state.treats.first { $0.id == teapot.id })
+    }
+
+    @MainActor
+    func testPlayhouseSnapshotRendersAndSavesToGallery() throws {
+        Coins.shared.resetForTests(balance: 0)
+        var frozenDoll = PlayhouseActor(look: Look.starter.sanitized(), x: 0.34, y: 0.90)
+        frozenDoll.freezePose = .oneLegTilt
+        let pet = PlayhouseActor(pet: PetLook(kind: "bunny"), x: 0.64, y: 0.92, flip: true)
+        let balloon = KeepyUppyBalloon(x: 512, y: 180, vx: 10, vy: -40, colorIndex: 2)
+        let treats = [PlayhouseTreat(kind: .bungeoppang, x: 0.48, y: 0.90)]
+
+        let image = try XCTUnwrap(
+            PlayhouseSnapshotRenderer.render(
+                bg: PlayhouseBackdrop.porch,
+                actors: [frozenDoll, pet],
+                balloon: balloon,
+                treats: treats,
+                me: Look.starter.sanitized()
+            )
+        )
+        XCTAssertEqual(image.size.width, PlayhouseSnapshotRenderer.snapshotSize.width, accuracy: 1)
+        XCTAssertEqual(image.size.height, PlayhouseSnapshotRenderer.snapshotSize.height, accuracy: 1)
+        XCTAssertFalse((image.pngData() ?? Data()).isEmpty)
+
+        let store = LookStore()
+        let saved = try XCTUnwrap(store.savePlayhouseSnapshot(image))
+        defer { store.deletePlayhousePhoto(saved) }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: saved.fileURL.path))
+        XCTAssertTrue(store.playhousePhotos.contains(where: { $0.id == saved.id }))
+        XCTAssertNotNil(saved.loadImage())
+
+        let coins = store.awardPlayhouseSnapCoins(signature: "porch-scene-1")
+        XCTAssertEqual(coins, LookStore.playhouseCoinReward)
+        XCTAssertEqual(Coins.shared.balance, LookStore.playhouseCoinReward)
+    }
+
+    func testBeautySoundResolvesAudioURLs() {
+        for s in BeautySFX.allCases {
+            XCTAssertNotNil(BeautySound.url(for: s), s.rawValue)
+        }
+    }
+
+    func testTreasureShopHanbokCrownAndFairyWandGating() throws {
+        Coins.shared.resetForTests(balance: 0)
+        XCTAssertEqual(ArtCategory.treasureItems["h_hanbokCrown"], "dressup/h_hanbokCrown")
+        XCTAssertEqual(ArtCategory.treasureItems["p_fairyWand"], "dressup/p_fairyWand")
+
+        let crown = try XCTUnwrap(art.items["h_hanbokCrown"])
+        let wand = try XCTUnwrap(art.items["p_fairyWand"])
+        XCTAssertEqual(crown.category, "hat")
+        XCTAssertEqual(wand.category, "hold")
+        XCTAssertTrue(LiveDollPainter.sparkly.contains("h_hanbokCrown"))
+        XCTAssertTrue(LiveDollPainter.sparkly.contains("p_fairyWand"))
+
+        let hatCat = try XCTUnwrap(art.category("hat"))
+        let holdCat = try XCTUnwrap(art.category("hold"))
+        XCTAssertFalse(hatCat.availableItems.contains("h_hanbokCrown"))
+        XCTAssertFalse(holdCat.availableItems.contains("p_fairyWand"))
+
+        Coins.shared.resetForTests(balance: 60)
+        XCTAssertTrue(Coins.shared.buy("dressup/h_hanbokCrown", price: 14))
+        XCTAssertTrue(hatCat.availableItems.contains("h_hanbokCrown"))
+        XCTAssertFalse(holdCat.availableItems.contains("p_fairyWand"))
+
+        XCTAssertTrue(Coins.shared.buy("dressup/p_fairyWand", price: 14))
+        XCTAssertTrue(holdCat.availableItems.contains("p_fairyWand"))
+
+        var look = Look.starter
+        look.wear("h_hanbokCrown", in: "hat")
+        look.wear("p_fairyWand", in: "hold")
+        let back = try JSONDecoder().decode(Look.self, from: JSONEncoder().encode(look)).sanitized()
+        XCTAssertEqual(back.picks["hat"], "h_hanbokCrown")
+        XCTAssertEqual(back.picks["hold"], "p_fairyWand")
+    }
 }

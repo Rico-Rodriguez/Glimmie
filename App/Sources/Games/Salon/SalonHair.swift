@@ -324,7 +324,7 @@ struct HairPiece {
 /// Something stuck in her hair: a clip, a bow, or a leaf from the park.
 struct HairClip: Codable, Equatable {
     enum Kind: String, Codable, CaseIterable {
-        case bow, flower, star, heart, butterfly, pearl, daisy, ribbon, leaf, twig
+        case bow, flower, star, heart, butterfly, pearl, daisy, ribbon, daenggi, royalDaenggi, pastelBow, heartJewel, leaf, twig
     }
     var kind: Kind
     var color: Int

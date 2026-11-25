@@ -51,11 +51,7 @@ final class PetArt {
     static let headCenter = CGPoint(x: 300, y: 262)
 
     private init() {
-        var file: PetRawFile?
-        if let url = GameFiles.url("dressup", "json", game: "DressUp"), let data = try? Data(contentsOf: url) {
-            file = (try? JSONDecoder().decode(PetRawWrapper.self, from: data))?.pets
-        }
-        guard let f = file else {
+        guard let f = DressUpBundle.takeForPets() else {
             size = CGSize(width: 600, height: 660); order = []; animals = [:]; wear = [:]; slots = []; bySlot = [:]
             thumbs = [:]; props = [:]
             return
@@ -98,57 +94,6 @@ final class PetArt {
     }
 }
 
-private struct PetRawShape: Decodable {
-    let d: String
-    let f: String?
-    let s: String?
-    let w: Double?
-    let o: Double?
-    let pat: Int?
-}
-
-private struct PetRawAnchors: Decodable {
-    let hat: [Double]
-    let eyes: [Double]
-    let wide: Double
-}
-
-private struct PetRawAnimal: Decodable {
-    let back, torso, limbs, head, front, blush, brows: [PetRawShape]
-    let eyes: [String: [PetRawShape]]
-    let mouths: [String: [PetRawShape]]
-    let eye: [Double]
-    let mouth: [Double]
-    let fur: String
-    let anchors: PetRawAnchors
-}
-
-private struct PetRawWear: Decodable {
-    let slot: String
-    let shapes: [PetRawShape]
-    let defaultColor: Int?
-    let accent: String?
-    let patternable: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case slot, shapes, accent, patternable
-        case defaultColor = "default"
-    }
-}
-
-private struct PetRawFile: Decodable {
-    let size: [Double]
-    let order: [String]
-    let animals: [String: PetRawAnimal]
-    let wear: [String: PetRawWear]
-    let slots: [String]
-    let thumbs: [String: [Double]]
-    let props: [String: [PetRawShape]]
-}
-
-private struct PetRawWrapper: Decodable {
-    let pets: PetRawFile
-}
 
 // MARK: - One pet and what it wears
 //

@@ -776,13 +776,11 @@ enum AquaPainter {
             wg.opacity = Double(min(1, (1 - u) * 3))
             drawTool(wg, sim, .wiper, at: pos, tilt: sin(u * .pi * 3) * 0.18, t: t)
         case .net:
-            let pos = CGPoint(
-                x: q.from.x + (q.target.x - q.from.x) * arc,
-                y: q.from.y + (q.target.y - q.from.y) * arc - 28 * arc
-            )
+            let pos = sim.netScoopPosition(u: u, from: q.from, target: q.target)
+            let tilt = -0.35 + sin(u * .pi * 2) * 0.45
             var ng = g
-            ng.opacity = Double(min(1, (1 - u) * 3))
-            drawTool(ng, nil, .net, at: pos, tilt: -0.35 * arc, t: t)
+            ng.opacity = Double(min(1, min(u * 6, (1 - u) * 4)))
+            drawTool(ng, nil, .net, at: pos, tilt: tilt, t: t)
         }
     }
 

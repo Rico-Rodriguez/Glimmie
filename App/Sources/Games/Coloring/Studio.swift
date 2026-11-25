@@ -74,6 +74,7 @@ final class ColoringStudio: ObservableObject {
     @Published var stickers: [ColorSticker] = []
     @Published var selected: UUID?
     @Published private(set) var canUndo = false
+    @Published private(set) var hasEdits = false
     @Published var burst: FillBurst?
 
     private(set) var usedGlitter = false
@@ -91,7 +92,7 @@ final class ColoringStudio: ObservableObject {
     /// The paint palette's wet paint, kept while she colors this page.
     let well = PaintWell()
 
-    private struct Step { var pixels: Data?; var flakes: [GlitterFlake]?; var stickers: [ColorSticker] }
+    private struct Step { var pixels: ColoringPaper.Snapshot?; var flakes: [GlitterFlake]?; var stickers: [ColorSticker]; var hadEdits: Bool }
     private var undo: [Step] = [] { didSet { canUndo = !undo.isEmpty } }
     private static let maxUndo = 12
     private(set) var dirty = false
@@ -123,7 +124,7 @@ final class ColoringStudio: ObservableObject {
 
     private func pushUndo(pixels: Bool) {
         guard let paper else { return }
-        undo.append(Step(pixels: pixels ? paper.snapshot() : nil, flakes: pixels ? paper.flakes : nil, stickers: stickers))
+        undo.append(Step(pixels: pixels ? paper.snapshot() : nil, flakes: pixels ? paper.flakes : nil, stickers: stickers, hadEdits: hasEdits))
         if undo.count > Self.maxUndo { undo.removeFirst() }
         dirty = true
     }
@@ -133,6 +134,7 @@ final class ColoringStudio: ObservableObject {
         if let px = step.pixels { paper.restore(px) }
         if let f = step.flakes { paper.flakes = f }
         stickers = step.stickers
+        hasEdits = step.hadEdits
         selected = nil
         Sound.shared.play(.whoosh, volume: 0.5)
         redraw()
@@ -143,6 +145,7 @@ final class ColoringStudio: ObservableObject {
         pushUndo(pixels: true)
         paper.clear()
         stickers = []
+        hasEdits = false
         Sound.shared.play(.whoosh, volume: 0.7)
         redraw()
     }
@@ -174,6 +177,7 @@ final class ColoringStudio: ObservableObject {
 
     @discardableResult
     func completeArtwork() -> [ColoringFind] {
+        guard hasEdits else { return [] }
         saveIfNeeded(force: true)
         var unlocked: [ColoringFind] = []
         for find in earnedFinds() {
@@ -191,9 +195,10 @@ final class ColoringStudio: ObservableObject {
         if tool == .fill {
             let before = paper.snapshot(), beforeFlakes = paper.flakes
             if paper.fill(at: p, style: fillStyle, color: color) {
-                undo.append(Step(pixels: before, flakes: beforeFlakes, stickers: stickers))
+                undo.append(Step(pixels: before, flakes: beforeFlakes, stickers: stickers, hadEdits: hasEdits))
                 if undo.count > Self.maxUndo { undo.removeFirst() }
                 dirty = true
+                hasEdits = true
                 if fillStyle == .glitter { usedGlitter = true }
                 if fillStyle == .rainbow { usedRainbow = true }
                 switch fillStyle {
@@ -213,6 +218,7 @@ final class ColoringStudio: ObservableObject {
             if brush == .paint { usedWatercolor = true }
             paper.beginStroke(at: p, brush: brush, color: color, size: ColoringPaper.sizes[sizeIndex], stayInLines: stayInLines,
                               pressure: pressure, tilt: tilt)
+            if brush != .eraser && (paper.strokeBox != nil || brush == .stamps) { hasEdits = true }
             redraw()
         }
     }
@@ -220,6 +226,7 @@ final class ColoringStudio: ObservableObject {
     func touchMoved(_ points: [StrokeSample]) {
         guard stroking, let paper else { return }
         for s in points { paper.continueStroke(to: s.point, pressure: s.pressure, tilt: s.tilt) }
+        if !hasEdits, paper.brush != .eraser, paper.strokeBox != nil || paper.brush == .stamps { hasEdits = true }
         redraw()
     }
 
@@ -238,6 +245,7 @@ final class ColoringStudio: ObservableObject {
         if let step = undo.popLast() {
             if let px = step.pixels { paper.restore(px) }
             if let f = step.flakes { paper.flakes = f }
+            hasEdits = step.hadEdits
         }
         redraw()
     }
@@ -283,6 +291,7 @@ final class ColoringStudio: ObservableObject {
 
     func addSticker(_ emoji: String) {
         pushUndo(pixels: false)
+        hasEdits = true
         usedStickers = true
         // Drop it near the middle, nudged so several don't land on top of each other.
         let n = Double(stickers.count % 5)
@@ -339,6 +348,10 @@ struct ColoringCanvas: UIViewRepresentable {
     func updateUIView(_ v: ColoringCanvasView, context: Context) {
         v.setStickerMode(tool == .stickers)
     }
+
+    static func dismantleUIView(_ uiView: ColoringCanvasView, coordinator: ()) {
+        uiView.stopSensors()
+    }
 }
 
 final class ColoringCanvasView: UIView {
@@ -350,6 +363,9 @@ final class ColoringCanvasView: UIView {
     /// Glitter catching the light: a soft halo and a bright four-point glint per twinkling flake.
     let haloLayer = CAShapeLayer()
     let glintLayer = CAShapeLayer()
+    /// Joyful pastel sparkle halo following the brush cursor when painting with the starlight rainbow brush.
+    private let rainbowHaloLayer = CAShapeLayer()
+    private let rainbowSparkleLayer = CAShapeLayer()
     private var link: CADisplayLink?
     private var pending = false
     private var activeTouch: UITouch?
@@ -385,6 +401,22 @@ final class ColoringCanvasView: UIView {
         glintLayer.shadowOpacity = 0.9
         glintLayer.shadowRadius = 2
         glintLayer.shadowOffset = .zero
+        for l in [rainbowHaloLayer, rainbowSparkleLayer] {
+            l.actions = ["path": NSNull(), "strokeColor": NSNull(), "fillColor": NSNull(), "hidden": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            l.isHidden = true
+            layer.addSublayer(l)
+        }
+        rainbowHaloLayer.fillColor = UIColor.clear.cgColor
+        rainbowHaloLayer.lineWidth = 3.5
+        rainbowHaloLayer.lineCap = .round
+        rainbowHaloLayer.shadowOpacity = 0.85
+        rainbowHaloLayer.shadowRadius = 5
+        rainbowHaloLayer.shadowOffset = .zero
+        rainbowSparkleLayer.fillColor = UIColor(red: 1, green: 0.96, blue: 0.72, alpha: 0.95).cgColor
+        rainbowSparkleLayer.shadowColor = UIColor.white.cgColor
+        rainbowSparkleLayer.shadowOpacity = 0.9
+        rainbowSparkleLayer.shadowRadius = 2
+        rainbowSparkleLayer.shadowOffset = .zero
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -395,6 +427,7 @@ final class ColoringCanvasView: UIView {
         CATransaction.setDisableActions(true)
         content.bounds = CGRect(origin: .zero, size: bounds.size)
         for l in [colorLayer, lineLayer, haloLayer, glintLayer] { l.frame = content.bounds }
+        for l in [rainbowHaloLayer, rainbowSparkleLayer] { l.frame = bounds }
         CATransaction.commit()
         if let zoom = studio?.zoom {
             zoom.canvasSize = bounds.size
@@ -418,33 +451,94 @@ final class ColoringCanvasView: UIView {
         CATransaction.commit()
     }
 
+    private var hasFlakes: Bool { !(studio?.paper?.flakes.isEmpty ?? true) }
+    private var needsFrameTick: Bool {
+        guard let paper = studio?.paper else { return false }
+        return !paper.flakes.isEmpty || paper.inStroke || paper.drying
+    }
+    var isDisplayLinkRunning: Bool { link != nil }
+    var isMotionRunning: Bool { motion.isDeviceMotionActive }
+
+    deinit {
+        stopSensors()
+    }
+
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil, link == nil {
-            let l = CADisplayLink(target: self, selector: #selector(tick))
-            l.add(to: .main, forMode: .common)
-            link = l
-            if motion.isDeviceMotionAvailable {
-                motion.deviceMotionUpdateInterval = 1.0 / 30
-                motion.startDeviceMotionUpdates()
+        if window == nil {
+            stopSensors()
+        } else {
+            syncSensors()
+            if pending, link == nil {
+                flushColorLayer()
             }
-        } else if window == nil {
-            link?.invalidate()
-            link = nil
+        }
+    }
+
+    func stopSensors() {
+        link?.invalidate()
+        link = nil
+        if motion.isDeviceMotionActive {
             motion.stopDeviceMotionUpdates()
         }
     }
 
-    func setNeedsShow() { pending = true }
+    private func syncSensors() {
+        guard window != nil else {
+            stopSensors()
+            return
+        }
+        if hasFlakes {
+            if motion.isDeviceMotionAvailable && !motion.isDeviceMotionActive {
+                motion.deviceMotionUpdateInterval = 1.0 / 30
+                motion.startDeviceMotionUpdates()
+            }
+        } else {
+            if motion.isDeviceMotionActive {
+                motion.stopDeviceMotionUpdates()
+            }
+            if hadGlints {
+                haloLayer.path = nil
+                glintLayer.path = nil
+                glintLayer.shadowPath = nil
+                hadGlints = false
+            }
+        }
+        if needsFrameTick {
+            if link == nil {
+                let l = CADisplayLink(target: self, selector: #selector(tick))
+                l.add(to: .main, forMode: .common)
+                link = l
+            }
+        } else {
+            link?.invalidate()
+            link = nil
+        }
+    }
+
+    private func flushColorLayer() {
+        pending = false
+        colorLayer.contents = studio?.paper?.makeImage()
+    }
+
+    func setNeedsShow() {
+        pending = true
+        syncSensors()
+        if link == nil {
+            flushColorLayer()
+        }
+    }
 
     @objc private func tick() {
         let now = CACurrentMediaTime()
         if let paper = studio?.paper, paper.tick(now: now) { pending = true }
         if pending {
-            pending = false
-            colorLayer.contents = studio?.paper?.makeImage()
+            flushColorLayer()
         }
         drawGlints(now)
+        if !needsFrameTick {
+            syncSensors()
+        }
     }
 
     private func drawGlints(_ now: CFTimeInterval) {
@@ -518,6 +612,39 @@ final class ColoringCanvasView: UIView {
         fingers = []
         pinch = nil
         waitForLift = false
+        hideRainbowCursor()
+    }
+
+    private func updateRainbowCursor(at viewPoint: CGPoint) {
+        guard studio?.tool == .rainbow, ColoringPaper.hasRainbowStarlight else {
+            hideRainbowCursor()
+            return
+        }
+        let now = CACurrentMediaTime()
+        let hue = CGFloat((now * 0.45).truncatingRemainder(dividingBy: 1))
+        let pastel = UIColor(hue: hue, saturation: 0.48, brightness: 1.0, alpha: 0.92).cgColor
+        let baseR = CGFloat(ColoringPaper.sizes[studio?.sizeIndex ?? 1]) * 0.42 + 12
+        let pulse = CGFloat(1 + 0.08 * sin(now * 8))
+        let r = baseR * pulse
+        rainbowHaloLayer.strokeColor = pastel
+        rainbowHaloLayer.shadowColor = pastel
+        rainbowHaloLayer.path = UIBezierPath(ovalIn: CGRect(x: viewPoint.x - r, y: viewPoint.y - r, width: r * 2, height: r * 2)).cgPath
+
+        let sparks = CGMutablePath()
+        for k in 0..<4 {
+            let ang = now * 2.4 + Double(k) * .pi / 2
+            let sr = r + 5
+            let sc = CGPoint(x: viewPoint.x + CGFloat(cos(ang)) * sr, y: viewPoint.y + CGFloat(sin(ang)) * sr)
+            sparks.addPath(PaintShapes.twinkle(center: sc, radius: k % 2 == 0 ? 6.5 : 4.5))
+        }
+        rainbowSparkleLayer.path = sparks
+        rainbowHaloLayer.isHidden = false
+        rainbowSparkleLayer.isHidden = false
+    }
+
+    private func hideRainbowCursor() {
+        if !rainbowHaloLayer.isHidden { rainbowHaloLayer.isHidden = true }
+        if !rainbowSparkleLayer.isHidden { rainbowSparkleLayer.isHidden = true }
     }
     // One finger (or the Apple Pencil) draws. Two fingers pinch to zoom and drag the page around; a stroke the
     // first finger had only just started is taken back, so a pinch leaves no marks. A quick two-finger tap
@@ -527,7 +654,7 @@ final class ColoringCanvasView: UIView {
         // Touches that ended without telling us (the tool changed mid-gesture) must not block new ones.
         let gone: (UITouch) -> Bool = { $0.phase == .ended || $0.phase == .cancelled }
         fingers.removeAll(where: gone)
-        if let t = activeTouch, gone(t) { activeTouch = nil; pendingFill = nil; studio?.touchEnded() }
+        if let t = activeTouch, gone(t) { activeTouch = nil; pendingFill = nil; studio?.touchEnded(); hideRainbowCursor() }
         if pinch != nil, fingers.count < 2 { pinch = nil }
         if fingers.isEmpty, activeTouch == nil { waitForLift = false }
         fingers += touches.filter { $0.type != .pencil }.sorted { $0.timestamp < $1.timestamp }
@@ -543,6 +670,7 @@ final class ColoringCanvasView: UIView {
             pendingFill = s.point
         } else {
             studio?.touchBegan(s.point, pressure: s.pressure, tilt: s.tilt)
+            updateRainbowCursor(at: t.location(in: self))
         }
     }
 
@@ -554,6 +682,7 @@ final class ColoringCanvasView: UIView {
         guard let t = activeTouch, touches.contains(t), pendingFill == nil else { return }
         let all = event?.coalescedTouches(for: t) ?? [t]
         studio?.touchMoved(all.map(sample))
+        updateRainbowCursor(at: t.location(in: self))
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -578,6 +707,7 @@ final class ColoringCanvasView: UIView {
         }
         if let t = activeTouch, touches.contains(t) {
             activeTouch = nil
+            hideRainbowCursor()
             if let p = pendingFill {
                 pendingFill = nil
                 if !cancelled { studio?.touchBegan(p) }
@@ -589,6 +719,7 @@ final class ColoringCanvasView: UIView {
     }
 
     private func startPinch() {
+        hideRainbowCursor()
         if let t = activeTouch, t.type != .pencil {
             // A stroke only just begun was the first finger of the pinch: take it back. A longer one stays.
             if CACurrentMediaTime() - activeStart < 0.5 { studio?.cancelStroke() } else { studio?.touchEnded() }

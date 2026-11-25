@@ -30,6 +30,13 @@ enum PhotoSaver {
         }
         SaveTarget(completion: completion).start(image: img)
     }
+
+    @MainActor
+    @discardableResult
+    static func save(image: UIImage, completion: ((Bool) -> Void)? = nil) -> Bool {
+        SaveTarget(completion: completion).start(image: image)
+        return true
+    }
 }
 
 private final class SaveTarget: NSObject {

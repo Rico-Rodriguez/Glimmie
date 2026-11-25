@@ -81,7 +81,7 @@ struct ICPaint: Equatable {
 // MARK: Choices
 
 enum ICStation: String, CaseIterable {
-    case scoop, soft, smoothie
+    case scoop, soft, smoothie, bingsu
 }
 
 /// The scoop cabinet's tubs.
@@ -169,8 +169,22 @@ enum ICFruit: Int, CaseIterable, Codable {
     var handful: Int { self == .blueberry ? 4 : 1 }
 }
 
+/// Korean bingsu signature hero toppings.
+enum ICBingsuHero: Int, CaseIterable, Codable {
+    case redBean, mango, strawberry, injeolmi
+
+    var topping: ICTopping {
+        switch self {
+        case .redBean: return .redBean
+        case .mango: return .mangoCubes
+        case .strawberry: return .strawberries
+        case .injeolmi: return .injeolmi
+        }
+    }
+}
+
 enum ICBase: String, CaseIterable, Codable {
-    case waffle, choco, cup, glass
+    case waffle, choco, cup, glass, bowl
 
     /// Depth of the inside below the rim, where soft serve can sink in.
     var floor: CGFloat {
@@ -178,6 +192,7 @@ enum ICBase: String, CaseIterable, Codable {
         case .waffle, .choco: return -8
         case .cup: return -46
         case .glass: return -132
+        case .bowl: return -26
         }
     }
 
@@ -187,6 +202,7 @@ enum ICBase: String, CaseIterable, Codable {
         case .waffle, .choco: return 46
         case .cup: return 52
         case .glass: return 50
+        case .bowl: return 64
         }
     }
 
@@ -196,6 +212,7 @@ enum ICBase: String, CaseIterable, Codable {
         case .waffle, .choco: return 146
         case .cup: return 70
         case .glass: return 168
+        case .bowl: return 76
         }
     }
 
@@ -204,18 +221,27 @@ enum ICBase: String, CaseIterable, Codable {
 
 enum ICTopping: String, CaseIterable, Codable {
     case sprinkles, chocoSauce, berrySauce, whip, cherry, wafer, straw
+    case redBean, mangoCubes, strawberries, injeolmi, condensedMilk
+
+    static let parlor: [ICTopping] = [.sprinkles, .chocoSauce, .berrySauce, .whip, .cherry, .wafer, .straw]
+    static let bingsu: [ICTopping] = [.redBean, .mangoCubes, .strawberries, .injeolmi, .condensedMilk]
+
+    var isBingsuChunk: Bool {
+        self == .redBean || self == .mangoCubes || self == .strawberries || self == .injeolmi
+    }
 
     var sauceColor: ICColor? {
         switch self {
         case .chocoSauce: return ICColor(0x5A2F1F)
         case .berrySauce: return ICColor(0xE0305E)
+        case .condensedMilk: return ICColor(0xFFF6DF)
         default: return nil
         }
     }
 }
 
 enum ICKind: String, Codable {
-    case scoops, soft, smoothie
+    case scoops, soft, smoothie, bingsu
 }
 
 // MARK: - Orders
@@ -224,7 +250,7 @@ struct ICOrder: Equatable {
     var customer: Int
     var kind: ICKind
     var base: ICBase
-    /// scoops: flavors bottom to top; soft: one ICSoft; smoothie: one or two ICFruit.
+    /// scoops: flavors bottom to top; soft: one ICSoft; smoothie: one or two ICFruit; bingsu: one ICBingsuHero.
     var flavors: [Int]
     var topping: ICTopping
 
@@ -232,7 +258,7 @@ struct ICOrder: Equatable {
 
     static func random(customer: Int, seed: Int = Int.random(in: 0..<1_000_000), kind requested: ICKind? = nil) -> ICOrder {
         var r = ICRandom(seed)
-        let kinds: [ICKind] = [.scoops, .soft, .smoothie]
+        let kinds: [ICKind] = [.scoops, .soft, .smoothie, .bingsu]
         let kind = requested ?? kinds[r.int(kinds.count)]
         switch kind {
         case .scoops:
@@ -254,12 +280,22 @@ struct ICOrder: Equatable {
             if r.int(2) == 0 { f.append(fruits[(a + 1 + r.int(fruits.count - 1)) % fruits.count].rawValue) }
             let tops: [ICTopping] = [.whip, .straw, .cherry, .sprinkles]
             return ICOrder(customer: customer, kind: kind, base: .glass, flavors: f, topping: tops[r.int(tops.count)])
+        case .bingsu:
+            let heroes = ICBingsuHero.allCases
+            let hero = heroes[r.int(heroes.count)]
+            let others = heroes.filter { $0 != hero }.map { $0.topping }
+            let tops: [ICTopping] = [.condensedMilk, .condensedMilk] + others
+            return ICOrder(customer: customer, kind: .bingsu, base: .bowl, flavors: [hero.rawValue],
+                           topping: tops[r.int(tops.count)])
         }
     }
 
     func matches(_ p: Part, _ b: ICBuild) -> Bool {
         switch p {
         case .base:
+            if kind == .bingsu {
+                return b.base == .bowl && b.kind == .bingsu && b.snowLevel >= 0.4
+            }
             return b.base == base && b.kind == kind
         case .flavor:
             switch kind {
@@ -272,6 +308,9 @@ struct ICOrder: Equatable {
                 let total = b.fruitIn.reduce(0, +)
                 guard total > 0.05 else { return false }
                 return flavors.allSatisfy { f in f < b.fruitIn.count && b.fruitIn[f] / total > 0.18 }
+            case .bingsu:
+                let hero = ICBingsuHero(rawValue: flavors.first ?? 0) ?? .redBean
+                return b.has(hero.topping)
             }
         case .topping:
             return b.has(topping)
@@ -307,13 +346,17 @@ struct ICOrder: Equatable {
             }
             p.add(ICColor(0xFFFDF7), 0.4)
             b.layers = [ICLayer(top: 0.86, color: p.color)]
+        case .bingsu:
+            b.snowLevel = 1
+            let hero = ICBingsuHero(rawValue: flavors.first ?? 0) ?? .redBean
+            b.bingsuPieces.append(contentsOf: ICBuild.sampleBingsuPieces(for: hero.topping, ring: 0))
         }
         switch topping {
         case .sprinkles:
             for i in 0..<26 {
                 b.sprinkles.append(ICStuck(dx: (icRand(i, 3) - 0.5) * 70, dy: 0, rot: icRand(i, 4) * 6.3, color: i % 6, onTop: true))
             }
-        case .chocoSauce, .berrySauce:
+        case .chocoSauce, .berrySauce, .condensedMilk:
             b.pictureSauce = topping
         case .whip:
             b.whip = ICBuild.sampleWhip()
@@ -323,6 +366,8 @@ struct ICOrder: Equatable {
             b.wafer = ICStick(dx: 14, h: 0, angle: 0.35)
         case .straw:
             b.straw = ICStick(dx: 18, h: 0, angle: 0.22)
+        case .redBean, .mangoCubes, .strawberries, .injeolmi:
+            b.bingsuPieces.append(contentsOf: ICBuild.sampleBingsuPieces(for: topping, ring: 1))
         }
         b.picture = true
         b.settlePicture()
@@ -355,7 +400,7 @@ enum ICStorage {
 // MARK: - Sounds
 
 enum IceSFX: String, CaseIterable {
-    case scrape, plop, clink, lever, soft, blend, chop, plunk, pour, splash, shake, sauce, whip, boing, crunch,
+    case scrape, plop, clink, lever, soft, blend, chop, plunk, pour, shake, sauce, whip, boing, crunch,
          bell, nom, yay, slurp, drip, tub, glass, door
 }
 
@@ -363,9 +408,11 @@ enum IceSFX: String, CaseIterable {
 final class IceSound {
     static let shared = IceSound()
     static let looping: Set<IceSFX> = [.scrape, .soft, .blend, .pour, .sauce, .whip]
+    private static let maxPoolSize = 3
 
     private var players: [IceSFX: [AVAudioPlayer]] = [:]
     private var loops: [IceSFX: AVAudioPlayer] = [:]
+    private var missing: Set<IceSFX> = []
     private var last: [IceSFX: Date] = [:]
     private var loopLevel: [IceSFX: Float] = [:]
     private var loopSent: [IceSFX: Float] = [:]
@@ -373,35 +420,20 @@ final class IceSound {
     /// Starting and fading players can stall for milliseconds, so it happens here, never on a drawing frame.
     private let queue = DispatchQueue(label: "icecream.sound", qos: .userInitiated)
 
+    static func url(for s: IceSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "IceCream") ?? GameFiles.url(s.rawValue, "wav", game: "IceCream")
+    }
+
     private init() {
         _ = Sound.shared // sets up the audio session
-        for s in IceSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "IceCream") else { continue }
-            if IceSound.looping.contains(s) {
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.numberOfLoops = -1
-                p?.volume = 0
-                p?.enableRate = true
-                p?.prepareToPlay()
-                loops[s] = p
-            } else {
-                players[s] = (0..<3).compactMap { _ in
-                    let p = try? AVAudioPlayer(contentsOf: url)
-                    p?.enableRate = true
-                    p?.prepareToPlay()
-                    return p
-                }
-            }
-        }
     }
 
     func play(_ s: IceSFX, volume: Float = 0.9, gap: Double = 0, rate: Float = 1) {
-        let now = Date()
-        if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
-        last[s] = now
-        guard let pool = players[s], !pool.isEmpty else { return }
         queue.async {
-            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            let now = Date()
+            if gap > 0, let t = self.last[s], now.timeIntervalSince(t) < gap { return }
+            self.last[s] = now
+            guard let p = self.player(for: s) else { return }
             p.volume = volume
             p.rate = rate
             p.currentTime = 0
@@ -412,7 +444,6 @@ final class IceSound {
     /// Fades a loop toward `volume` (and its speed toward `rate`); it pauses when silent. Called every frame,
     /// but only reaches the player when the level has moved enough to hear.
     func setLoop(_ s: IceSFX, volume: Float, rate: Float = 1) {
-        guard let p = loops[s] else { return }
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.2
         loopLevel[s] = v
@@ -424,27 +455,58 @@ final class IceSound {
         loopSent[s] = on ? v : 0
         if rateMoved { rateSent[s] = rate }
         queue.async {
-            p.volume = on ? v : 0
-            if rateMoved { p.rate = rate }
             if on {
+                guard let p = self.loopPlayer(for: s) else { return }
+                p.volume = v
+                if rateMoved { p.rate = rate }
                 if !p.isPlaying { p.play() }
-            } else if p.isPlaying {
-                p.pause()
+            } else if let p = self.loops[s] {
+                p.volume = 0
+                if p.isPlaying { p.pause() }
             }
         }
     }
 
     func stopLoops() {
-        for s in loops.keys {
-            loopLevel[s] = 0
-            loopSent[s] = 0
-        }
-        let all = Array(loops.values)
+        loopLevel.removeAll()
+        loopSent.removeAll()
+        rateSent.removeAll()
         queue.async {
-            for p in all {
+            for p in self.loops.values {
                 p.pause()
                 p.volume = 0
             }
         }
+    }
+
+    private func player(for s: IceSFX) -> AVAudioPlayer? {
+        guard !missing.contains(s) else { return nil }
+        let pool = players[s] ?? []
+        if let idle = pool.first(where: { !$0.isPlaying }) { return idle }
+        if pool.count < Self.maxPoolSize {
+            if let url = Self.url(for: s), let created = try? AVAudioPlayer(contentsOf: url) {
+                created.enableRate = true
+                created.prepareToPlay()
+                players[s] = pool + [created]
+                return created
+            }
+            if pool.isEmpty { missing.insert(s) }
+        }
+        return pool.max(by: { $0.currentTime < $1.currentTime }) ?? pool.first
+    }
+
+    private func loopPlayer(for s: IceSFX) -> AVAudioPlayer? {
+        if let existing = loops[s] { return existing }
+        guard !missing.contains(s) else { return nil }
+        guard let url = Self.url(for: s), let created = try? AVAudioPlayer(contentsOf: url) else {
+            missing.insert(s)
+            return nil
+        }
+        created.numberOfLoops = -1
+        created.volume = 0
+        created.enableRate = true
+        created.prepareToPlay()
+        loops[s] = created
+        return created
     }
 }

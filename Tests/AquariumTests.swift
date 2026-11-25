@@ -215,9 +215,58 @@ final class AquariumTests: XCTestCase {
         let sim = freshSim()
         sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 450, y: 380))
         sim.tapDockNet()
+        XCTAssertNotNil(sim.quickAction)
+        XCTAssertFalse(sim.bubbles.isEmpty, "tapping net should send rising bubbles along the scoop arc")
+        XCTAssertTrue(sim.particles.contains { $0.kind == .sparkle }, "tapping net should emit sparkle particles")
         run(sim, seconds: 1)
         XCTAssertEqual(sim.fish.count, 1)
         XCTAssertFalse(sim.fish[0].caught)
+    }
+
+    func testHoopAndChestCoinPayoutsEnforceCooldown() {
+        let sim = freshSim()
+        let chestIdx = sim.addDecor(.chest, x: 680)
+        let chestTap = CGPoint(x: 680, y: sim.decor[chestIdx].y - 26)
+
+        // First chest tap awards 3 coins.
+        sim.handBegan(chestTap)
+        sim.handEnded(chestTap, tap: true)
+        XCTAssertEqual(Coins.shared.balance, 3)
+
+        // Rapid second tap inside the 2.5s cooldown does not farm coins.
+        run(sim, seconds: 1.0)
+        sim.handBegan(chestTap)
+        sim.handEnded(chestTap, tap: true)
+        XCTAssertEqual(Coins.shared.balance, 3)
+
+        // After cooldown elapses, chest pays out again.
+        run(sim, seconds: AquariumSim.coinCooldown + 0.2)
+        sim.handBegan(chestTap)
+        sim.handEnded(chestTap, tap: true)
+        XCTAssertEqual(Coins.shared.balance, 6)
+
+        // Hoop tricks also enforce the standardized 2.5s coin cooldown.
+        Coins.shared.resetForTests()
+        let hoopSim = freshSim()
+        let f0 = hoopSim.spawn(.goldfish, variant: 0, at: CGPoint(x: 425, y: 360))
+        let f1 = hoopSim.spawn(.goldfish, variant: 1, at: CGPoint(x: 395, y: 360))
+        hoopSim.fish[f0].dir = 1
+        hoopSim.fish[f0].facing = 1
+        hoopSim.fish[f1].dir = 1
+        hoopSim.fish[f1].facing = 1
+        hoopSim.spawnBubbleHoop(at: CGPoint(x: 460, y: 360))
+        run(hoopSim, seconds: 0.9)
+        XCTAssertEqual(hoopSim.hoops.first?.tricks, 2)
+        XCTAssertEqual(Coins.shared.balance, 2, "back-to-back hoop tricks within cooldown must only pay once")
+
+        run(hoopSim, seconds: AquariumSim.coinCooldown + 0.3)
+        hoopSim.hoops.removeAll()
+        hoopSim.fish[f0].p = CGPoint(x: 425, y: 360)
+        hoopSim.fish[f0].dir = 1
+        hoopSim.fish[f0].facing = 1
+        hoopSim.spawnBubbleHoop(at: CGPoint(x: 460, y: 360))
+        run(hoopSim, seconds: 0.4)
+        XCTAssertEqual(Coins.shared.balance, 4, "hoop trick after cooldown pays out again")
     }
 
     // MARK: - Tap Priority & Interactive Reef Props
@@ -318,16 +367,28 @@ final class AquariumTests: XCTestCase {
         }
     }
 
-    func testDecorCatalogHasTwelveFreeAndThreeTreasureItems() {
+    func testDecorCatalogHasTwelveFreeAndFourTreasureItems() {
         XCTAssertEqual(AquaDecorKind.available.count, 12)
-        XCTAssertEqual(AquaDecorKind.allCases.count, 15)
+        XCTAssertEqual(AquaDecorKind.allCases.count, 16)
         let treasures = Set(AquaDecorKind.allCases.compactMap(\.treasure))
-        XCTAssertEqual(treasures, ["aquarium/crystal", "aquarium/coral", "aquarium/unicorn"])
+        XCTAssertEqual(treasures, ["aquarium/crystal", "aquarium/coral", "aquarium/unicorn", "aquarium/koiBridge"])
 
         Coins.shared.resetForTests(balance: 40)
         XCTAssertTrue(Coins.shared.buy("aquarium/coral", price: 12))
         XCTAssertEqual(AquaDecorKind.available.count, 13)
         XCTAssertTrue(AquaDecorKind.available.contains(.rainbowCoral))
+
+        XCTAssertTrue(Coins.shared.buy("aquarium/koiBridge", price: 14))
+        XCTAssertEqual(AquaDecorKind.available.count, 14)
+        XCTAssertTrue(AquaDecorKind.available.contains(.koiBridge))
+        XCTAssertTrue(AquaDecorKind.koiBridge.bubbles)
+
+        let sim = freshSim()
+        sim.pump = true
+        let idx = sim.addDecor(.koiBridge, x: 512)
+        sim.decor[idx].nextPuff = 0
+        run(sim, seconds: 0.2)
+        XCTAssertFalse(sim.bubbles.isEmpty, "koi bridge should release gentle bubbles through its arch")
     }
 
     // MARK: - Save / Load & Legacy Migration
@@ -410,7 +471,9 @@ final class AquariumTests: XCTestCase {
 
     func testBundledAudioFilesShip() {
         for sfx in AquaSFX.allCases {
-            XCTAssertNotNil(GameFiles.url(sfx.rawValue, "wav", game: "Aquarium"), "missing bundled Aquarium sound \(sfx.rawValue).wav")
+            let url = GameFiles.url(sfx.rawValue, "caf", game: "Aquarium")
+                ?? GameFiles.url(sfx.rawValue, "wav", game: "Aquarium")
+            XCTAssertNotNil(url, "missing bundled Aquarium sound \(sfx.rawValue)")
         }
     }
 }

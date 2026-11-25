@@ -49,6 +49,9 @@ enum SalonTool: String, CaseIterable, Identifiable {
 }
 
 enum SalonToolArt {
+    static let starDryerTreasureID = "salon/starDryer"
+    static var hasStarDryer: Bool { Coins.shared.owns(starDryerTreasureID) }
+
     private static func fo(_ ctx: GraphicsContext, _ p: Path, _ c: RGB, _ w: CGFloat = 3) {
         ctx.fill(p, with: .color(c.color))
         ctx.stroke(p, with: .color(Shades.outline(c).color), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
@@ -197,25 +200,48 @@ enum SalonToolArt {
             }
             fo(ctx, Path(ellipseIn: CGRect(x: 46, y: 52, width: 8, height: 8)), RGB(1, 0.85, 0.4), 2)
         case .dryer:
-            let lilac = RGB(0.76, 0.66, 0.98)
+            let starDryer = hasStarDryer
+            let bodyColor = starDryer ? RGB(1.0, 0.64, 0.82) : RGB(0.76, 0.66, 0.98)
             var handle = Path()
             handle.move(to: CGPoint(x: 60, y: 48))
             handle.addLine(to: CGPoint(x: 70, y: 88))
-            ctx.stroke(handle, with: .color(Shades.outline(lilac).color), style: StrokeStyle(lineWidth: 20, lineCap: .round))
-            ctx.stroke(handle, with: .color(Shades.shade(lilac).color), style: StrokeStyle(lineWidth: 14, lineCap: .round))
-            fo(ctx, Path(roundedRect: CGRect(x: 4, y: 27, width: 22, height: 18), cornerRadius: 5), Shades.shade(lilac))
+            ctx.stroke(handle, with: .color(Shades.outline(bodyColor).color), style: StrokeStyle(lineWidth: 20, lineCap: .round))
+            ctx.stroke(handle, with: .color(Shades.shade(bodyColor).color), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+            if starDryer {
+                // Pastel pink flared nozzle capped with a sparkling golden 5-point star tip
+                var nozzle = Path()
+                nozzle.move(to: CGPoint(x: 24, y: 26))
+                nozzle.addLine(to: CGPoint(x: 9, y: 23))
+                nozzle.addLine(to: CGPoint(x: 9, y: 49))
+                nozzle.addLine(to: CGPoint(x: 24, y: 46))
+                nozzle.closeSubpath()
+                fo(ctx, nozzle, RGB(1.0, 0.78, 0.88), 2.5)
+                let tipStar = ClipPainter.star(13.5).applying(CGAffineTransform(translationX: 11, y: 36))
+                fo(ctx, tipStar, RGB(1.0, 0.86, 0.42), 2.3)
+                ctx.fill(Path(ellipseIn: CGRect(x: 7.5, y: 32.5, width: 7, height: 7)), with: .color(.white.opacity(0.9)))
+            } else {
+                fo(ctx, Path(roundedRect: CGRect(x: 4, y: 27, width: 22, height: 18), cornerRadius: 5), Shades.shade(bodyColor))
+            }
             let barrel = Path(roundedRect: CGRect(x: 18, y: 18, width: 66, height: 36), cornerRadius: 18, style: .continuous)
-            fo(ctx, barrel, lilac)
-            fo(ctx, Path(ellipseIn: CGRect(x: 66, y: 22, width: 22, height: 28)), RGB(1, 0.85, 0.92), 2.4)
+            fo(ctx, barrel, bodyColor)
+            fo(ctx, Path(ellipseIn: CGRect(x: 66, y: 22, width: 22, height: 28)), starDryer ? RGB(1, 0.94, 0.74) : RGB(1, 0.85, 0.92), 2.4)
             for i in 0..<3 {
                 var v = Path()
                 let y = 30 + CGFloat(i) * 6
                 v.move(to: CGPoint(x: 72, y: y))
                 v.addLine(to: CGPoint(x: 82, y: y))
-                ctx.stroke(v, with: .color(Shades.outline(lilac).color.opacity(0.6)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                ctx.stroke(v, with: .color(Shades.outline(bodyColor).color.opacity(0.6)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
             }
-            shine(ctx, CGRect(x: 26, y: 23, width: 30, height: 6), lilac)
-            fo(ctx, Path(ellipseIn: CGRect(x: 60, y: 58, width: 9, height: 9)), RGB(1, 0.6, 0.75), 1.8)
+            shine(ctx, CGRect(x: 26, y: 23, width: 30, height: 6), bodyColor)
+            if starDryer {
+                let gold = RGB(1.0, 0.86, 0.42)
+                fo(ctx, ClipPainter.star(7).applying(CGAffineTransform(translationX: 46, y: 39)), gold, 1.6)
+                StorybookArt.sparkle(ctx, at: CGPoint(x: 8, y: 17), radius: 5.5, color: Theme.lemon, opacity: 0.95)
+                StorybookArt.sparkle(ctx, at: CGPoint(x: 5, y: 55), radius: 4.5, color: Theme.sky, opacity: 0.9)
+                fo(ctx, Path(ellipseIn: CGRect(x: 60, y: 58, width: 9, height: 9)), gold, 1.8)
+            } else {
+                fo(ctx, Path(ellipseIn: CGRect(x: 60, y: 58, width: 9, height: 9)), RGB(1, 0.6, 0.75), 1.8)
+            }
         case .curler:
             let pink = RGB(1, 0.66, 0.82)
             var rod = Path()

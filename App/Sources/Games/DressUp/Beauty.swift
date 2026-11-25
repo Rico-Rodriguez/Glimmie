@@ -161,31 +161,53 @@ enum BeautySFX: String, CaseIterable {
 
 final class BeautySound {
     static let shared = BeautySound()
+    private static let maxPoolSize = 3
+
+    private let queue = DispatchQueue(label: "glimmie.dressup.beautySound", qos: .userInitiated)
     private var players: [BeautySFX: [AVAudioPlayer]] = [:]
+    private var missing: Set<BeautySFX> = []
     private var last: [BeautySFX: Date] = [:]
+
+    static func url(for s: BeautySFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "DressUp") ?? GameFiles.url(s.rawValue, "wav", game: "DressUp")
+    }
 
     private init() {
         _ = Sound.shared
-        for s in BeautySFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "DressUp") else { continue }
-            players[s] = (0..<3).compactMap { _ in
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.prepareToPlay()
-                return p
-            }
-        }
     }
 
     /// Plays `s`, at most once every `gap` seconds (for sounds repeated while a finger moves).
     func play(_ s: BeautySFX, volume: Float = 0.8, gap: Double = 0) {
         let now = Date()
-        if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
-        last[s] = now
-        guard let pool = players[s] else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.currentTime = 0
-        p.play()
+        queue.async {
+            if gap > 0, let t = self.last[s], now.timeIntervalSince(t) < gap { return }
+            self.last[s] = now
+            guard let p = self.player(for: s) else { return }
+            p.volume = volume
+            p.currentTime = 0
+            p.play()
+        }
+    }
+
+    private func player(for s: BeautySFX) -> AVAudioPlayer? {
+        guard !missing.contains(s) else { return nil }
+        let pool = players[s] ?? []
+        if let idle = pool.first(where: { !$0.isPlaying }) { return idle }
+        if pool.count < Self.maxPoolSize {
+            if let created = makePlayer(for: s) {
+                players[s] = pool + [created]
+                return created
+            }
+            if pool.isEmpty { missing.insert(s) }
+        }
+        return pool.max(by: { $0.currentTime < $1.currentTime }) ?? pool.first
+    }
+
+    private func makePlayer(for s: BeautySFX) -> AVAudioPlayer? {
+        guard let url = Self.url(for: s),
+              let player = try? AVAudioPlayer(contentsOf: url) else { return nil }
+        player.prepareToPlay()
+        return player
     }
 }
 

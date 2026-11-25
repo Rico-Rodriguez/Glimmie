@@ -305,4 +305,73 @@ final class IceCreamTests: XCTestCase {
         XCTAssertTrue(sim.build.ropeTipped)
         XCTAssertEqual(sim.build.rope.count, beadCount)
     }
+
+    func testSoundsAreBundled() {
+        XCTAssertFalse(IceSFX.allCases.map { $0.rawValue }.contains("splash"))
+        for s in IceSFX.allCases { XCTAssertNotNil(IceSound.url(for: s), s.rawValue) }
+    }
+
+    func testBingsuShavesSnowTopsAndScoresThreeStars() {
+        let sim = freshSim()
+        sim.setStation(.bingsu)
+        XCTAssertEqual(sim.build.base, .bowl)
+        XCTAssertEqual(sim.build.kind, .bingsu)
+        XCTAssertFalse(sim.build.hasTreat)
+
+        sim.tapShaver()
+        run(sim, seconds: 0.9)
+        XCTAssertGreaterThan(sim.build.snowLevel, 0.3)
+        XCTAssertTrue(sim.build.hasTreat)
+
+        sim.pressShaver(true)
+        run(sim, seconds: 2.0)
+        sim.pressShaver(false)
+        XCTAssertEqual(sim.build.snowLevel, 1, accuracy: 0.01)
+
+        sim.autoTopping(.redBean)
+        sim.autoTopping(.mangoCubes)
+        sim.autoTopping(.strawberries)
+        sim.autoTopping(.injeolmi)
+        sim.autoTopping(.condensedMilk)
+        run(sim, seconds: 2.4)
+
+        XCTAssertTrue(sim.build.has(.redBean))
+        XCTAssertTrue(sim.build.has(.mangoCubes))
+        XCTAssertTrue(sim.build.has(.strawberries))
+        XCTAssertTrue(sim.build.has(.injeolmi))
+        XCTAssertTrue(sim.build.has(.condensedMilk))
+
+        let order = ICOrder(customer: 0, kind: .bingsu, base: .bowl, flavors: [ICBingsuHero.redBean.rawValue], topping: .condensedMilk)
+        XCTAssertEqual(order.stars(for: sim.build), 3)
+
+        let bakeryTreat = sim.build.toBakeryTreat()
+        XCTAssertEqual(bakeryTreat.kind, .iceCream)
+        XCTAssertFalse(bakeryTreat.toppings.isEmpty)
+    }
+
+    func testDockLayoutCentersSmoothieAndBingsuWithoutBaseGap() {
+        let scoop = IceCreamView.dockLayout(for: .scoop)
+        XCTAssertTrue(scoop.hasBase)
+        XCTAssertEqual(scoop.toppings, ICTopping.parlor)
+
+        let smoothie = IceCreamView.dockLayout(for: .smoothie)
+        XCTAssertFalse(smoothie.hasBase)
+        XCTAssertEqual(smoothie.toppings, ICTopping.parlor)
+        XCTAssertLessThan(smoothie.spots.first?.x ?? 999, scoop.spots.first?.x ?? 0)
+
+        let bingsu = IceCreamView.dockLayout(for: .bingsu)
+        XCTAssertFalse(bingsu.hasBase)
+        XCTAssertEqual(bingsu.toppings, ICTopping.bingsu)
+        XCTAssertEqual(bingsu.spots.count, 5)
+    }
+
+    func testRainbowBingsuTreasureHookRespondsToOwnership() {
+        Coins.shared.resetForTests(balance: 40)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(ICArt.rainbowBingsuTreasureID, "bakery/rainbowBingsu")
+        XCTAssertFalse(ICArt.hasRainbowBingsu)
+        XCTAssertTrue(Coins.shared.buy("bakery/rainbowBingsu", price: 12))
+        XCTAssertTrue(ICArt.hasRainbowBingsu)
+    }
 }

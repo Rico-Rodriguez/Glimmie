@@ -149,8 +149,8 @@ final class PotionSim: ObservableObject {
     var basinColor = PotionColor.clearWater
     private var refilling = false
 
-    /// Lever is perpendicular (`0`) to the horizontal drain pipe when shut, and inline (`pi/2`) when open.
-    var valveAngle: CGFloat { draining ? .pi / 2 : 0 }
+    /// Lever is vertical (`0`) when shut and tilted 45° toward the spout (`.pi / 4`) when open so it clears the pipe and basin.
+    var valveAngle: CGFloat { draining ? .pi / 4 : 0 }
 
     // MARK: Stirring Paddle
     static let spoonRest = CGPoint(x: 492, y: 520)
@@ -162,9 +162,28 @@ final class PotionSim: ObservableObject {
     private var stirChimeAccum: CGFloat = 0
     private var stirNoteIndex = 0
 
+    var hasHeartCauldron: Bool { Coins.shared.owns("potionlab/heartCauldron") }
+    var hasFairyLadle: Bool { Coins.shared.owns("potionlab/fairyLadle") }
+
+    func paddleTip() -> CGPoint {
+        let C = PotionGeometry.cauldronCenter
+        let hw = PotionGeometry.neckHalfWidth
+        let pivot = CGPoint(
+            x: max(C.x - hw + 14, min(C.x + hw - 14, spoon.x * 0.65 + C.x * 0.35 - (spoonHeld ? 0 : 34))),
+            y: PotionGeometry.rimY
+        )
+        let dx = pivot.x - spoon.x
+        let dy = pivot.y - spoon.y
+        let len = max(1, hypot(dx, dy))
+        let total: CGFloat = max(len + 74, 275)
+        return CGPoint(x: spoon.x + dx / len * total, y: spoon.y + dy / len * total)
+    }
+
     // MARK: Mixing & Discovery
     var mixProgress: CGFloat = 1
     var discoveredInBrew: Set<PotionKind> = []
+    private(set) var rewardedRecipesInSession: Set<PotionKind> = []
+    private(set) var unlockedStickersInSession: Set<String> = []
     var turn: CGFloat = 0
     var flash: CGFloat = 0
     var nextID: Int = 1
@@ -430,12 +449,11 @@ final class PotionSim: ObservableObject {
         spoonTarget = clampToCauldron(p)
         stirChimeAccum = 0
         cue(.tap, gap: 0.15)
-        // Even a tap in the cauldron gives a lively little swirl & mixes.
         let clamped = spoonTarget
         push(clamped, CGVector(dx: rand(-120, 120), dy: rand(-60, 60)), radius: 46)
         if !ingredients.isEmpty {
-            mixProgress = 1
-            evaluateRecipe()
+            mixProgress = min(1, mixProgress + 0.25)
+            if mixProgress >= 1 { evaluateRecipe() }
         }
     }
 
@@ -452,13 +470,21 @@ final class PotionSim: ObservableObject {
             stirNoteIndex += 1
         }
         if !ingredients.isEmpty {
-            mixProgress = min(1, mixProgress + dist * 0.012 + 0.15)
+            mixProgress = min(1, mixProgress + dist * 0.012 + 0.08)
             if mixProgress >= 1 { evaluateRecipe() }
         }
     }
 
     func endStir() {
         spoonHeld = false
+    }
+
+    func stir(by progress: CGFloat = 0.7) {
+        guard !ingredients.isEmpty else { return }
+        let c = PotionGeometry.cauldronCenter
+        push(c, CGVector(dx: rand(-140, 140), dy: rand(-70, 70)), radius: 48)
+        mixProgress = min(1, mixProgress + max(0, progress))
+        if mixProgress >= 1 { evaluateRecipe() }
     }
 
     private func clampToCauldron(_ p: CGPoint) -> CGPoint {
@@ -481,8 +507,7 @@ final class PotionSim: ObservableObject {
         if level != .off { cue(.whoosh, gap: 0.25) }
         if level == .boil {
             temp = max(temp, 0.82)
-            if mixProgress >= 1 || !ingredients.isEmpty {
-                mixProgress = 1
+            if mixProgress >= 1 && !ingredients.isEmpty {
                 evaluateRecipe()
             }
         }
@@ -496,8 +521,7 @@ final class PotionSim: ObservableObject {
     func setMoonlit(_ on: Bool) {
         moonlit = on
         cue(.click)
-        if on && !ingredients.isEmpty {
-            mixProgress = 1
+        if on && mixProgress >= 1 && !ingredients.isEmpty {
             evaluateRecipe()
         }
         save()
@@ -546,8 +570,11 @@ final class PotionSim: ObservableObject {
         sparkleBurst(at: CGPoint(x: PotionGeometry.cauldronCenter.x, y: PotionGeometry.rimY - 12), color: kind.color, n: 20)
 
         if trackRewards {
+            unlockedStickersInSession.insert(kind.rawValue)
             StickerBook.shared.find(game: PotionSim.gameID, id: kind.rawValue)
-            Coins.shared.earn(4, game: PotionSim.gameID, from: PotionGeometry.cauldronCenter)
+            if rewardedRecipesInSession.insert(kind).inserted {
+                Coins.shared.earn(4, game: PotionSim.gameID, from: PotionGeometry.cauldronCenter)
+            }
         }
         bottleCurrentBrew(forcedKind: kind)
         return kind
@@ -698,7 +725,8 @@ final class PotionSim: ObservableObject {
             cue(.chime, gap: 0.08)
         }
 
-        if trackRewards, let stickerID = effect.unlocksStickerID {
+        if trackRewards, let stickerID = effect.unlocksStickerID(for: creature) {
+            unlockedStickersInSession.insert(stickerID)
             StickerBook.shared.find(game: PotionSim.gameID, id: stickerID)
         }
         return effect
@@ -1141,6 +1169,19 @@ final class PotionSim: ObservableObject {
                 size: rand(5, 10)
             ))
         }
+        if hasFairyLadle && speed > 95 && rand() < d * 24 {
+            let tip = paddleTip()
+            let palette = [RGB(hex: "#FFE680"), RGB(hex: "#FFB5DC"), RGB(hex: "#FFF9D6"), RGB(hex: "#D6C4FF")]
+            let col = palette[Int(rand(0, CGFloat(palette.count))) % palette.count]
+            motes.append(PMote(
+                p: CGPoint(x: tip.x + rand(-16, 16), y: tip.y + rand(-16, 16)),
+                v: CGVector(dx: spoonVel.dx * 0.12 + rand(-28, 28), dy: rand(-68, -22)),
+                max: 0.85,
+                kind: .sparkle,
+                color: col,
+                size: rand(6, 11)
+            ))
+        }
     }
 
     private func fluidForces(_ d: CGFloat) {
@@ -1531,11 +1572,9 @@ final class PotionSim: ObservableObject {
     }
 
     private func stepMixAndRare(_ d: CGFloat) {
-        if !ingredients.isEmpty && mixProgress < 1 {
-            mixProgress = min(1, mixProgress + d * 2.0)
-            if mixProgress >= 1 {
-                evaluateRecipe()
-            }
+        // Passive settling caps at 0.55 so real stirring is required to complete and bottle a brew.
+        if !ingredients.isEmpty && mixProgress < 0.55 {
+            mixProgress = min(0.55, mixProgress + d * 0.5)
         }
         guard let kind = rare, volume > 100 else { return }
         turn = min(1, turn + d / 1.4)
@@ -1766,6 +1805,7 @@ final class PotionSim: ObservableObject {
             setBurner(.boil)
             addIngredient(.dragonChili)
             addIngredient(.starGlitter)
+            stir()
         case "night":
             setMoonlit(true)
             night = 1

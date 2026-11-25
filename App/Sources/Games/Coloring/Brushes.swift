@@ -127,6 +127,8 @@ extension PaintRegionMask {
 // - eraser: lifts color from the paper's hills first; rub more to get it all.
 
 extension ColoringPaper {
+    static var hasRainbowStarlight: Bool { Coins.shared.owns(ColoringVectorSticker.rainbowBrushTreasureID) }
+
     /// Offset added to a pixel's depth in `acc`, so 0 can mean "the stroke never came near".
     private static let depthOffset: Float = 64
 
@@ -229,6 +231,7 @@ extension ColoringPaper {
             radius = Float(brushSize / 2) * (0.92 + 0.16 * p) * (1 + holdGrow)
             let ca = rainbowColor(travelled), cb = rainbowColor(travelled + len)
             box = capsule(a, b, colorA: ca, colorB: cb)
+            if Self.hasRainbowStarlight && !hold { addFlakes(a, b, len: len, density: 0.34) }
         case .glitter:
             radius = Float(brushSize / 2)
             box = capsule(a, b)
@@ -378,6 +381,7 @@ extension ColoringPaper {
             (cr * 0.86, cg * 0.86, cb * 0.86), (cb * 0.5 + 128, cr * 0.5 + 128, cg * 0.5 + 128),
         ]
         let seed = strokeSeed
+        let rainbowStarlight = brush == .rainbow && Self.hasRainbowStarlight
         // Going over it again in a new stroke presses wax and pencil into some of the valleys the
         // last stroke skipped: the grain is shifted a few pixels per stroke so new gaps fill in.
         let sx = Int(seed &* 37 % 9), sy = Int(seed &* 53 % 9)
@@ -405,6 +409,15 @@ extension ColoringPaper {
                     or = br * (1 - a) + (0.78 * br * mr / 255 + 0.22 * mr) * a
                     og = bg * (1 - a) + (0.78 * bg * mg / 255 + 0.22 * mg) * a
                     ob = bb * (1 - a) + (0.78 * bb * mb / 255 + 0.22 * mb) * a
+                    if rainbowStarlight && cov > 0.52 {
+                        let hsh = paintHash(x >> 1, y >> 1, seed)
+                        if hsh < 0.085 {
+                            let shimmer: Float = hsh < 0.03 ? 0.78 : 0.48
+                            or = or + (255 - or) * shimmer
+                            og = og + (252 - og) * shimmer
+                            ob = ob + (238 - ob) * shimmer
+                        }
+                    }
                 case .glitter:
                     let dep = A - K
                     let cov = clamp01(dep / 1.3)
@@ -460,10 +473,10 @@ extension ColoringPaper {
 
     // MARK: Glitter flakes
 
-    private func addFlakes(_ a: CGPoint, _ b: CGPoint, len: CGFloat) {
+    private func addFlakes(_ a: CGPoint, _ b: CGPoint, len: CGFloat, density: Double = 1) {
         let r = CGFloat(radius)
-        var n = Double(len * r / 75)
-        if len == 0 { n = 3 }
+        var n = Double(len * r / 75) * density
+        if len == 0 { n = 3 * density }
         while n > 0 {
             if n < 1 && rng.next() > n { break }
             n -= 1

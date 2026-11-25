@@ -44,6 +44,22 @@ struct TidyLevel: Identifiable {
     let id: String
     let scene: TidyScene
     let slots: [TidySlot]
+    var isShuffle: Bool = false
+    var scatterSeed: UInt64? = nil
+}
+
+struct TidySeededRNG: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) {
+        state = seed == 0 ? 0x9E37_79B9_7F4A_7C15 : seed
+    }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
 }
 
 enum TidyLevels {
@@ -255,4 +271,141 @@ enum TidyLevels {
         at(.strawberry, 220, 320), at(.strawberry, 270, 320), at(.strawberry, 220, 380), at(.strawberry, 270, 380),
         at(.banana, 495, 320, rot: -0.15), at(.banana, 495, 385, rot: 0.1),
     ])
+
+    // MARK: Endless shuffle / bonus clutter generator
+
+    private static let recolorableKinds: Set<TidyKind> = [
+        .book, .crayon, .pencil, .eraser, .sock, .block, .mug, .bowl, .glass,
+        .towel, .shirt, .hat, .shoe, .ball, .car, .jar, .can, .cereal,
+        .bottle, .lunchbox, .toothbrush, .shampoo, .soap, .jam, .yogurt
+    ]
+
+    private static func slotBounds(_ s: TidySlot) -> CGRect {
+        let sz = s.kind.size
+        let w = abs(cos(s.rot)) * sz.width + abs(sin(s.rot)) * sz.height
+        let h = abs(sin(s.rot)) * sz.width + abs(cos(s.rot)) * sz.height
+        return CGRect(x: s.pos.x - w / 2, y: s.pos.y - h / 2, width: w, height: h)
+    }
+
+    private static func insideScene(_ rect: CGRect) -> Bool {
+        rect.minX >= 6 && rect.maxX <= TidyScene.size.width - 6 &&
+        rect.minY >= -2 && rect.maxY <= TidyScene.size.height + 2
+    }
+
+    /// Generates a fresh, completable bonus-clutter layout for any room by picking playful subsets,
+    /// reshuffling color-sort sequences, and gently scattering standalone positions within valid bounds.
+    static func shuffled(roomIndex: Int, seed: UInt64) -> TidyLevel {
+        let idx = ((roomIndex % all.count) + all.count) % all.count
+        let base = all[idx]
+        let template = all
+            .filter { $0.scene == base.scene }
+            .max { $0.slots.count < $1.slots.count } ?? base
+        var rng = TidySeededRNG(seed: seed ^ (UInt64(idx + 1) &* 0x517C_C1B7_2722_0A95))
+
+        // Partition into bottom-up stacks and standalone slots so stacks always start on a shelf.
+        var stacks: [Int: [TidySlot]] = [:]
+        var standalone: [TidySlot] = []
+        for slot in template.slots {
+            if let g = slot.stack {
+                stacks[g, default: []].append(slot)
+            } else {
+                standalone.append(slot)
+            }
+        }
+
+        var picked: [TidySlot] = []
+        for g in stacks.keys.sorted() {
+            guard var members = stacks[g], !members.isEmpty else { continue }
+            // Lower on screen (larger y) sits at the bottom of the pile.
+            members.sort { $0.pos.y > $1.pos.y }
+            let keepCount = members.count >= 3 ? Int.random(in: 2...members.count, using: &rng) : members.count
+            picked.append(contentsOf: members.prefix(keepCount))
+        }
+
+        // Pick a playful subset of standalone slots while keeping total in 4...16.
+        let minTotal = min(template.slots.count, max(4, (template.slots.count * 2 + 2) / 3))
+        let maxTotal = min(16, template.slots.count)
+        let targetTotal = minTotal < maxTotal ? Int.random(in: minTotal...maxTotal, using: &rng) : maxTotal
+        let needStandalone = max(0, min(standalone.count, targetTotal - picked.count))
+        var chosenStandalone = standalone
+        if needStandalone < chosenStandalone.count {
+            var indices = Array(chosenStandalone.indices)
+            indices.shuffle(using: &rng)
+            let keepSet = Set(indices.prefix(needStandalone))
+            chosenStandalone = chosenStandalone.enumerated().filter { keepSet.contains($0.offset) }.map(\.element)
+        }
+        picked.append(contentsOf: chosenStandalone)
+
+        // Refresh colors so sorting puzzles and shelves feel new every round.
+        if template.scene == .socks {
+            let cols = Set(picked.map { Int($0.pos.x.rounded()) }).sorted()
+            var palette = Array(0..<8)
+            palette.shuffle(using: &rng)
+            let colColor = Dictionary(uniqueKeysWithValues: cols.enumerated().map { ($0.element, palette[$0.offset % palette.count]) })
+            for i in picked.indices {
+                if let c = colColor[Int(picked[i].pos.x.rounded())] {
+                    picked[i].color = c
+                }
+            }
+        } else {
+            // Reshuffle strict color sequences per kind so rainbow rows get fresh orders.
+            let strictKinds = Array(Set(picked.filter(\.strict).map(\.kind))).sorted { $0.rawValue < $1.rawValue }
+            for kind in strictKinds {
+                let idxs = picked.indices.filter { picked[$0].strict && picked[$0].kind == kind }
+                guard idxs.count > 1 else { continue }
+                var colors = Array(0..<8)
+                colors.shuffle(using: &rng)
+                for (offset, slotIdx) in idxs.enumerated() {
+                    picked[slotIdx].color = colors[offset % colors.count]
+                }
+            }
+            for i in picked.indices where !picked[i].strict {
+                let kind = picked[i].kind
+                if kind == .apple {
+                    picked[i].color = Bool.random(using: &rng) ? 0 : 3
+                } else if recolorableKinds.contains(kind) {
+                    picked[i].color = Int.random(in: 0..<8, using: &rng)
+                }
+            }
+        }
+
+        // Gently scatter standalone slots horizontally (and slightly vertically on top-down scenes)
+        // only where the shifted footprint stays cleanly inside bounds and non-overlapping.
+        for i in picked.indices where picked[i].stack == nil {
+            let s = picked[i]
+            if template.scene == .bathroom && s.kind == .toothbrush { continue }
+            if template.scene == .fridge && s.pos.x > 580 { continue }
+            if template.scene == .backpack && s.pos.x > 570 { continue }
+            let dx = CGFloat(Int.random(in: -10...10, using: &rng))
+            let dy: CGFloat = template.scene.topDown ? CGFloat(Int.random(in: -6...6, using: &rng)) : 0
+            let drot: CGFloat = (template.scene.topDown && abs(s.rot) < 0.01)
+                ? CGFloat(Int.random(in: -4...4, using: &rng)) * 0.012
+                : 0
+            let candidate = TidySlot(
+                kind: s.kind,
+                pos: CGPoint(x: s.pos.x + dx, y: s.pos.y + dy),
+                rot: s.rot + drot,
+                color: s.color,
+                strict: s.strict,
+                stack: s.stack
+            )
+            let rect = slotBounds(candidate)
+            guard insideScene(rect) else { continue }
+            let padded = rect.insetBy(dx: -3, dy: -3)
+            let collides = picked.indices.contains { j in
+                j != i && padded.intersects(slotBounds(picked[j]))
+            }
+            if !collides {
+                picked[i] = candidate
+            }
+        }
+
+        return TidyLevel(
+            id: "\(base.id)_shuffle_\(seed)",
+            scene: base.scene,
+            slots: picked,
+            isShuffle: true,
+            scatterSeed: seed
+        )
+    }
 }

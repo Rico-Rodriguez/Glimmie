@@ -23,7 +23,7 @@ enum PizzaStep: Int, CaseIterable {
 }
 
 enum ToppingKind: String, CaseIterable, Codable {
-    case pepperoni, mushroom, olive, pepper, pineapple, basil, tomato, ham
+    case pepperoni, mushroom, olive, pepper, pineapple, basil, tomato, ham, goguma, cornCheese
 }
 
 enum PizzaTool: Equatable {
@@ -173,6 +173,8 @@ final class PizzaSim {
     var happyUntil: Double = 0
     var chewUntil: Double = 0
     var wiggleAt: Double = -10
+    var ovenNudgeAt: Double = -10
+    var onAutoNewPizza: (() -> Void)?
     var save = PizzaSave()
 
     var stage: PizzaStep = .dough
@@ -288,7 +290,12 @@ final class PizzaSim {
             sauceCoverage = coverage(sauce, above: 0.14)
             cheeseCoverage = coverage(cheese, above: 0.16)
         }
-        if let t = newPizzaAt, time >= t { newPizzaAt = nil; newPizza() }
+        if let t = newPizzaAt, time >= t {
+            newPizzaAt = nil
+            newPizza()
+            let cb = onAutoNewPizza
+            DispatchQueue.main.async { cb?() }
+        }
         stepSounds()
     }
 
@@ -1100,9 +1107,19 @@ final class PizzaSim {
 
     var allEaten: Bool { slices.allSatisfy { isEaten(($0.0 + $0.1) / 2) } }
 
+    var isUnbakedEmptyDough: Bool {
+        bake < 0.25 && totalSauce < 0.5 && landed == 0 && toppings.isEmpty
+    }
+
     func serveSlice(at p: CGPoint) {
         guard lifted == nil, !ball, !inOven, let s = slice(at: p) else {
             if !ball && slice(at: p) == nil && hypot(p.x - PGeo.center.x, p.y - PGeo.center.y) < meanR { wiggleAt = time }
+            return
+        }
+        if isUnbakedEmptyDough {
+            wiggleAt = time
+            ovenNudgeAt = time
+            Sound.shared.play(.boing, volume: 0.5)
             return
         }
         var strings: [CheeseString] = []
@@ -1260,6 +1277,7 @@ final class PizzaSim {
         sauceCoverage = 0
         cheeseCoverage = 0
         outAt = -100
+        ovenNudgeAt = -10
     }
 
     /// Moves to a step (nothing is locked: any step at any time).

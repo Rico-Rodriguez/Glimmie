@@ -267,6 +267,11 @@ struct SalonView: View {
                         },
                         trailing: {
                             HStack(spacing: 12) {
+                                SalonMyDollButton(size: GameChromeLayout.buttonSize) {
+                                    switchToMyDoll()
+                                }
+                                .accessibilityLabel("My Doll")
+
                                 RoundButton(
                                     symbol: "person.crop.circle.badge.plus",
                                     tint: Color(hex: 0x9B79E0),
@@ -399,6 +404,19 @@ struct SalonView: View {
         saveCurrent()
         world.newClient()
         hat = nil
+        saveCurrent()
+    }
+
+    private func switchToMyDoll() {
+        SalonSound.shared.play(.chime, volume: 0.65)
+        Sound.shared.play(.sparkle, volume: 0.55)
+        Sound.shared.tap()
+        backupStyledClientIfNeeded()
+        saveCurrent()
+        world.loadMyDoll()
+        hat = nil
+        world.cheer()
+        burstID += 1
         saveCurrent()
     }
 
@@ -628,20 +646,26 @@ struct SalonView: View {
     }
 
     static let clipChoices: [SalonCarry] = [
+        .clip(.daenggi, 5), .clip(.pastelBow, 2), .clip(.heartJewel, 4),
         .clip(.bow, 4), .clip(.bow, 16), .clip(.ribbon, 19), .clip(.flower, 3), .clip(.daisy, 0), .clip(.star, 9),
         .clip(.heart, 5), .clip(.butterfly, 15), .clip(.pearl, 0), .scrunchie(3), .scrunchie(18), .scrunchie(11),
     ]
+
+    static var availableClipChoices: [SalonCarry] {
+        ClipPainter.hasRoyalDaenggi ? [.clip(.royalDaenggi, 5)] + clipChoices : clipChoices
+    }
 
     static let hats = ["h_crown", "h_tiara", "h_bigbow", "h_twobows", "h_flowers", "h_headband",
                        "h_unicorn", "h_cat", "h_bunny", "h_starcrown", "h_halo", "h_sunflower"]
 
     private var clipTray: some View {
         let cols = Array(repeating: GridItem(.fixed(68), spacing: 10), count: 3)
+        let choices = SalonView.availableClipChoices
         return ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 12) {
                 LazyVGrid(columns: cols, spacing: 10) {
-                    ForEach(0..<SalonView.clipChoices.count, id: \.self) { i in
-                        clipChoice(SalonView.clipChoices[i])
+                    ForEach(0..<choices.count, id: \.self) { i in
+                        clipChoice(choices[i])
                     }
                 }
                 Capsule().fill(Theme.pink.opacity(0.32)).frame(width: 170, height: 5)
@@ -672,14 +696,18 @@ struct SalonView: View {
     }
 
     private func clipChoice(_ c: SalonCarry) -> some View {
-        Button {
+        let isRoyalTreasure: Bool = {
+            if case .clip(.royalDaenggi, _) = c { return true }
+            return false
+        }()
+        return Button {
             guard Date() > suppressClipTapUntil else { return }
             Sound.shared.play(.pop, volume: 0.5)
             Sound.shared.tap()
             placeForHer(c)
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white)
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(isRoyalTreasure ? Color(hex: 0xFFFDF0) : .white)
                 Canvas { ctx, size in
                     var g = ctx
                     g.translateBy(x: size.width / 2, y: size.height / 2)
@@ -693,7 +721,10 @@ struct SalonView: View {
                 }
             }
             .frame(width: 68, height: 68)
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.blush, lineWidth: 2.2))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(isRoyalTreasure ? Color(hex: 0xFFD966) : Theme.blush, lineWidth: isRoyalTreasure ? 3 : 2.2)
+            )
         }
         .buttonStyle(Squish())
         .simultaneousGesture(
@@ -771,6 +802,85 @@ struct SalonView: View {
         tool = t
         hat = world.hat
         if t == .dye { dye = SalonWorld.rainbowIndex }
+    }
+}
+
+// MARK: - My Doll button (pictorial mini portrait tinted from UserDefaults snapshot)
+
+private struct SalonMyDollButton: View {
+    let size: CGFloat
+    let action: () -> Void
+
+    var body: some View {
+        let palette = SalonDollDefaults.colors()
+        return Button(action: action) {
+            ZStack(alignment: .bottomTrailing) {
+                Canvas { ctx, s in
+                    let r = min(s.width, s.height)
+                    let cx = s.width * 0.5
+                    let cy = s.height * 0.52
+
+                    // Hair silhouette behind head
+                    let backHair = Path(ellipseIn: CGRect(x: cx - r * 0.34, y: cy - r * 0.34, width: r * 0.68, height: r * 0.72))
+                    ctx.fill(backHair, with: .color(palette.hair.color))
+                    ctx.stroke(backHair, with: .color(Shades.outline(palette.hair).color), lineWidth: 2)
+
+                    // Face oval
+                    let face = Path(ellipseIn: CGRect(x: cx - r * 0.25, y: cy - r * 0.21, width: r * 0.50, height: r * 0.50))
+                    ctx.fill(face, with: .color(palette.skin.color))
+                    ctx.stroke(face, with: .color(Shades.outline(palette.skin).color), lineWidth: 1.8)
+
+                    // Cute bangs fringe arc
+                    var bangs = Path()
+                    bangs.move(to: CGPoint(x: cx - r * 0.25, y: cy - r * 0.04))
+                    bangs.addQuadCurve(to: CGPoint(x: cx, y: cy - r * 0.27), control: CGPoint(x: cx - r * 0.2, y: cy - r * 0.26))
+                    bangs.addQuadCurve(to: CGPoint(x: cx + r * 0.25, y: cy - r * 0.04), control: CGPoint(x: cx + r * 0.2, y: cy - r * 0.26))
+                    bangs.addQuadCurve(to: CGPoint(x: cx, y: cy - r * 0.09), control: CGPoint(x: cx + r * 0.1, y: cy - r * 0.03))
+                    bangs.addQuadCurve(to: CGPoint(x: cx - r * 0.25, y: cy - r * 0.04), control: CGPoint(x: cx - r * 0.1, y: cy - r * 0.03))
+                    bangs.closeSubpath()
+                    ctx.fill(bangs, with: .color(palette.hair.color))
+                    ctx.stroke(bangs, with: .color(Shades.outline(palette.hair).color), lineWidth: 1.6)
+
+                    // Eyes & sparkle dots
+                    for side in [-1.0, 1.0] {
+                        let ex = cx + CGFloat(side) * r * 0.10
+                        let ey = cy + r * 0.04
+                        ctx.fill(Path(ellipseIn: CGRect(x: ex - 3.2, y: ey - 3.6, width: 6.4, height: 7.2)), with: .color(palette.eye.color))
+                        ctx.fill(Path(ellipseIn: CGRect(x: ex - 1.6, y: ey - 2.4, width: 2.4, height: 2.4)), with: .color(.white))
+                    }
+
+                    // Rosy cheeks + happy smile
+                    ctx.fill(Path(ellipseIn: CGRect(x: cx - r * 0.19, y: cy + r * 0.09, width: 6, height: 4)), with: .color(Theme.pink.opacity(0.45)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: cx + r * 0.19 - 6, y: cy + r * 0.09, width: 6, height: 4)), with: .color(Theme.pink.opacity(0.45)))
+                    var smile = Path()
+                    smile.move(to: CGPoint(x: cx - 4.5, y: cy + r * 0.15))
+                    smile.addQuadCurve(to: CGPoint(x: cx + 4.5, y: cy + r * 0.15), control: CGPoint(x: cx, y: cy + r * 0.22))
+                    ctx.stroke(smile, with: .color(Shades.ink.color), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                }
+                .frame(width: size, height: size)
+                .background(
+                    Circle().fill(
+                        LinearGradient(
+                            colors: [Color(hex: 0xFFE5F2), Color(hex: 0xFFC5E1)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                )
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white, lineWidth: 4.5))
+                .shadow(color: Theme.ink.opacity(0.24), radius: 6, y: 4)
+
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(Circle().fill(Theme.pink))
+                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                    .offset(x: 4, y: 4)
+            }
+        }
+        .buttonStyle(Squish())
     }
 }
 

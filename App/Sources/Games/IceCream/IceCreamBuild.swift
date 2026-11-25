@@ -7,7 +7,7 @@ import SwiftUI
 // the stand can slide and sink (it does under the soft-serve nozzle) and everything on it goes along.
 //
 // `profile` is the treat's top edge as she sees it, in 2-point columns. Sprinkles, sauce, cherries and the whipped
-// cream all land on it, so they sit on whatever is really there: a scoop, the swirl, the smoothie.
+// cream all land on it, so they sit on whatever is really there: a scoop, the swirl, the smoothie, or bingsu snow.
 
 struct ICScoop: Equatable {
     var id: Int
@@ -73,6 +73,16 @@ struct ICStick: Equatable {
     var angle: CGFloat
 }
 
+/// One piece of Korean bingsu garnish nestled on the snow dome.
+struct ICBingsuPiece: Equatable {
+    var topping: ICTopping
+    var dx: CGFloat
+    var h: CGFloat
+    var rot: CGFloat
+    var scale: CGFloat
+    var seed: Int
+}
+
 /// A band of smoothie in the glass, from the band below up to `top` (fraction of the glass).
 struct ICLayer: Equatable {
     var top: CGFloat
@@ -100,6 +110,8 @@ struct ICBuild: Equatable {
     var layers: [ICLayer] = []
     /// Fruit blended into the glass, by ICFruit raw value.
     var fruitIn: [CGFloat] = [CGFloat](repeating: 0, count: ICFruit.allCases.count)
+    var snowLevel: CGFloat = 0
+    var bingsuPieces: [ICBingsuPiece] = []
     var sprinkles: [ICStuck] = []
     var sauces: [ICSauce] = []
     var cherry: ICBody?
@@ -115,12 +127,25 @@ struct ICBuild: Equatable {
     static func col(_ dx: CGFloat) -> Int { Int(((dx - colX0) / colW).rounded()) }
     static func colDX(_ i: Int) -> CGFloat { colX0 + colW * CGFloat(i) }
 
-    var isEmpty: Bool { base == nil && scoops.isEmpty && rope.isEmpty }
+    static func snowRadius(level: CGFloat) -> CGFloat { 60 * (0.58 + 0.42 * icClamp(level)) }
+    static func snowPeak(level: CGFloat) -> CGFloat { 24 + 104 * icClamp(level) }
+
+    static func snowHeight(at dx: CGFloat, level: CGFloat) -> CGFloat? {
+        guard level > 0.02 else { return nil }
+        let rx = snowRadius(level: level)
+        guard abs(dx) <= rx else { return nil }
+        let u = abs(dx) / rx
+        let peak = snowPeak(level: level)
+        return -6 + (peak + 6) * pow(max(0, 1 - u * u), 0.72)
+    }
+
+    var isEmpty: Bool { base == nil && scoops.isEmpty && rope.isEmpty && snowLevel <= 0.01 }
     var hasTreat: Bool {
-        !scoops.isEmpty || rope.count > 20 || fill > 0.25
+        !scoops.isEmpty || rope.count > 20 || fill > 0.25 || snowLevel >= 0.3
     }
 
     var kind: ICKind {
+        if base == .bowl { return .bingsu }
         if base == .glass && scoops.isEmpty && rope.isEmpty { return .smoothie }
         if !rope.isEmpty && scoops.isEmpty { return .soft }
         return .scoops
@@ -150,13 +175,15 @@ struct ICBuild: Equatable {
     func has(_ t: ICTopping) -> Bool {
         switch t {
         case .sprinkles: return sprinkles.filter { $0.onTop }.count >= 6 || (picture && !sprinkles.isEmpty)
-        case .chocoSauce, .berrySauce:
+        case .chocoSauce, .berrySauce, .condensedMilk:
             if pictureSauce == t { return true }
             return sauces.contains { $0.topping == t && $0.amount.reduce(0, +) > 3 }
         case .whip: return whip.count >= 12
         case .cherry: return cherry != nil
         case .wafer: return wafer != nil
         case .straw: return straw != nil
+        case .redBean, .mangoCubes, .strawberries, .injeolmi:
+            return bingsuPieces.contains { $0.topping == t }
         }
     }
 
@@ -178,6 +205,7 @@ struct ICBuild: Equatable {
         switch base {
         case .glass?: return -14
         case .cup?: return -8
+        case .bowl?: return -4
         default: return -12
         }
     }
@@ -200,9 +228,19 @@ struct ICBuild: Equatable {
                         lift(i, inner ? (fill > 0.02 ? liquid : b.floor + 4) : 0)
                     } else if b == .cup {
                         lift(i, abs(x) < rim - 4 ? b.floor + 4 : 0)
+                    } else if b == .bowl {
+                        lift(i, abs(x) < rim - 4 ? b.floor + 6 : 0)
                     } else {
                         lift(i, abs(x) < rim - 4 ? -6 : 2)
                     }
+                }
+            }
+        }
+        if snowLevel > 0.02 {
+            for i in 0..<ICBuild.columns {
+                let x = ICBuild.colDX(i)
+                if let h = ICBuild.snowHeight(at: x, level: snowLevel) {
+                    lift(i, h)
                 }
             }
         }
@@ -291,6 +329,28 @@ struct ICBuild: Equatable {
         return out
     }
 
+    static func sampleBingsuPieces(for t: ICTopping, ring: Int) -> [ICBingsuPiece] {
+        switch t {
+        case .redBean:
+            let offsets: [CGFloat] = ring == 0 ? [0] : [-24, 24]
+            return offsets.enumerated().map { idx, dx in
+                ICBingsuPiece(topping: .redBean, dx: dx, h: 0, rot: 0, scale: ring == 0 ? 1.05 : 0.78, seed: idx + ring * 11)
+            }
+        case .mangoCubes, .injeolmi:
+            let offsets: [CGFloat] = ring == 0 ? [-28, -10, 12, 29] : [-38, -16, 18, 38]
+            return offsets.enumerated().map { idx, dx in
+                ICBingsuPiece(topping: t, dx: dx, h: 0, rot: (icRand(idx, ring + 5) - 0.5) * 0.7, scale: 0.95, seed: idx + ring * 13)
+            }
+        case .strawberries:
+            let offsets: [CGFloat] = ring == 0 ? [-26, 0, 26] : [-36, 36]
+            return offsets.enumerated().map { idx, dx in
+                ICBingsuPiece(topping: .strawberries, dx: dx, h: 0, rot: dx * 0.012, scale: 0.95, seed: idx + ring * 17)
+            }
+        default:
+            return []
+        }
+    }
+
     /// Puts a picture's toppings onto whatever is under them.
     mutating func settlePicture() {
         let w = whip, c = cherry
@@ -304,12 +364,22 @@ struct ICBuild: Equatable {
             return b
         }
         rebuildProfile()
+        if !bingsuPieces.isEmpty {
+            bingsuPieces = bingsuPieces.enumerated().map { idx, piece0 in
+                var piece = piece0
+                let surf = top(piece.dx) ?? 20
+                let inset: CGFloat = piece.topping == .redBean ? 4 : CGFloat(idx % 2) * 14 + 6
+                piece.h = max(12, surf - inset)
+                return piece
+            }
+        }
         if let pc = pictureSauce {
             var s = ICSauce(topping: pc, amount: [CGFloat](repeating: 0, count: ICBuild.columns),
                             run: [CGFloat](repeating: 0, count: ICBuild.columns))
-            for i in 0..<ICBuild.columns where profile[i] > -500 && abs(ICBuild.colDX(i)) < 44 {
-                s.amount[i] = 0.6
-                s.run[i] = 8 + 22 * icRand(i / 4, 9)
+            let span: CGFloat = base == .bowl ? 48 : 44
+            for i in 0..<ICBuild.columns where profile[i] > -500 && abs(ICBuild.colDX(i)) < span {
+                s.amount[i] = 0.65
+                s.run[i] = 10 + 24 * icRand(i / 4, 9)
             }
             sauces = [s]
         }
@@ -343,6 +413,7 @@ struct ICBuild: Equatable {
         case .choco?: t.cone = "choco"
         case .cup?: t.cone = "cup"; t.liner = 0
         case .glass?: t.cone = "cup"; t.liner = 1
+        case .bowl?: t.cone = "cup"; t.liner = 2
         default: t.cone = "waffle"
         }
 
@@ -364,14 +435,30 @@ struct ICBuild: Equatable {
                 .prefix(2)
                 .map { Self.bakeryFlavor(for: $0) }
             t.scoops = ranked.isEmpty ? [2] : Array(ranked)
+        case .bingsu:
+            t.scoops = [0, 0]
         }
         if t.scoops.isEmpty { t.scoops = [0] }
 
         if has(.chocoSauce) { t.sauce = 0 }
         else if has(.berrySauce) { t.sauce = 1 }
+        else if has(.condensedMilk) { t.sauce = 2 }
 
         let art = BakeryArt.shared
         let topY = art.scoopY0 - CGFloat(max(0, min(4, t.scoops.count) - 1)) * art.scoopDY
+        if has(.strawberries) {
+            t.toppings.append(PlacedTopping(sprite: "top_strawberry", x: 282, y: Double(topY - 72), rot: -12, scale: 0.95))
+            t.toppings.append(PlacedTopping(sprite: "top_strawberry", x: 320, y: Double(topY - 70), rot: 14, scale: 0.95))
+        }
+        if has(.redBean) {
+            t.toppings.append(PlacedTopping(sprite: "top_cream", x: 300, y: Double(topY - 82), scale: 0.88, color: 1))
+        }
+        if has(.mangoCubes) {
+            t.toppings.append(PlacedTopping(sprite: "top_star", x: 300, y: Double(topY - 62), scale: 0.9, color: 4))
+        }
+        if has(.injeolmi) {
+            t.toppings.append(PlacedTopping(sprite: "top_wafer", x: 332, y: Double(topY - 66), rot: 16, scale: 0.85))
+        }
         if has(.whip) {
             t.toppings.append(PlacedTopping(sprite: "top_cream", x: 300, y: Double(topY - 68), scale: 0.9, color: 11))
         }

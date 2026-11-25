@@ -1044,7 +1044,7 @@ struct BeautyStudio: View {
     // MARK: Stage
 
     private var stage: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
             Canvas { ctx, size in
                 let t = tl.date.timeIntervalSinceReferenceDate
                 world.size = size
@@ -1211,7 +1211,8 @@ struct BeautyStudio: View {
     }
 
     private var dipButton: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24)) { tl in
+        let isDry = world.load < 0.05
+        return TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !isDry)) { tl in
             let dry = world.load < 0.05
             let t = tl.date.timeIntervalSinceReferenceDate
             let pulse: CGFloat = dry ? 1 + 0.13 * CGFloat(sin(t * 7)) : 1

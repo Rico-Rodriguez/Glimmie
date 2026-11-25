@@ -302,12 +302,6 @@ extension GardenSim {
                     v.facing = -side
                     v.p = CGPoint(x: h.x + 30 * side + sin(t * 1.3) * 6, y: h.y - 8 + sin(t * 2.1) * 5)
                 }
-                // Auto-fulfill once the child already has the wished crop in her basket/bouquet.
-                if !v.fulfilled && time - v.arrivedAt > 0.9 && basketSatisfies(v.kind.wish) {
-                    visitors[i] = v
-                    fulfillVisitor(at: i)
-                    continue
-                }
                 if time > v.stayUntil || gone { leave(&v) }
             }
             visitors[i] = v
@@ -320,6 +314,26 @@ extension GardenSim {
         case .anyFlower: return basketHasAnyFlower()
         case .raindrop, .decor, .moon: return false
         }
+    }
+
+    func wishSatisfied(_ wish: VisitorWish) -> Bool {
+        switch wish {
+        case .plant(let kind): return basketHas(kind)
+        case .anyFlower: return basketHasAnyFlower()
+        case .raindrop: return weather == .rain || rain > 0.4 || wetAt(436, span: 85) > 0.5
+        case .decor(let kind):
+            return decor.contains { $0.kind == kind || (kind == .birdhouse && $0.kind == .birdbath) }
+        case .moon: return weather == .night || night > 0.5
+        }
+    }
+
+    @discardableResult
+    func feedVisitorFromBasket(at p: CGPoint) -> Bool {
+        guard let i = visitorHit(p) else { return false }
+        let v = visitors[i]
+        guard !v.fulfilled, basketSatisfies(v.kind.wish) else { return false }
+        fulfillVisitor(at: i)
+        return true
     }
 
     private func arrive(_ k: GVisitorKind, at s: (CGPoint, Int?, Int?)) {
@@ -416,7 +430,15 @@ extension GardenSim {
         guard let i = visitorHit(p) else { return false }
         let v = visitors[i]
         if !v.fulfilled {
-            fulfillVisitor(at: i)
+            if wishSatisfied(v.kind.wish) {
+                fulfillVisitor(at: i)
+                return true
+            }
+            // Playful wiggle without awarding free coins before the wish is satisfied.
+            guard time - v.poked > 0.45 else { return true }
+            visitors[i].poked = time
+            playVisitorSound(v.kind)
+            Sound.shared.tap()
             return true
         }
         guard time - v.poked > 0.55 else { return true }

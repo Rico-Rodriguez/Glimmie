@@ -12,6 +12,8 @@ import SwiftUI
 // - Smoothies (IceCreamBlender.swift): fruit pieces and ice are real circles that tumble into the jar and pile up.
 //   The motor whirls them in a vortex; the blades chop them smaller until they're gone into the color of the drink.
 //   Then she carries the jar to the glass, it tips, and a stream pours in (or spills on the counter, it's a shop).
+// - Bingsu: holding or tapping the snow shaver flurries fine milk-snow flakes into a footed pastel bowl, then sweet
+//   red bean, golden mango cubes, ruby strawberries, nutty injeolmi mochi and condensed milk crown the dome.
 // - Toppings: sprinkles fly out of a shaken shaker and stick where they land, sauce runs down the treat in drips,
 //   whipped cream piles up in a rosette, a cherry drops, bounces and rolls into place.
 
@@ -35,6 +37,11 @@ enum ICGeo {
     static let softButtons: [CGPoint] = [CGPoint(x: 418, y: 158), CGPoint(x: 494, y: 158),
                                          CGPoint(x: 418, y: 232), CGPoint(x: 494, y: 232)]
     static let softButtonR: CGFloat = 30
+    // Bingsu snow shaver.
+    static let snowNozzle = CGPoint(x: 600, y: 310)
+    static let snowButton = CGPoint(x: 454, y: 196)
+    static let snowButtonR: CGFloat = 42
+    static let snowChamber = CGRect(x: 536, y: 112, width: 128, height: 162)
     // Blender.
     static let jarHome = CGPoint(x: 178, y: 566)
     static let jarH: CGFloat = 270
@@ -65,7 +72,7 @@ enum ICAutoPour: Equatable {
 }
 
 enum ICPartKind {
-    case sprinkle, sauce, splash, drop, ice, sparkle, crumb, steam
+    case sprinkle, sauce, splash, drop, ice, snow, sparkle, crumb, steam
 }
 
 struct ICPart {
@@ -173,6 +180,14 @@ final class IceSim {
     var softSpinV: CGFloat = 0
     var whipSession: ICWhipSession?
 
+    // Bingsu snow shaver
+    var shaving = false
+    var shavePress: CGFloat = 0
+    var snowBurstTime: CGFloat = 0
+    var shaveBladeAngle: CGFloat = 0
+    var bingsuSeed = 1
+    private var snowAcc: CGFloat = 0
+
     // Blender (IceCreamBlender.swift)
     var chunks: [ICChunk] = []
     var jarP = ICGeo.jarHome
@@ -238,6 +253,7 @@ final class IceSim {
         stepHeld(dt)
         stepScoops(dt)
         stepSoft(dt)
+        stepBingsu(dt)
         stepWhip(dt)
         stepBlender(dt)
         stepParticles(dt)
@@ -254,8 +270,8 @@ final class IceSim {
     // MARK: Stand
 
     func standTarget() -> CGPoint {
-        let b = build.base ?? .waffle
-        if station == .soft && b != .glass {
+        let b = build.base ?? (station == .bingsu ? .bowl : .waffle)
+        if station == .soft && b != .glass && b != .bowl {
             let topH = softTop()
             return CGPoint(x: ICGeo.nozzle.x - rho, y: ICGeo.nozzle.y + 46 + topH)
         }
@@ -274,24 +290,27 @@ final class IceSim {
     func setStation(_ s: ICStation) {
         guard s != station, held == nil else { return }
         lever = nil
+        shaving = false
+        snowBurstTime = 0
         blending = false
         blendingToggle = false
         autoPour = nil
         autoPourTime = 0
         station = s
         if s == .smoothie && build.base == nil { placeBase(.glass) }
+        if s == .bingsu && build.base == nil { placeBase(.bowl) }
     }
 
-    /// Puts a cone, cup or glass on the stand (swaps it while nothing is in it yet).
+    /// Puts a cone, cup, glass or bowl on the stand (swaps it while nothing is in it yet).
     func placeBase(_ b: ICBase) {
         guard build.base != b else { return }
-        if build.base != nil && (!build.scoops.isEmpty || !build.rope.isEmpty || build.fill > 0.01) { return }
+        if build.base != nil && (!build.scoops.isEmpty || !build.rope.isEmpty || build.fill > 0.01 || build.snowLevel > 0.01) { return }
         build = ICBuild()
         build.base = b
         baseDrop = (b, time)
         profileDirty = true
         resetSoft()
-        IceSound.shared.play(b == .glass ? .glass : .tub, volume: 0.7)
+        IceSound.shared.play(b == .glass || b == .bowl ? .glass : .tub, volume: 0.7)
     }
 
     /// Clears the stand to start a new treat.
@@ -305,7 +324,149 @@ final class IceSim {
         if station == .smoothie {
             resetBlender()
             placeBase(.glass)
+        } else if station == .bingsu {
+            placeBase(.bowl)
         }
+    }
+
+    // MARK: Bingsu snow shaver
+
+    var isShavingSnow: Bool {
+        station == .bingsu && (shaving || snowBurstTime > 0) && build.base == .bowl && build.snowLevel < 1
+    }
+
+    func pressShaver(_ on: Bool) {
+        if on {
+            guard station == .bingsu else { return }
+            if build.base != .bowl { placeBase(.bowl) }
+            if build.snowLevel >= 1 {
+                IceSound.shared.play(.plop, volume: 0.35)
+                Sound.shared.tap()
+                return
+            }
+            shaving = true
+            IceSound.shared.play(.lever, volume: 0.55, rate: 1.2)
+            Sound.shared.tap()
+        } else {
+            shaving = false
+        }
+    }
+
+    /// Quick tap gives a playful burst of falling milk-snow so pre-readers can tap or hold.
+    func tapShaver() {
+        guard station == .bingsu else { return }
+        if build.base != .bowl { placeBase(.bowl) }
+        if build.snowLevel >= 1 {
+            IceSound.shared.play(.plop, volume: 0.35)
+            Sound.shared.tap()
+            return
+        }
+        snowBurstTime = max(snowBurstTime, 0.7)
+        Sound.shared.tap()
+    }
+
+    private func stepBingsu(_ dt: CGFloat) {
+        let active = isShavingSnow
+        let target: CGFloat = active ? 1 : 0
+        shavePress += (target - shavePress) * min(1, dt * 16)
+        if snowBurstTime > 0 { snowBurstTime = max(0, snowBurstTime - dt) }
+        guard active else { snowAcc = 0; return }
+
+        shaveBladeAngle += dt * 30
+        let prev = build.snowLevel
+        build.snowLevel = min(1, build.snowLevel + dt * 0.52)
+        profileDirty = true
+
+        // Lift any toppings already on the snow so they ride on top of the rising mountain.
+        if !build.bingsuPieces.isEmpty {
+            for i in build.bingsuPieces.indices {
+                let dx = build.bingsuPieces[i].dx
+                if let surf = ICBuild.snowHeight(at: dx, level: build.snowLevel) {
+                    build.bingsuPieces[i].h = max(build.bingsuPieces[i].h, surf - 10)
+                }
+            }
+        }
+
+        snowAcc += 52 * dt
+        while snowAcc >= 1 {
+            snowAcc -= 1
+            let spread = CGFloat.random(in: -22...22)
+            let tone = CGFloat.random(in: 0...1)
+            let col = ICColor(0xFFFFFF).mix(ICColor(0xE4F4FF), tone * 0.55)
+            parts.append(ICPart(
+                kind: .snow,
+                p: CGPoint(x: ICGeo.snowNozzle.x + spread, y: ICGeo.snowNozzle.y + CGFloat.random(in: -2...8)),
+                v: CGVector(dx: spread * 1.6, dy: CGFloat.random(in: 120...210)),
+                life: 1.5,
+                size: CGFloat.random(in: 4.5...8.5),
+                color: col,
+                rot: CGFloat.random(in: 0...6.3),
+                spin: CGFloat.random(in: -4...4)
+            ))
+        }
+
+        if prev < 1 && build.snowLevel >= 1 {
+            shaving = false
+            snowBurstTime = 0
+            Sound.shared.play(.sparkle, volume: 0.6)
+            Sound.shared.tap()
+            sparkle()
+        }
+    }
+
+    func dropBingsuPieces(_ t: ICTopping, at point: CGPoint?) {
+        guard t.isBingsuChunk else { return }
+        if build.base == nil { placeBase(.bowl) }
+        if profileDirty {
+            build.rebuildProfile()
+            profileDirty = false
+        }
+        let maxDX: CGFloat = build.snowLevel > 0.15 ? max(24, ICBuild.snowRadius(level: build.snowLevel) - 10) : 42
+        let centerDX = point.map { icClamp($0.x - S.x, -maxDX, maxDX) }
+
+        let count: Int
+        switch t {
+        case .redBean: count = 1
+        case .strawberries: count = 3
+        case .mangoCubes, .injeolmi: count = 4
+        default: count = 1
+        }
+
+        for k in 0..<count {
+            bingsuSeed += 1
+            let s = bingsuSeed
+            let dx: CGFloat
+            if let cx = centerDX {
+                let jitter = (icRand(s, 3) - 0.5) * (t == .redBean ? 12 : 34)
+                dx = icClamp(cx + jitter, -maxDX, maxDX)
+            } else if t == .redBean {
+                let existing = build.bingsuPieces.filter { $0.topping == .redBean }.count
+                let spots: [CGFloat] = [0, -24, 24, -14, 14]
+                dx = spots[existing % spots.count]
+            } else {
+                let u = (CGFloat(k) + 0.5) / CGFloat(count)
+                let spread = (u - 0.5) * maxDX * 1.75 + (icRand(s, 5) - 0.5) * 14
+                dx = icClamp(spread, -maxDX, maxDX)
+            }
+            let surf = build.top(dx) ?? 12
+            let inset: CGFloat
+            if t == .redBean {
+                inset = 2
+            } else if let pt = point {
+                let wantedH = S.y - pt.y
+                inset = icClamp(surf - wantedH, 4, max(8, surf * 0.45))
+            } else {
+                inset = 6 + icRand(s, 7) * max(8, surf * 0.36)
+            }
+            let h = max(8, surf - inset)
+            let rot: CGFloat = t == .redBean ? 0 : (icRand(s, 9) - 0.5) * 0.85
+            let scale: CGFloat = t == .redBean ? (abs(dx) < 8 ? 1.05 : 0.84) : (0.88 + icRand(s, 11) * 0.24)
+            build.bingsuPieces.append(ICBingsuPiece(topping: t, dx: dx, h: h, rot: rot, scale: scale, seed: s))
+            if build.bingsuPieces.count > 48 { build.bingsuPieces.removeFirst() }
+        }
+        IceSound.shared.play(.plop, volume: 0.65)
+        Sound.shared.tap()
+        sparkle()
     }
 
     // MARK: Picking up and carrying
@@ -371,6 +532,8 @@ final class IceSim {
         autoPour = nil
         autoPourTime = 0
         pressLever(nil)
+        shaving = false
+        snowBurstTime = 0
         blending = false
         blendingToggle = false
         milkPour = 0
@@ -524,7 +687,7 @@ final class IceSim {
         case .waffle, .choco:
             let a: CGFloat = 40
             return s.r > a ? sqrt(s.r * s.r - a * a) : s.r * 0.35
-        case .cup:
+        case .cup, .bowl:
             return base.floor + s.r * 0.9 + 6
         case .glass:
             let liquid = base.floor + (-base.floor) * min(1, build.fill)
@@ -618,7 +781,7 @@ final class IceSim {
                                     rot: CGFloat.random(in: 0...6.3), spin: CGFloat.random(in: -14...14)))
             }
             if shake > 0.15 { IceSound.shared.play(.shake, volume: Float(min(1, 0.3 + shake)), gap: 0.11) }
-        case .chocoSauce, .berrySauce:
+        case .chocoSauce, .berrySauce, .condensedMilk:
             guard overTreat(tip) else { return }
             emitAcc += 60 * dt
             while emitAcc >= 1 {
@@ -657,6 +820,11 @@ final class IceSim {
                 }
                 Sound.shared.tap()
                 sparkle()
+                return
+            }
+        case .redBean, .mangoCubes, .strawberries, .injeolmi:
+            if overTreat(tip) {
+                dropBingsuPieces(t, at: tip)
                 return
             }
         case .whip:
@@ -762,6 +930,13 @@ final class IceSim {
         return o.flavors.contains(f.rawValue)
     }
 
+    func wanted(bingsu t: ICTopping) -> Bool {
+        guard let o = order, o.kind == .bingsu else { return false }
+        if o.topping == t { return true }
+        if let raw = o.flavors.first, let hero = ICBingsuHero(rawValue: raw), hero.topping == t { return true }
+        return false
+    }
+
     // MARK: Particles
 
     private func stepParticles(_ dt: CGFloat) {
@@ -772,12 +947,22 @@ final class IceSim {
             q.age += dt
             if q.age > q.life { continue }
             if q.resting { keep.append(q); continue }
-            q.v.dy += IceSim.gravity * (q.kind == .steam ? -0.05 : 1) * dt
-            if q.kind == .crumb || q.kind == .splash || q.kind == .drop { q.v.dx *= (1 - 1.5 * dt) }
+            let gScale: CGFloat = q.kind == .steam ? -0.05 : (q.kind == .snow ? 0.16 : 1)
+            q.v.dy += IceSim.gravity * gScale * dt
+            if q.kind == .snow {
+                q.v.dx += sin(CGFloat(time) * 7 + q.rot) * 90 * dt
+                q.v.dx *= (1 - 2.2 * dt)
+            } else if q.kind == .crumb || q.kind == .splash || q.kind == .drop {
+                q.v.dx *= (1 - 1.5 * dt)
+            }
             q.p.x += q.v.dx * dt
             q.p.y += q.v.dy * dt
             q.rot += q.spin * dt
             switch q.kind {
+            case .snow:
+                let dx = q.p.x - S.x
+                if let t = build.top(dx), q.p.y >= S.y - t + 4 { continue }
+                if q.p.y >= ICGeo.counterY + 6 { continue }
             case .sprinkle:
                 let dx = q.p.x - S.x
                 if let t = build.top(dx), q.p.y >= S.y - t - 1, q.v.dy > 0 {
@@ -842,7 +1027,8 @@ final class IceSim {
 
     /// Hands the treat to the customer; it slides off the stand.
     func serve() -> ICBuild? {
-        guard build.hasTreat, held == nil, lever == nil, !blending, autoPour == nil else { return nil }
+        guard build.hasTreat, held == nil, lever == nil, !blending, autoPour == nil, !shaving else { return nil }
+        snowBurstTime = 0
         let b = build
         served = (b, S, time)
         bites = 0
@@ -855,6 +1041,11 @@ final class IceSim {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 guard let self = self, self.build.base == nil, self.station == .smoothie else { return }
                 self.placeBase(.glass)
+            }
+        } else if station == .bingsu {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self = self, self.build.base == nil, self.station == .bingsu else { return }
+                self.placeBase(.bowl)
             }
         }
         return b
@@ -875,7 +1066,13 @@ final class IceSim {
 
     private func stepSound() {
         let snd = IceSound.shared
-        snd.setLoop(.scrape, volume: held == .scoop && scoopIn != nil ? Float(0.15 + scraping * 0.7) : 0, rate: Float(0.8 + scraping * 0.5))
+        let scoopVol: Float = held == .scoop && scoopIn != nil ? Float(0.15 + scraping * 0.7) : 0
+        let shaveVol: Float = isShavingSnow ? 0.52 : 0
+        snd.setLoop(
+            .scrape,
+            volume: max(scoopVol, shaveVol),
+            rate: shaveVol > scoopVol ? 1.55 : Float(0.8 + scraping * 0.5)
+        )
         snd.setLoop(.soft, volume: lever != nil && !softFull && build.base != nil ? 0.7 : 0)
         snd.setLoop(.blend, volume: Float(min(1, motor * 1.2)) * 0.8, rate: Float(0.55 + motor * 0.35 + (1 - chunkLoad()) * motor * 0.3))
         snd.setLoop(.pour, volume: Float(min(1, pourRate * 1.4 + milkPour)) * 0.8)

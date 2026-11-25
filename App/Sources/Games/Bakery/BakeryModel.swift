@@ -56,10 +56,39 @@ enum BakeryPalette {
     ]
 }
 
+enum BungeoppangFilling: Int, CaseIterable, Codable {
+    case redBean, custard, strawberry, sweetPotato, chocolate, matcha
+
+    var fillHex: UInt32 {
+        switch self {
+        case .redBean: return 0x7A2E3B
+        case .custard: return 0xFFE07A
+        case .strawberry: return 0xFF8FB6
+        case .sweetPotato: return 0xF5B942
+        case .chocolate: return 0x6B3E2E
+        case .matcha: return 0x8FD18B
+        }
+    }
+
+    var accentHex: UInt32 {
+        switch self {
+        case .redBean: return 0x4E1924
+        case .custard: return 0xD99E34
+        case .strawberry: return 0xE2385C
+        case .sweetPotato: return 0xD68228
+        case .chocolate: return 0x452418
+        case .matcha: return 0x569955
+        }
+    }
+}
+
 // MARK: - A treat
 
 enum TreatKind: String, Codable, CaseIterable {
-    case cake, cupcake, iceCream
+    case cake, cupcake, bungeoppang, iceCream
+
+    /// Treats baked in the Bakery kitchen (parlor treats are crafted in IceCreamView).
+    static let kitchenCases: [TreatKind] = [.cake, .cupcake, .bungeoppang]
 }
 
 struct PlacedTopping: Codable, Equatable, Identifiable {
@@ -89,6 +118,10 @@ struct Treat: Codable, Equatable {
     var toppings: [PlacedTopping] = []
     /// Spatula strokes in the cake frosting, as flat x, y pairs (stage units). nil in older saves.
     var swoosh: [[Int]]?
+    /// Bungeoppang filling (`BungeoppangFilling.rawValue`). nil in older saves.
+    var filling: Int?
+    /// Korean Strawberry Fresh-Cream Cake whipped-cream & sliced-strawberry crown. nil in older saves.
+    var freshCreamCrown: Bool?
 
     init(kind: TreatKind = .cake) { self.kind = kind }
 
@@ -96,6 +129,10 @@ struct Treat: Codable, Equatable {
         (swoosh ?? []).map { s in
             stride(from: 0, to: s.count - 1, by: 2).map { CGPoint(x: CGFloat(s[$0]), y: CGFloat(s[$0 + 1])) }
         }
+    }
+
+    var bungeoppangFilling: BungeoppangFilling {
+        BungeoppangFilling(rawValue: filling ?? 0) ?? .redBean
     }
 
     /// A pretty finished treat (for the wish bubble, tiles and screenshots).
@@ -107,15 +144,30 @@ struct Treat: Codable, Equatable {
         t.liner = rng.int(BakeryPalette.liners.count)
         switch kind {
         case .cake:
-            t.tiers = 1 + rng.int(3)
-            let top = BakeryArt.shared.tiers[t.tiers - 1]
-            t.toppings = [PlacedTopping(sprite: "top_strawberry", x: 300, y: Double(top.t - 22)),
-                          PlacedTopping(sprite: "top_cream", x: Double(300 - top.hw * 0.55), y: Double(top.t - 4), scale: 0.7, color: 11),
-                          PlacedTopping(sprite: "top_cream", x: Double(300 + top.hw * 0.55), y: Double(top.t - 4), scale: 0.7, color: 11)]
+            if seed == 4 || seed % 3 == 1 {
+                t.flavor = 0
+                t.tiers = seed == 4 ? 2 : 1 + rng.int(3)
+                t.frosting = 0
+                t.freshCreamCrown = true
+                let top = BakeryArt.shared.tiers[t.tiers - 1]
+                t.toppings = [PlacedTopping(sprite: "top_strawberry", x: 300, y: Double(top.t - 26), scale: 1.05)]
+            } else {
+                t.tiers = 1 + rng.int(3)
+                let top = BakeryArt.shared.tiers[t.tiers - 1]
+                t.toppings = [PlacedTopping(sprite: "top_strawberry", x: 300, y: Double(top.t - 22)),
+                              PlacedTopping(sprite: "top_cream", x: Double(300 - top.hw * 0.55), y: Double(top.t - 4), scale: 0.7, color: 11),
+                              PlacedTopping(sprite: "top_cream", x: Double(300 + top.hw * 0.55), y: Double(top.t - 4), scale: 0.7, color: 11)]
+            }
         case .cupcake:
             t.frostStyle = BakeryPalette.frostStyles[rng.int(3)]
             t.frostStage = 3
             t.toppings = [PlacedTopping(sprite: "top_cherry", x: 300, y: 196)]
+        case .bungeoppang:
+            t.flavor = seed == 9 ? 0 : rng.int(BakeryPalette.flavors.count)
+            t.filling = seed == 9 ? BungeoppangFilling.redBean.rawValue : rng.int(BungeoppangFilling.allCases.count)
+            t.frosting = seed == 9 ? 2 : 2 + rng.int(BakeryPalette.frostings.count - 2)
+            t.toppings = [PlacedTopping(sprite: "top_strawberry", x: 288, y: 318, scale: 0.85),
+                          PlacedTopping(sprite: "top_cream", x: 336, y: 326, scale: 0.72, color: 11)]
         case .iceCream:
             t.cone = BakeryPalette.cones[rng.int(BakeryPalette.cones.count)]
             t.scoops = (0..<(1 + rng.int(3))).map { _ in rng.int(BakeryPalette.flavors.count) }
@@ -190,32 +242,48 @@ final class BakeryStore: ObservableObject {
 /// The bakery's own effects from App/Resources/Games/Bakery (made by tools/bakery/sounds.py).
 /// Effects only: no voice, never text-to-speech.
 enum BakeSFX: String, CaseIterable {
-    case plop, pour, swish, squeeze, shake, nom, tick, doorbell, scoop, drizzle, oven, yay, magic, freeze
+    case plop, swish, squeeze, shake, nom, tick, doorbell, scoop, drizzle, oven, yay, magic, freeze
     case poof, grains, glug, sizzle, smear, batter
 }
 
 final class BakerySound {
     static let shared = BakerySound()
+    private static let maxPoolSize = 3
+
+    private let queue = DispatchQueue(label: "bakery.sound", qos: .userInitiated)
     private var players: [BakeSFX: [AVAudioPlayer]] = [:]
+    private var missing: Set<BakeSFX> = []
+
+    static func url(for s: BakeSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Bakery") ?? GameFiles.url(s.rawValue, "wav", game: "Bakery")
+    }
 
     private init() {
-        _ = Sound.shared  // sets up the audio session
-        for s in BakeSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Bakery") else { continue }
-            players[s] = (0..<3).compactMap { _ in
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.prepareToPlay()
-                return p
-            }
-        }
+        _ = Sound.shared // sets up the audio session
     }
 
     func play(_ s: BakeSFX, volume: Float = 1) {
-        guard let pool = players[s], !pool.isEmpty else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.currentTime = 0
-        p.play()
+        queue.async {
+            guard let p = self.player(for: s) else { return }
+            p.volume = volume
+            p.currentTime = 0
+            p.play()
+        }
+    }
+
+    private func player(for s: BakeSFX) -> AVAudioPlayer? {
+        guard !missing.contains(s) else { return nil }
+        let pool = players[s] ?? []
+        if let idle = pool.first(where: { !$0.isPlaying }) { return idle }
+        if pool.count < Self.maxPoolSize {
+            if let url = Self.url(for: s), let created = try? AVAudioPlayer(contentsOf: url) {
+                created.prepareToPlay()
+                players[s] = pool + [created]
+                return created
+            }
+            if pool.isEmpty { missing.insert(s) }
+        }
+        return pool.max(by: { $0.currentTime < $1.currentTime }) ?? pool.first
     }
 }
 

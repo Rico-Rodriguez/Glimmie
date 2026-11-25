@@ -65,7 +65,8 @@ final class BakeryTests: XCTestCase {
     }
 
     func testSoundsAreBundled() {
-        for s in BakeSFX.allCases { XCTAssertNotNil(GameFiles.url(s.rawValue, "wav", game: "Bakery"), s.rawValue) }
+        XCTAssertFalse(BakeSFX.allCases.map { $0.rawValue }.contains("pour"))
+        for s in BakeSFX.allCases { XCTAssertNotNil(BakerySound.url(for: s), s.rawValue) }
     }
     // MARK: Realistic kitchen
 
@@ -286,11 +287,43 @@ final class BakeryTests: XCTestCase {
 
     // MARK: Stickers & Treat Case
 
-    func testBakeryFindsDefinesSixUniqueStickersWiredToEntry() {
+    func testBakeryFindsDefinesEightUniqueStickersWiredToEntry() {
         let stickers = BakeryFind.stickers
-        XCTAssertEqual(stickers.count, 6)
-        XCTAssertEqual(Set(stickers.map { $0.id }).count, 6)
+        XCTAssertEqual(stickers.count, 8)
+        XCTAssertEqual(Set(stickers.map { $0.id }).count, 8)
+        XCTAssertTrue(BakeryFind.allCases.contains(.bungeoppang))
+        XCTAssertTrue(BakeryFind.allCases.contains(.bingsu))
         XCTAssertEqual(BakeryGame.entry.stickers.map { $0.id }, BakeryFind.allCases.map { $0.rawValue })
+    }
+
+    func testKitchenOrdersExcludeIceCreamAndIncludeBungeoppang() {
+        var seen: Set<TreatKind> = []
+        for seed in 0..<80 {
+            let o = BakeryOrder.random(customer: seed % BakeryPalette.customers.count, seed: seed)
+            XCTAssertNotEqual(o.kind, .iceCream)
+            seen.insert(o.kind)
+            XCTAssertEqual(o.matchCount(o.picture), 4)
+            XCTAssertEqual(o.stars(for: o.picture), 3)
+        }
+        XCTAssertEqual(seen, Set(TreatKind.kitchenCases))
+    }
+
+    func testBungeoppangAndKoreanStrawberryCakeRoundTrip() throws {
+        XCTAssertGreaterThan(FrostStepView.makeBungeoppangSamples().count, 40)
+        var fish = Treat.sample(.bungeoppang, seed: 9)
+        fish.filling = BungeoppangFilling.custard.rawValue
+        let decodedFish = try JSONDecoder().decode(Treat.self, from: JSONEncoder().encode(fish))
+        XCTAssertEqual(decodedFish, fish)
+        XCTAssertEqual(decodedFish.bungeoppangFilling, .custard)
+
+        let cake = Treat.sample(.cake, seed: 4)
+        XCTAssertEqual(cake.freshCreamCrown, true)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(cake)) as! [String: Any]
+        json.removeValue(forKey: "filling")
+        json.removeValue(forKey: "freshCreamCrown")
+        let legacy = try JSONDecoder().decode(Treat.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(legacy.filling)
+        XCTAssertNil(legacy.freshCreamCrown)
     }
 
     func testRemoveServedRemovesSavedTreatSafely() {
@@ -305,5 +338,15 @@ final class BakeryTests: XCTestCase {
         XCTAssertEqual(store.served.count, 1)
         store.served = before
         store.save()
+    }
+
+    func testGoldenBungeoTreasureHookRespondsToOwnership() {
+        Coins.shared.resetForTests(balance: 40)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(BungeoppangArt.goldenTreasureID, "bakery/goldenBungeo")
+        XCTAssertFalse(BungeoppangArt.hasGoldenMold)
+        XCTAssertTrue(Coins.shared.buy("bakery/goldenBungeo", price: 10))
+        XCTAssertTrue(BungeoppangArt.hasGoldenMold)
     }
 }

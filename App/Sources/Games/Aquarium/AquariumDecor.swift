@@ -38,6 +38,7 @@ enum AquaDecorPainter {
         case .crystal: TreasureArt.crystals(g, glow: 0.5 + 0.2 * sin(t * 1.6))
         case .rainbowCoral: TreasureArt.rainbowCoral(g, sway: sway + sin(t * 0.9 + CGFloat(seed)) * 0.3)
         case .unicorn: TreasureArt.unicorn(g)
+        case .koiBridge: koiBridge(g, t: t)
         }
     }
 
@@ -559,6 +560,118 @@ enum AquaDecorPainter {
         }
         s.fill(dots, with: .color(StorybookArt.color(0xFFF0C8, alpha: 0.9)))
         StorybookArt.highlight(s, in: CGRect(x: -8, y: -9, width: 10, height: 6), opacity: 0.4)
+    }
+
+    static func koiBridge(_ g: GraphicsContext, t: CGFloat = 0) {
+        let redHex: UInt32 = 0xEE5C6E
+        let darkRedHex: UInt32 = 0xD64258
+        let goldHex: UInt32 = 0xFFD45A
+        let stoneHex: UInt32 = 0xB8C5D4
+        let redOutline = StorybookArt.outline(for: redHex, factor: 0.56)
+        let goldOutline = StorybookArt.outline(for: goldHex, factor: 0.62)
+
+        // Subtle luminous water glow & decorative gently rising arch bubbles
+        g.fill(
+            Path(ellipseIn: CGRect(x: -44, y: -44, width: 88, height: 42)),
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xA6F2FF, alpha: 0.42), StorybookArt.color(0xA6F2FF, alpha: 0)]),
+                center: CGPoint(x: 0, y: -22),
+                startRadius: 4,
+                endRadius: 44
+            )
+        )
+        for k in 0..<4 {
+            let phase = (t * 0.45 + CGFloat(k) * 0.27).truncatingRemainder(dividingBy: 1)
+            let bx = -20 + CGFloat(k) * 13 + sin(t * 2.2 + CGFloat(k) * 1.6) * 4
+            let by = -6 - phase * 40
+            let br: CGFloat = k.isMultiple(of: 2) ? 4.0 : 2.8
+            let alpha = Double(sin(phase * .pi)) * 0.85
+            if alpha > 0.05 {
+                let b = Path(ellipseIn: CGRect(x: bx - br, y: by - br, width: br * 2, height: br * 2))
+                g.fill(b, with: .color(StorybookArt.color(0xD8F8FF, alpha: 0.48 * alpha)))
+                g.stroke(b, with: .color(.white.opacity(0.9 * alpha)), lineWidth: 1.4)
+            }
+        }
+
+        // Mossy riverbank stone abutments on both sides of the arch
+        for side in [-1.0, 1.0] as [CGFloat] {
+            let rockRect = CGRect(x: side > 0 ? 44 : -80, y: -24, width: 36, height: 24)
+            shaded(g, Path(roundedRect: rockRect, cornerRadius: 11), hex: stoneHex, top: -24, bottom: 0, line: 2.2)
+            let pebble = Path(ellipseIn: CGRect(x: side > 0 ? 58 : -78, y: -14, width: 20, height: 14))
+            shaded(g, pebble, hex: 0xCAD6E2, top: -14, bottom: 0, line: 1.8)
+        }
+
+        // Curved bridge arch deck (open semicircular archway underneath)
+        var deck = Path()
+        deck.move(to: CGPoint(x: -76, y: -12))
+        deck.addQuadCurve(to: CGPoint(x: 76, y: -12), control: CGPoint(x: 0, y: -74))
+        deck.addLine(to: CGPoint(x: 64, y: 0))
+        deck.addQuadCurve(to: CGPoint(x: -64, y: 0), control: CGPoint(x: 0, y: -56))
+        deck.closeSubpath()
+        shaded(g, deck, hex: darkRedHex, top: -48, bottom: 0, line: 2.6)
+
+        // Golden arch trim hugging the inner curve & top deck edge
+        var innerGold = Path()
+        innerGold.move(to: CGPoint(x: -62, y: -2))
+        innerGold.addQuadCurve(to: CGPoint(x: 62, y: -2), control: CGPoint(x: 0, y: -54))
+        g.stroke(innerGold, with: .color(goldOutline), style: StrokeStyle(lineWidth: 6.2, lineCap: .round))
+        g.stroke(innerGold, with: .color(StorybookArt.color(goldHex)), style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
+
+        // Helper for point along the bridge deck top curve (-1...1)
+        func deckY(_ u: CGFloat) -> CGFloat {
+            // Quadratic Bezier P0=(-76,-12), C=(0,-74), P2=(76,-12) evaluated at t=(u+1)/2
+            let s = (u + 1) * 0.5
+            let inv = 1 - s
+            return inv * inv * (-12) + 2 * inv * s * (-74) + s * s * (-12)
+        }
+
+        // Back railing balusters & golden horizontal mid-bar
+        for k in 0..<7 {
+            let u = -0.82 + CGFloat(k) * (1.64 / 6)
+            let x = u * 76
+            let y0 = deckY(u)
+            var post = Path()
+            post.move(to: CGPoint(x: x, y: y0 + 2))
+            post.addLine(to: CGPoint(x: x, y: y0 - 24))
+            g.stroke(post, with: .color(redOutline), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+            g.stroke(post, with: .color(StorybookArt.color(redHex)), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+        }
+
+        var midBar = Path()
+        midBar.move(to: CGPoint(x: -72, y: -26))
+        midBar.addQuadCurve(to: CGPoint(x: 72, y: -26), control: CGPoint(x: 0, y: -88))
+        g.stroke(midBar, with: .color(goldOutline), style: StrokeStyle(lineWidth: 5.5, lineCap: .round))
+        g.stroke(midBar, with: .color(StorybookArt.color(goldHex)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+        // Top sweeping crimson handrail
+        var topRail = Path()
+        topRail.move(to: CGPoint(x: -76, y: -38))
+        topRail.addQuadCurve(to: CGPoint(x: 76, y: -38), control: CGPoint(x: 0, y: -102))
+        g.stroke(topRail, with: .color(redOutline), style: StrokeStyle(lineWidth: 11, lineCap: .round))
+        g.stroke(topRail, with: .color(StorybookArt.color(redHex)), style: StrokeStyle(lineWidth: 6.5, lineCap: .round))
+        g.stroke(topRail.offsetBy(dx: 0, dy: -1.5), with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+
+        // 4 chunky bridge posts crowned with gleaming golden giboshi finials
+        for u in [-0.96, -0.34, 0.34, 0.96] as [CGFloat] {
+            let x = u * 76
+            let yBase = deckY(u)
+            let yTop = yBase - 30
+            let pillar = Path(roundedRect: CGRect(x: x - 4.5, y: yTop, width: 9, height: 32), cornerRadius: 3.5)
+            shaded(g, pillar, hex: redHex, top: yTop, bottom: yBase + 2, line: 2.0)
+
+            // Golden collar & lotus-bud cap
+            let collar = Path(roundedRect: CGRect(x: x - 6.5, y: yTop - 4, width: 13, height: 5.5), cornerRadius: 2.5)
+            StorybookArt.fillAndStroke(g, collar, fill: StorybookArt.color(goldHex), stroke: goldOutline, width: 1.8)
+            var finial = Path()
+            finial.move(to: CGPoint(x: x - 5.5, y: yTop - 4))
+            finial.addQuadCurve(to: CGPoint(x: x, y: yTop - 15), control: CGPoint(x: x - 7, y: yTop - 11))
+            finial.addQuadCurve(to: CGPoint(x: x + 5.5, y: yTop - 4), control: CGPoint(x: x + 7, y: yTop - 11))
+            finial.closeSubpath()
+            StorybookArt.fillAndStroke(g, finial, fill: StorybookArt.color(0xFFE484), stroke: goldOutline, width: 1.8)
+            StorybookArt.highlight(g, in: CGRect(x: x - 2.5, y: yTop - 11, width: 2.5, height: 3.5), opacity: 0.8)
+        }
+
+        moss(g, width: 146, seed: 31)
     }
 
     // MARK: - Tools

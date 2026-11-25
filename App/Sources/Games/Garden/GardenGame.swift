@@ -59,27 +59,12 @@ final class GardenSound {
     static let shared = GardenSound()
     private var players: [GardenSFX: [AVAudioPlayer]] = [:]
     private var loops: [GardenSFX: AVAudioPlayer] = [:]
+    private var missingLoops: Set<GardenSFX> = []
     private var last: [GardenSFX: Date] = [:]
     static let looping: Set<GardenSFX> = [.water, .rain, .wind, .crickets, .buzz]
 
     private init() {
         _ = Sound.shared
-        for s in GardenSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Garden") else { continue }
-            if GardenSound.looping.contains(s) {
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.numberOfLoops = -1
-                p?.volume = 0
-                p?.prepareToPlay()
-                loops[s] = p
-            } else {
-                players[s] = (0..<3).compactMap { _ in
-                    let p = try? AVAudioPlayer(contentsOf: url)
-                    p?.prepareToPlay()
-                    return p
-                }
-            }
-        }
     }
 
     // Audio playback stays off the render thread so AVAudioPlayer seeks never stall a frame.
@@ -87,12 +72,47 @@ final class GardenSound {
     private var loopLevel: [GardenSFX: Float] = [:]
     private var loopSent: [GardenSFX: Float] = [:]
 
+    private func audioURL(for s: GardenSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Garden")
+            ?? GameFiles.url(s.rawValue, "wav", game: "Garden")
+    }
+
+    private func playerPool(for s: GardenSFX) -> [AVAudioPlayer] {
+        if let existing = players[s] { return existing }
+        guard let url = audioURL(for: s) else {
+            players[s] = []
+            return []
+        }
+        let pool: [AVAudioPlayer] = (0..<3).compactMap { _ in
+            let p = try? AVAudioPlayer(contentsOf: url)
+            p?.prepareToPlay()
+            return p
+        }
+        players[s] = pool
+        return pool
+    }
+
+    private func loopPlayer(for s: GardenSFX) -> AVAudioPlayer? {
+        if let existing = loops[s] { return existing }
+        if missingLoops.contains(s) { return nil }
+        guard let url = audioURL(for: s), let p = try? AVAudioPlayer(contentsOf: url) else {
+            missingLoops.insert(s)
+            return nil
+        }
+        p.numberOfLoops = -1
+        p.volume = 0
+        p.prepareToPlay()
+        loops[s] = p
+        return p
+    }
+
     func play(_ s: GardenSFX, volume: Float = 0.9, gap: Double = 0) {
         let now = Date()
-        if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
-        last[s] = now
-        guard let pool = players[s], !pool.isEmpty else { return }
         queue.async {
+            if gap > 0, let t = self.last[s], now.timeIntervalSince(t) < gap { return }
+            self.last[s] = now
+            let pool = self.playerPool(for: s)
+            guard !pool.isEmpty else { return }
             let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
             p.volume = volume
             p.currentTime = 0
@@ -101,7 +121,7 @@ final class GardenSound {
     }
 
     func setLoop(_ s: GardenSFX, volume: Float) {
-        guard let p = loops[s] else { return }
+        guard GardenSound.looping.contains(s) else { return }
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.15
         loopLevel[s] = v
@@ -110,23 +130,24 @@ final class GardenSound {
         guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
         loopSent[s] = on ? v : 0
         queue.async {
-            p.volume = on ? v : 0
             if on {
+                guard let p = self.loopPlayer(for: s) else { return }
+                p.volume = v
                 if !p.isPlaying { p.play() }
-            } else if p.isPlaying {
-                p.pause()
+            } else if let p = self.loops[s] {
+                p.volume = 0
+                if p.isPlaying { p.pause() }
             }
         }
     }
 
     func stopLoops() {
-        for s in loops.keys {
+        for s in GardenSound.looping {
             loopLevel[s] = 0
             loopSent[s] = 0
         }
-        let all = Array(loops.values)
         queue.async {
-            for p in all {
+            for p in self.loops.values {
                 p.pause()
                 p.volume = 0
             }
@@ -561,6 +582,7 @@ struct GardenView: View {
                 }
                 .frame(maxWidth: min(maxScrollWidth, CGFloat(count) * 82))
                 .frame(height: 76)
+                .scrollDisabled(carrying != nil)
 
                 Button {
                     Sound.shared.tap()
@@ -621,10 +643,10 @@ struct GardenView: View {
             }
         }
         .simultaneousGesture(
-            DragGesture(minimumDistance: 12, coordinateSpace: .named("garden"))
+            DragGesture(minimumDistance: 10, coordinateSpace: .named("garden"))
                 .onChanged { v in
-                    // Require an upward pull when the tray scrolls horizontally so scrolling never spawns items accidentally.
-                    let pullOut = v.translation.height < -14 || (count <= 8 && !ToolTap.isTap(v.translation))
+                    // Consistent gesture rule across all item counts: upward lift pulls an item out, sideways swipes scroll.
+                    let pullOut = v.translation.height < -12 && abs(v.translation.height) >= abs(v.translation.width) * 0.55
                     guard carrying != nil || pullOut else { return }
                     let p = v.location
                     if carrying == nil {

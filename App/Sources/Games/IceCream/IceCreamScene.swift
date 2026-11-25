@@ -36,15 +36,16 @@ enum ICScene {
         g.scaleBy(x: map.s, y: map.s)
         let r = map.visible
         // striped wallpaper
-        let wall = ICColor(0xFFF4EC)
+        let wall = station == .bingsu ? ICColor(0xF2F9FF) : ICColor(0xFFF4EC)
+        let stripe = station == .bingsu ? ICColor(0xDFF0FF) : ICColor(0xFFE2EC)
         g.fill(Path(r), with: .color(wall.color))
         var x = (r.minX / 64).rounded(.down) * 64
         while x < r.maxX {
-            g.fill(Path(CGRect(x: x, y: r.minY, width: 32, height: r.height)), with: .color(ICColor(0xFFE2EC).color(0.7)))
+            g.fill(Path(CGRect(x: x, y: r.minY, width: 32, height: r.height)), with: .color(stripe.color(0.7)))
             x += 64
         }
         // a scalloped awning along the top
-        let awn = ICColor(0xFF8FB8)
+        let awn = station == .bingsu ? ICColor(0x88CCF4) : ICColor(0xFF8FB8)
         g.fill(Path(CGRect(x: r.minX, y: r.minY, width: r.width, height: 18 - r.minY)), with: .color(awn.color))
         var sc = Path()
         var ax = (r.minX / 56).rounded(.down) * 56
@@ -75,7 +76,7 @@ enum ICScene {
         out.fill(Path(ellipseIn: CGRect(x: w.minX + 176, y: w.minY + 82, width: 40, height: 30)), with: .color(ICColor(0x9BE07F).color))
         // window frame
         g.stroke(hole, with: .color(ICColor(0xFFFFFF).color), lineWidth: 16)
-        g.stroke(hole.offsetBy(dx: 0, dy: 0), with: .color(ICColor(0xF3B6CC).color), lineWidth: 4)
+        g.stroke(hole.offsetBy(dx: 0, dy: 0), with: .color((station == .bingsu ? ICColor(0xA8D6F0) : ICColor(0xF3B6CC)).color), lineWidth: 4)
         // shelves for the fruit bins
         if station == .smoothie {
             for y in [CGFloat(368), 484] {
@@ -83,6 +84,12 @@ enum ICScene {
                 g.fill(shelf, with: .color(ICColor(0xD9A56A).color))
                 g.stroke(shelf, with: .color(ICColor(0xA87440).color), lineWidth: 2.5)
                 g.fill(Path(CGRect(x: 296, y: y + 14, width: 228, height: 6)), with: .color(ICColor(0x5B3A68).color(0.08)))
+            }
+        }
+        // decorative frosty snowflake medallions on the bingsu wall
+        if station == .bingsu {
+            for (sx, sy, sr) in [(CGFloat(116), CGFloat(198), CGFloat(24)), (CGFloat(228), CGFloat(266), CGFloat(18)), (CGFloat(154), CGFloat(344), CGFloat(15))] {
+                snowflake(g, at: CGPoint(x: sx, y: sy), radius: sr, color: ICColor(0xB4DDF6).color(0.55), width: 3)
             }
         }
         // a soft shadow line where the counter meets the wall
@@ -98,6 +105,23 @@ enum ICScene {
         g.fill(p, with: .color(.white.opacity(0.9)))
     }
 
+    static func snowflake(_ g: GraphicsContext, at c: CGPoint, radius r: CGFloat, color: Color, width: CGFloat) {
+        var p = Path()
+        for k in 0..<6 {
+            let a = CGFloat(k) * .pi / 3
+            let end = CGPoint(x: c.x + cos(a) * r, y: c.y + sin(a) * r)
+            p.move(to: c)
+            p.addLine(to: end)
+            let mid = CGPoint(x: c.x + cos(a) * r * 0.62, y: c.y + sin(a) * r * 0.62)
+            for s in [-1.0, 1.0] {
+                let ba = a + CGFloat(s) * 0.72
+                p.move(to: mid)
+                p.addLine(to: CGPoint(x: mid.x + cos(ba) * r * 0.3, y: mid.y + sin(ba) * r * 0.3))
+            }
+        }
+        g.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round))
+    }
+
     // MARK: The shop layer
 
     static func draw(_ ctx: GraphicsContext, map: ICMap, sim: IceSim) {
@@ -106,12 +130,13 @@ enum ICScene {
         g.scaleBy(x: map.s, y: map.s)
         let r = map.visible
         let t = CGFloat(sim.time)
-        sill(g)
+        sill(g, station: sim.station)
         counter(g, r, sim)
         switch sim.station {
         case .scoop: cabinet(g, sim, t)
         case .soft: machine(g, sim, t)
         case .smoothie: smoothieBar(g, sim, t)
+        case .bingsu: bingsuStation(g, sim, t)
         }
         stand(g, sim)
         ICArt.drawBuild(g, sim.build, at: sim.S, time: t)
@@ -131,14 +156,15 @@ enum ICScene {
         }
     }
 
-    private static func sill(_ g: GraphicsContext) {
+    private static func sill(_ g: GraphicsContext, station: ICStation) {
         let w = ICGeo.window
         let sill = Path(roundedRect: CGRect(x: w.minX - 14, y: w.maxY - 22, width: w.width + 28, height: 30), cornerRadius: 8)
-        let c = ICColor(0xFFD3E2)
+        let c = station == .bingsu ? ICColor(0xCBEAFF) : ICColor(0xFFD3E2)
         g.fill(sill, with: .color(c.color))
         g.stroke(sill, with: .color(ICArt.outline(c)), lineWidth: 2.5)
+        let wallFill = station == .bingsu ? ICColor(0xF2F9FF) : ICColor(0xFFF4EC)
         g.fill(Path(CGRect(x: w.minX - 8, y: w.maxY + 8, width: w.width + 16, height: ICGeo.counterY - w.maxY - 8)),
-               with: .color(ICColor(0xFFF4EC).color))
+               with: .color(wallFill.color))
         g.fill(Path(CGRect(x: w.minX - 8, y: w.maxY + 8, width: w.width + 16, height: 10)), with: .color(ICColor(0x5B3A68).color(0.08)))
     }
 
@@ -376,6 +402,157 @@ enum ICScene {
         }
     }
 
+    // MARK: Korean Bingsu Snow Shaver Station
+
+    private static func bingsuStation(_ g: GraphicsContext, _ sim: IceSim, _ t: CGFloat) {
+        let sky = ICColor(0xA6D9F7)
+        let mint = ICColor(0xA8E8D6)
+        let edge = ICArt.outline(sky)
+
+        // Left counter chilled milk-ice tray & stacked spare celadon bowls
+        let tray = Path(roundedRect: CGRect(x: 56, y: 632, width: 266, height: 30), cornerRadius: 12)
+        g.fill(tray, with: .linearGradient(Gradient(colors: [ICColor(0xF6D9B2).color, ICColor(0xDFB57E).color]),
+                                           startPoint: CGPoint(x: 56, y: 632), endPoint: CGPoint(x: 56, y: 662)))
+        g.stroke(tray, with: .color(ICArt.outline(ICColor(0xDFB57E))), lineWidth: 2.5)
+        // Frosted milk-ice blocks sitting on the tray
+        for (bx, by, bw, bh) in [(CGFloat(84), CGFloat(574), CGFloat(64), CGFloat(58)), (CGFloat(154), CGFloat(592), CGFloat(54), CGFloat(40))] {
+            let block = Path(roundedRect: CGRect(x: bx, y: by, width: bw, height: bh), cornerRadius: 12)
+            g.fill(block, with: .linearGradient(Gradient(colors: [.white, ICColor(0xEAF6FF).color, ICColor(0xCBE7FA).color]),
+                                                startPoint: CGPoint(x: bx, y: by), endPoint: CGPoint(x: bx + bw, y: by + bh)))
+            g.stroke(block, with: .color(ICColor(0x9BC8E4).color), lineWidth: 2.4)
+            g.fill(Path(roundedRect: CGRect(x: bx + 8, y: by + 8, width: bw * 0.28, height: bh * 0.45), cornerRadius: 4),
+                   with: .color(.white.opacity(0.7)))
+        }
+        // Two nested pastel celadon bowls on the right side of the wooden tray
+        for k in 0..<2 {
+            let cy = CGFloat(612 - k * 14)
+            var spare = Path()
+            spare.move(to: CGPoint(x: 228, y: cy))
+            spare.addLine(to: CGPoint(x: 304, y: cy))
+            spare.addCurve(to: CGPoint(x: 228, y: cy), control1: CGPoint(x: 296, y: cy + 32), control2: CGPoint(x: 236, y: cy + 32))
+            spare.closeSubpath()
+            g.fill(spare, with: .color(mint.shade(k == 1 ? 0.1 : -0.05).color))
+            g.stroke(spare, with: .color(ICArt.outline(mint)), lineWidth: 2.2)
+        }
+        // Drifting cold mist off the milk-ice blocks
+        for k in 0..<4 {
+            let ph = (t * 0.26 + CGFloat(k) * 0.25).truncatingRemainder(dividingBy: 1)
+            let mx = 96 + CGFloat(k) * 34 + sin(t + CGFloat(k)) * 7
+            let my = 576 - ph * 80
+            g.fill(ICArt.ellipse(CGPoint(x: mx, y: my), 20, 7), with: .color(.white.opacity(Double(0.26 * sin(ph * .pi)))))
+        }
+
+        // Retro pastel Korean snow-ice shaver above the stand
+        let body = Path(roundedRect: CGRect(x: 364, y: 102, width: 336, height: 176), cornerRadius: 34)
+        g.fill(body, with: .linearGradient(
+            Gradient(colors: [sky.shade(0.35).color, sky.color, sky.shade(-0.12).color]),
+            startPoint: CGPoint(x: 364, y: 102),
+            endPoint: CGPoint(x: 700, y: 278)
+        ))
+        g.stroke(body, with: .color(edge), lineWidth: 3.5)
+
+        // Creamy mint top crown cap
+        let crown = Path(roundedRect: CGRect(x: 382, y: 94, width: 300, height: 32), cornerRadius: 16)
+        g.fill(crown, with: .color(ICColor(0xFFF9F4).color))
+        g.stroke(crown, with: .color(edge), lineWidth: 2.8)
+        g.fill(Path(roundedRect: CGRect(x: 400, y: 102, width: 264, height: 10), cornerRadius: 5), with: .color(mint.color))
+
+        // Translucent frosted ice cylinder chamber on the right side (over x = 600)
+        let ch = ICGeo.snowChamber
+        let chamber = Path(roundedRect: ch, cornerRadius: 20)
+        g.fill(chamber, with: .linearGradient(
+            Gradient(colors: [ICColor(0xEEF8FF).color(0.92), ICColor(0xD4ECFC).color(0.85)]),
+            startPoint: CGPoint(x: ch.minX, y: ch.minY),
+            endPoint: CGPoint(x: ch.maxX, y: ch.maxY)
+        ))
+        // Frozen milk-ice block inside chamber (lowers gently as snow is shaved)
+        let iceFrac = max(0.24, 1 - sim.build.snowLevel * 0.62)
+        let iceH = (ch.height - 44) * iceFrac
+        let iceRect = CGRect(x: ch.minX + 18, y: ch.maxY - 24 - iceH, width: ch.width - 36, height: iceH)
+        let icePath = Path(roundedRect: iceRect, cornerRadius: 12)
+        g.fill(icePath, with: .linearGradient(
+            Gradient(colors: [.white, ICColor(0xF6FBFF).color, ICColor(0xDDF0FD).color]),
+            startPoint: CGPoint(x: iceRect.minX, y: iceRect.minY),
+            endPoint: CGPoint(x: iceRect.maxX, y: iceRect.maxY)
+        ))
+        g.stroke(icePath, with: .color(ICColor(0xB4D6EC).color), lineWidth: 2)
+        // Piston press bar resting on top of the milk-ice block
+        let piston = Path(roundedRect: CGRect(x: ch.minX + 26, y: iceRect.minY - 12, width: ch.width - 52, height: 12), cornerRadius: 5)
+        g.fill(piston, with: .color(ICColor(0xC9D8E6).color))
+        g.stroke(piston, with: .color(ICArt.outline(ICColor(0xC9D8E6))), lineWidth: 2)
+        // Spinning shaver blade bar at the bottom of the chamber
+        let bladeY = ch.maxY - 14
+        let bladeW = 28 + abs(cos(sim.shaveBladeAngle)) * 18
+        let blade = Path(roundedRect: CGRect(x: ch.midX - bladeW, y: bladeY - 4, width: bladeW * 2, height: 8), cornerRadius: 4)
+        g.fill(blade, with: .color(ICColor(0x98ACC0).color))
+        // Chamber glass shine + outline
+        var shine = Path()
+        shine.move(to: CGPoint(x: ch.minX + 12, y: ch.minY + 18))
+        shine.addLine(to: CGPoint(x: ch.minX + 12, y: ch.maxY - 22))
+        g.stroke(shine, with: .color(.white.opacity(0.65)), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+        g.stroke(chamber, with: .color(ICColor(0x88BCDD).color), lineWidth: 3)
+
+        // Snow chute nozzle right above the bowl
+        let n = ICGeo.snowNozzle
+        var chute = Path()
+        chute.move(to: CGPoint(x: n.x - 36, y: 274))
+        chute.addLine(to: CGPoint(x: n.x + 36, y: 274))
+        chute.addLine(to: CGPoint(x: n.x + 26, y: n.y))
+        chute.addLine(to: CGPoint(x: n.x - 26, y: n.y))
+        chute.closeSubpath()
+        g.fill(chute, with: .linearGradient(Gradient(colors: [ICColor(0xFFFDFB).color, ICColor(0xDCEAF6).color]),
+                                            startPoint: CGPoint(x: n.x - 30, y: 274), endPoint: CGPoint(x: n.x + 30, y: n.y)))
+        g.stroke(chute, with: .color(edge), lineWidth: 2.6)
+
+        // Falling feathery milk-snow ribbon curtain while shaving
+        if sim.isShavingSnow {
+            let bowlTop = sim.S.y - (sim.build.top(0) ?? 0)
+            let span = max(20, bowlTop - n.y)
+            for k in -2...2 {
+                let x0 = n.x + CGFloat(k) * 8
+                let sway = sin(t * 14 + CGFloat(k) * 1.4) * 5
+                var strand = Path()
+                strand.move(to: CGPoint(x: x0, y: n.y))
+                strand.addQuadCurve(
+                    to: CGPoint(x: x0 + sway * 1.6, y: n.y + span),
+                    control: CGPoint(x: x0 - sway, y: n.y + span * 0.52)
+                )
+                g.stroke(strand, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 7 - abs(CGFloat(k)), lineCap: .round))
+            }
+        }
+
+        // Big tactile snowflake press button on the left face
+        let bt = ICGeo.snowButton
+        let r = ICGeo.snowButtonR
+        let press = sim.shavePress
+        if sim.build.snowLevel < 0.4 {
+            let pulse = r + 10 + sin(t * 5.2) * 4.5
+            g.stroke(ICArt.circle(bt, pulse), with: .color(Theme.lemon.opacity(0.8)), lineWidth: 5)
+        }
+        g.fill(ICArt.circle(bt, r + 8), with: .color(.white.opacity(0.92)))
+        g.stroke(ICArt.circle(bt, r + 8), with: .color(edge), lineWidth: 2.6)
+
+        var bg = g
+        bg.translateBy(x: bt.x, y: bt.y + 5 * press)
+        bg.scaleBy(x: 1 - 0.07 * press, y: 1 - 0.07 * press)
+        let btnCol = ICColor(0x7AC8F5).mix(ICColor(0x9BE4D0), press)
+        let knob = ICArt.circle(.zero, r)
+        bg.fill(knob, with: .radialGradient(
+            Gradient(colors: [btnCol.shade(0.32).color, btnCol.color, btnCol.shade(-0.14).color]),
+            center: CGPoint(x: -r * 0.3, y: -r * 0.35),
+            startRadius: 2,
+            endRadius: r * 1.3
+        ))
+        bg.stroke(knob, with: .color(ICArt.outline(btnCol)), lineWidth: 3)
+        var snowIcon = bg
+        snowIcon.rotate(by: .radians(Double(sim.shaveBladeAngle * 0.12)))
+        snowflake(snowIcon, at: .zero, radius: r * 0.56, color: .white, width: 4.5)
+
+        if sim.order?.kind == .bingsu && sim.build.snowLevel < 0.4 {
+            heart(g, at: CGPoint(x: bt.x + r * 0.85, y: bt.y - r * 0.8), t: t, size: 12)
+        }
+    }
+
     private static func softStream(_ g: GraphicsContext, _ sim: IceSim) {
         guard !sim.free.isEmpty else { return }
         var pts: [(p: CGPoint, f: Bool, r: CGFloat, c: Int)] = []
@@ -400,7 +577,7 @@ enum ICScene {
 
     private static func stand(_ g: GraphicsContext, _ sim: IceSim) {
         let S = sim.S
-        let base = sim.build.base ?? .waffle
+        let base = sim.build.base ?? (sim.station == .bingsu ? .bowl : .waffle)
         let steel = ICColor(0xC9D3DE)
         let counterY = ICGeo.counterY
         let ringY = base.isCone ? S.y + 66 : S.y + base.depth
@@ -651,7 +828,7 @@ enum ICScene {
     static func topping(_ g: GraphicsContext, _ t: ICTopping, held: Bool) {
         switch t {
         case .sprinkles: ICArt.shaker(g)
-        case .chocoSauce, .berrySauce: ICArt.bottle(g, t)
+        case .chocoSauce, .berrySauce, .condensedMilk: ICArt.bottle(g, t)
         case .whip: ICArt.whipCan(g)
         case .cherry:
             var c = g
@@ -659,6 +836,11 @@ enum ICScene {
             ICArt.cherry(c, at: .zero, wob: 0)
         case .wafer: ICArt.wafer(g, at: CGPoint(x: 0, y: 40), angle: 0.15)
         case .straw: ICArt.straw(g, at: CGPoint(x: 0, y: 70), angle: 0.1, length: 140)
+        case .redBean, .mangoCubes, .strawberries, .injeolmi:
+            var c = g
+            let sc: CGFloat = held ? 1.25 : 1.05
+            c.scaleBy(x: sc, y: sc)
+            ICArt.bingsuCluster(c, t)
         }
     }
 
@@ -696,6 +878,9 @@ enum ICScene {
                 ICArt.sprinkle(g, q.p, rot: q.rot, color: q.color)
             case .sauce:
                 g.fill(ICArt.ellipse(q.p, q.size * 0.8, q.size * 1.3), with: .color(q.color.color))
+            case .snow:
+                g.fill(ICArt.circle(q.p, q.size * 1.2), with: .color(ICColor(0xD8EEFF).color(0.4 * fade)))
+                g.fill(ICArt.circle(q.p, q.size * 0.85), with: .color(q.color.color(0.95 * fade)))
             case .steam:
                 g.fill(ICArt.circle(q.p, q.size), with: .color(.white.opacity(0.3 * fade)))
             case .sparkle:

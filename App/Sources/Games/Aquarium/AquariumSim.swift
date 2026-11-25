@@ -113,7 +113,7 @@ struct AquaSnail {
 }
 
 struct AquaQuickAction {
-    enum Kind { case food, wiper, net(fishID: Int) }
+    enum Kind { case food, wiper, net }
     var kind: Kind
     var from: CGPoint
     var target: CGPoint
@@ -127,6 +127,7 @@ final class AquariumSim {
     static let gravity: CGFloat = 1600
     static let maxFish = 24
     static let wiperScale: CGFloat = 1.45
+    static let coinCooldown: Double = 2.5
 
     var fish: [AquaFish] = []
     var food: [AquaFood] = []
@@ -728,7 +729,7 @@ final class AquariumSim {
         }
         AquaSound.shared.play(.chime, volume: 0.68, gap: 0.12)
         AquaSound.shared.play(.blub, volume: 0.55, gap: 0.12)
-        if time - lastHoopCoinAt >= 1.2 {
+        if time - lastHoopCoinAt >= Self.coinCooldown {
             lastHoopCoinAt = time
             Coins.shared.earn(2, game: AquariumSim.gameID, from: hp)
         }
@@ -1089,6 +1090,14 @@ final class AquariumSim {
                 } else if d.kind == .castle && time > d.nextPuff {
                     d.nextPuff = time + Double.random(in: 4...8)
                     addBubble(CGPoint(x: d.x + (d.flip ? 40 : -40), y: d.y - 140), r: CGFloat.random(in: 2...3.5))
+                } else if d.kind == .koiBridge && time > d.nextPuff {
+                    d.nextPuff = time + Double.random(in: 1.6...3.2)
+                    for k in 0..<2 {
+                        addBubble(
+                            CGPoint(x: d.x + CGFloat.random(in: -22...22), y: d.y - 24 - CGFloat(k) * 8),
+                            r: CGFloat.random(in: 2.2...4.2)
+                        )
+                    }
                 }
             }
             let lid: CGFloat = time < d.openUntil ? 1 : 0
@@ -1296,21 +1305,49 @@ final class AquariumSim {
         spawnBubbleHoop(at: target)
     }
 
-    func tapDockNet(from origin: CGPoint = CGPoint(x: 608, y: AGeo.dockY)) {
-        guard let i = fish.indices.first(where: { !fish[$0].caught }) else {
-            AquaSound.shared.play(.swish, volume: 0.45)
-            return
+    func netScoopPosition(u: CGFloat, from: CGPoint, target: CGPoint) -> CGPoint {
+        let clamped = max(0, min(1, u))
+        if clamped < 0.2 {
+            let k = aqEase(clamped / 0.2)
+            let start = CGPoint(x: target.x - 160, y: target.y - 10)
+            return CGPoint(x: from.x + (start.x - from.x) * k, y: from.y + (start.y - from.y) * k)
+        } else if clamped < 0.8 {
+            let s = (clamped - 0.2) / 0.6
+            let x = target.x - 160 + s * 320
+            let y = target.y - 10 + sin(s * .pi) * 68
+            return CGPoint(x: x, y: y)
+        } else {
+            let k = aqEase((clamped - 0.8) / 0.2)
+            let end = CGPoint(x: target.x + 160, y: target.y - 10)
+            return CGPoint(x: end.x + (from.x - end.x) * k, y: end.y + (from.y - end.y) * k)
         }
-        let target = fish[i].p
-        tapFish(i)
-        fish[i].flipStart = time
-        AquaSound.shared.play(.boing, volume: 0.45)
+    }
+
+    func tapDockNet(from origin: CGPoint = CGPoint(x: 608, y: AGeo.dockY)) {
+        let center = CGPoint(x: 512, y: 372)
+        AquaSound.shared.play(.swish, volume: 0.55)
+        AquaSound.shared.play(.bloop, volume: 0.5, gap: 0.1)
+        for k in 0..<6 {
+            let x = center.x - 130 + CGFloat(k) * 52
+            let y = center.y + sin(CGFloat(k) / 5 * .pi) * 44
+            addBubble(CGPoint(x: x, y: y), r: CGFloat.random(in: 2.6...5.4))
+            particles.append(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: x, y: y - 10),
+                    v: .zero,
+                    life: 0.7,
+                    size: 13,
+                    color: k.isMultiple(of: 2) ? ARGB(0xFFFFFF) : ARGB(0xB8F5FF)
+                )
+            )
+        }
         quickAction = AquaQuickAction(
-            kind: .net(fishID: fish[i].id),
+            kind: .net,
             from: origin,
-            target: target,
+            target: center,
             start: time,
-            duration: 0.72,
+            duration: 0.92,
             triggered: true
         )
     }
@@ -1322,11 +1359,35 @@ final class AquariumSim {
             quickAction = nil
             return
         }
-        if case .wiper = q.kind {
-            let u = CGFloat(elapsed / q.duration)
+        let u = CGFloat(elapsed / q.duration)
+        switch q.kind {
+        case .wiper:
             let sweepX = q.target.x + sin(u * .pi * 3) * 44
             let sweepY = q.target.y + cos(u * .pi * 2) * 28
             wipe(at: CGPoint(x: sweepX, y: sweepY), radius: 84 * FingerLift.spread, amount: 2.2 * dt, sparkle: true)
+        case .net:
+            guard u >= 0.18 && u <= 0.82 else { break }
+            let pos = netScoopPosition(u: u, from: q.from, target: q.target)
+            if CGFloat.random(in: 0...1) < dt * 28 {
+                addBubble(
+                    CGPoint(x: pos.x + CGFloat.random(in: -18...18), y: pos.y + CGFloat.random(in: -12...14)),
+                    r: CGFloat.random(in: 2.2...5.6)
+                )
+            }
+            if CGFloat.random(in: 0...1) < dt * 16 {
+                particles.append(
+                    AquaParticle(
+                        kind: .sparkle,
+                        p: CGPoint(x: pos.x + CGFloat.random(in: -22...22), y: pos.y + CGFloat.random(in: -18...18)),
+                        v: .zero,
+                        life: 0.6,
+                        size: 12,
+                        color: Bool.random() ? ARGB(0xFFFFFF) : ARGB(0xFFE69A)
+                    )
+                )
+            }
+        case .food:
+            break
         }
     }
 
@@ -1696,6 +1757,28 @@ final class AquariumSim {
                 addBubble(CGPoint(x: decor[i].x + CGFloat.random(in: -10...10), y: decor[i].y - 114 - CGFloat(k) * 8), r: CGFloat.random(in: 2.2...5.2))
             }
             AquaSound.shared.play(.bloop, volume: 0.55)
+        case .koiBridge:
+            for k in 0..<8 {
+                addBubble(
+                    CGPoint(x: decor[i].x + CGFloat.random(in: -26...26), y: decor[i].y - 18 - CGFloat(k) * 9),
+                    r: CGFloat.random(in: 2.4...5.4)
+                )
+            }
+            for k in 0..<4 {
+                let a = CGFloat(k) / 4 * 2 * .pi
+                particles.append(
+                    AquaParticle(
+                        kind: .sparkle,
+                        p: CGPoint(x: decor[i].x + cos(a) * 32, y: decor[i].y - 48 + sin(a) * 14),
+                        v: .zero,
+                        life: 0.75,
+                        size: 13,
+                        color: ARGB(0xFFE68A)
+                    )
+                )
+            }
+            AquaSound.shared.play(.chime, volume: 0.45)
+            AquaSound.shared.play(.bloop, volume: 0.5, gap: 0.15)
         default:
             AquaSound.shared.play(.boing, volume: 0.4)
         }

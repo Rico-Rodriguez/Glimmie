@@ -478,4 +478,193 @@ enum TidySceneArt {
         ctx.fill(Path(CGRect(x: r.midX - 14, y: r.minY, width: 28, height: r.height)), with: .color(TRGB(0xEFD2A6).color(0.9)))
         TPaint.emblem(ctx, 1, at: CGPoint(x: r.midX, y: r.midY + 10), size: 28, color: TidyPalette.c(7).color)
     }
+
+    /// Cozy plush teddy bear wearing a colorful pastel Korean Hanbok, cheering from the room corner.
+    static func hanbokPlushBear(_ ctx: GraphicsContext, at base: CGPoint, time: Double, cheer: Double) {
+        let clampedCheer = max(0, min(1, cheer))
+        let idleSway = sin(time * 2.4) * 0.035
+        let hopY = CGFloat(clampedCheer) * -10
+        let squash = CGFloat(sin(clampedCheer * .pi)) * 0.06
+        let furOutline = StorybookArt.outline(for: 0xCF915B)
+        let pinkOutline = StorybookArt.outline(for: 0xF271A1)
+        let lemonOutline = StorybookArt.outline(for: 0xE5C35B)
+
+        var g = ctx
+        g.translateBy(x: base.x, y: base.y + hopY)
+        g.scaleBy(x: 1 - squash * 0.5, y: 1 + squash)
+        g.rotate(by: .radians(idleSway + sin(time * 12) * 0.05 * clampedCheer))
+
+        // Little plush paws peeking below the chima hem.
+        for side in [-1.0, 1.0] {
+            let fx = CGFloat(side) * 21
+            let foot = Path(ellipseIn: CGRect(x: fx - 12, y: -16, width: 24, height: 16))
+            g.fill(foot, with: .color(Color(hex: 0xD49B6A)))
+            g.stroke(foot, with: .color(furOutline), lineWidth: 2)
+            g.fill(Path(ellipseIn: CGRect(x: fx - 6.5, y: -12, width: 13, height: 8.5)), with: .color(Color(hex: 0xFFE8CE)))
+        }
+
+        // Full bell-shaped pastel blossom-pink Hanbok chima (skirt).
+        var chima = Path()
+        chima.move(to: CGPoint(x: -20, y: -48))
+        chima.addCurve(to: CGPoint(x: -38, y: -10), control1: CGPoint(x: -33, y: -38), control2: CGPoint(x: -38, y: -22))
+        chima.addQuadCurve(to: CGPoint(x: 0, y: -4), control: CGPoint(x: -20, y: -3))
+        chima.addQuadCurve(to: CGPoint(x: 38, y: -10), control: CGPoint(x: 20, y: -3))
+        chima.addCurve(to: CGPoint(x: 20, y: -48), control1: CGPoint(x: 38, y: -22), control2: CGPoint(x: 33, y: -38))
+        chima.closeSubpath()
+        g.fill(chima, with: .linearGradient(
+            Gradient(colors: [Color(hex: 0xFFBCD4), Color(hex: 0xFF8FB8), Color(hex: 0xF271A1)]),
+            startPoint: CGPoint(x: 0, y: -48), endPoint: CGPoint(x: 0, y: -4)
+        ))
+        // Soft skirt pleats and golden embroidered hem inside the chima silhouette.
+        var hemCtx = g
+        hemCtx.clip(to: chima)
+        for px: CGFloat in [-16, 0, 16] {
+            var pleat = Path()
+            pleat.move(to: CGPoint(x: px * 0.55, y: -46))
+            pleat.addQuadCurve(to: CGPoint(x: px * 1.45, y: -6), control: CGPoint(x: px * 1.15, y: -26))
+            hemCtx.stroke(pleat, with: .color(Color(hex: 0xD94E84).opacity(0.28)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+        var hemBand = Path()
+        hemBand.move(to: CGPoint(x: -40, y: -14))
+        hemBand.addQuadCurve(to: CGPoint(x: 40, y: -14), control: CGPoint(x: 0, y: -6))
+        hemCtx.stroke(hemBand, with: .color(Color(hex: 0xFFD66E)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+        for bx: CGFloat in [-24, -12, 0, 12, 24] {
+            hemCtx.fill(Path(ellipseIn: CGRect(x: bx - 2.2, y: -13.2, width: 4.4, height: 4.4)), with: .color(.white.opacity(0.85)))
+        }
+        g.stroke(chima, with: .color(pinkOutline), style: StrokeStyle(lineWidth: 2.4, lineJoin: .round))
+
+        // Colorful saekdong rainbow-striped sleeves that lift happily while cheering.
+        let stripeColors: [Color] = [
+            Color(hex: 0x8FE3C2), Color(hex: 0x94CEFF), Color(hex: 0xCFA8FF), Color(hex: 0xFFA2C4), Color(hex: 0xFFE57F)
+        ]
+        for side in [-1.0, 1.0] {
+            let s = CGFloat(side)
+            var arm = g
+            arm.translateBy(x: s * 18, y: -52)
+            let liftAngle = (-0.82 * clampedCheer - 0.12 * sin(time * 3.2)) * side
+            arm.rotate(by: .radians(Double(side * 0.42) + liftAngle))
+
+            let sleeveRect = CGRect(x: side < 0 ? -24 : 0, y: -7.5, width: 24, height: 15)
+            let sleeve = Path(roundedRect: sleeveRect, cornerRadius: 7)
+            arm.fill(sleeve, with: .color(Color(hex: 0xFFF3C4)))
+            var stripes = arm
+            stripes.clip(to: sleeve)
+            let stripeW: CGFloat = 4.6
+            for (idx, col) in stripeColors.enumerated() {
+                let sx = side < 0 ? (-24 + CGFloat(idx) * stripeW) : (CGFloat(idx) * stripeW)
+                stripes.fill(Path(CGRect(x: sx, y: -9, width: stripeW + 0.5, height: 18)), with: .color(col))
+            }
+            arm.stroke(sleeve, with: .color(lemonOutline), lineWidth: 2)
+            // Little round plush paw at sleeve cuff.
+            let pawX: CGFloat = side < 0 ? -27 : 27
+            let paw = Path(ellipseIn: CGRect(x: pawX - 6.5, y: -6.5, width: 13, height: 13))
+            arm.fill(paw, with: .color(Color(hex: 0xDD9F6B)))
+            arm.stroke(paw, with: .color(furOutline), lineWidth: 2)
+        }
+
+        // Soft lemon-cream Hanbok jeogori (jacket).
+        let jeogori = Path(roundedRect: CGRect(x: -22, y: -61, width: 44, height: 22), cornerRadius: 10)
+        g.fill(jeogori, with: .linearGradient(
+            Gradient(colors: [Color(hex: 0xFFF6C6), Color(hex: 0xFFE38E)]),
+            startPoint: CGPoint(x: 0, y: -61), endPoint: CGPoint(x: 0, y: -39)
+        ))
+        g.stroke(jeogori, with: .color(lemonOutline), lineWidth: 2.2)
+
+        // Crisp white dongjeong collar V.
+        var collar = Path()
+        collar.move(to: CGPoint(x: -11, y: -60))
+        collar.addLine(to: CGPoint(x: 0, y: -47))
+        collar.addLine(to: CGPoint(x: 11, y: -60))
+        g.stroke(collar, with: .color(.white), style: StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
+        g.stroke(collar, with: .color(Color(hex: 0xE2D5F0)), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+
+        // Rosy pink goreum ribbon bow and twin silk ties.
+        var tieA = Path()
+        tieA.move(to: CGPoint(x: 5, y: -46))
+        tieA.addQuadCurve(to: CGPoint(x: 1, y: -27), control: CGPoint(x: 4, y: -36))
+        var tieB = Path()
+        tieB.move(to: CGPoint(x: 6, y: -46))
+        tieB.addQuadCurve(to: CGPoint(x: 13, y: -29), control: CGPoint(x: 11, y: -38))
+        g.stroke(tieA, with: .color(Color(hex: 0xFF5D98)), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+        g.stroke(tieB, with: .color(Color(hex: 0xFF5D98)), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+        let knot = Path(ellipseIn: CGRect(x: 1, y: -51, width: 9, height: 8))
+        g.fill(knot, with: .color(Color(hex: 0xFF77AB)))
+        g.stroke(knot, with: .color(pinkOutline), lineWidth: 1.5)
+
+        // Round plush ears behind the head.
+        for side in [-1.0, 1.0] {
+            let ex = CGFloat(side) * 20
+            let ear = Path(ellipseIn: CGRect(x: ex - 10, y: -103, width: 20, height: 20))
+            g.fill(ear, with: .color(Color(hex: 0xDC9E69)))
+            g.stroke(ear, with: .color(furOutline), lineWidth: 2.2)
+            g.fill(Path(ellipseIn: CGRect(x: ex - 5.5, y: -98.5, width: 11, height: 11)), with: .color(Color(hex: 0xFFB8CE)))
+        }
+
+        // Warm honey-brown teddy head.
+        let head = Path(ellipseIn: CGRect(x: -26, y: -99, width: 52, height: 47))
+        g.fill(head, with: .radialGradient(
+            Gradient(colors: [Color(hex: 0xECC090), Color(hex: 0xDC9E69), Color(hex: 0xC88652)]),
+            center: CGPoint(x: -5, y: -83), startRadius: 4, endRadius: 32
+        ))
+        g.stroke(head, with: .color(furOutline), lineWidth: 2.4)
+
+        // Tiny blossom ribbon bow perched by the right ear.
+        var earBow = g
+        earBow.translateBy(x: 16, y: -95)
+        earBow.rotate(by: .radians(0.32))
+        let bowL = Path(ellipseIn: CGRect(x: -10, y: -4.5, width: 10, height: 9))
+        let bowR = Path(ellipseIn: CGRect(x: 0, y: -4.5, width: 10, height: 9))
+        earBow.fill(bowL, with: .color(Color(hex: 0xFF70A6)))
+        earBow.fill(bowR, with: .color(Color(hex: 0xFF70A6)))
+        earBow.stroke(bowL, with: .color(pinkOutline), lineWidth: 1.4)
+        earBow.stroke(bowR, with: .color(pinkOutline), lineWidth: 1.4)
+        earBow.fill(Path(ellipseIn: CGRect(x: -3, y: -3, width: 6, height: 6)), with: .color(Color(hex: 0xFFE380)))
+
+        // Creamy muzzle, cocoa button nose, rosy cheeks, eyes and cheerful grin.
+        let muzzle = Path(ellipseIn: CGRect(x: -12, y: -76, width: 24, height: 17))
+        g.fill(muzzle, with: .color(Color(hex: 0xFFF1DA)))
+        g.fill(Path(ellipseIn: CGRect(x: -4.5, y: -74.5, width: 9, height: 6.5)), with: .color(Color(hex: 0x6A3F2E)))
+        g.fill(Path(ellipseIn: CGRect(x: -2.2, y: -73.8, width: 3.2, height: 2)), with: .color(.white.opacity(0.65)))
+
+        for side in [-1.0, 1.0] {
+            g.fill(Path(ellipseIn: CGRect(x: CGFloat(side) * 15 - 5.5, y: -74, width: 11, height: 7)),
+                   with: .color(Color(hex: 0xFF91B8).opacity(0.55)))
+        }
+
+        let eyeColor = Color(hex: 0x4B2E26)
+        if clampedCheer > 0.2 {
+            // Happy squinting arcs while cheering.
+            for side in [-1.0, 1.0] {
+                let cx = CGFloat(side) * 10
+                var arc = Path()
+                arc.move(to: CGPoint(x: cx - 4.2, y: -78))
+                arc.addQuadCurve(to: CGPoint(x: cx + 4.2, y: -78), control: CGPoint(x: cx, y: -84.5))
+                g.stroke(arc, with: .color(eyeColor), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+            }
+            var grin = Path()
+            grin.move(to: CGPoint(x: -5.5, y: -66.5))
+            grin.addQuadCurve(to: CGPoint(x: 5.5, y: -66.5), control: CGPoint(x: 0, y: -60.5))
+            grin.closeSubpath()
+            g.fill(grin, with: .color(Color(hex: 0xFF709C)))
+            g.stroke(grin, with: .color(eyeColor), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+        } else {
+            for side in [-1.0, 1.0] {
+                let cx = CGFloat(side) * 10
+                g.fill(Path(ellipseIn: CGRect(x: cx - 3.6, y: -83, width: 7.2, height: 7.6)), with: .color(eyeColor))
+                g.fill(Path(ellipseIn: CGRect(x: cx - 1.8, y: -82, width: 2.6, height: 2.6)), with: .color(.white))
+            }
+            var smile = Path()
+            smile.move(to: CGPoint(x: -4.5, y: -66.5))
+            smile.addQuadCurve(to: CGPoint(x: 4.5, y: -66.5), control: CGPoint(x: 0, y: -62.5))
+            g.stroke(smile, with: .color(eyeColor), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+
+        // Cheer sparkles & tiny pink heart floating overhead whenever an item lands home.
+        if clampedCheer > 0.08 {
+            let rise = CGFloat(clampedCheer) * 12
+            StorybookArt.heart(g, at: CGPoint(x: -24, y: -112 - rise * 0.7), size: 11, color: Color(hex: 0xFF70A6), opacity: clampedCheer * 0.95)
+            StorybookArt.sparkle(g, at: CGPoint(x: 24, y: -114 - rise), radius: 8.5, color: Theme.lemon, opacity: clampedCheer)
+            StorybookArt.sparkle(g, at: CGPoint(x: 0, y: -120 - rise * 0.85), radius: 6.5, color: .white, opacity: clampedCheer * 0.9)
+        }
+    }
 }

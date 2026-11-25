@@ -197,11 +197,11 @@ struct BouquetFlower: Codable, Equatable {
 
 enum DecorKind: String, Codable, CaseIterable {
     case pinwheel, lantern, mushroom, flamingo, birdbath, birdhouse, bunny, flag
-    case crystal, rainbow, unicorn
+    case crystal, rainbow, unicorn, lotus
 
     var treasure: String? {
         switch self {
-        case .crystal, .rainbow, .unicorn: return "garden/\(rawValue)"
+        case .crystal, .rainbow, .unicorn, .lotus: return "garden/\(rawValue)"
         default: return nil
         }
     }
@@ -223,6 +223,7 @@ enum DecorKind: String, Codable, CaseIterable {
         case .crystal: return TreasureArt.crystalSize
         case .rainbow: return TreasureArt.rainbowSize
         case .unicorn: return TreasureArt.unicornSize
+        case .lotus: return CGSize(width: 88, height: 112)
         }
     }
 }
@@ -292,7 +293,7 @@ enum GGeo {
     static let vase = CGPoint(x: 916, y: 570)
 
     static let lawnY: CGFloat = 614
-    static let basket = CGPoint(x: 146, y: 766)
+    static let basket = CGPoint(x: 132, y: 786)
     static let returnBadge = CGPoint(x: 932, y: 766)
     static let dockY: CGFloat = GameChromeLayout.dockY
     static let trayY: CGFloat = 668

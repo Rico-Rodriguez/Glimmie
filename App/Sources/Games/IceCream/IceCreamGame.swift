@@ -1,8 +1,8 @@
 import SwiftUI
 
-// Bakery's scoop cabinet, soft-serve machine, and smoothie bar share this serving window.
+// Bakery's scoop cabinet, soft-serve machine, smoothie bar, and Korean bingsu shaver share this serving window.
 final class IceHand {
-    enum Mode { case none, held, lever, blend, tickle, bin(Int) }
+    enum Mode { case none, held, lever, blend, shaver, tickle, bin(Int) }
     var mode: Mode = .none
     var active = false
     var start = CGPoint.zero
@@ -37,6 +37,10 @@ private struct ICDockPlate: View, Equatable {
                     case .straw:
                         g.translateBy(x: -7, y: 4)
                         g.scaleBy(x: 0.44, y: 0.44)
+                        ICScene.topping(g, t, held: false)
+                    case .redBean, .mangoCubes, .strawberries, .injeolmi:
+                        g.translateBy(x: 0, y: 2)
+                        g.scaleBy(x: 1.0, y: 1.0)
                         ICScene.topping(g, t, held: false)
                     default:
                         g.translateBy(x: 0, y: 36)
@@ -81,8 +85,8 @@ private struct ICStationSwitcher: View {
     let select: (ICStation) -> Void
 
     var body: some View {
-        GameTrayCard(cornerRadius: 28, paddingH: 8, paddingV: 6) {
-            HStack(spacing: 6) {
+        GameTrayCard(cornerRadius: 26, paddingH: 7, paddingV: 5) {
+            HStack(spacing: 5) {
                 ForEach(ICStation.allCases, id: \.self) { s in
                     let isSelected = s == active
                     Button {
@@ -91,13 +95,13 @@ private struct ICStationSwitcher: View {
                         Canvas { ctx, size in
                             drawIcon(ctx, size: size, station: s)
                         }
-                        .frame(width: 56, height: 48)
+                        .frame(width: 50, height: 46)
                         .background(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(isSelected ? Color.white : Theme.cream.opacity(0.65))
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .stroke(isSelected ? Theme.pink : Theme.blush.opacity(0.6), lineWidth: isSelected ? 3.5 : 2)
                         )
                         .scaleEffect(isSelected ? 1.05 : 0.94)
@@ -116,6 +120,7 @@ private struct ICStationSwitcher: View {
         case .scoop: return "Scoops"
         case .soft: return "Soft Serve"
         case .smoothie: return "Smoothies"
+        case .bingsu: return "Bingsu"
         }
     }
 
@@ -190,6 +195,37 @@ private struct ICStationSwitcher: View {
             let cap = Path(ellipseIn: CGRect(x: 14.5, y: 10.5, width: 19, height: 9))
             StorybookArt.shape(g, cap, hex: 0xFFFDFB, width: 1.9)
             StorybookArt.highlight(g, in: CGRect(x: 17, y: 21, width: 3.5, height: 15), opacity: 0.55)
+
+        case .bingsu:
+            var spoon = Path()
+            spoon.move(to: CGPoint(x: 29, y: 24))
+            spoon.addLine(to: CGPoint(x: 39, y: 7))
+            g.stroke(spoon, with: .color(StorybookArt.outline(for: 0xFF9EC4)), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+            g.stroke(spoon, with: .color(StorybookArt.color(0xFFC2DA)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+
+            var snow = Path()
+            snow.move(to: CGPoint(x: 9, y: 27))
+            snow.addCurve(to: CGPoint(x: 24, y: 8), control1: CGPoint(x: 9, y: 16), control2: CGPoint(x: 16, y: 8))
+            snow.addCurve(to: CGPoint(x: 39, y: 27), control1: CGPoint(x: 32, y: 8), control2: CGPoint(x: 39, y: 16))
+            snow.closeSubpath()
+            StorybookArt.fillAndStroke(g, snow, fill: StorybookArt.color(0xF6FBFF), stroke: StorybookArt.outline(for: 0xB4D4EA), width: 2)
+
+            let pat = Path(ellipseIn: CGRect(x: 18, y: 7, width: 12, height: 7.5))
+            StorybookArt.shape(g, pat, hex: 0x7A3242, width: 1.6)
+            let berry = Path(ellipseIn: CGRect(x: 28, y: 17, width: 6.5, height: 6))
+            StorybookArt.shape(g, berry, hex: 0xED3B5B, width: 1.4)
+            let mango = Path(roundedRect: CGRect(x: 12.5, y: 17, width: 6.5, height: 6), cornerRadius: 1.8)
+            StorybookArt.shape(g, mango, hex: 0xFFB62F, width: 1.4)
+
+            let foot = Path(roundedRect: CGRect(x: 17, y: 38, width: 14, height: 5), cornerRadius: 2.5)
+            StorybookArt.shape(g, foot, hex: 0x86D4C2, width: 1.8)
+            var bowl = Path()
+            bowl.move(to: CGPoint(x: 7, y: 26))
+            bowl.addLine(to: CGPoint(x: 41, y: 26))
+            bowl.addCurve(to: CGPoint(x: 7, y: 26), control1: CGPoint(x: 38, y: 42), control2: CGPoint(x: 10, y: 42))
+            bowl.closeSubpath()
+            StorybookArt.shape(g, bowl, hex: 0x9EE4D2, width: 2.2)
+            StorybookArt.highlight(g, in: CGRect(x: 12, y: 29, width: 7, height: 2.6), opacity: 0.55)
         }
     }
 }
@@ -204,7 +240,7 @@ private struct ICBaseDockButton: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.15)) { _ in
-            let locked = !sim.build.scoops.isEmpty || !sim.build.rope.isEmpty || sim.build.fill > 0.01
+            let locked = !sim.build.scoops.isEmpty || !sim.build.rope.isEmpty || sim.build.fill > 0.01 || sim.build.snowLevel > 0.01
             ICDockPlate(
                 topping: nil,
                 open: trayOpen && !locked,
@@ -276,6 +312,7 @@ struct IceCreamView: View {
     @GestureState private var handDown = false
     @GestureState private var toppingDown = false
     @State private var tray = false
+    @State private var showStickers = false
     @State private var order = ICOrder.random(customer: 0, kind: .soft)
     @State private var picture = ICBuild()
     @State private var phase: Phase = .arriving
@@ -290,7 +327,17 @@ struct IceCreamView: View {
     @State private var started = false
     @State private var demoServe = false
 
-    static let toppings: [ICTopping] = ICTopping.allCases
+    static func dockLayout(for s: ICStation) -> (hasBase: Bool, toppings: [ICTopping], spots: [CGPoint]) {
+        let hasBase = (s == .scoop || s == .soft)
+        let toppings = (s == .bingsu) ? ICTopping.bingsu : ICTopping.parlor
+        let leftEdge: CGFloat = hasBase ? 132 : 42
+        let rightEdge: CGFloat = 892
+        let centerX = (leftEdge + rightEdge) / 2
+        let step: CGFloat = hasBase ? 98 : (toppings.count <= 5 ? 124 : 106)
+        let startX = centerX - CGFloat(toppings.count - 1) * step / 2
+        let spots = toppings.indices.map { CGPoint(x: startX + CGFloat($0) * step, y: ICGeo.dockY) }
+        return (hasBase, toppings, spots)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -319,6 +366,14 @@ struct IceCreamView: View {
                     .coinPurse(game: BakeryStore.game)
                     .scaleEffect(map.s)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
+
+                if showStickers {
+                    StickerBookView(game: BakeryStore.game) {
+                        withAnimation(.spring(response: 0.35)) { showStickers = false }
+                    }
+                    .transition(.opacity)
+                    .zIndex(5)
+                }
             }
             .coordinateSpace(name: "ice")
         }
@@ -363,7 +418,12 @@ struct IceCreamView: View {
         hand.active = false
         hand.tubTapped = nil
         sim.cancelInteraction()
-        if (next == .smoothie && sim.build.base != .glass) || (next != .smoothie && sim.build.base == .glass) {
+        let incompatibleBase =
+            (next == .smoothie && sim.build.base != .glass) ||
+            (next != .smoothie && sim.build.base == .glass) ||
+            (next == .bingsu && sim.build.base != .bowl) ||
+            (next != .bingsu && sim.build.base == .bowl)
+        if incompatibleBase {
             sim.build = ICBuild()
             sim.baseDrop = nil
             sim.resetSoft()
@@ -462,6 +522,14 @@ struct IceCreamView: View {
                 grab(.jar, at: p, from: CGPoint(x: jp.x, y: jp.y - ICGeo.jarH / 2))
                 return
             }
+        case .bingsu:
+            let onButton = hypot(p.x - ICGeo.snowButton.x, p.y - ICGeo.snowButton.y) < ICGeo.snowButtonR + 22
+            let onChamber = ICGeo.snowChamber.insetBy(dx: -12, dy: -12).contains(p)
+            if onButton || onChamber {
+                hand.mode = .shaver
+                sim.pressShaver(true)
+                return
+            }
         }
         if ICGeo.window.contains(p) {
             hand.mode = .tickle
@@ -514,6 +582,9 @@ struct IceCreamView: View {
             }
         case .lever:
             sim.pressLever(nil)
+        case .shaver:
+            sim.pressShaver(false)
+            if quickTap { sim.tapShaver() }
         case .blend:
             if hand.wasBlendToggle {
                 sim.blending = false
@@ -540,7 +611,7 @@ struct IceCreamView: View {
         case .scoop: lift = FingerLift.tool
         case .topping(let t):
             switch t {
-            case .cherry, .wafer, .straw: lift = FingerLift.item
+            case .cherry, .wafer, .straw, .redBean, .mangoCubes, .strawberries, .injeolmi: lift = FingerLift.item
             default: lift = FingerLift.pour
             }
         case .fruit: lift = FingerLift.item
@@ -554,25 +625,31 @@ struct IceCreamView: View {
 
     private func controls(_ map: ICMap) -> some View {
         ZStack {
-            RoundButton(symbol: "arrow.left", size: GameChromeLayout.buttonSize) { exit() }
-                .accessibilityLabel("Back to Bakery")
-                .disabled(phase == .eating)
-                .position(x: 54, y: 50)
-            ICStationSwitcher(active: station, disabled: phase == .eating) { next in
-                switchStation(to: next)
+            HStack(spacing: 14) {
+                RoundButton(symbol: "arrow.left", size: GameChromeLayout.buttonSize) { exit() }
+                    .accessibilityLabel("Back to Bakery")
+                    .disabled(phase == .eating)
+                StickerBookButton(game: BakeryStore.game, size: GameChromeLayout.buttonSize) {
+                    withAnimation(.spring(response: 0.35)) { showStickers = true }
+                }
+                ICStationSwitcher(active: station, disabled: phase == .eating) { next in
+                    switchStation(to: next)
+                }
+                Spacer(minLength: 12)
+                RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x46B7B0), size: 58) {
+                    Sound.shared.play(.whoosh, volume: 0.6)
+                    sim.clearStand()
+                    carrying = nil
+                    tray = false
+                }
+                .accessibilityLabel("Start Over")
+                CoinCounter(game: BakeryStore.game, height: 60)
+                heartJar
             }
-            .position(x: 214, y: 50)
-            RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x46B7B0), size: 58) {
-                Sound.shared.play(.whoosh, volume: 0.6)
-                sim.clearStand()
-                carrying = nil
-                tray = false
-            }
-            .accessibilityLabel("Start Over")
-            .position(x: 746, y: 50)
-            CoinCounter(game: BakeryStore.game, height: 60)
-                .position(x: 848, y: 50)
-            heartJar.position(x: 960, y: 52)
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
             if phase == .waiting || phase == .happy {
                 orderBubble
                     .position(x: 879, y: 164)
@@ -583,7 +660,7 @@ struct IceCreamView: View {
             }
             dock(map)
             if tray { baseTray.transition(.move(edge: .bottom).combined(with: .opacity)) }
-            StickerToast(game: BakeryStore.game, target: CGPoint(x: 54, y: 50))
+            StickerToast(game: BakeryStore.game, target: GameChromeLayout.stickerTarget)
         }
     }
 
@@ -592,18 +669,19 @@ struct IceCreamView: View {
         case .scoop: return .scoops
         case .soft: return .soft
         case .smoothie: return .smoothie
+        case .bingsu: return .bingsu
         }
     }
 
     private var heartJar: some View {
         ZStack(alignment: .bottomTrailing) {
-            Sprite("heartjar", box: Box.thing).frame(width: 76, height: 76)
+            Sprite("heartjar", box: Box.thing).frame(width: 72, height: 72)
             Text("\(bakery.hearts)")
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 9).padding(.vertical, 2)
                 .background(Capsule().fill(Color(hex: 0xF45C9A)))
-                .offset(x: 8, y: 4)
+                .offset(x: 6, y: 4)
         }
         .scaleEffect(jarBounce ? 1.3 : 1)
         .allowsHitTesting(false)
@@ -631,14 +709,15 @@ struct IceCreamView: View {
     }
 
     private func dock(_ map: ICMap) -> some View {
-        ZStack {
+        let layout = IceCreamView.dockLayout(for: station)
+        return ZStack {
             GameTrayCard(cornerRadius: 34, paddingH: 0, paddingV: 0) {
                 Color.clear.frame(width: 984, height: 102)
             }
             .position(x: 512, y: ICGeo.dockY)
             .allowsHitTesting(false)
 
-            if station != .smoothie {
+            if layout.hasBase {
                 ICBaseDockButton(
                     sim: sim,
                     order: order,
@@ -655,9 +734,10 @@ struct IceCreamView: View {
                 )
                 .position(x: 78, y: ICGeo.dockY)
             }
-            ForEach(Array(IceCreamView.toppings.enumerated()), id: \.offset) { i, t in
-                let spot = CGPoint(x: 186 + CGFloat(i) * 98, y: ICGeo.dockY)
-                ICDockPlate(topping: t, open: false, wanted: phase == .waiting && order.topping == t)
+            ForEach(Array(layout.toppings.enumerated()), id: \.element) { i, t in
+                let spot = layout.spots[i]
+                let wanted = phase == .waiting && (order.topping == t || sim.wanted(bingsu: t))
+                ICDockPlate(topping: t, open: false, wanted: wanted)
                     .equatable()
                     .opacity(carrying == t ? 0.35 : 1)
                     .gesture(toppingGesture(t, spot: spot, map: map))
@@ -676,7 +756,7 @@ struct IceCreamView: View {
             .onChanged { v in
                 let p = map.design(v.location)
                 if carrying == nil {
-                    guard !hand.active, sim.held == nil, sim.lever == nil, !sim.blending else { return }
+                    guard !hand.active, sim.held == nil, sim.lever == nil, !sim.blending, !sim.shaving else { return }
                     carrying = t
                     tray = false
                     sim.dockHome[t] = spot
@@ -707,7 +787,7 @@ struct IceCreamView: View {
     private var baseTray: some View {
         GameTrayCard(cornerRadius: 30, paddingH: 14, paddingV: 10) {
             HStack(spacing: 12) {
-                ForEach(ICBase.allCases.filter { $0 != .glass }, id: \.self) { b in
+                ForEach(ICBase.allCases.filter { $0 != .glass && $0 != .bowl }, id: \.self) { b in
                     Button {
                         Sound.shared.tap()
                         sim.placeBase(b)
@@ -809,9 +889,12 @@ struct IceCreamView: View {
             Coins.shared.earn(Coins.reward(stars: s), game: BakeryStore.game, from: CGPoint(x: ICGeo.customer.x, y: ICGeo.customer.y - 20))
             if !demoServe && !sim.demo {
                 StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.firstTreat.rawValue)
-                if b.kind == .smoothie {
+                switch b.kind {
+                case .smoothie:
                     StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.smoothieStar.rawValue)
-                } else {
+                case .bingsu:
+                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.bingsu.rawValue)
+                case .scoops, .soft:
                     StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.iceCreamPro.rawValue)
                 }
                 if s == 3 {
@@ -864,7 +947,7 @@ struct IceCreamView: View {
 
     // MARK: Screenshot hooks
 
-    /// -iceDemo scoop | soft | blend | pour | sundae | serve. Freezes the shop mid-action; nothing is saved.
+    /// -iceDemo scoop | soft | blend | pour | sundae | bingsu | serve. Freezes the shop mid-action; nothing is saved.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-iceDemo"), i + 1 < args.count else { return }
@@ -940,6 +1023,21 @@ struct IceCreamView: View {
             sim.autoTopping(.wafer)
             run(2)
             sim.frozen = true
+        case "bingsu":
+            station = .bingsu
+            sim.setStation(.bingsu)
+            order = ICOrder.random(customer: 1, seed: 21, kind: .bingsu)
+            picture = order.picture()
+            sim.pressShaver(true)
+            run(2.1)
+            sim.pressShaver(false)
+            sim.autoTopping(.condensedMilk)
+            run(1.8)
+            sim.autoTopping(.redBean)
+            sim.autoTopping(.strawberries)
+            sim.autoTopping(.mangoCubes)
+            run(0.6)
+            sim.frozen = true
         case "serve":
             demoServe = true
             sim.placeBase(order.base)
@@ -1014,9 +1112,10 @@ private struct ICOrderParts: View {
         case .base:
             var b = ICBuild()
             b.base = o.base
+            if o.kind == .bingsu { b.snowLevel = 0.9 }
             var c = g
-            let k: CGFloat = o.base == .glass ? 0.2 : 0.22
-            c.translateBy(x: 0, y: -o.base.depth * k * 0.5)
+            let k: CGFloat = o.base == .glass ? 0.2 : (o.base == .bowl ? 0.16 : 0.22)
+            c.translateBy(x: 0, y: o.base == .bowl ? 4 : -o.base.depth * k * 0.5)
             c.scaleBy(x: k, y: k)
             ICArt.drawBuild(c, b, at: .zero, time: 0)
         case .flavor:
@@ -1032,6 +1131,12 @@ private struct ICOrderParts: View {
                     let x = o.flavors.count == 1 ? 0 : (i == 0 ? -7 : 7)
                     ICArt.fruit(g, fr, at: CGPoint(x: CGFloat(x), y: 0), r: fr == .blueberry ? 8 : 10, rot: 0, seed: i)
                 }
+                return
+            case .bingsu:
+                let hero = ICBingsuHero(rawValue: o.flavors.first ?? 0) ?? .redBean
+                var c = g
+                c.scaleBy(x: 0.52, y: 0.52)
+                ICArt.bingsuCluster(c, hero.topping)
                 return
             }
             for (i, c) in colors.enumerated() {
@@ -1052,6 +1157,8 @@ private struct ICOrderParts: View {
             case .straw:
                 c.translateBy(x: -4, y: 14)
                 c.scaleBy(x: 0.18, y: 0.18)
+            case .redBean, .mangoCubes, .strawberries, .injeolmi:
+                c.scaleBy(x: 0.48, y: 0.48)
             default:
                 c.translateBy(x: 0, y: 15)
                 c.scaleBy(x: 0.2, y: 0.2)

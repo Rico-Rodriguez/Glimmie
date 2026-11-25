@@ -133,7 +133,7 @@ private struct VetSeat: View {
                         .offset(x: 6, y: 4)
                 }
             }
-            .overlay(alignment: .top) {
+            .overlay(alignment: .bottom) {
                 if clinic.healedCount(animal) > 0 {
                     HStack(spacing: 3) {
                         ForEach(0..<min(5, clinic.healedCount(animal)), id: \.self) { _ in
@@ -146,7 +146,7 @@ private struct VetSeat: View {
                     .padding(.vertical, 6)
                     .background(Capsule().fill(Theme.cream.opacity(0.95)))
                     .overlay(Capsule().stroke(Theme.blush, lineWidth: 2.5))
-                    .offset(y: 395)
+                    .padding(.bottom, 14)
                 }
             }
         }

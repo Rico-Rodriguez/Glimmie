@@ -2,10 +2,10 @@ import SwiftUI
 
 // MARK: - The customer's order
 //
-// Every customer orders one exact treat: a kind (cake, cupcake, ice cream), a flavor, a frosting color (or a
-// cone for ice cream) and one topping. The order is a picture card that stays on screen the whole time she
-// bakes, so nothing has to be remembered. Each part of the card gets a green tick as soon as the treat matches
-// it, the matching choices in the kitchen wear a little heart badge, and when she serves it the customer gives
+// Every customer orders one exact treat: a kind (cake, cupcake, bungeoppang), a flavor, a frosting color
+// and one topping. The order is a picture card that stays on screen the whole time she bakes, so nothing
+// has to be remembered. Each part of the card gets a green tick as soon as the treat matches it, the
+// matching choices in the kitchen wear a little heart badge, and when she serves it the customer gives
 // 1 to 3 stars. It stays gentle: every treat is eaten happily and earns at least one star.
 
 struct BakeryOrder: Equatable {
@@ -26,10 +26,11 @@ struct BakeryOrder: Equatable {
 
     static func random(customer: Int, seed: Int = Int.random(in: 0..<1_000_000)) -> BakeryOrder {
         var r = SeededRandom(seed)
-        let kind = TreatKind.allCases[r.int(TreatKind.allCases.count)]
+        let kinds = TreatKind.kitchenCases
+        let kind = kinds[r.int(kinds.count)]
         // frosting colors 0 and 1 are white and cream: hard to tell apart on a white card, so orders skip them
         return BakeryOrder(customer: customer, kind: kind,
-                           flavor: r.int(kind == .iceCream ? BakeryPalette.scoopFlavors.count : BakeryPalette.flavors.count),
+                           flavor: r.int(BakeryPalette.flavors.count),
                            frosting: 2 + r.int(BakeryPalette.frostings.count - 2),
                            cone: BakeryPalette.cones[r.int(BakeryPalette.cones.count)],
                            topping: toppings[r.int(toppings.count)])
@@ -67,12 +68,16 @@ struct BakeryOrder: Equatable {
         switch kind {
         case .cake:
             t.tiers = 1 + flavor % 2
+            if topping == "top_strawberry" { t.freshCreamCrown = true }
             let top = BakeryArt.shared.tiers[t.tiers - 1]
             t.toppings = [PlacedTopping(sprite: topping, x: 300, y: Double(top.t - 26), scale: 1.35)]
         case .cupcake:
             t.frostStyle = BakeryPalette.frostStyles[flavor % BakeryPalette.frostStyles.count]
             t.frostStage = 3
             t.toppings = [PlacedTopping(sprite: topping, x: 300, y: 200, scale: 1.25)]
+        case .bungeoppang:
+            t.filling = flavor % BungeoppangFilling.allCases.count
+            t.toppings = [PlacedTopping(sprite: topping, x: 300, y: 315, scale: 1.2)]
         case .iceCream:
             t.cone = cone
             t.scoops = [flavor, flavor]
@@ -171,7 +176,8 @@ struct OrderParts: View {
     @ViewBuilder private func picture(_ p: BakeryOrder.Part) -> some View {
         switch p {
         case .kind:
-            TreatView(treat: Treat.sample(order.kind, seed: order.kind == .cake ? 4 : order.kind == .cupcake ? 7 : 12), plate: false)
+            let seed = order.kind == .cake ? 4 : order.kind == .cupcake ? 7 : order.kind == .bungeoppang ? 9 : 12
+            TreatView(treat: Treat.sample(order.kind, seed: seed), plate: false)
                 .padding(item * 0.1)
         case .flavor:
             FlavorJar(sprite: order.kind == .iceCream ? "tub" : "bottle", flavor: order.flavor)

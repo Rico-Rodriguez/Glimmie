@@ -78,15 +78,20 @@ struct ColoringStudioView: View {
                 ColoringButton(icon: "checkmark", tint: Theme.mint, size: 70) {
                     guard !finishing else { return }
                     finishing = true
-                    let unlocked = studio.completeArtwork()
-                    Coins.shared.earn(4, game: ColoringGallery.gameID, from: CGPoint(x: 512, y: 420))
-                    if unlocked.isEmpty {
-                        Sound.shared.play(.fanfare, volume: 0.8)
+                    if studio.hasEdits {
+                        let unlocked = studio.completeArtwork()
+                        Coins.shared.earn(4, game: ColoringGallery.gameID, from: CGPoint(x: 512, y: 420))
+                        if unlocked.isEmpty {
+                            Sound.shared.play(.fanfare, volume: 0.8)
+                        } else {
+                            Sound.shared.play(.cheer, volume: 0.7)
+                        }
+                        celebrate += 1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.85) { onDone() }
                     } else {
-                        Sound.shared.play(.cheer, volume: 0.7)
+                        Sound.shared.play(.pop, volume: 0.6)
+                        onDone()
                     }
-                    celebrate += 1
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.85) { onDone() }
                 }
                 .disabled(finishing)
                 .accessibilityLabel("Done")
@@ -293,13 +298,17 @@ struct ColoringStudioView: View {
             if studio.tool == .stickers {
                 ScrollView(showsIndicators: false) {
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(58), spacing: 6), count: 3), spacing: 6) {
-                        ForEach(ColoringStickers.all, id: \.self) { id in
+                        ForEach(ColoringStickers.available, id: \.self) { id in
+                            let isBonus = ColoringVectorStickers.sticker(for: id)?.isBonusTreasure == true
                             Button { studio.addSticker(id) } label: {
                                 ColoringStickerArtView(id: id, showShadow: false)
                                     .padding(4)
                                     .frame(width: 58, height: 58)
-                                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white))
-                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.blush, lineWidth: 2))
+                                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(isBonus ? Color(hex: 0xFFFDF0) : .white))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                            .stroke(isBonus ? Color(hex: 0xFFD966) : Theme.blush, lineWidth: isBonus ? 2.8 : 2)
+                                    )
                             }
                             .buttonStyle(Squish())
                         }
@@ -417,6 +426,7 @@ private struct ColoringToolButton: View {
     let action: () -> Void
 
     var body: some View {
+        let starlightRainbow = tool == .rainbow && ColoringPaper.hasRainbowStarlight
         Button {
             Sound.shared.play(.tap, volume: 0.5)
             action()
@@ -424,7 +434,7 @@ private struct ColoringToolButton: View {
             GameDockTile(
                 size: 62,
                 selected: selected,
-                tint: selected ? Theme.blush.opacity(0.55) : .white,
+                tint: selected ? Theme.blush.opacity(0.55) : (starlightRainbow ? Color(hex: 0xFFF9FF) : .white),
                 cornerRadius: 18
             ) {
                 ZStack {
@@ -432,7 +442,24 @@ private struct ColoringToolButton: View {
                         .padding(5)
                     if tool == .glitter {
                         ColoringTwinkles(count: 4).allowsHitTesting(false)
+                    } else if starlightRainbow {
+                        ColoringTwinkles(count: 5).allowsHitTesting(false)
                     }
+                }
+            }
+            .overlay {
+                if starlightRainbow {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            AngularGradient(
+                                colors: [Theme.pink, Theme.peach, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac, Theme.pink],
+                                center: .center
+                            ),
+                            lineWidth: selected ? 4 : 3
+                        )
+                        .padding(-2)
+                        .shadow(color: Theme.pink.opacity(0.45), radius: 5)
+                        .allowsHitTesting(false)
                 }
             }
         }

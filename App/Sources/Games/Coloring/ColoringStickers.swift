@@ -199,6 +199,13 @@ enum ColoringVectorSticker: String, CaseIterable {
     case paw, diamond, magicWand
     case cupcake, strawberry, lollipop
     case iceCream, balloon, musicNote
+    case hanbokRibbon, fairyGem
+
+    static let starStampTreasureID = "coloring/starStamp"
+    static let rainbowBrushTreasureID = "coloring/rainbowBrush"
+    static let bonusStarStampCases: [ColoringVectorSticker] = [.hanbokRibbon, .fairyGem]
+
+    var isBonusTreasure: Bool { Self.bonusStarStampCases.contains(self) }
 
     /// Draws the sticker inside a centered 100x100 design square (-50...50).
     func draw(in d: VectorDrawer) {
@@ -227,6 +234,8 @@ enum ColoringVectorSticker: String, CaseIterable {
         case .iceCream: drawIceCream(d)
         case .balloon: drawBalloon(d)
         case .musicNote: drawMusicNote(d)
+        case .hanbokRibbon: drawHanbokRibbon(d)
+        case .fairyGem: drawFairyGem(d)
         }
     }
 
@@ -907,6 +916,92 @@ enum ColoringVectorSticker: String, CaseIterable {
             }
         }
         d.sparkle(at: CGPoint(x: -24, y: -16), radius: 6, color: Theme.lemon, includeInDieCut: true)
+    }
+
+    private func drawHanbokRibbon(_ d: VectorDrawer) {
+        // Twin swallow-tail royal hanbok silk drapes with gold geumbak accents
+        for side in [-1.0, 1.0] {
+            let s = CGFloat(side)
+            var tail = Path()
+            tail.move(to: CGPoint(x: s * 3, y: -4))
+            tail.addCurve(to: CGPoint(x: s * 22, y: 24), control1: CGPoint(x: s * 17, y: 2), control2: CGPoint(x: s * 22, y: 14))
+            tail.addLine(to: CGPoint(x: s * 14, y: 34))
+            tail.addLine(to: CGPoint(x: s * 5, y: 24))
+            tail.addCurve(to: CGPoint(x: 0, y: -2), control1: CGPoint(x: s * 5, y: 12), control2: CGPoint(x: s * 2, y: 3))
+            tail.closeSubpath()
+            d.shape(tail, hex: side < 0 ? 0xFF7CA8 : 0xFF9AC9, width: 2.8)
+            d.detail { inner in
+                var trim = Path()
+                trim.move(to: CGPoint(x: s * 8, y: 19))
+                trim.addLine(to: CGPoint(x: s * 19, y: 18))
+                inner.stroke(trim, color: StorybookArt.color(0xFFE378), width: 2.6)
+                inner.fill(
+                    Path(ellipseIn: CGRect(x: s * 12 - 2.5, y: 9 - 2.5, width: 5, height: 5)),
+                    color: StorybookArt.color(0xFFF3B8)
+                )
+            }
+        }
+        // Center pastel jade norigae tassel drop
+        var tassel = Path()
+        tassel.move(to: CGPoint(x: -5, y: 12))
+        tassel.addLine(to: CGPoint(x: 5, y: 12))
+        tassel.addLine(to: CGPoint(x: 8, y: 34))
+        tassel.addLine(to: CGPoint(x: -8, y: 34))
+        tassel.closeSubpath()
+        d.shape(tassel, hex: 0x9FE3CF, width: 2.4)
+        d.detail { inner in
+            for dx in [CGFloat(-3), 0, 3] {
+                var strand = Path()
+                strand.move(to: CGPoint(x: dx, y: 15))
+                strand.addLine(to: CGPoint(x: dx * 1.3, y: 32))
+                inner.stroke(strand, color: StorybookArt.outline(for: 0x70C9AD), width: 1.4)
+            }
+        }
+        // Puffy hanbok bow loops
+        for side in [-1.0, 1.0] {
+            let s = CGFloat(side)
+            d.transformed(dx: s * 20, dy: -12, degrees: s * -12) { loop in
+                loop.shape(Path(roundedRect: CGRect(x: -16, y: -13, width: 32, height: 26), cornerRadius: 13), hex: 0xFF8FB8, width: 3)
+                loop.highlight(in: CGRect(x: -8, y: -9, width: 11, height: 5), opacity: 0.6)
+            }
+        }
+        // Golden knot + jade medallion
+        let knot = Path(roundedRect: CGRect(x: -10, y: -21, width: 20, height: 20), cornerRadius: 9)
+        d.fillAndStroke(knot, fill: StorybookArt.color(0xFFE070), stroke: StorybookArt.outline(for: 0xE5A22E), width: 2.8)
+        d.detail { inner in
+            inner.shape(Path(ellipseIn: CGRect(x: -5.5, y: -16.5, width: 11, height: 11)), hex: 0x9FE3CF, width: 1.8)
+            inner.highlight(in: CGRect(x: -3, y: -14.5, width: 4, height: 3), opacity: 0.85)
+        }
+        d.sparkle(at: CGPoint(x: 0, y: -33), radius: 6.5, color: Theme.lemon, includeInDieCut: true)
+    }
+
+    private func drawFairyGem(_ d: VectorDrawer) {
+        // Fluttering pastel fairy wings behind the crystal heart
+        for side in [-1.0, 1.0] {
+            let s = CGFloat(side)
+            d.transformed(dx: s * 23, dy: -8, degrees: s * 22) { w in
+                w.shape(Path(ellipseIn: CGRect(x: -14, y: -10, width: 28, height: 20)), hex: 0xC9E8FF, width: 2.6)
+                w.highlight(in: CGRect(x: -8, y: -6, width: 11, height: 5), opacity: 0.72)
+            }
+            d.transformed(dx: s * 18, dy: 11, degrees: s * -18) { w in
+                w.shape(Path(ellipseIn: CGRect(x: -10, y: -7.5, width: 20, height: 15)), hex: 0xDFCCFF, width: 2.4)
+            }
+        }
+        // Scalloped golden star bezel
+        let starBezel = VectorDrawer.starPath(at: CGPoint(x: 0, y: 2), outer: 27, inner: 19, points: 8)
+        d.fillAndStroke(starBezel, fill: StorybookArt.color(0xFFE172), stroke: StorybookArt.outline(for: 0xE5A22E), width: 2.8)
+
+        // Radiant pastel heart gem in the center
+        let heart = VectorDrawer.heartPath(at: CGPoint(x: 0, y: 2), size: 38)
+        d.fillAndStroke(heart, fill: StorybookArt.color(0xFF7EB8), stroke: StorybookArt.outline(for: 0xE55896), width: 2.8)
+        d.detail { inner in
+            let facet = VectorDrawer.heartPath(at: CGPoint(x: 0, y: 0), size: 20)
+            inner.fill(facet, color: StorybookArt.color(0xFFC2E0))
+            inner.highlight(in: CGRect(x: -10, y: -8, width: 8.5, height: 5.5), opacity: 0.85)
+        }
+        d.sparkle(at: CGPoint(x: 0, y: -31), radius: 7, color: Theme.lemon, includeInDieCut: true)
+        d.sparkle(at: CGPoint(x: 26, y: -25), radius: 5, color: Theme.pink)
+        d.sparkle(at: CGPoint(x: -26, y: 24), radius: 5, color: Theme.sky)
     }
 }
 

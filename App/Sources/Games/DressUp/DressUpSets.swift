@@ -19,6 +19,12 @@ struct OutfitSet: Identifiable {
     var pet: [String: String] = [:]
 
     static let all: [OutfitSet] = [
+        OutfitSet(id: "hanbok", icon: "t_jeogori",
+                  picks: ["top": "t_jeogori", "bottom": "b_chima", "neck": "n_norigae", "hat": "h_jokduri", "shoes": "sh_ballet"],
+                  colors: ["top": 11, "bottom": 3, "neck": 18, "hat": 19, "shoes": 2], bg: "bg_garden", pet: ["hat": "ph_flowers", "neck": "pn_bowtie"]),
+        OutfitSet(id: "jewelFairy", icon: "d_jewelfairy",
+                  picks: ["dress": "d_jewelfairy", "hat": "h_hearttiara", "back": "w_jewelwings", "hold": "p_starwand", "socks": "s_frilly", "shoes": "sh_glitter", "earrings": "er_heart"],
+                  colors: ["dress": 3, "hat": 4, "back": 18, "hold": 4, "socks": 0, "shoes": 3, "earrings": 4], bg: "bg_rainbow", pet: ["hat": "ph_tiara", "back": "pk_fairy"]),
         OutfitSet(id: "halloween", icon: "d_pumpkin",
                   picks: ["dress": "d_pumpkin", "hat": "h_pointy", "hold": "p_candy", "socks": "s_stripes", "shoes": "sh_maryjane", "back": "w_bat"],
                   colors: ["socks": 8, "shoes": 23, "back": 20], bg: "bg_night", pet: ["hat": "ph_witch", "back": "pk_bat"]),

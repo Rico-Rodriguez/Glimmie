@@ -86,13 +86,21 @@ enum SGeo {
 
 // MARK: - Domain kinds
 
-enum SpaCategory: String, CaseIterable, Identifiable {
+enum SpaCategory: String, CaseIterable, Identifiable, Codable {
     case fizz, wash, pamper, toys
     var id: String { rawValue }
 }
 
 enum BombKind: String, CaseIterable {
-    case rose, sunshine, ocean, mint, galaxy, rainbow
+    case rose, sunshine, ocean, mint, galaxy, rainbow, yuzu
+
+    var treasure: String? {
+        self == .yuzu ? "spa/yuzuBomb" : nil
+    }
+
+    static var available: [BombKind] {
+        allCases.filter { k in k.treasure.map { Coins.shared.owns($0) } ?? true }
+    }
 
     var color: RGB {
         switch self {
@@ -102,12 +110,19 @@ enum BombKind: String, CaseIterable {
         case .mint: return RGB(hex: "#5FD9A8")
         case .galaxy: return RGB(hex: "#8E6BFF")
         case .rainbow: return RGB(hex: "#FF8FB8")
+        case .yuzu: return RGB(hex: "#FFD84A")
         }
     }
 
-    var glitter: Bool { self == .sunshine || self == .galaxy || self == .rainbow }
+    var glitter: Bool { self == .sunshine || self == .galaxy || self == .rainbow || self == .yuzu }
 
     func dye(_ t: Double) -> RGB {
+        if self == .yuzu {
+            let gold = RGB(hex: "#FFE15A")
+            let citrus = RGB(hex: "#FFA83A")
+            let u = 0.5 + 0.5 * sin(t * 2.2)
+            return gold.mix(citrus, u * 0.65)
+        }
         if self == .galaxy {
             let hues = ["#7A5BFF", "#A378FF", "#5F8CFF", "#D484FF"].map { RGB(hex: $0) }
             let u = (t * 0.35).truncatingRemainder(dividingBy: 1) * Double(hues.count)
@@ -122,7 +137,7 @@ enum BombKind: String, CaseIterable {
     }
 }
 
-enum FoamTint: String, CaseIterable {
+enum FoamTint: String, CaseIterable, Codable {
     case cloud, berry, lavender, mint
 
     var color: RGB {
@@ -135,7 +150,7 @@ enum FoamTint: String, CaseIterable {
     }
 }
 
-enum MaskKind: Int, CaseIterable {
+enum MaskKind: Int, CaseIterable, Codable {
     case cucumber, strawberry, honey, blueberry
 
     var color: RGB {
@@ -148,8 +163,16 @@ enum MaskKind: Int, CaseIterable {
     }
 }
 
-enum ToyKind: String, CaseIterable {
-    case duck, boat, whale, turtle
+enum ToyKind: String, CaseIterable, Codable {
+    case duck, boat, whale, turtle, goldenDuck
+
+    var treasure: String? {
+        self == .goldenDuck ? "spa/goldenDuck" : nil
+    }
+
+    static var available: [ToyKind] {
+        allCases.filter { k in k.treasure.map { Coins.shared.owns($0) } ?? true }
+    }
 
     var half: CGSize {
         switch self {
@@ -157,6 +180,7 @@ enum ToyKind: String, CaseIterable {
         case .boat: return CGSize(width: 48, height: 44)
         case .whale: return CGSize(width: 52, height: 32)
         case .turtle: return CGSize(width: 42, height: 24)
+        case .goldenDuck: return CGSize(width: 44, height: 42)
         }
     }
 
@@ -166,6 +190,7 @@ enum ToyKind: String, CaseIterable {
         case .boat: return 0.32
         case .whale: return 0.50
         case .turtle: return 0.62
+        case .goldenDuck: return 0.40
         }
     }
 }
@@ -177,6 +202,7 @@ enum SpaTool: Equatable {
     case mask(MaskKind)
     case cucumbers
     case towel
+    case sheepTowel
     case mist
     case wand
 }
@@ -195,7 +221,7 @@ enum SpaExpression: Equatable {
     case cozy
 }
 
-enum SpaWish: String, CaseIterable {
+enum SpaWish: String, CaseIterable, Codable {
     case bathBomb
     case foamHair
     case cucumbers
@@ -210,6 +236,97 @@ enum SpaWish: String, CaseIterable {
         case .cucumbers, .cozyTowel, .faceMask: return .pamper
         case .whaleToy: return .toys
         }
+    }
+}
+
+// MARK: - Persistence
+
+struct SpaToySave: Codable, Equatable {
+    var kind: ToyKind
+    var x: Double
+    var y: Double
+    var facing: Double
+}
+
+struct SpaSave: Codable, Equatable {
+    var vol: Double
+    var warm: Double
+    var soap: Double
+    var foam: [Double]
+    var toys: [SpaToySave]
+    var cucumbersOn: Bool
+    var sheepTowelOn: Bool
+    var sheepTowelTint: FoamTint
+    var maskCov: [Double]
+    var maskKind: [Int]
+    var activeWish: SpaWish
+    var wishCompletedCount: Int
+    var selectedCategory: SpaCategory
+
+    enum CodingKeys: String, CodingKey {
+        case vol, warm, soap, foam, toys
+        case cucumbersOn, sheepTowelOn, sheepTowelTint
+        case maskCov, maskKind
+        case activeWish, wishCompletedCount, selectedCategory
+    }
+
+    init(
+        vol: Double,
+        warm: Double,
+        soap: Double,
+        foam: [Double],
+        toys: [SpaToySave],
+        cucumbersOn: Bool,
+        sheepTowelOn: Bool,
+        sheepTowelTint: FoamTint,
+        maskCov: [Double],
+        maskKind: [Int],
+        activeWish: SpaWish,
+        wishCompletedCount: Int,
+        selectedCategory: SpaCategory
+    ) {
+        self.vol = vol
+        self.warm = warm
+        self.soap = soap
+        self.foam = foam
+        self.toys = toys
+        self.cucumbersOn = cucumbersOn
+        self.sheepTowelOn = sheepTowelOn
+        self.sheepTowelTint = sheepTowelTint
+        self.maskCov = maskCov
+        self.maskKind = maskKind
+        self.activeWish = activeWish
+        self.wishCompletedCount = wishCompletedCount
+        self.selectedCategory = selectedCategory
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        vol = try c.decodeIfPresent(Double.self, forKey: .vol) ?? Double(SGeo.maxDepth * 0.84)
+        warm = try c.decodeIfPresent(Double.self, forKey: .warm) ?? 0.9
+        soap = try c.decodeIfPresent(Double.self, forKey: .soap) ?? 36
+        foam = try c.decodeIfPresent([Double].self, forKey: .foam) ?? []
+        toys = try c.decodeIfPresent([SpaToySave].self, forKey: .toys) ?? []
+        cucumbersOn = try c.decodeIfPresent(Bool.self, forKey: .cucumbersOn) ?? false
+        sheepTowelOn = try c.decodeIfPresent(Bool.self, forKey: .sheepTowelOn) ?? false
+        sheepTowelTint = try c.decodeIfPresent(FoamTint.self, forKey: .sheepTowelTint) ?? .cloud
+        maskCov = try c.decodeIfPresent([Double].self, forKey: .maskCov) ?? []
+        maskKind = try c.decodeIfPresent([Int].self, forKey: .maskKind) ?? []
+        activeWish = try c.decodeIfPresent(SpaWish.self, forKey: .activeWish) ?? .bathBomb
+        wishCompletedCount = try c.decodeIfPresent(Int.self, forKey: .wishCompletedCount) ?? 0
+        selectedCategory = try c.decodeIfPresent(SpaCategory.self, forKey: .selectedCategory) ?? .fizz
+    }
+}
+
+enum SpaStorage {
+    static let file = "spa.json"
+
+    static func load() -> SpaSave? {
+        GameStorage.load(SpaSave.self, game: SpaSim.gameID, file: file)
+    }
+
+    static func save(_ s: SpaSave) {
+        GameStorage.save(s, game: SpaSim.gameID, file: file)
     }
 }
 
@@ -382,7 +499,10 @@ final class SpaSim {
     var plugOut = false
     var drainFlow: CGFloat = 0
     var warm: CGFloat = 0
+    var yuzuCitrus: CGFloat = 0
     var fog = [CGFloat](repeating: 0, count: SGeo.fogCols * SGeo.fogRows)
+    var fogCleared = [Bool](repeating: false, count: SGeo.fogCols * SGeo.fogRows)
+    var mirrorFreshUntil: Double = 0
 
     // Interactive entities & particles
     var things: [SThing] = []
@@ -405,6 +525,8 @@ final class SpaSim {
     var maskKind = [Int](repeating: 0, count: SGeo.maskCols * SGeo.maskRows)
     var maskDry = [CGFloat](repeating: 0, count: SGeo.maskCols * SGeo.maskRows)
     var cucumbersOn = false
+    var sheepTowelOn = false
+    var sheepTowelTint: FoamTint = .cloud
     var beads: [SBead] = []
     var suds: [SSud] = []
     var foamPuffs: [FoamPuff] = []
@@ -421,11 +543,13 @@ final class SpaSim {
     var bob: CGFloat = 0
     var bobV: CGFloat = 0
 
-    // Wishes & stickers
+    // Wishes, UI & stickers
     var activeWish: SpaWish = .bathBomb
     var wishCompletedCount = 0
     var wishCelebrateUntil: Double = -10
+    var selectedCategory: SpaCategory = .fizz
     private(set) var unlockedFinds: Set<SpaFind> = []
+    private var lastSave: Double = 0
 
     // Held dock tool
     var tool: SpaTool?
@@ -446,12 +570,77 @@ final class SpaSim {
     var handV: CGVector = .zero
     private var swishSound: Double = 0
 
-    init(look: Look? = nil) {
+    init(look: Look? = nil, save: SpaSave? = nil) {
         let base = look ?? SpaSim.herLook()
         self.look = SpaSim.bathLook(base)
         for e in [Expression.normal, .blink, .happy] {
             layers[e] = DollPainter.layers(self.look, e)
         }
+        if let save {
+            restore(save)
+        }
+    }
+
+    func makeSave() -> SpaSave {
+        let savedToys: [SpaToySave] = things.compactMap { t in
+            guard case .toy(let k) = t.kind else { return nil }
+            return SpaToySave(kind: k, x: Double(t.p.x), y: Double(t.p.y), facing: Double(t.facing))
+        }
+        return SpaSave(
+            vol: Double(vol),
+            warm: Double(warm),
+            soap: Double(soap),
+            foam: foam.map { Double($0) },
+            toys: savedToys,
+            cucumbersOn: cucumbersOn,
+            sheepTowelOn: sheepTowelOn,
+            sheepTowelTint: sheepTowelTint,
+            maskCov: maskCov.map { Double($0) },
+            maskKind: maskKind,
+            activeWish: activeWish,
+            wishCompletedCount: wishCompletedCount,
+            selectedCategory: selectedCategory
+        )
+    }
+
+    func restore(_ s: SpaSave) {
+        vol = max(0, min(SGeo.maxDepth, CGFloat(s.vol)))
+        warm = max(0, min(1, CGFloat(s.warm)))
+        soap = max(0, CGFloat(s.soap))
+        tapOn = false
+        plugOut = false
+        if s.foam.count == SGeo.columns {
+            foam = s.foam.map { max(0, min(2.4, CGFloat($0))) }
+        } else {
+            foam = [CGFloat](repeating: 0, count: SGeo.columns)
+        }
+        foamTint = [RGB](repeating: RGB(1, 1, 1), count: SGeo.columns)
+        cucumbersOn = s.cucumbersOn
+        sheepTowelOn = s.sheepTowelOn
+        sheepTowelTint = s.sheepTowelTint
+        if s.maskCov.count == maskCov.count && s.maskKind.count == maskKind.count {
+            maskCov = s.maskCov.map { max(0, min(1, CGFloat($0))) }
+            maskKind = s.maskKind
+            maskDry = maskCov.map { $0 > 0.05 ? 0.1 : 0 }
+        }
+        activeWish = s.activeWish
+        wishCompletedCount = max(0, s.wishCompletedCount)
+        selectedCategory = s.selectedCategory
+        things.removeAll()
+        for t in s.toys.prefix(8) {
+            let hw = t.kind.half.width
+            let x = max(SGeo.bodyR + hw, min(SGeo.tubR - hw, CGFloat(t.x)))
+            let y = max(SGeo.lipY - 12, min(SGeo.tubBottom - t.kind.half.height, CGFloat(t.y)))
+            let id = spawnThing(.toy(t.kind), at: CGPoint(x: x, y: y), held: false)
+            if let idx = thingIndex(id) {
+                things[idx].facing = t.facing < 0 ? -1 : 1
+            }
+        }
+    }
+
+    func save() {
+        guard !demo && !quiet else { return }
+        SpaStorage.save(makeSave())
     }
 
     static func herLook() -> Look {
@@ -491,11 +680,15 @@ final class SpaSim {
         hv = [CGFloat](repeating: 0, count: SGeo.columns)
         tint = [RGB](repeating: RGB(1, 1, 1), count: SGeo.columns)
         tintA = [CGFloat](repeating: 0, count: SGeo.columns)
+        yuzuCitrus = 0
         fog = [CGFloat](repeating: 0, count: SGeo.fogCols * SGeo.fogRows)
+        fogCleared = [Bool](repeating: false, count: SGeo.fogCols * SGeo.fogRows)
+        mirrorFreshUntil = 0
         maskCov = [CGFloat](repeating: 0, count: SGeo.maskCols * SGeo.maskRows)
         maskKind = [Int](repeating: 0, count: SGeo.maskCols * SGeo.maskRows)
         maskDry = [CGFloat](repeating: 0, count: SGeo.maskCols * SGeo.maskRows)
         cucumbersOn = false
+        sheepTowelOn = false
         beads.removeAll()
         suds.removeAll()
         foamPuffs.removeAll()
@@ -514,12 +707,15 @@ final class SpaSim {
         prepareWarmBath()
         giggleUntil = time + 1.0
         pops.append(SPop(p: SGeo.fromDoll(CGPoint(x: 300, y: 220)), r: 44, sparkle: true))
+        save()
     }
 
     // MARK: - Water queries
 
     var level: CGFloat { SGeo.tubBottom - vol }
     var hasWater: Bool { vol > 1.5 }
+    var waterLevelFraction: CGFloat { vol / SGeo.maxDepth }
+    var hasEnoughWaterForBomb: Bool { waterLevelFraction >= 0.25 }
     var soapiness: CGFloat { vol > 4 ? min(1, soap / max(26, vol) * 120) : 0 }
     var totalFoam: CGFloat { foam.reduce(0, +) }
     var maskCoverage: CGFloat { maskCov.reduce(0, +) / CGFloat(maskCov.count) }
@@ -642,6 +838,10 @@ final class SpaSim {
         stepHearts(d)
         stepHer(d)
         sounds()
+        if !demo && !quiet && time - lastSave > 2.5 {
+            lastSave = time
+            save()
+        }
     }
 
     private func stepWaterLevel(_ d: CGFloat) {
@@ -662,6 +862,7 @@ final class SpaSim {
         if vol <= 0.01 {
             vol = 0
             soap = 0
+            yuzuCitrus = max(0, yuzuCitrus - d * 1.4)
             for i in 0..<SGeo.columns {
                 tintA[i] *= max(0, 1 - d * 0.9)
                 h[i] = 0
@@ -830,10 +1031,15 @@ final class SpaSim {
             things[i].v = CGVector(dx: CGFloat.random(in: -35...35), dy: 80)
         }
         if case .bomb(let bk) = kind {
-            if bk == .rainbow {
-                discover(.rainbowBath, at: CGPoint(x: x, y: 420))
+            if hasEnoughWaterForBomb {
+                if bk == .rainbow {
+                    discover(.rainbowBath, at: CGPoint(x: x, y: 420))
+                }
+                fulfillWish(.bathBomb)
+            } else {
+                play(.plop, 0.55, gap: 0.1)
+                pops.append(SPop(p: CGPoint(x: x, y: SGeo.tubBottom - 26), r: 24, sparkle: false))
             }
-            fulfillWish(.bathBomb)
         }
     }
 
@@ -900,7 +1106,7 @@ final class SpaSim {
                     if drainFlow > 0.05 {
                         t.v.dx += (SGeo.drain.x - t.p.x) * 0.65 * drainFlow * d
                     }
-                    if t.isBomb && t.fizz > 0 && t.wetFor > 0.4 {
+                    if t.isBomb && hasEnoughWaterForBomb && t.fizz > 0 && t.wetFor > 0.4 {
                         t.v.dx += CGFloat.random(in: -520...520) * d
                         t.av += CGFloat.random(in: -9...9) * d
                     }
@@ -911,7 +1117,7 @@ final class SpaSim {
                     }
                     if !t.wasIn && t.v.dy > 140 {
                         splash(at: CGPoint(x: t.p.x, y: surf), speed: t.v.dy, size: hw)
-                        if case .bomb(let bk) = t.kind {
+                        if case .bomb(let bk) = t.kind, hasEnoughWaterForBomb {
                             surprisedUntil = max(surprisedUntil, time + 0.42)
                             giggleUntil = max(giggleUntil, time + 1.55)
                             bobV -= 55
@@ -924,7 +1130,7 @@ final class SpaSim {
                 }
             }
             let nowIn = sub > 0.05
-            if nowIn && t.isBomb { t.wetFor += d }
+            if nowIn && t.isBomb && hasEnoughWaterForBomb { t.wetFor += d }
             t.wasIn = nowIn
             t.av -= t.a * (sub > 0 ? 0 : 10) * d
             t.av *= max(0, 1 - 5 * d)
@@ -954,7 +1160,12 @@ final class SpaSim {
                 }
                 if t.p.y + hh > SGeo.tubBottom {
                     t.p.y = SGeo.tubBottom - hh
-                    if t.v.dy > 180 && !hasWater { play(.plop, 0.3, gap: 0.1) }
+                    if t.v.dy > 180 && (!hasWater || (t.isBomb && !hasEnoughWaterForBomb)) {
+                        play(.plop, 0.35, gap: 0.1)
+                        if t.isBomb {
+                            pops.append(SPop(p: CGPoint(x: t.p.x, y: SGeo.tubBottom - 10), r: 22, sparkle: false))
+                        }
+                    }
                     t.v.dy = -abs(t.v.dy) * 0.25
                     t.v.dx *= max(0, 1 - 6 * d)
                     t.av -= t.a * 20 * d
@@ -963,7 +1174,7 @@ final class SpaSim {
             t.p.x = max(hw + 16, min(1008 - hw, t.p.x))
             t.squashV += (-t.squash * 260 - t.squashV * 12) * d
             t.squash += t.squashV * d
-            if case .bomb(let k) = t.kind, t.wetFor > 0.28, t.fizz > 0 {
+            if case .bomb(let k) = t.kind, hasEnoughWaterForBomb, t.wetFor > 0.28, t.fizz > 0 {
                 fizz(&t, k, d)
             }
             things[i] = t
@@ -997,6 +1208,7 @@ final class SpaSim {
     }
 
     private func fizz(_ t: inout SThing, _ k: BombKind, _ d: CGFloat) {
+        guard hasEnoughWaterForBomb else { return }
         let under = underWater(t.p)
         t.fizz -= d / 10.5
         if k == .rainbow && !unlockedFinds.contains(.rainbowBath) {
@@ -1033,13 +1245,16 @@ final class SpaSim {
                 addFoam(i, d * 0.42 * (1 - CGFloat(abs(i - c)) / 5), tint: col)
             }
         }
-        if k.glitter && CGFloat.random(in: 0...1) < d * 28 {
+        if k == .yuzu {
+            yuzuCitrus = min(1, yuzuCitrus + d * 0.55)
+        }
+        if k.glitter && CGFloat.random(in: 0...1) < d * (k == .yuzu ? 36 : 28) {
             let a = CGFloat.random(in: 0 ... (2 * .pi))
             let gold = RGB(hex: "#FFF2A8")
             glitter.append(SGlitter(
                 p: CGPoint(x: t.p.x + cos(a) * r, y: t.p.y + sin(a) * r),
                 v: CGVector(dx: cos(a) * 32, dy: sin(a) * 20 - 10),
-                color: k == .sunshine ? gold : col.mix(RGB(1, 1, 1), 0.4),
+                color: (k == .sunshine || k == .yuzu) ? gold : col.mix(RGB(1, 1, 1), 0.4),
                 phase: a
             ))
         }
@@ -1328,15 +1543,13 @@ final class SpaSim {
         }
         steam.removeAll { $0.age > $0.life }
 
-        // Mirror steams up visibly within ~4 seconds of warm water so finger doodling works right away.
-        let grow = warm * (hasWater ? 0.58 : 0.05)
-        for i in fog.indices {
-            let r = i / SGeo.fogCols
-            let toward: CGFloat = 0.94 - CGFloat(r) * 0.006
-            if grow > 0.001 {
+        // Mirror steams up visibly within ~4 seconds of warm water; finger-drawn lines stay crisp until wiped with towel/shower or reset.
+        let grow = (time >= mirrorFreshUntil && hasWater) ? warm * 0.58 : 0
+        if grow > 0.001 {
+            for i in fog.indices where !fogCleared[i] {
+                let r = i / SGeo.fogCols
+                let toward: CGFloat = 0.94 - CGFloat(r) * 0.006
                 fog[i] += (toward - fog[i]) * min(1, grow * d)
-            } else {
-                fog[i] = max(0, fog[i] - d * 0.008)
             }
         }
     }
@@ -1722,6 +1935,48 @@ final class SpaSim {
         fulfillWish(.cozyTowel)
     }
 
+    func putSheepTowelOn(tint: FoamTint? = nil) {
+        if let tint { sheepTowelTint = tint }
+        sheepTowelOn = true
+        cozyUntil = max(cozyUntil, time + 4.5)
+        let crown = SGeo.fromDoll(CGPoint(x: 300, y: 170))
+        pops.append(SPop(p: crown, r: 44, sparkle: true))
+        spawnHearts(at: crown, count: 5)
+        giggleUntil = max(giggleUntil, time + 1.2)
+        bobV -= 65
+        play(.squish, 0.55)
+        play(.chime, 0.5, gap: 0.25)
+        discover(.cozyWrap, at: crown)
+        fulfillWish(.cozyTowel)
+    }
+
+    func removeSheepTowel() {
+        guard sheepTowelOn else { return }
+        sheepTowelOn = false
+        for side in [-1.0, 1.0] {
+            pops.append(SPop(p: SGeo.fromDoll(CGPoint(x: 300 + CGFloat(side) * 144, y: 212)), r: 24, sparkle: false))
+        }
+        giggleUntil = max(giggleUntil, time + 0.85)
+        play(.pop, 0.55)
+    }
+
+    func toggleSheepTowel() {
+        if sheepTowelOn { removeSheepTowel() } else { putSheepTowelOn() }
+    }
+
+    func cycleSheepTowelTint() {
+        guard sheepTowelOn else { return }
+        let all = FoamTint.allCases
+        if let idx = all.firstIndex(of: sheepTowelTint) {
+            sheepTowelTint = all[(idx + 1) % all.count]
+        }
+        let crown = SGeo.fromDoll(CGPoint(x: 300, y: 180))
+        pops.append(SPop(p: crown, r: 34, sparkle: true))
+        giggleUntil = max(giggleUntil, time + 0.85)
+        bobV -= 45
+        play(.pop, 0.55)
+    }
+
     /// Sparkle Mist spritzes twinkling stars & floating hearts around her!
     func spritzMist(at p: CGPoint) {
         pops.append(SPop(p: p, r: 32, sparkle: true))
@@ -1816,6 +2071,16 @@ final class SpaSim {
             for eye in SGeo.eyes where hypot(eye.x - dd.x, eye.y - dd.y) < 68 {
                 removeCucumbers()
                 return
+            }
+        }
+
+        // 6b. Tap either sheep-horn towel bun to cycle pastel terry colors
+        if sheepTowelOn {
+            for bun in [CGPoint(x: 156, y: 214), CGPoint(x: 444, y: 214)] {
+                if hypot(bun.x - dd.x, bun.y - dd.y) < 54 {
+                    cycleSheepTowelTint()
+                    return
+                }
             }
         }
 
@@ -1964,9 +2229,39 @@ final class SpaSim {
                 let cy = m.minY + (CGFloat(r) + 0.5) * ch
                 let dist = hypot(cx - p.x, cy - p.y)
                 if dist < 26 {
-                    fog[r * SGeo.fogCols + c] *= dist < 17 ? 0 : 0.35
+                    let idx = r * SGeo.fogCols + c
+                    if dist < 17 {
+                        fog[idx] = 0
+                        fogCleared[idx] = true
+                    } else {
+                        fog[idx] *= 0.35
+                        if fog[idx] < 0.15 { fogCleared[idx] = true }
+                    }
                 }
             }
+        }
+    }
+
+    func clearMirrorFog(at p: CGPoint, radius: CGFloat = 52) {
+        let m = SGeo.mirror
+        guard m.insetBy(dx: -radius, dy: -radius).contains(p) else { return }
+        let cw = m.width / CGFloat(SGeo.fogCols)
+        let ch = m.height / CGFloat(SGeo.fogRows)
+        var clearedAny = false
+        for r in 0..<SGeo.fogRows {
+            for c in 0..<SGeo.fogCols {
+                let cx = m.minX + (CGFloat(c) + 0.5) * cw
+                let cy = m.minY + (CGFloat(r) + 0.5) * ch
+                if hypot(cx - p.x, cy - p.y) < radius {
+                    let idx = r * SGeo.fogCols + c
+                    if fog[idx] > 0.02 || fogCleared[idx] { clearedAny = true }
+                    fog[idx] = 0
+                    fogCleared[idx] = false
+                }
+            }
+        }
+        if clearedAny {
+            mirrorFreshUntil = max(mirrorFreshUntil, time + 2.0)
         }
     }
 
@@ -1998,6 +2293,22 @@ final class SpaSim {
         case .duck:
             things[i].v.dy -= 240
             play(.squeak, 0.8)
+        case .goldenDuck:
+            things[i].v.dy -= 265
+            let top = CGPoint(x: things[i].p.x, y: things[i].p.y - things[i].half.height)
+            pops.append(SPop(p: top, r: 36, sparkle: true))
+            spawnHearts(at: top, count: 3)
+            for k in 0..<8 {
+                let a = CGFloat(k) / 8 * 2 * .pi
+                glitter.append(SGlitter(
+                    p: CGPoint(x: top.x + cos(a) * 14, y: top.y + sin(a) * 10),
+                    v: CGVector(dx: cos(a) * 36, dy: -26 + sin(a) * 16),
+                    color: RGB(hex: "#FFE88A"),
+                    phase: a
+                ))
+            }
+            play(.squeak, 0.8)
+            play(.chime, 0.65, gap: 0.15)
         case .boat:
             things[i].v.dx += things[i].facing * 165
             play(.toot, 0.75)
@@ -2051,6 +2362,11 @@ final class SpaSim {
             let d = SGeo.toDoll(toolP)
             if SGeo.inHead(d, pad: 65) {
                 putCucumbersOn()
+            }
+        } else if tool == .sheepTowel {
+            let d = SGeo.toDoll(toolP)
+            if SGeo.inHead(d, pad: 75) {
+                putSheepTowelOn()
             }
         }
         tool = nil
@@ -2153,12 +2469,19 @@ final class SpaSim {
                 rinse(at: dd, amount: d * 3.2)
                 wipeMask(at: dd, radius: 64 * FingerLift.spread, amount: d * 1.8)
             }
+            if SGeo.mirror.insetBy(dx: -36, dy: -36).contains(below) {
+                clearMirrorFog(at: below, radius: 54 * FingerLift.spread)
+            }
             for i in things.indices where !things[i].held && abs(things[i].p.x - toolP.x) < 52 * FingerLift.spread && things[i].p.y > toolP.y {
                 things[i].v.dy += 240 * d
                 things[i].v.dx += (things[i].p.x - toolP.x) * 3 * d
             }
 
         case .towel:
+            if SGeo.mirror.insetBy(dx: -34, dy: -34).contains(toolP) {
+                clearMirrorFog(at: toolP, radius: 56 * FingerLift.spread)
+                if speed > 36 { rubbing = 0.6 }
+            }
             let dd = SGeo.toDoll(toolP)
             if SGeo.onHer(dd, pad: 34) && speed > 36 {
                 rubbing = 0.8
@@ -2183,7 +2506,7 @@ final class SpaSim {
                 }
             }
 
-        case .cucumbers:
+        case .cucumbers, .sheepTowel:
             break
 
         case .mist:
@@ -2212,7 +2535,9 @@ final class SpaSim {
         let s = SpaSound.shared
         s.setLoop(.running, volume: Float(flow) * 0.7)
         s.setLoop(.drain, volume: Float(drainFlow) * (vol > 0.5 ? 0.55 : 0))
-        let fizzing = things.reduce(CGFloat(0)) { $0 + ($1.isBomb && $1.wetFor > 0.3 ? 0.5 + $1.fizz * 0.5 : 0) }
+        let fizzing = hasEnoughWaterForBomb
+            ? things.reduce(CGFloat(0)) { $0 + ($1.isBomb && $1.wetFor > 0.3 ? 0.5 + $1.fizz * 0.5 : 0) }
+            : 0
         s.setLoop(.fizz, volume: Float(min(1, fizzing)) * 0.55)
         let showering = tool == .shower || quickShowerUntil > time
         s.setLoop(.shower, volume: showering ? 0.55 : 0)

@@ -35,6 +35,8 @@ struct ColorMixer: View {
     @State private var drops = [1, 1]
     @State private var next = 0
     @State private var stirStart = Date.distantPast
+    @State private var stirring = false
+    @State private var stirToken = UUID()
 
     static func palette(forCategory cat: String, art: DressUpArt = .shared) -> [RGB] {
         switch art.category(cat)?.palette {
@@ -97,13 +99,23 @@ struct ColorMixer: View {
         .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(Theme.blush, lineWidth: 4))
     }
 
+    private func startStir() {
+        stirStart = Date()
+        stirring = true
+        let token = UUID()
+        stirToken = token
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.48) {
+            if stirToken == token { stirring = false }
+        }
+    }
+
     private func pick(_ c: RGB) {
         Sound.shared.play(.bubble)
         Sound.shared.tap()
         pots[next] = c
         drops[next] = 1
         next = (next + 1) % 2
-        stirStart = Date()
+        startStir()
     }
 
     private func pot(_ i: Int) -> some View {
@@ -111,7 +123,7 @@ struct ColorMixer: View {
             guard pots[i] != nil else { return }
             Sound.shared.play(.pop)
             drops[i] = drops[i] >= 5 ? 1 : drops[i] + 1
-            stirStart = Date()
+            startStir()
         } label: {
             VStack(spacing: 6) {
                 ZStack {
@@ -163,7 +175,7 @@ struct ColorMixer: View {
     }
 
     private var bowl: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !stirring)) { tl in
             Canvas { ctx, size in
                 let t = tl.date.timeIntervalSinceReferenceDate
                 let since = tl.date.timeIntervalSince(stirStart)

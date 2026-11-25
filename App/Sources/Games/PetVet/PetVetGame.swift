@@ -41,47 +41,63 @@ private struct PetVetTileIcon: View {
 // MARK: - Sounds
 
 enum VetSFX: String, CaseIterable {
-    case scrub, splash, pluck, squeak, heartbeat, sneeze, nom, giggle, spray, sticker
+    case scrub, splash, pluck, heartbeat, sneeze, nom, giggle, spray, sticker
     case zip, brr, beep, healed, hop, ouch, swish, bugjump
 }
 
 /// Pet Vet's own effects, from App/Resources/Games/PetVet. Shared effects still go through `Sound`.
 final class VetSound {
     static let shared = VetSound()
+    private let queue = DispatchQueue(label: "glimmie.petvet.sound", qos: .userInitiated)
     private var players: [VetSFX: [AVAudioPlayer]] = [:]
     private var last: [String: Date] = [:]
 
     private init() {
         _ = Sound.shared // sets up the audio session
-        for s in VetSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "PetVet") else { continue }
-            players[s] = (0..<3).compactMap { _ in
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.prepareToPlay()
-                return p
-            }
-        }
+    }
+
+    static func url(for s: VetSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "PetVet") ?? GameFiles.url(s.rawValue, "wav", game: "PetVet")
     }
 
     func play(_ s: VetSFX, volume: Float = 0.9, gap: Double = 0) {
-        if gap > 0 {
-            let now = Date()
-            if let t = last[s.rawValue], now.timeIntervalSince(t) < gap { return }
-            last[s.rawValue] = now
+        queue.async {
+            if gap > 0 {
+                let now = Date()
+                if let t = self.last[s.rawValue], now.timeIntervalSince(t) < gap { return }
+                self.last[s.rawValue] = now
+            }
+            let pool: [AVAudioPlayer]
+            if let existing = self.players[s] {
+                pool = existing
+            } else if let url = Self.url(for: s) {
+                let created: [AVAudioPlayer] = (0..<3).compactMap { _ in
+                    let p = try? AVAudioPlayer(contentsOf: url)
+                    p?.prepareToPlay()
+                    return p
+                }
+                self.players[s] = created
+                pool = created
+            } else {
+                self.players[s] = []
+                return
+            }
+            guard !pool.isEmpty else { return }
+            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            p.volume = volume
+            p.currentTime = 0
+            p.play()
         }
-        guard let pool = players[s], !pool.isEmpty else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.currentTime = 0
-        p.play()
     }
 
     /// A shared effect, throttled.
     func play(_ s: SFX, volume: Float = 0.8, gap: Double) {
-        let now = Date()
-        if let t = last["shared." + s.rawValue], now.timeIntervalSince(t) < gap { return }
-        last["shared." + s.rawValue] = now
-        Sound.shared.play(s, volume: volume)
+        queue.async {
+            let now = Date()
+            if let t = self.last["shared." + s.rawValue], now.timeIntervalSince(t) < gap { return }
+            self.last["shared." + s.rawValue] = now
+            Sound.shared.play(s, volume: volume)
+        }
     }
 }
 

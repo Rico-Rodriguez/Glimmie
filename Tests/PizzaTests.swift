@@ -220,4 +220,60 @@ final class PizzaTests: XCTestCase {
         XCTAssertEqual(sim.cuts.count, 1)
         XCTAssertEqual(sim.slices.count, 2)
     }
+
+    func testSoundsAreBundled() {
+        for s in PizzaSFX.allCases { XCTAssertNotNil(PizzaSound.url(for: s), s.rawValue) }
+    }
+
+    func testKoreanToppingsPlaceAndMatchOrders() {
+        XCTAssertEqual(ToppingKind.allCases.count, 10)
+        XCTAssertTrue(ToppingKind.allCases.contains(.goguma))
+        XCTAssertTrue(ToppingKind.allCases.contains(.cornCheese))
+
+        let sim = freshSim()
+        sim.demoDisc(220)
+        sim.order = PizzaOrder(customer: 0, wants: [.goguma, .cornCheese])
+        for k in 0..<2 {
+            sim.place(.goguma, at: CGPoint(x: PGeo.center.x + CGFloat(k) * 36, y: PGeo.center.y), from: nil)
+            sim.place(.cornCheese, at: CGPoint(x: PGeo.center.x - CGFloat(k + 1) * 36, y: PGeo.center.y), from: nil)
+        }
+        XCTAssertTrue(sim.ready(.toppings))
+        XCTAssertEqual(sim.order.stars(sim.toppings), 3)
+    }
+
+    func testRawEmptyDoughRefusesServeAndNudgesOven() {
+        Coins.shared.resetForTests(balance: 0)
+        let sim = freshSim()
+        sim.demoDisc(220)
+        sim.go(.slice)
+        XCTAssertTrue(sim.isUnbakedEmptyDough)
+
+        sim.serveSlice(at: PGeo.center)
+        XCTAssertNil(sim.lifted, "bare raw dough must not be served")
+        XCTAssertNil(sim.stars)
+        XCTAssertEqual(Coins.shared.balance, 0)
+        XCTAssertGreaterThanOrEqual(sim.ovenNudgeAt, 0)
+
+        sim.bake = 0.3
+        XCTAssertFalse(sim.isUnbakedEmptyDough)
+        sim.serveSlice(at: PGeo.center)
+        XCTAssertNotNil(sim.lifted, "lightly baked pizza serves normally")
+    }
+
+    func testPizzaTreasureHooksRespondToOwnership() {
+        Coins.shared.resetForTests(balance: 60)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(PizzaPainter.goldOvenTreasureID, "pizza/goldOven")
+        XCTAssertEqual(PizzaPainter.starCutterTreasureID, "pizza/starCutter")
+        XCTAssertFalse(PizzaPainter.hasGoldOven)
+        XCTAssertFalse(PizzaPainter.hasStarCutter)
+
+        XCTAssertTrue(Coins.shared.buy("pizza/goldOven", price: 12))
+        XCTAssertTrue(PizzaPainter.hasGoldOven)
+        XCTAssertFalse(PizzaPainter.hasStarCutter)
+
+        XCTAssertTrue(Coins.shared.buy("pizza/starCutter", price: 10))
+        XCTAssertTrue(PizzaPainter.hasStarCutter)
+    }
 }

@@ -491,9 +491,11 @@ final class VetFX {
 
     /// An elastic bandage wound round a sore paw, strip by strip, with the roll rolling round.
     static func drawWrap(_ c: GraphicsContext, at p: CGPoint, started: Double?, t: Double) {
+        let bowBandage = VetDraw.hasBowBandage
         let age = started.map { t - $0 } ?? 10
         let strips = 4
         let each = 0.2
+        let dotCols: [Color] = [Theme.pink, Theme.sky, Theme.mint, Theme.lemon, Theme.lilac]
         for i in 0..<strips {
             let k = CGFloat(max(0, min(1, (age - Double(i) * each) / each)))
             guard k > 0 else { break }
@@ -517,6 +519,16 @@ final class VetFX {
                 x += 8
             }
             g.stroke(weave, with: .color(Color(hex: 0xE4DAEE)), lineWidth: 1.6)
+            if bowBandage {
+                var dotsCtx = g
+                dotsCtx.clip(to: strip)
+                for d in 0..<5 {
+                    let dx = -24 + CGFloat(d) * 12 + (i % 2 == 0 ? 0 : 4)
+                    let dy: CGFloat = d % 2 == 0 ? -3.2 : 3.4
+                    dotsCtx.fill(Path(ellipseIn: CGRect(x: dx - 2.6, y: dy - 2.6, width: 5.2, height: 5.2)),
+                                 with: .color(dotCols[(d + i) % dotCols.count]))
+                }
+            }
             if k < 1 {
                 // the roll, turning as it goes
                 let rx = fromLeft ? shown.maxX : shown.minX
@@ -538,6 +550,12 @@ final class VetFX {
             let h = VetExamView.heart(11)
             g.fill(h, with: .color(Color(hex: 0xFF8FB8)))
             g.stroke(h, with: .color(.white), lineWidth: 2.5)
+            if bowBandage {
+                var bowCtx = c
+                bowCtx.translateBy(x: p.x, y: p.y - 31)
+                bowCtx.scaleBy(x: pop * 0.9, y: pop * 0.9)
+                VetDraw.satinBow(in: bowCtx)
+            }
         }
     }
 

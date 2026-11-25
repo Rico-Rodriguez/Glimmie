@@ -27,12 +27,12 @@ enum PotionGeometry {
     /// Workbench countertop & controls.
     static let tableY: CGFloat = 638
     static let burnerCenter = CGPoint(x: 540, y: 620)
-    static let dialCenter = CGPoint(x: 428, y: 634)
-    static let dialRadius: CGFloat = 30
-    static let valveCenter = CGPoint(x: 654, y: 592)
-    static let basinRect = CGRect(x: 690, y: 604, width: 58, height: 36)
-    static var drainMouth: CGPoint { CGPoint(x: 718, y: 594) }
-    static let bottleFillCenter = CGPoint(x: 722, y: 482)
+    static let dialCenter = CGPoint(x: 398, y: 632)
+    static let dialRadius: CGFloat = 28
+    static let valveCenter = CGPoint(x: 668, y: 586)
+    static let basinRect = CGRect(x: 694, y: 606, width: 48, height: 32)
+    static var drainMouth: CGPoint { CGPoint(x: 718, y: 592) }
+    static let bottleFillCenter = CGPoint(x: 704, y: 316)
 
     /// Cozy 2-tier 5-slot Tasting Stand on the right stage.
     static let standCapacity = 5
@@ -350,7 +350,8 @@ enum TransformationEffect: String, CaseIterable, Codable, Equatable {
         self == .bubbleFloat || self == .mermaid
     }
 
-    var unlocksStickerID: String? {
+    func unlocksStickerID(for creature: LabCreature) -> String? {
+        guard creature == .unicorn else { return nil }
         switch self {
         case .bubbleFloat, .mermaid: return "floatingUnicorn"
         case .rainbow, .wild: return "rainbowUnicorn"
@@ -396,7 +397,7 @@ enum PotionKind: String, CaseIterable, Codable, Identifiable {
         case .galaxy: return PotionRecipe([.starGlitter, .sleepyLavender, .mermaidWave])
         case .golden: return PotionRecipe([.starGlitter, .fairyRose, .dragonChili])
         case .rainbow: return PotionRecipe([.rainbowMane, .fairyRose, .mermaidWave])
-        case .wild: return PotionRecipe([.fairyRose, .mermaidWave, .starGlitter, .bubbleBerry], distinctMinimum: 4)
+        case .wild: return PotionRecipe([.frostFlake, .dragonChili, .rainbowMane, .sleepyLavender], distinctMinimum: 4)
         }
     }
 
@@ -407,7 +408,6 @@ enum PotionKind: String, CaseIterable, Codable, Identifiable {
         moonlit: Bool
     ) -> PotionKind? {
         let present = Set(ingredients.compactMap { $0.value > 0 ? $0.key : nil })
-        if present.count >= 4 { return .wild }
         if present.isSuperset(of: [.rainbowMane, .fairyRose, .mermaidWave]) { return .rainbow }
         if present.isSuperset(of: [.starGlitter, .fairyRose, .dragonChili]) { return .golden }
         if present.isSuperset(of: [.starGlitter, .sleepyLavender, .mermaidWave]) { return .galaxy }
@@ -417,6 +417,7 @@ enum PotionKind: String, CaseIterable, Codable, Identifiable {
         if present.isSuperset(of: [.mermaidWave, .bubbleBerry]) { return .mermaid }
         if present.isSuperset(of: [.frostFlake, .mermaidWave]) { return .frost }
         if present.isSuperset(of: [.sleepyLavender, .bubbleBerry]) { return .dream }
+        if present.count >= 4 { return .wild }
         return nil
     }
 

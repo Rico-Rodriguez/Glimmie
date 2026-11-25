@@ -143,6 +143,33 @@ final class GardenTests: XCTestCase {
         XCTAssertTrue(sim.plots[5].plant?.isSpecial ?? false)
     }
 
+    func testShovelClearsWeedFirstWithoutUprootingNearbyPlant() {
+        let sim = freshSim()
+        let px = GGeo.plotX[2]
+        sim.plots[2].plant = Plant(kind: .sunflower, growth: 1, left: 1, variant: 0)
+        sim.weeds = [GWeed(x: px + 34, growth: 1, seed: 3)]
+
+        sim.pickUp(.shovel, at: CGPoint(x: px + 44, y: GGeo.soilY + 6))
+        for k in 0..<18 {
+            sim.carry(to: CGPoint(x: px + 44 - CGFloat(k) * 2.5, y: GGeo.soilY + 8))
+            sim.step(dt: 1.0 / 60)
+        }
+        sim.release(home: CGPoint(x: 371, y: GGeo.dockY))
+
+        XCTAssertTrue(sim.weeds.isEmpty, "shovel should clear nearby weed first")
+        XCTAssertEqual(sim.plots[2].plant?.kind, .sunflower, "clearing weed must not accidentally uproot neighboring plant")
+
+        // Casual off-center sweep past the stem does not uproot the plant either.
+        run(sim, seconds: 0.7)
+        sim.pickUp(.shovel, at: CGPoint(x: px + 32, y: GGeo.soilY + 8))
+        for k in 0..<20 {
+            sim.carry(to: CGPoint(x: px + 32 + CGFloat(k) * 0.8, y: GGeo.soilY + 10))
+            sim.step(dt: 1.0 / 60)
+        }
+        sim.release(home: CGPoint(x: 371, y: GGeo.dockY))
+        XCTAssertEqual(sim.plots[2].plant?.kind, .sunflower)
+    }
+
     // MARK: Per-Crop Harvest & Live Bouquet Vase
 
     func testCarrotPullHarvest() {
@@ -219,6 +246,7 @@ final class GardenTests: XCTestCase {
     func testVisitorWishTapUnlocksStickerAndAwardsThreeCoinsOnce() {
         let sim = freshSim()
         sim.decor = []
+        sim.basket = []
         for i in sim.plots.indices { sim.plots[i].plant = nil }
         sim.plots[1].plant = Plant(kind: .carrot, growth: 1, left: 1, variant: 0)
         sim.nextVisit = 0
@@ -232,6 +260,19 @@ final class GardenTests: XCTestCase {
 
         let coinsBefore = Coins.shared.balance
         let tapPt = CGPoint(x: bunny.pos.x, y: bunny.pos.y - 30)
+
+        // Tapping before harvesting a carrot makes bunny wiggle without free coins or fulfillment.
+        XCTAssertTrue(sim.tapVisitor(tapPt))
+        XCTAssertFalse(sim.visitors.first(where: { $0.kind == .bunny })?.fulfilled ?? true)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore)
+
+        // Having a carrot in the basket does NOT passively auto-fulfill without player action.
+        sim.basket.append("carrot:0")
+        run(sim, seconds: 2.0)
+        XCTAssertFalse(sim.visitors.first(where: { $0.kind == .bunny })?.fulfilled ?? true)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore)
+
+        // Now tapping bunny fulfills its wish once, unlocks its sticker, and awards 3 coins.
         XCTAssertTrue(sim.tapVisitor(tapPt))
         XCTAssertTrue(sim.visitors.first(where: { $0.kind == .bunny })?.fulfilled ?? false)
         XCTAssertTrue(StickerBook.shared.has(game: GardenSim.gameID, id: GardenFind.bunny.rawValue))
@@ -240,6 +281,25 @@ final class GardenTests: XCTestCase {
         // Tapping again plays joyfully without double-awarding coins.
         run(sim, seconds: 0.7)
         XCTAssertTrue(sim.tapVisitor(tapPt))
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 3)
+    }
+
+    func testBasketDragFeedsVisitorToFulfillWish() {
+        let sim = freshSim()
+        sim.decor = []
+        sim.basket = ["carrot:0"]
+        var bunny = GVisitor(kind: .bunny, p: CGPoint(x: 320, y: GGeo.yardY + 8), facing: 1)
+        bunny.state = .staying
+        bunny.stayUntil = 30
+        sim.visitors = [bunny]
+
+        let coinsBefore = Coins.shared.balance
+        sim.handBegan(GGeo.basket)
+        let target = CGPoint(x: bunny.pos.x, y: bunny.pos.y - 30)
+        sim.handMoved(target)
+        sim.handEnded(target, tap: false)
+
+        XCTAssertTrue(sim.visitors.first?.fulfilled ?? false)
         XCTAssertEqual(Coins.shared.balance, coinsBefore + 3)
     }
 
@@ -326,6 +386,29 @@ final class GardenTests: XCTestCase {
         XCTAssertTrue(sim.decor.isEmpty)
     }
 
+    func testShortDecorPlacedClearOfTallPlantsAndReachable() {
+        let sim = freshSim()
+        sim.decor = []
+        for i in sim.plots.indices {
+            sim.plots[i].plant = Plant(kind: .sunflower, growth: 1, left: 1, variant: i % 6)
+        }
+        let idx = sim.placeDecorOnFreeSpot(.mushroom)
+        let d = sim.decor[idx]
+        for px in GGeo.plotX {
+            XCTAssertGreaterThanOrEqual(abs(d.x - px), 48, "short decor should avoid hiding behind tall plot stems")
+        }
+        let grabPt = CGPoint(x: d.x, y: d.y - 24)
+        sim.handBegan(grabPt)
+        XCTAssertTrue(sim.isDraggingDecor, "short decor placed in open gap should be directly grabbable")
+        sim.handEnded(grabPt, tap: false)
+    }
+
+    func testBasketClearOfTrayBar() {
+        let trayBottom = GGeo.trayY + 46
+        let basketTop = GGeo.basket.y - 49
+        XCTAssertGreaterThan(basketTop, trayBottom + 16, "harvest basket handle and crops must clear the floating seed tray")
+    }
+
     // MARK: Rare Variants, Stickers, Save Compatibility & Audio
 
     func testSpecialPlantsLookDifferent() {
@@ -402,7 +485,27 @@ final class GardenTests: XCTestCase {
 
     func testEverySoundIsBundled() {
         for s in GardenSFX.allCases {
-            XCTAssertNotNil(GameFiles.url(s.rawValue, "wav", game: "Garden"), s.rawValue)
+            let url = GameFiles.url(s.rawValue, "caf", game: "Garden") ?? GameFiles.url(s.rawValue, "wav", game: "Garden")
+            XCTAssertNotNil(url, s.rawValue)
         }
+    }
+
+    func testLotusLanternTreasureGatingAndSaveRoundTrip() throws {
+        XCTAssertEqual(DecorKind.lotus.treasure, "garden/lotus")
+        XCTAssertFalse(DecorKind.available.contains(.lotus))
+
+        Coins.shared.resetForTests(balance: 40)
+        XCTAssertTrue(Coins.shared.buy("garden/lotus", price: 12))
+        XCTAssertTrue(DecorKind.available.contains(.lotus))
+
+        let sim = freshSim()
+        sim.decor = []
+        let idx = sim.placeDecorOnFreeSpot(.lotus)
+        XCTAssertEqual(sim.decor[idx].kind, .lotus)
+
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let decoded = try JSONDecoder().decode(GardenSave.self, from: data)
+        let restored = GardenSim(save: decoded)
+        XCTAssertEqual(restored.decor.map(\.kind), [.lotus])
     }
 }

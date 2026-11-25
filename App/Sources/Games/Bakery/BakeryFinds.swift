@@ -7,6 +7,8 @@ enum BakeryFind: String, CaseIterable {
     case tallCake
     case iceCreamPro
     case smoothieStar
+    case bungeoppang
+    case bingsu
 
     static var stickers: [Sticker] {
         allCases.map { find in
@@ -31,6 +33,10 @@ enum BakeryFind: String, CaseIterable {
             drawIceCreamPro(g)
         case .smoothieStar:
             drawSmoothieStar(g)
+        case .bungeoppang:
+            drawBungeoppang(g)
+        case .bingsu:
+            drawBingsu(g)
         }
     }
 
@@ -260,6 +266,135 @@ enum BakeryFind: String, CaseIterable {
         drawStar(g, at: CGPoint(x: 0, y: 12), radius: 11, fill: 0xFFE378, outline: 0xD99622)
         StorybookArt.sparkle(g, at: CGPoint(x: -31, y: -24), radius: 7, color: Theme.lemon)
         StorybookArt.sparkle(g, at: CGPoint(x: 32, y: -8), radius: 6, color: Theme.pink)
+    }
+
+    private func drawBungeoppang(_ g: GraphicsContext) {
+        var fish = g
+        fish.rotate(by: .degrees(-10))
+
+        // Crispy lacy waffle flange
+        var flange = Path()
+        flange.move(to: CGPoint(x: -38, y: 0))
+        flange.addCurve(to: CGPoint(x: 15, y: -26), control1: CGPoint(x: -33, y: -24), control2: CGPoint(x: -4, y: -33))
+        flange.addQuadCurve(to: CGPoint(x: 41, y: -15), control: CGPoint(x: 27, y: -10))
+        flange.addQuadCurve(to: CGPoint(x: 34, y: 0), control: CGPoint(x: 40, y: -5))
+        flange.addQuadCurve(to: CGPoint(x: 41, y: 15), control: CGPoint(x: 40, y: 5))
+        flange.addQuadCurve(to: CGPoint(x: 15, y: 26), control: CGPoint(x: 27, y: 10))
+        flange.addCurve(to: CGPoint(x: -38, y: 0), control1: CGPoint(x: -4, y: 33), control2: CGPoint(x: -33, y: 24))
+        flange.closeSubpath()
+        StorybookArt.fillAndStroke(
+            fish,
+            flange,
+            fill: StorybookArt.color(0xF6C775),
+            stroke: StorybookArt.outline(for: 0xC88034),
+            width: 2.8
+        )
+
+        // Plump golden fish body
+        var body = Path()
+        body.move(to: CGPoint(x: -34, y: 0))
+        body.addCurve(to: CGPoint(x: 13, y: -22), control1: CGPoint(x: -28, y: -20), control2: CGPoint(x: -3, y: -27))
+        body.addQuadCurve(to: CGPoint(x: 36, y: -12), control: CGPoint(x: 24, y: -8))
+        body.addQuadCurve(to: CGPoint(x: 30, y: 0), control: CGPoint(x: 35, y: -4))
+        body.addQuadCurve(to: CGPoint(x: 36, y: 12), control: CGPoint(x: 35, y: 4))
+        body.addQuadCurve(to: CGPoint(x: 13, y: 22), control: CGPoint(x: 24, y: 8))
+        body.addCurve(to: CGPoint(x: -34, y: 0), control1: CGPoint(x: -3, y: 27), control2: CGPoint(x: -28, y: 20))
+        body.closeSubpath()
+        fish.fill(
+            body,
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xFFE29B), StorybookArt.color(0xEAA349), StorybookArt.color(0xC97A2E)]),
+                center: CGPoint(x: -10, y: -9),
+                startRadius: 2,
+                endRadius: 42
+            )
+        )
+
+        // Waffle diamond crosshatch on body
+        var grid = fish
+        grid.clip(to: body)
+        var lines = Path()
+        for k in -2...4 {
+            let x = CGFloat(k) * 10 - 6
+            lines.move(to: CGPoint(x: x - 14, y: -24))
+            lines.addLine(to: CGPoint(x: x + 16, y: 24))
+            lines.move(to: CGPoint(x: x + 16, y: -24))
+            lines.addLine(to: CGPoint(x: x - 14, y: 24))
+        }
+        grid.stroke(lines, with: .color(StorybookArt.outline(for: 0xB86A22).opacity(0.45)), lineWidth: 1.8)
+        fish.stroke(body, with: .color(StorybookArt.outline(for: 0xB86A22)), lineWidth: 2.6)
+
+        // Sweet red-bean pat peek at mouth + smiling eye + blush
+        let mouth = Path(ellipseIn: CGRect(x: -34, y: -3.5, width: 8, height: 7))
+        StorybookArt.fillAndStroke(fish, mouth, fill: StorybookArt.color(0x7A3242), stroke: StorybookArt.outline(for: 0x5A202D), width: 1.8)
+        var eye = Path()
+        eye.addArc(center: CGPoint(x: -18, y: -4), radius: 4.2, startAngle: .degrees(200), endAngle: .degrees(340), clockwise: false)
+        fish.stroke(eye, with: .color(StorybookArt.outline(for: 0x7A421A)), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+        fish.fill(Path(ellipseIn: CGRect(x: -23, y: 1, width: 8, height: 5)), with: .color(StorybookArt.color(0xFF91B4, alpha: 0.65)))
+        StorybookArt.highlight(fish, in: CGRect(x: -14, y: -16, width: 16, height: 6), opacity: 0.55)
+
+        StorybookArt.sparkle(g, at: CGPoint(x: -33, y: -26), radius: 7, color: Theme.lemon)
+        StorybookArt.sparkle(g, at: CGPoint(x: 33, y: -24), radius: 6, color: Theme.pink)
+    }
+
+    private func drawBingsu(_ g: GraphicsContext) {
+        // Pastel bingsu spoon tucked behind snow dome
+        var spoon = Path()
+        spoon.move(to: CGPoint(x: 10, y: -8))
+        spoon.addLine(to: CGPoint(x: 32, y: -36))
+        g.stroke(spoon, with: .color(StorybookArt.outline(for: 0xFFA6C8)), style: StrokeStyle(lineWidth: 8.5, lineCap: .round))
+        g.stroke(spoon, with: .color(StorybookArt.color(0xFFC2DA)), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+
+        // Fluffy shaved milk-snow dome
+        var snow = Path()
+        snow.move(to: CGPoint(x: -31, y: 6))
+        snow.addCurve(to: CGPoint(x: 0, y: -34), control1: CGPoint(x: -32, y: -16), control2: CGPoint(x: -16, y: -34))
+        snow.addCurve(to: CGPoint(x: 31, y: 6), control1: CGPoint(x: 16, y: -34), control2: CGPoint(x: 32, y: -16))
+        snow.closeSubpath()
+        g.fill(
+            snow,
+            with: .radialGradient(
+                Gradient(colors: [.white, StorybookArt.color(0xF6FAFF), StorybookArt.color(0xDCEAF6)]),
+                center: CGPoint(x: -10, y: -18),
+                startRadius: 2,
+                endRadius: 42
+            )
+        )
+        g.stroke(snow, with: .color(StorybookArt.outline(for: 0xB8D4E8)), lineWidth: 2.8)
+
+        // Creamy condensed-milk drizzle ribbon
+        var drizzle = Path()
+        drizzle.move(to: CGPoint(x: -18, y: -10))
+        drizzle.addQuadCurve(to: CGPoint(x: -6, y: -14), control: CGPoint(x: -12, y: -2))
+        drizzle.addQuadCurve(to: CGPoint(x: 6, y: -12), control: CGPoint(x: 0, y: -22))
+        drizzle.addQuadCurve(to: CGPoint(x: 18, y: -8), control: CGPoint(x: 12, y: -2))
+        g.stroke(drizzle, with: .color(StorybookArt.color(0xFFF3CE)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+
+        // Red-bean pat crown + sliced strawberry + mango cube
+        let bean = Path(ellipseIn: CGRect(x: -12, y: -35, width: 24, height: 15))
+        StorybookArt.fillAndStroke(g, bean, fill: StorybookArt.color(0x7A3242), stroke: StorybookArt.outline(for: 0x561E2B), width: 2.2)
+        StorybookArt.highlight(g, in: CGRect(x: -6, y: -32, width: 6, height: 3.5), opacity: 0.45)
+
+        let mango = Path(roundedRect: CGRect(x: -24, y: -14, width: 12, height: 11), cornerRadius: 3)
+        StorybookArt.fillAndStroke(g, mango, fill: StorybookArt.color(0xFFB838), stroke: StorybookArt.outline(for: 0xD88318), width: 1.8)
+        let berry = Path(ellipseIn: CGRect(x: 11, y: -15, width: 13, height: 12))
+        StorybookArt.fillAndStroke(g, berry, fill: StorybookArt.color(0xF04564), stroke: StorybookArt.outline(for: 0xB82542), width: 1.8)
+
+        // Footed pastel celadon bingsu bowl
+        let foot = Path(roundedRect: CGRect(x: -15, y: 29, width: 30, height: 9), cornerRadius: 4.5)
+        StorybookArt.fillAndStroke(g, foot, fill: StorybookArt.color(0x88D4C2), stroke: StorybookArt.outline(for: 0x5EA897), width: 2.4)
+        var bowl = Path()
+        bowl.move(to: CGPoint(x: -35, y: 4))
+        bowl.addLine(to: CGPoint(x: 35, y: 4))
+        bowl.addCurve(to: CGPoint(x: -35, y: 4), control1: CGPoint(x: 30, y: 36), control2: CGPoint(x: -30, y: 36))
+        bowl.closeSubpath()
+        StorybookArt.fillAndStroke(g, bowl, fill: StorybookArt.color(0xA6E6D6), stroke: StorybookArt.outline(for: 0x5EA897), width: 2.8)
+        let rim = Path(roundedRect: CGRect(x: -37, y: 0, width: 74, height: 8), cornerRadius: 4)
+        StorybookArt.fillAndStroke(g, rim, fill: StorybookArt.color(0xC6F2E7), stroke: StorybookArt.outline(for: 0x5EA897), width: 2.2)
+        StorybookArt.highlight(g, in: CGRect(x: -24, y: 12, width: 14, height: 5), opacity: 0.5)
+
+        StorybookArt.sparkle(g, at: CGPoint(x: -34, y: -22), radius: 7, color: Theme.sky)
+        StorybookArt.sparkle(g, at: CGPoint(x: 35, y: -6), radius: 6, color: Theme.lemon)
     }
 
     private func drawStar(_ g: GraphicsContext, at center: CGPoint, radius: CGFloat, fill: UInt32, outline: UInt32) {

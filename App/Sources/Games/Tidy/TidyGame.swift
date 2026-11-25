@@ -59,34 +59,47 @@ enum TidySFX: String, CaseIterable {
 /// so a run of things put away climbs up a little scale.
 final class TidySound {
     static let shared = TidySound()
+    private let queue = DispatchQueue(label: "glimmie.tidy.sound", qos: .userInitiated)
     private var players: [TidySFX: [AVAudioPlayer]] = [:]
     private var music: AVAudioPlayer?
-    private let light = UIImpactFeedbackGenerator(style: .light)
-    private let soft = UIImpactFeedbackGenerator(style: .soft)
-    private let rigid = UIImpactFeedbackGenerator(style: .rigid)
-    private let note = UINotificationFeedbackGenerator()
+    private var light: UIImpactFeedbackGenerator?
+    private var soft: UIImpactFeedbackGenerator?
+    private var rigid: UIImpactFeedbackGenerator?
+    private var note: UINotificationFeedbackGenerator?
 
     private init() {
         _ = Sound.shared // sets up the audio session
-        for s in TidySFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Tidy") else { continue }
-            players[s] = (0..<4).compactMap { _ in
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.enableRate = true
-                p?.prepareToPlay()
-                return p
-            }
-        }
-        light.prepare(); soft.prepare(); rigid.prepare()
+    }
+
+    static func url(for s: TidySFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Tidy") ?? GameFiles.url(s.rawValue, "wav", game: "Tidy")
     }
 
     func play(_ s: TidySFX, volume: Float = 1, rate: Float = 1) {
-        guard let pool = players[s], !pool.isEmpty else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.rate = max(0.5, min(2, rate))
-        p.currentTime = 0
-        p.play()
+        queue.async {
+            let pool: [AVAudioPlayer]
+            if let existing = self.players[s] {
+                pool = existing
+            } else if let url = Self.url(for: s) {
+                let created: [AVAudioPlayer] = (0..<4).compactMap { _ in
+                    let p = try? AVAudioPlayer(contentsOf: url)
+                    p?.enableRate = true
+                    p?.prepareToPlay()
+                    return p
+                }
+                self.players[s] = created
+                pool = created
+            } else {
+                self.players[s] = []
+                return
+            }
+            guard !pool.isEmpty else { return }
+            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            p.volume = volume
+            p.rate = max(0.5, min(2, rate))
+            p.currentTime = 0
+            p.play()
+        }
     }
 
     /// The sound of a thing landing, by what it's made of.
@@ -105,34 +118,62 @@ final class TidySound {
     }
 
     func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
-        switch style {
-        case .soft: soft.impactOccurred()
-        case .rigid: rigid.impactOccurred(intensity: 0.8)
-        default: light.impactOccurred()
+        let fire = {
+            switch style {
+            case .soft:
+                let g = self.soft ?? UIImpactFeedbackGenerator(style: .soft)
+                if self.soft == nil { self.soft = g }
+                g.impactOccurred()
+                g.prepare()
+            case .rigid:
+                let g = self.rigid ?? UIImpactFeedbackGenerator(style: .rigid)
+                if self.rigid == nil { self.rigid = g }
+                g.impactOccurred(intensity: 0.8)
+                g.prepare()
+            default:
+                let g = self.light ?? UIImpactFeedbackGenerator(style: .light)
+                if self.light == nil { self.light = g }
+                g.impactOccurred()
+                g.prepare()
+            }
         }
+        if Thread.isMainThread { fire() } else { DispatchQueue.main.async(execute: fire) }
     }
 
-    func success() { note.notificationOccurred(.success) }
+    func success() {
+        let fire = {
+            let g = self.note ?? UINotificationFeedbackGenerator()
+            if self.note == nil { self.note = g }
+            g.notificationOccurred(.success)
+            g.prepare()
+        }
+        if Thread.isMainThread { fire() } else { DispatchQueue.main.async(execute: fire) }
+    }
 
     func startMusic() {
-        if music == nil, let url = GameFiles.url("calm", "m4a", game: "Tidy") {
-            music = try? AVAudioPlayer(contentsOf: url)
-            music?.numberOfLoops = -1
-            music?.prepareToPlay()
+        queue.async {
+            if self.music == nil,
+               let url = GameFiles.url("calm", "caf", game: "Tidy") ?? GameFiles.url("calm", "m4a", game: "Tidy") {
+                self.music = try? AVAudioPlayer(contentsOf: url)
+                self.music?.numberOfLoops = -1
+                self.music?.prepareToPlay()
+            }
+            guard let m = self.music else { return }
+            if !m.isPlaying {
+                m.volume = 0
+                m.play()
+            }
+            m.setVolume(0.42, fadeDuration: 1.5)
         }
-        guard let m = music else { return }
-        if !m.isPlaying {
-            m.volume = 0
-            m.play()
-        }
-        m.setVolume(0.42, fadeDuration: 1.5)
     }
 
     func stopMusic() {
-        guard let m = music, m.isPlaying else { return }
-        m.setVolume(0, fadeDuration: 0.6)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak m] in
-            if let m = m, m.volume < 0.05 { m.pause() }
+        queue.async {
+            guard let m = self.music, m.isPlaying else { return }
+            m.setVolume(0, fadeDuration: 0.6)
+            self.queue.asyncAfter(deadline: .now() + 0.65) { [weak m] in
+                if let m = m, m.volume < 0.05 { m.pause() }
+            }
         }
     }
 }
@@ -156,25 +197,68 @@ private struct TidyRoomBackdrop: View {
 
 // MARK: - Root
 
+private enum TidySession: Equatable {
+    case standard(index: Int, round: Int)
+    case shuffled(roomIndex: Int, seed: UInt64)
+
+    var roomIndex: Int {
+        switch self {
+        case .standard(let index, _): return index
+        case .shuffled(let roomIndex, _): return roomIndex
+        }
+    }
+
+    var isInitialRound: Bool {
+        if case .standard(_, let round) = self { return round == 0 }
+        return false
+    }
+
+    var level: TidyLevel {
+        switch self {
+        case .standard(let index, _): return TidyLevels.all[index]
+        case .shuffled(let roomIndex, let seed): return TidyLevels.shuffled(roomIndex: roomIndex, seed: seed)
+        }
+    }
+
+    var viewID: String {
+        switch self {
+        case .standard(let index, let round): return "std-\(index)-\(round)"
+        case .shuffled(let roomIndex, let seed): return "shuf-\(roomIndex)-\(seed)"
+        }
+    }
+}
+
 struct TidyGameView: View {
     let exit: () -> Void
     @StateObject private var store = TidyStore()
-    @State private var playing: Int?
-    @State private var round = 0
+    @State private var session: TidySession?
+    @State private var shuffleCounter: UInt64 = 1
 
     var body: some View {
         ZStack {
-            if let i = playing {
-                TidyPlayView(index: i, store: store, round: round,
-                             next: { go(to: (i + 1) % TidyLevels.all.count) },
-                             levels: { withAnimation(.easeInOut(duration: 0.35)) { playing = nil } },
-                             replay: { round += 1 },
-                             exit: exit)
-                    .id("\(i)-\(round)")
-                    .transition(.opacity)
+            if let active = session {
+                let roomIdx = active.roomIndex
+                TidyPlayView(
+                    level: active.level,
+                    roomIndex: roomIdx,
+                    allowDemoPrefill: active.isInitialRound,
+                    store: store,
+                    next: { advance(from: active) },
+                    levels: { withAnimation(.easeInOut(duration: 0.35)) { session = nil } },
+                    replay: { replayCurrent(active) },
+                    shuffle: { startShuffle(roomIndex: roomIdx) },
+                    exit: exit
+                )
+                .id(active.viewID)
+                .transition(.opacity)
             } else {
-                TidyLevelPicker(store: store, exit: exit) { go(to: $0) }
-                    .transition(.opacity)
+                TidyLevelPicker(
+                    store: store,
+                    exit: exit,
+                    open: { go(to: $0) },
+                    openShuffle: { startRandomClearedShuffle() }
+                )
+                .transition(.opacity)
             }
         }
         .onAppear {
@@ -189,14 +273,56 @@ struct TidyGameView: View {
 
     private func go(to i: Int) {
         TidySound.shared.play(.whoosh, volume: 0.5)
-        withAnimation(.easeInOut(duration: 0.35)) { playing = i }
+        withAnimation(.easeInOut(duration: 0.35)) { session = .standard(index: i, round: 0) }
+    }
+
+    private func nextSeed() -> UInt64 {
+        shuffleCounter &+= 1
+        return UInt64.random(in: 1...UInt64.max) ^ (shuffleCounter &* 0x9E37_79B9_7F4A_7C15)
+    }
+
+    private func startShuffle(roomIndex: Int) {
+        TidySound.shared.play(.whoosh, volume: 0.5)
+        let seed = nextSeed()
+        withAnimation(.easeInOut(duration: 0.35)) {
+            session = .shuffled(roomIndex: roomIndex, seed: seed)
+        }
+    }
+
+    private func startRandomClearedShuffle() {
+        let cleared = TidyLevels.all.indices.filter { store.done.contains(TidyLevels.all[$0].id) }
+        let pick = cleared.randomElement() ?? Int.random(in: 0..<TidyLevels.all.count)
+        startShuffle(roomIndex: pick)
+    }
+
+    private func replayCurrent(_ active: TidySession) {
+        switch active {
+        case .standard(let index, let round):
+            session = .standard(index: index, round: round + 1)
+        case .shuffled(let roomIndex, _):
+            session = .shuffled(roomIndex: roomIndex, seed: nextSeed())
+        }
+    }
+
+    private func advance(from active: TidySession) {
+        switch active {
+        case .standard(let index, _):
+            if index + 1 < TidyLevels.all.count {
+                go(to: index + 1)
+            } else {
+                // Past level 24: seamlessly enter endless bonus clutter shuffles!
+                startShuffle(roomIndex: Int.random(in: 0..<TidyLevels.all.count))
+            }
+        case .shuffled(let roomIndex, _):
+            startShuffle(roomIndex: (roomIndex + 1) % TidyLevels.all.count)
+        }
     }
 
     /// Simulator screenshot hooks: -tidyLevel <n> opens a level (-tidyPrefill <k>, -tidyHold in TidyPlayView).
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-tidyLevel"), i + 1 < args.count, let n = Int(args[i + 1]), TidyLevels.all.indices.contains(n) {
-            playing = n
+            session = .standard(index: n, round: 0)
         }
         if args.contains("-tidyDemoDone") {
             for l in TidyLevels.all.prefix(9) { store.done.insert(l.id) }
@@ -229,11 +355,14 @@ struct TidyLevelPicker: View {
     @ObservedObject var store: TidyStore
     let exit: () -> Void
     let open: (Int) -> Void
+    let openShuffle: () -> Void
 
     @State private var page: TidyPickerPage = .cozy
     @State private var showBook = false
+    @State private var shuffleBob = false
 
     private var nextUp: Int { TidyLevels.all.firstIndex { !store.done.contains($0.id) } ?? 0 }
+    private var allCleared: Bool { TidyLevels.all.allSatisfy { store.done.contains($0.id) } }
 
     var body: some View {
         ZStack {
@@ -280,7 +409,22 @@ struct TidyLevelPicker: View {
                             pickerSwitcherBar
                         },
                         trailing: {
-                            TidyMusicButton(store: store, size: GameChromeLayout.buttonSize)
+                            HStack(spacing: 12) {
+                                if !store.done.isEmpty {
+                                    RoundButton(
+                                        symbol: "die.face.5.fill",
+                                        tint: Color(hex: 0xFFB84D),
+                                        size: GameChromeLayout.buttonSize
+                                    ) {
+                                        Sound.shared.play(.sparkle, volume: 0.5)
+                                        Sound.shared.tap()
+                                        openShuffle()
+                                    }
+                                    .scaleEffect(allCleared && shuffleBob ? 1.09 : 1)
+                                    .accessibilityLabel("Bonus Shuffle Room")
+                                }
+                                TidyMusicButton(store: store, size: GameChromeLayout.buttonSize)
+                            }
                         }
                     )
 
@@ -304,6 +448,9 @@ struct TidyLevelPicker: View {
         .onAppear {
             let cozyDone = TidyPickerPage.cozy.range.allSatisfy { store.done.contains(TidyLevels.all[$0].id) }
             if cozyDone { page = .sparkle }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                shuffleBob = true
+            }
         }
     }
 
@@ -421,11 +568,12 @@ struct TidyMusicButton: View {
 // MARK: - Playing a level
 
 struct TidyPlayView: View {
-    let index: Int
+    let roomIndex: Int
     @ObservedObject var store: TidyStore
     let next: () -> Void
     let levels: () -> Void
     let replay: () -> Void
+    let shuffle: () -> Void
     let exit: () -> Void
     @StateObject private var world: TidyWorld
     @State private var touching = false
@@ -435,18 +583,24 @@ struct TidyPlayView: View {
     @State private var resetArmedAt = Date.distantPast
     @State private var resetPulse = false
 
-    init(index: Int, store: TidyStore, round: Int, next: @escaping () -> Void, levels: @escaping () -> Void,
-         replay: @escaping () -> Void, exit: @escaping () -> Void) {
-        self.index = index
+    private var canShuffleRoom: Bool {
+        world.level.isShuffle || store.done.contains(TidyLevels.all[roomIndex].id)
+    }
+
+    init(level: TidyLevel, roomIndex: Int, allowDemoPrefill: Bool, store: TidyStore,
+         next: @escaping () -> Void, levels: @escaping () -> Void,
+         replay: @escaping () -> Void, shuffle: @escaping () -> Void, exit: @escaping () -> Void) {
+        self.roomIndex = roomIndex
         self.store = store
         self.next = next
         self.levels = levels
         self.replay = replay
+        self.shuffle = shuffle
         self.exit = exit
         let args = ProcessInfo.processInfo.arguments
         var prefill = 0
-        if round == 0, let i = args.firstIndex(of: "-tidyPrefill"), i + 1 < args.count, let n = Int(args[i + 1]) { prefill = n }
-        let w = TidyWorld(level: TidyLevels.all[index], prefill: prefill)
+        if allowDemoPrefill, let i = args.firstIndex(of: "-tidyPrefill"), i + 1 < args.count, let n = Int(args[i + 1]) { prefill = n }
+        let w = TidyWorld(level: level, prefill: prefill)
         w.size = CGSize(width: GameChromeLayout.width, height: GameChromeLayout.height)
         _world = StateObject(wrappedValue: w)
     }
@@ -503,6 +657,14 @@ struct TidyPlayView: View {
                                     Sound.shared.tap()
                                     levels()
                                 }
+                                if canShuffleRoom {
+                                    RoundButton(symbol: "die.face.5.fill", tint: Color(hex: 0xFFB84D), size: GameChromeLayout.buttonSize) {
+                                        Sound.shared.play(.sparkle, volume: 0.5)
+                                        Sound.shared.tap()
+                                        shuffle()
+                                    }
+                                    .accessibilityLabel("Shuffle Room")
+                                }
                                 protectedResetButton
                                 TidyMusicButton(store: store, size: GameChromeLayout.buttonSize)
                             }
@@ -532,8 +694,10 @@ struct TidyPlayView: View {
         .ignoresSafeArea()
         .onChange(of: world.complete) { done in
             if done {
-                store.done.insert(world.level.id)
-                store.save()
+                if !world.level.isShuffle {
+                    store.done.insert(world.level.id)
+                    store.save()
+                }
                 if store.done.count >= 6 {
                     StickerBook.shared.find(game: TidyGame.id, id: TidyFind.tidyChampion.rawValue)
                 }
@@ -597,11 +761,17 @@ struct TidyPlayView: View {
     private var doneButtons: some View {
         VStack {
             Spacer()
-            HStack(spacing: 40) {
+            HStack(spacing: 34) {
                 RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x4CC3C0), size: 96) {
                     Sound.shared.tap()
                     replay()
                 }
+                RoundButton(symbol: "die.face.5.fill", tint: Color(hex: 0xFFB84D), size: 96) {
+                    Sound.shared.play(.sparkle, volume: 0.5)
+                    Sound.shared.tap()
+                    shuffle()
+                }
+                .accessibilityLabel("Shuffle Bonus Clutter")
                 Button {
                     Sound.shared.tap()
                     next()
@@ -650,6 +820,20 @@ enum TidyRenderer {
         bc.translateBy(x: -br.midX, y: -br.maxY)
         softShadow(ctx, CGPoint(x: br.midX, y: br.maxY), width: br.width * 1.15, height: 18, alpha: 0.25)
         TidySceneArt.movingBox(bc, br, open: 1)
+
+        if TidyWorld.hasPlushBear {
+            let bearPos = CGPoint(x: w.size.width - 90, y: w.floorY - 4)
+            let cheer: Double
+            if w.isDone {
+                cheer = 0.72 + 0.28 * sin(w.time * 6.5)
+            } else if w.lastPlace >= 0 && w.time - w.lastPlace < 1.15 {
+                cheer = sin((w.time - w.lastPlace) / 1.15 * .pi)
+            } else {
+                cheer = 0
+            }
+            softShadow(ctx, CGPoint(x: bearPos.x, y: bearPos.y + 1), width: 76, height: 14, alpha: 0.24)
+            TidySceneArt.hanbokPlushBear(ctx, at: bearPos, time: w.time, cheer: cheer)
+        }
 
         var sc = ctx
         sc.translateBy(x: o.x, y: o.y)

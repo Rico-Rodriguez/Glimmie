@@ -231,7 +231,13 @@ extension IceSim {
 
     /// A tap on a topping in the dock puts it on for her.
     func autoTopping(_ t: ICTopping) {
-        if build.base == nil { placeBase(station == .smoothie ? .glass : .waffle) }
+        if build.base == nil {
+            placeBase(station == .smoothie ? .glass : station == .bingsu ? .bowl : .waffle)
+        }
+        if profileDirty {
+            build.rebuildProfile()
+            profileDirty = false
+        }
         let top = build.top(0) ?? 0
         let y0 = S.y - top
         switch t {
@@ -243,10 +249,11 @@ extension IceSim {
                                     color: ICPalette.candy[ci], colorIndex: ci, rot: CGFloat.random(in: 0...6.3), spin: CGFloat.random(in: -12...12)))
             }
             IceSound.shared.play(.shake, volume: 0.8)
-        case .chocoSauce, .berrySauce:
+        case .chocoSauce, .berrySauce, .condensedMilk:
             let col = t.sauceColor ?? ICColor(0x5A2F1F)
+            let span: CGFloat = t == .condensedMilk ? 36 : 28
             for k in 0..<80 {
-                let x = S.x + sin(CGFloat(k) * 0.35) * 28
+                let x = S.x + sin(CGFloat(k) * 0.35) * span
                 parts.append(ICPart(kind: .sauce, p: CGPoint(x: x, y: y0 - 50 - CGFloat(k) * 3.5), v: CGVector(dx: 0, dy: 240),
                                     life: 4, size: 5.5, color: col, topping: t))
             }
@@ -274,6 +281,9 @@ extension IceSim {
                 IceSound.shared.play(.crunch, volume: 0.6)
             }
             sparkle()
+        case .redBean, .mangoCubes, .strawberries, .injeolmi:
+            dropBingsuPieces(t, at: nil)
+            return
         }
         profileDirty = true
     }

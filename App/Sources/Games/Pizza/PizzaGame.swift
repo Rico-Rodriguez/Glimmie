@@ -183,41 +183,31 @@ enum PizzaSFX: String, CaseIterable {
 final class PizzaSound {
     static let shared = PizzaSound()
     static let looping: Set<PizzaSFX> = [.spread, .sprinkle, .fire, .sizzle, .roll]
+    private static let maxPoolSize = 3
+
     private var players: [PizzaSFX: [AVAudioPlayer]] = [:]
     private var loops: [PizzaSFX: AVAudioPlayer] = [:]
+    private var missing: Set<PizzaSFX> = []
     private var last: [PizzaSFX: Date] = [:]
     private var loopLevel: [PizzaSFX: Float] = [:]
     private var loopSent: [PizzaSFX: Float] = [:]
     /// Starting and fading AVAudioPlayers can stall, so it happens here, never on the frame being drawn.
     private let queue = DispatchQueue(label: "pizza.sound", qos: .userInitiated)
 
+    static func url(for s: PizzaSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Pizza") ?? GameFiles.url(s.rawValue, "wav", game: "Pizza")
+    }
+
     private init() {
         _ = Sound.shared // sets up the audio session
-        for s in PizzaSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Pizza") else { continue }
-            if PizzaSound.looping.contains(s) {
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.numberOfLoops = -1
-                p?.volume = 0
-                p?.prepareToPlay()
-                loops[s] = p
-            } else {
-                players[s] = (0..<3).compactMap { _ in
-                    let p = try? AVAudioPlayer(contentsOf: url)
-                    p?.prepareToPlay()
-                    return p
-                }
-            }
-        }
     }
 
     func play(_ s: PizzaSFX, volume: Float = 0.9, gap: Double = 0) {
-        let now = Date()
-        if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
-        last[s] = now
-        guard let pool = players[s], !pool.isEmpty else { return }
         queue.async {
-            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            let now = Date()
+            if gap > 0, let t = self.last[s], now.timeIntervalSince(t) < gap { return }
+            self.last[s] = now
+            guard let p = self.player(for: s) else { return }
             p.volume = volume
             p.currentTime = 0
             p.play()
@@ -226,7 +216,6 @@ final class PizzaSound {
 
     /// Fades a looping sound toward `volume` (called every frame; only reaches the player when it changes enough).
     func setLoop(_ s: PizzaSFX, volume: Float) {
-        guard let p = loops[s] else { return }
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.15
         loopLevel[s] = v
@@ -235,27 +224,55 @@ final class PizzaSound {
         guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
         loopSent[s] = on ? v : 0
         queue.async {
-            p.volume = on ? v : 0
             if on {
+                guard let p = self.loopPlayer(for: s) else { return }
+                p.volume = v
                 if !p.isPlaying { p.play() }
-            } else if p.isPlaying {
-                p.pause()
+            } else if let p = self.loops[s] {
+                p.volume = 0
+                if p.isPlaying { p.pause() }
             }
         }
     }
 
     func stopLoops() {
-        for s in loops.keys {
-            loopLevel[s] = 0
-            loopSent[s] = 0
-        }
-        let all = Array(loops.values)
+        loopLevel.removeAll()
+        loopSent.removeAll()
         queue.async {
-            for p in all {
+            for p in self.loops.values {
                 p.pause()
                 p.volume = 0
             }
         }
+    }
+
+    private func player(for s: PizzaSFX) -> AVAudioPlayer? {
+        guard !missing.contains(s) else { return nil }
+        let pool = players[s] ?? []
+        if let idle = pool.first(where: { !$0.isPlaying }) { return idle }
+        if pool.count < Self.maxPoolSize {
+            if let url = Self.url(for: s), let created = try? AVAudioPlayer(contentsOf: url) {
+                created.prepareToPlay()
+                players[s] = pool + [created]
+                return created
+            }
+            if pool.isEmpty { missing.insert(s) }
+        }
+        return pool.max(by: { $0.currentTime < $1.currentTime }) ?? pool.first
+    }
+
+    private func loopPlayer(for s: PizzaSFX) -> AVAudioPlayer? {
+        if let existing = loops[s] { return existing }
+        guard !missing.contains(s) else { return nil }
+        guard let url = Self.url(for: s), let created = try? AVAudioPlayer(contentsOf: url) else {
+            missing.insert(s)
+            return nil
+        }
+        created.numberOfLoops = -1
+        created.volume = 0
+        created.prepareToPlay()
+        loops[s] = created
+        return created
     }
 }
 
@@ -292,7 +309,7 @@ private enum PizzaSlot: Hashable {
         case .ladle, .cheese, .cutter: return CGPoint(x: 112, y: 470)
         case .topping(let k):
             let i = ToppingKind.allCases.firstIndex(of: k) ?? 0
-            return CGPoint(x: 70 + CGFloat(i % 2) * 96, y: 236 + CGFloat(i / 2) * 104)
+            return CGPoint(x: 70 + CGFloat(i % 2) * 96, y: 200 + CGFloat(i / 2) * 98)
         }
     }
 }
@@ -399,12 +416,43 @@ private struct StepIcon: View, Equatable {
                 PizzaPainter.cutter(g, spin: 0)
             }
         }
-        .frame(width: 50, height: 50)
+        .frame(width: 46, height: 46)
         .allowsHitTesting(false)
     }
 }
 
-/// Smoothly animated next/new-pizza button (never driven by a 10Hz periodic timer).
+/// Pulsing golden ring around the oven step icon when a player tries serving raw empty dough.
+private struct PizzaOvenNudgeRing: View {
+    let sim: PizzaSim
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.15)) { tl in
+            let nudging = sim.time - sim.ovenNudgeAt < 2.2
+            if nudging {
+                let pulse = CGFloat(1.08 + 0.08 * sin(tl.date.timeIntervalSinceReferenceDate * 10))
+                Circle()
+                    .stroke(Color(hex: 0xFFA52C), lineWidth: 5)
+                    .frame(width: 64, height: 64)
+                    .scaleEffect(pulse)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// Smoothly animated next/new-pizza button (polling scoped strictly to this leaf).
+private struct PizzaDynamicNextButton: View {
+    let sim: PizzaSim
+    let step: PizzaStep
+    let action: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.2)) { _ in
+            PizzaNextButton(step: step, ready: sim.ready(step), bakeProgress: sim.bake, action: action)
+        }
+    }
+}
+
 private struct PizzaNextButton: View {
     let step: PizzaStep
     let ready: Bool
@@ -453,6 +501,16 @@ private struct PizzaNextButton: View {
     }
 }
 
+private struct PizzaDynamicHeartsBadge: View {
+    let sim: PizzaSim
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            PizzaHeartsBadge(hearts: sim.save.hearts)
+        }
+    }
+}
+
 private struct PizzaHeartsBadge: View {
     let hearts: Int
 
@@ -479,6 +537,39 @@ private struct PizzaHeartsBadge: View {
 
 private enum PizzaCueKind: Equatable {
     case knead, flatten, toss, stoke
+}
+
+/// Scoped periodic check for pictorial idle hints without redrawing the dock or chrome.
+private struct PizzaDynamicCueOverlay: View {
+    let sim: PizzaSim
+    let hand: PizzaHand
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            if let cue = activeCue {
+                PizzaPictorialCue(kind: cue)
+            }
+        }
+    }
+
+    private var activeCue: PizzaCueKind? {
+        guard !hand.active, !sim.hold else { return nil }
+        let idle = Date().timeIntervalSince(hand.idleSince)
+        switch sim.stage {
+        case .dough:
+            if sim.ball {
+                if sim.kneads >= PGeo.knead && idle > 1.2 { return .flatten }
+                if sim.kneads < PGeo.knead && idle > 2.2 { return .knead }
+            } else if sim.tossStart == nil && sim.meanR < 185 && idle > 2.4 {
+                return .toss
+            }
+        case .bake:
+            if sim.bake < 0.96 && idle > 2.2 { return .stoke }
+        default:
+            break
+        }
+        return nil
+    }
 }
 
 /// Smooth pictorial hints (zero text) when idle on knead, flatten, dough toss, or oven stoke.
@@ -557,6 +648,8 @@ struct PizzaView: View {
     @State private var sim = PizzaSim()
     @State private var grids = PizzaGrids()
     @State private var hand = PizzaHand()
+    @State private var uiStage: PizzaStep = .dough
+    @State private var uiWants: [ToppingKind] = []
     @State private var carrying: PizzaSlot?
     @State private var showStickers = false
     @State private var started = false
@@ -580,13 +673,11 @@ struct PizzaView: View {
                 .contentShape(Rectangle())
                 .gesture(handGesture(map))
 
-                TimelineView(.periodic(from: .now, by: 0.15)) { _ in
-                    controls(map)
-                }
-                .frame(width: 1024, height: 834)
-                .coinPurse(game: PizzaSim.gameID)
-                .scaleEffect(map.s)
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                controls(map)
+                    .frame(width: 1024, height: 834)
+                    .coinPurse(game: PizzaSim.gameID)
+                    .scaleEffect(map.s)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
 
                 if showStickers {
                     StickerBookView(game: PizzaSim.gameID) {
@@ -610,7 +701,16 @@ struct PizzaView: View {
         guard !started else { return }
         started = true
         _ = PizzaSound.shared
+        sim.onAutoNewPizza = {
+            syncUIState()
+        }
         applyLaunchArguments()
+        syncUIState()
+    }
+
+    private func syncUIState() {
+        uiStage = sim.stage
+        uiWants = sim.order.wants
     }
 
     // MARK: Hand
@@ -644,75 +744,62 @@ struct PizzaView: View {
 
     // MARK: Controls
 
-    private var activeCue: PizzaCueKind? {
-        guard !hand.active, !sim.hold else { return nil }
-        let idle = Date().timeIntervalSince(hand.idleSince)
-        switch sim.stage {
-        case .dough:
-            if sim.ball {
-                if sim.kneads >= PGeo.knead && idle > 1.2 { return .flatten }
-                if sim.kneads < PGeo.knead && idle > 2.2 { return .knead }
-            } else if sim.tossStart == nil && sim.meanR < 185 && idle > 2.4 {
-                return .toss
-            }
-        case .bake:
-            if sim.bake < 0.96 && idle > 2.2 { return .stoke }
-        default:
-            break
-        }
-        return nil
-    }
-
     private func controls(_ map: GMap) -> some View {
-        let step = sim.stage
-        let ready = sim.ready(step)
-        return ZStack {
-            HomeButton(size: GameChromeLayout.buttonSize, action: exit)
-                .position(GameChromeLayout.homeCenter)
-            StickerBookButton(game: PizzaSim.gameID, size: GameChromeLayout.buttonSize) {
-                withAnimation(.spring(response: 0.35)) { showStickers = true }
-            }
-            .position(GameChromeLayout.stickerTarget)
-            stepBar(step)
-                .position(x: 452, y: GameChromeLayout.topBarY)
-            CoinCounter(game: PizzaSim.gameID, height: GameChromeLayout.buttonSize)
-                .position(x: 806, y: GameChromeLayout.topBarY)
-            PizzaHeartsBadge(hearts: sim.save.hearts)
-                .position(x: 942, y: GameChromeLayout.topBarY)
-            dock(step, map)
-            PizzaNextButton(step: step, ready: ready, bakeProgress: sim.bake) {
+        ZStack {
+            GameTopBar(
+                gameID: PizzaSim.gameID,
+                showStickerBook: true,
+                showCoins: true,
+                onExit: exit,
+                onStickerBook: {
+                    withAnimation(.spring(response: 0.35)) { showStickers = true }
+                },
+                center: {
+                    stepBar(uiStage)
+                },
+                trailing: {
+                    PizzaDynamicHeartsBadge(sim: sim)
+                }
+            )
+            dock(uiStage, map)
+            PizzaDynamicNextButton(sim: sim, step: uiStage) {
                 Sound.shared.tap()
-                if step == .slice {
+                if uiStage == .slice {
                     sim.newPizza()
-                } else if let n = PizzaStep(rawValue: step.rawValue + 1) {
+                } else if let n = PizzaStep(rawValue: uiStage.rawValue + 1) {
                     Sound.shared.play(.pop, volume: 0.6)
                     sim.go(n)
                 }
+                syncUIState()
             }
             .position(x: 938, y: 752)
-            if let cue = activeCue {
-                PizzaPictorialCue(kind: cue)
-            }
+            PizzaDynamicCueOverlay(sim: sim, hand: hand)
             StickerToast(game: PizzaSim.gameID, target: GameChromeLayout.stickerTarget)
         }
         .frame(width: 1024, height: 834)
     }
 
     private func stepBar(_ current: PizzaStep) -> some View {
-        GameTrayCard(cornerRadius: 34, paddingH: 10, paddingV: 6) {
-            HStack(spacing: 8) {
+        GameTrayCard(cornerRadius: 30, paddingH: 8, paddingV: 5) {
+            HStack(spacing: 6) {
                 ForEach(PizzaStep.allCases, id: \.self) { s in
                     Button {
                         Sound.shared.tap()
                         Sound.shared.play(.pop, volume: 0.6)
                         sim.go(s)
+                        syncUIState()
                     } label: {
                         StepIcon(step: s)
                             .equatable()
-                            .frame(width: 58, height: 58)
+                            .frame(width: 54, height: 54)
                             .background(Circle().fill(.white))
                             .overlay(Circle().stroke(current == s ? Theme.pink : Theme.blush.opacity(0.6), lineWidth: current == s ? 5 : 2.5))
-                            .scaleEffect(current == s ? 1.1 : 0.92)
+                            .overlay {
+                                if s == .bake {
+                                    PizzaOvenNudgeRing(sim: sim)
+                                }
+                            }
+                            .scaleEffect(current == s ? 1.08 : 0.92)
                             .shadow(color: Theme.ink.opacity(0.16), radius: 4, y: 3)
                             .animation(.spring(response: 0.35, dampingFraction: 0.6), value: current)
                     }
@@ -737,9 +824,9 @@ struct PizzaView: View {
         return ZStack {
             if step == .toppings {
                 GameTrayCard(cornerRadius: 34, paddingH: 0, paddingV: 0) {
-                    Color.clear.frame(width: 210, height: 432)
+                    Color.clear.frame(width: 210, height: 516)
                 }
-                .position(x: 118, y: 392)
+                .position(x: 118, y: 396)
                 .allowsHitTesting(false)
             } else if !currentSlots.isEmpty {
                 GameTrayCard(cornerRadius: 40, paddingH: 0, paddingV: 0) {
@@ -750,7 +837,7 @@ struct PizzaView: View {
             }
 
             ForEach(currentSlots, id: \.self) { slot in
-                PizzaDockPlate(slot: slot, wanted: slot.kind.map { sim.order.wants.contains($0) } ?? false, big: slot.kind == nil)
+                PizzaDockPlate(slot: slot, wanted: slot.kind.map { uiWants.contains($0) } ?? false, big: slot.kind == nil)
                     .equatable()
                     .opacity(carrying == slot && slot.kind == nil ? 0.35 : 1)
                     .position(slot.spot)

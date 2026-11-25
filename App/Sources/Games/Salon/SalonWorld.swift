@@ -15,39 +15,104 @@ enum SalonSFX: String, CaseIterable {
 
 final class SalonSound {
     static let shared = SalonSound()
+    private let queue = DispatchQueue(label: "glimmie.salon.sound", qos: .userInitiated)
     private var players: [SalonSFX: [AVAudioPlayer]] = [:]
     private var last: [String: Date] = [:]
 
     private init() {
         _ = Sound.shared
-        for s in SalonSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Salon") else { continue }
-            players[s] = (0..<3).compactMap { _ in
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.prepareToPlay()
-                return p
-            }
-        }
+    }
+
+    static func url(for s: SalonSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Salon") ?? GameFiles.url(s.rawValue, "wav", game: "Salon")
     }
 
     func play(_ s: SalonSFX, volume: Float = 0.8, gap: Double = 0) {
-        if gap > 0 {
-            let now = Date()
-            if let t = last[s.rawValue], now.timeIntervalSince(t) < gap { return }
-            last[s.rawValue] = now
+        queue.async {
+            if gap > 0 {
+                let now = Date()
+                if let t = self.last[s.rawValue], now.timeIntervalSince(t) < gap { return }
+                self.last[s.rawValue] = now
+            }
+            let pool: [AVAudioPlayer]
+            if let existing = self.players[s] {
+                pool = existing
+            } else if let url = Self.url(for: s) {
+                let created: [AVAudioPlayer] = (0..<3).compactMap { _ in
+                    let p = try? AVAudioPlayer(contentsOf: url)
+                    p?.prepareToPlay()
+                    return p
+                }
+                self.players[s] = created
+                pool = created
+            } else {
+                self.players[s] = []
+                return
+            }
+            guard !pool.isEmpty else { return }
+            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            p.volume = volume
+            p.currentTime = 0
+            p.play()
         }
-        guard let pool = players[s] else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.currentTime = 0
-        p.play()
     }
 
     func play(_ s: SFX, volume: Float = 0.8, gap: Double) {
-        let now = Date()
-        if let t = last["shared." + s.rawValue], now.timeIntervalSince(t) < gap { return }
-        last["shared." + s.rawValue] = now
-        Sound.shared.play(s, volume: volume)
+        queue.async {
+            let now = Date()
+            if let t = self.last["shared." + s.rawValue], now.timeIntervalSince(t) < gap { return }
+            self.last["shared." + s.rawValue] = now
+            Sound.shared.play(s, volume: volume)
+        }
+    }
+}
+
+/// Lightweight shared appearance snapshot written by Dress Up in `UserDefaults.standard`
+/// so Salon can bring her own doll into the chair without touching Dress Up's `GameStorage` folder.
+enum SalonDollDefaults {
+    static let skinHexKey = "glimmie.doll.skinHex"
+    static let hairHexKey = "glimmie.doll.hairHex"
+    static let eyeHexKey = "glimmie.doll.eyeHex"
+
+    static let defaultSkinIndex = 1
+    static let defaultHairIndex = 3
+    static let defaultEyeIndex = 6
+
+    static func nearestIndex(hex: String?, in palette: [RGB], fallback: Int) -> Int {
+        guard !palette.isEmpty else { return 0 }
+        let safeFallback = min(max(0, fallback), palette.count - 1)
+        guard let raw = hex?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return safeFallback
+        }
+        let clean = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+        guard clean.count >= 6, UInt32(clean.prefix(6), radix: 16) != nil else {
+            return safeFallback
+        }
+        let target = RGB(hex: clean)
+        var bestIdx = safeFallback
+        var bestDist = Double.greatestFiniteMagnitude
+        for (i, c) in palette.enumerated() {
+            let dr = c.r - target.r
+            let dg = c.g - target.g
+            let db = c.b - target.b
+            let d = dr * dr + dg * dg + db * db
+            if d < bestDist {
+                bestDist = d
+                bestIdx = i
+            }
+        }
+        return bestIdx
+    }
+
+    static func colors(from defaults: UserDefaults = .standard) -> (skin: RGB, hair: RGB, eye: RGB) {
+        let art = DressUpArt.shared
+        let skinIdx = nearestIndex(hex: defaults.string(forKey: skinHexKey), in: art.skin, fallback: defaultSkinIndex)
+        let hairIdx = nearestIndex(hex: defaults.string(forKey: hairHexKey), in: art.hair, fallback: defaultHairIndex)
+        let eyeIdx = nearestIndex(hex: defaults.string(forKey: eyeHexKey), in: art.eye, fallback: defaultEyeIndex)
+        let skin = art.skin.indices.contains(skinIdx) ? art.skin[skinIdx] : RGB(hex: "#FFDCCB")
+        let hair = art.hair.indices.contains(hairIdx) ? art.hair[hairIdx] : RGB(hex: "#C98A55")
+        let eye = art.eye.indices.contains(eyeIdx) ? art.eye[eyeIdx] : RGB(hex: "#5C9BEB")
+        return (skin, hair, eye)
     }
 }
 
@@ -252,6 +317,52 @@ final class SalonWorld {
         }
         sim.settle(seconds: 2)
         return (look, sim)
+    }
+
+    static func makeMyDollClient(defaults: UserDefaults = .standard) -> (Look, HairSim) {
+        let art = DressUpArt.shared
+        var look = Look.starter
+        look.skin = SalonDollDefaults.nearestIndex(
+            hex: defaults.string(forKey: SalonDollDefaults.skinHexKey),
+            in: art.skin,
+            fallback: SalonDollDefaults.defaultSkinIndex
+        )
+        look.hair = SalonDollDefaults.nearestIndex(
+            hex: defaults.string(forKey: SalonDollDefaults.hairHexKey),
+            in: art.hair,
+            fallback: SalonDollDefaults.defaultHairIndex
+        )
+        look.eye = SalonDollDefaults.nearestIndex(
+            hex: defaults.string(forKey: SalonDollDefaults.eyeHexKey),
+            in: art.eye,
+            fallback: SalonDollDefaults.defaultEyeIndex
+        )
+        look = look.sanitized(art)
+        for cat in ["hairBack", "hairFront", "hat", "dress", "top", "bottom", "shoes", "socks"] { look.picks[cat] = nil }
+        let recipe = HairRecipe(seed: 108, color: look.hair, length: 2, fringe: 4, curl: 0.15, tangle: 0.05)
+        let sim = HairSim(recipe: recipe, palette: hairPalette)
+        sim.settle(seconds: 2)
+        return (look, sim)
+    }
+
+    func loadMyDoll(defaults: UserDefaults = .standard) {
+        let c = SalonWorld.makeMyDollClient(defaults: defaults)
+        look = c.0
+        sim = c.1
+        cape = 3
+        hat = nil
+        visitID = UUID()
+        bits.removeAll()
+        moving = nil
+        movingOffset = .zero
+        cancelCarry()
+        tappedTie = nil
+        scissorsFlash = nil
+        turnTarget = 0
+        hasBeenStyled = false
+        hasUnrewardedStyling = false
+        savedSinceStyle = false
+        changed = true
     }
 
     func newClient() {
@@ -716,6 +827,17 @@ final class SalonWorld {
             if Double.random(in: 0..<1, using: &rng) < 0.6 {
                 let side = dir.perp * rnd(-16, 16)
                 bits.append(SalonBit(kind: .air, p: q + side, v: dir * rnd(360, 500) + dir.perp * rnd(-30, 30), life: 0.45, size: rnd(14, 26)))
+            }
+            if SalonToolArt.hasStarDryer && Double.random(in: 0..<1, using: &rng) < 0.78 {
+                let rainbow: [RGB] = [
+                    RGB(hex: "#FF7DB8"), RGB(hex: "#FFB870"), RGB(hex: "#FFE670"),
+                    RGB(hex: "#7EE0B5"), RGB(hex: "#84C5FF"), RGB(hex: "#CFA6FF"),
+                ]
+                let pick = rainbow[Int.random(in: 0..<rainbow.count, using: &rng)]
+                let side = dir.perp * rnd(-14, 14)
+                bits.append(SalonBit(kind: .sparkle, p: q + dir * rnd(10, 28) + side,
+                                     v: dir * rnd(260, 420) + dir.perp * rnd(-48, 48),
+                                     life: rndD(0.45, 0.78), size: rnd(6.5, 12.5), color: pick))
             }
             SalonSound.shared.play(.dryer, volume: 0.5, gap: 0.5)
         case .curler?:

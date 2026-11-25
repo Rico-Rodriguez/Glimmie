@@ -147,14 +147,14 @@ private struct Sway {
 }
 
 enum LiveDollPainter {
-    static let sparkly: Set<String> = [
+    static let sparkly: Set<String> = Set([
         "h_crown", "h_tiara", "h_starcrown", "h_halo", "h_unicorn", "p_wand", "d_magic", "d_star", "d_gown", "d_mermaid",
         "d_ballerina", "d_princess", "sh_glitter", "mk_glitter", "mk_gems", "er_pearl", "er_star", "er_drop", "n_pearls",
         "n_star", "n_heart", "w_fairy", "w_angel", "w_butterfly", "g_star", "p_bubbles",
-    ]
+    ]).union(DressUpCulturalOutfits.sparklyIDs)
     /// Bottoms with legs in them don't swing.
     static let stiff: Set<String> = ["b_shorts", "b_pants", "b_leggings", "b_overalls"]
-    static let wings: Set<String> = ["w_fairy", "w_angel", "w_butterfly", "w_bat"]
+    static let wings: Set<String> = Set(["w_fairy", "w_angel", "w_butterfly", "w_bat"]).union(DressUpCulturalOutfits.wingIDs)
     static let satin: Set<String> = ["dress", "bottom"]
 
     private static var points: [String: [CGPoint]] = [:]
@@ -370,9 +370,10 @@ struct LiveDollView: View {
     let box: CGRect
     let motion: DollMotion
     var windy = false
+    var paused = false
 
     var body: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: paused)) { tl in
             Canvas { ctx, size in
                 let t = tl.date.timeIntervalSinceReferenceDate
                 motion.windy = windy
@@ -389,6 +390,7 @@ struct LiveDollView: View {
 /// Moving things in front of a scene: twinkling stars, falling snow, rising bubbles, drifting petals.
 struct SceneLife: View {
     let bg: String
+    var paused = false
 
     private enum Kind { case stars, snow, bubbles, petals, leaves, none }
     private var kind: Kind {
@@ -406,7 +408,7 @@ struct SceneLife: View {
         if kind == .none {
             Color.clear
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { tl in
                 Canvas { ctx, size in draw(ctx, size: size, t: tl.date.timeIntervalSinceReferenceDate) }
             }
             .allowsHitTesting(false)
@@ -486,23 +488,25 @@ struct SceneLife: View {
 
 /// A burst of sparkles that really twinkle: they fly out turning, flaring and dimming. New `.id` to replay.
 struct TwinkleBurst: View {
+    static let duration: Double = 1.1
     var colors: [Color] = [.white, Theme.lemon, Theme.pink]
     var count = 14
     var radius: CGFloat = 180
     @State private var start = Date()
+    @State private var active = true
 
     var body: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !active)) { tl in
             Canvas { ctx, size in
                 let age = tl.date.timeIntervalSince(start)
-                guard age < 1.1 else { return }
+                guard age < Self.duration else { return }
                 let c = CGPoint(x: size.width / 2, y: size.height / 2)
                 for i in 0..<count {
                     let a = Double(i) / Double(count) * 2 * .pi + Double(i % 3) * 0.2
                     let k = 1 - pow(1 - min(1, age / 0.9), 3)
                     let d = radius * CGFloat(k) * (0.7 + 0.15 * CGFloat(i % 3))
                     let flicker = 0.6 + 0.4 * abs(sin(age * 18 + Double(i)))
-                    let fade = max(0, 1 - age / 1.1)
+                    let fade = max(0, 1 - age / Self.duration)
                     let r = CGFloat(9 + (i % 3) * 4) * CGFloat(flicker) * CGFloat(0.5 + fade * 0.6)
                     var g = ctx
                     g.translateBy(x: c.x + CGFloat(cos(a)) * d, y: c.y + CGFloat(sin(a)) * d)
@@ -517,5 +521,9 @@ struct TwinkleBurst: View {
         }
         .frame(width: radius * 2 + 80, height: radius * 2 + 80)
         .allowsHitTesting(false)
+        .task {
+            try? await Task.sleep(nanoseconds: UInt64((Self.duration + 0.05) * 1_000_000_000))
+            active = false
+        }
     }
 }

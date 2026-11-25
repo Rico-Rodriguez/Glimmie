@@ -185,7 +185,7 @@ final class SalonTests: XCTestCase {
     }
 
     func testSoundsAndClientsExist() {
-        for sfx in SalonSFX.allCases { XCTAssertNotNil(GameFiles.url(sfx.rawValue, "wav", game: "Salon"), sfx.rawValue) }
+        for sfx in SalonSFX.allCases { XCTAssertNotNil(SalonSound.url(for: sfx), sfx.rawValue) }
         let c = SalonWorld.makeClient(seed: 9)
         XCTAssertNil(c.0.picks["hairBack"])
         XCTAssertNotNil(c.0.picks["eyes"])
@@ -321,5 +321,115 @@ final class SalonTests: XCTestCase {
         }
         XCTAssertGreaterThan(cleared, 0)
         XCTAssertLessThan(s.foam.count, max(3, startFoam / 3))
+    }
+
+    func testKoreanAndMagicalAccessoriesAttachAndRoundTrip() throws {
+        let newKinds: [HairClip.Kind] = [.daenggi, .pastelBow, .heartJewel]
+        for kind in newKinds {
+            XCTAssertTrue(
+                SalonView.clipChoices.contains {
+                    if case .clip(let k, _) = $0 { return k == kind }
+                    return false
+                },
+                "expected \(kind.rawValue) in SalonView.clipChoices"
+            )
+            XCTAssertTrue(HairClip(kind: kind, color: 4, strand: 0, node: 0, dx: 0, dy: 0).holds)
+        }
+
+        let s = sim(21)
+        s.settle(seconds: 1)
+        XCTAssertTrue(s.attach(.daenggi, color: 5, at: HairV(390, 220)))
+        XCTAssertTrue(s.attach(.pastelBow, color: 2, at: HairV(210, 220)))
+        XCTAssertTrue(s.attach(.heartJewel, color: 4, at: HairV(300, 175)))
+
+        let encoded = try JSONEncoder().encode(s.save(positions: true))
+        let decoded = try JSONDecoder().decode(HairSim.Save.self, from: encoded)
+        let restored = HairSim(save: decoded, palette: DressUpArt.shared.hair)
+        XCTAssertEqual(Set(restored.clips.map(\.kind)), Set(newKinds))
+    }
+
+    func testMyDollClientReadsUserDefaultsAndFallsBackCleanly() {
+        let suite = "com.glimmie.tests.salon.mydoll.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return XCTFail("could not create isolated UserDefaults suite")
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let art = DressUpArt.shared
+
+        // Fallback when Dress Up hasn't written appearance keys yet.
+        let fallback = SalonWorld.makeMyDollClient(defaults: defaults)
+        XCTAssertEqual(fallback.0.skin, min(SalonDollDefaults.defaultSkinIndex, max(0, art.skin.count - 1)))
+        XCTAssertEqual(fallback.0.hair, min(SalonDollDefaults.defaultHairIndex, max(0, art.hair.count - 1)))
+        XCTAssertEqual(fallback.0.eye, min(SalonDollDefaults.defaultEyeIndex, max(0, art.eye.count - 1)))
+        XCTAssertNil(fallback.0.picks["hairBack"])
+        XCTAssertNotNil(fallback.0.picks["eyes"])
+        XCTAssertFalse(fallback.1.strands.isEmpty)
+
+        // Exact palette hex lookup when Dress Up writes shared appearance keys.
+        let wantSkin = min(3, max(0, art.skin.count - 1))
+        let wantHair = min(0, max(0, art.hair.count - 1))
+        let wantEye = min(2, max(0, art.eye.count - 1))
+        func hexString(_ c: RGB) -> String {
+            String(format: "#%02X%02X%02X", Int((c.r * 255).rounded()), Int((c.g * 255).rounded()), Int((c.b * 255).rounded()))
+        }
+        defaults.set(hexString(art.skin[wantSkin]), forKey: SalonDollDefaults.skinHexKey)
+        defaults.set(hexString(art.hair[wantHair]), forKey: SalonDollDefaults.hairHexKey)
+        defaults.set(hexString(art.eye[wantEye]), forKey: SalonDollDefaults.eyeHexKey)
+
+        let world = SalonWorld(visit: nil)
+        world.loadMyDoll(defaults: defaults)
+        XCTAssertEqual(world.look.skin, wantSkin)
+        XCTAssertEqual(world.look.hair, wantHair)
+        XCTAssertEqual(world.look.eye, wantEye)
+        XCTAssertFalse(world.hasBeenStyled)
+
+        // Malformed hex falls back safely without crashing.
+        defaults.set("not-a-hex", forKey: SalonDollDefaults.skinHexKey)
+        let safe = SalonWorld.makeMyDollClient(defaults: defaults)
+        XCTAssertEqual(safe.0.skin, min(SalonDollDefaults.defaultSkinIndex, max(0, art.skin.count - 1)))
+    }
+
+    func testSalonTreasureHooksUnlockRoyalDaenggiAndStarDryer() throws {
+        Coins.shared.resetForTests(balance: 60)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(ClipPainter.royalDaenggiTreasureID, "salon/royalDaenggi")
+        XCTAssertEqual(SalonToolArt.starDryerTreasureID, "salon/starDryer")
+        XCTAssertFalse(ClipPainter.hasRoyalDaenggi)
+        XCTAssertFalse(SalonToolArt.hasStarDryer)
+        XCTAssertEqual(SalonView.availableClipChoices, SalonView.clipChoices)
+
+        XCTAssertTrue(Coins.shared.buy(ClipPainter.royalDaenggiTreasureID, price: 10))
+        XCTAssertTrue(ClipPainter.hasRoyalDaenggi)
+        XCTAssertEqual(SalonView.availableClipChoices.count, SalonView.clipChoices.count + 1)
+        XCTAssertEqual(SalonView.availableClipChoices.first, .clip(.royalDaenggi, 5))
+        XCTAssertTrue(HairClip(kind: .royalDaenggi, color: 5, strand: 0, node: 0, dx: 0, dy: 0).holds)
+
+        let s = sim(29)
+        s.settle(seconds: 1)
+        XCTAssertTrue(s.attach(.royalDaenggi, color: 5, at: HairV(390, 220)))
+        let encoded = try JSONEncoder().encode(s.save(positions: true))
+        let decoded = try JSONDecoder().decode(HairSim.Save.self, from: encoded)
+        let restored = HairSim(save: decoded, palette: DressUpArt.shared.hair)
+        XCTAssertEqual(restored.clips.first?.kind, .royalDaenggi)
+
+        // Dry hair emits no sparkles without starDryer, and emits rainbow sparkles once owned.
+        let baseWorld = SalonWorld(visit: SalonVisit(look: SalonWorld.makeClient(seed: 12).0, hair: s.save(positions: true), cape: 3, hat: nil))
+        baseWorld.tool = .dryer
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        baseWorld.press(CGPoint(x: 660, y: 360))
+        baseWorld.frame(at: t0)
+        for k in 1...20 {
+            baseWorld.frame(at: t0.addingTimeInterval(Double(k) / 60))
+        }
+        XCTAssertEqual(baseWorld.bits.filter { $0.kind == .sparkle }.count, 0)
+
+        XCTAssertTrue(Coins.shared.buy(SalonToolArt.starDryerTreasureID, price: 12))
+        XCTAssertTrue(SalonToolArt.hasStarDryer)
+        for k in 21...45 {
+            baseWorld.frame(at: t0.addingTimeInterval(Double(k) / 60))
+        }
+        XCTAssertGreaterThan(baseWorld.bits.filter { $0.kind == .sparkle }.count, 0)
     }
 }

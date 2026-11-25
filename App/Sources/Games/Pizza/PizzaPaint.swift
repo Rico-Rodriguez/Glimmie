@@ -35,6 +35,11 @@ struct GMap {
 }
 
 enum PizzaPainter {
+    static let goldOvenTreasureID = "pizza/goldOven"
+    static let starCutterTreasureID = "pizza/starCutter"
+    static var hasGoldOven: Bool { Coins.shared.owns(goldOvenTreasureID) }
+    static var hasStarCutter: Bool { Coins.shared.owns(starCutterTreasureID) }
+
     // MARK: colors
 
     static let rawDough = RGB(0.96, 0.89, 0.74)
@@ -605,6 +610,81 @@ enum PizzaPainter {
             fat.addQuadCurve(to: CGPoint(x: 13, y: 4), control: CGPoint(x: 0, y: 6))
             g.stroke(fat, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
             g.stroke(sq, with: .color(RGB(0.86, 0.48, 0.48).mix(RGB(0.62, 0.32, 0.2), b).color), lineWidth: 2 + 2 * CGFloat(b))
+        case .goguma:
+            let rr: CGFloat = 21
+            var rosette = Path()
+            let lobes = 10
+            for i in 0..<(lobes * 4) {
+                let a = Double(i) / Double(lobes * 4) * 2 * .pi
+                let rad = rr * (0.9 + 0.1 * CGFloat(sin(Double(i) / 4 * 2 * .pi)))
+                let pt = CGPoint(x: CGFloat(cos(a)) * rad, y: CGFloat(sin(a)) * rad)
+                if i == 0 { rosette.move(to: pt) } else { rosette.addLine(to: pt) }
+            }
+            rosette.closeSubpath()
+            g.fill(rosette.offsetBy(dx: shadowOff * 0.6, dy: shadowOff), with: .color(shadow))
+            let g1 = RGB(1.0, 0.87, 0.36).mix(RGB(0.95, 0.7, 0.2), b)
+            let g2 = RGB(0.94, 0.72, 0.2).mix(RGB(0.82, 0.48, 0.12), b)
+            g.fill(rosette, with: .radialGradient(Gradient(colors: [g1.mix(RGB(1, 1, 0.9), 0.32).color, g1.color, g2.color]),
+                                                  center: CGPoint(x: -6, y: -7), startRadius: 1, endRadius: rr * 1.25))
+            var swirl = Path()
+            for step in 0...32 {
+                let u = CGFloat(step) / 32
+                let a = u * 3.1 * .pi
+                let rad = (1 - u) * 14.5
+                let pt = CGPoint(x: cos(a) * rad, y: sin(a) * rad)
+                if step == 0 { swirl.move(to: pt) } else { swirl.addLine(to: pt) }
+            }
+            g.stroke(swirl.offsetBy(dx: 0.8, dy: 1.4), with: .color(g2.mul(0.75, 0.65, 0.5).color.opacity(0.6)),
+                     style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
+            g.stroke(swirl.offsetBy(dx: -0.8, dy: -1), with: .color(RGB(1, 0.98, 0.82).color.opacity(0.78)),
+                     style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+            // Tiny purple goguma peel specks + warm caramelized toast flecks
+            for _ in 0..<4 {
+                let a = r.unit() * 2 * .pi
+                let d = 5 + CGFloat(r.unit()) * 11
+                g.fill(Path(ellipseIn: CGRect(x: CGFloat(cos(a)) * d - 1.6, y: CGFloat(sin(a)) * d - 1.2, width: 3.2, height: 2.4)),
+                       with: .color(RGB(0.56, 0.22, 0.38).color.opacity(0.72)))
+            }
+            if b > 0.2 {
+                g.stroke(swirl, with: .color(RGB(0.74, 0.38, 0.08).color.opacity(0.38 * b)),
+                         style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+            }
+            g.stroke(rosette, with: .color(RGB(0.82, 0.56, 0.14).mix(RGB(0.62, 0.34, 0.08), b).color), lineWidth: 2.2)
+        case .cornCheese:
+            var blobPts: [CGPoint] = []
+            for i in 0..<12 {
+                let a = Double(i) / 12 * 2 * .pi
+                let rad = 18.5 + CGFloat(r.unit() - 0.5) * 4.5
+                blobPts.append(CGPoint(x: CGFloat(cos(a)) * rad, y: CGFloat(sin(a)) * rad * 0.92))
+            }
+            let base = smoothClosed(blobPts)
+            g.fill(base.offsetBy(dx: shadowOff * 0.6, dy: shadowOff), with: .color(shadow))
+            let c1 = RGB(1.0, 0.96, 0.80).mix(RGB(0.98, 0.84, 0.44), b)
+            let c2 = RGB(0.96, 0.86, 0.54).mix(RGB(0.88, 0.64, 0.24), b)
+            g.fill(base, with: .radialGradient(Gradient(colors: [c1.color, c2.color]),
+                                               center: CGPoint(x: -5, y: -6), startRadius: 1, endRadius: 22))
+            g.stroke(base, with: .color(RGB(0.84, 0.66, 0.28).mix(RGB(0.68, 0.42, 0.12), b).color), lineWidth: 2)
+            // Plump glossy sweet golden corn kernels
+            let kernels: [(CGFloat, CGFloat, Double)] = [
+                (-8, -6, -0.3), (3, -8, 0.2), (10, -1, 0.5),
+                (-10, 4, 0.4), (0, 1, -0.15), (7, 8, -0.4), (-2, 10, 0.25),
+            ]
+            let kernFill = RGB(1.0, 0.85, 0.16).mix(RGB(0.95, 0.7, 0.12), b)
+            let kernEdge = RGB(0.84, 0.58, 0.08).mix(RGB(0.65, 0.36, 0.05), b)
+            for (kx, ky, rot) in kernels {
+                var kg = g
+                kg.translateBy(x: kx, y: ky)
+                kg.rotate(by: .radians(rot))
+                let kPath = Path(roundedRect: CGRect(x: -4.4, y: -3.6, width: 8.8, height: 7.2), cornerRadius: 3.2)
+                kg.fill(kPath, with: .color(kernFill.color))
+                kg.stroke(kPath, with: .color(kernEdge.color), lineWidth: 1.4)
+                kg.fill(Path(ellipseIn: CGRect(x: -2.4, y: -2.2, width: 3.2, height: 1.8)), with: .color(.white.opacity(0.68)))
+            }
+            // Tiny green parsley flecks for Korean corn-cheese contrast
+            for (px, py) in [(CGFloat(-4), CGFloat(-1)), (CGFloat(5), CGFloat(3))] {
+                g.fill(Path(roundedRect: CGRect(x: px - 2, y: py - 1.2, width: 4, height: 2.4), cornerRadius: 1),
+                       with: .color(RGB(0.24, 0.62, 0.22).mix(RGB(0.16, 0.42, 0.14), b).color))
+            }
         }
     }
 
@@ -748,6 +828,118 @@ enum PizzaPainter {
         g.stroke(ring, with: .color(RGB(0.68, 0.36, 0.24).color), lineWidth: 46)
         g.stroke(ring, with: .color(RGB(0.84, 0.74, 0.64).color.opacity(0.8)), style: StrokeStyle(lineWidth: 46, dash: [3, 44]))
         g.stroke(ring.offsetBy(dx: 0, dy: 0), with: .color(RGB(1, 0.6, 0.3).color.opacity(0.18 * glow)), lineWidth: 8)
+        if hasGoldOven {
+            drawGoldOvenArch(g, visibleMaxY: v.maxY, time: t)
+        }
+    }
+
+    private static func drawGoldOvenArch(_ g: GraphicsContext, visibleMaxY: CGFloat, time t: Double) {
+        let center = CGPoint(x: 512, y: 430)
+        let innerR: CGFloat = 380
+        let outerR: CGFloat = 424
+        let tileHexes: [UInt32] = [0xFFB3CF, 0xFFE68A, 0xA8EAD5, 0xA8D6FF, 0xD3C0FF]
+        let goldEdge = StorybookArt.outline(for: 0xD89A1C)
+
+        // Pastel-painted ceramic mosaic tiles lining the vertical pillars + curved arch
+        let pillarSteps = max(1, Int(ceil((visibleMaxY - 420) / 38)))
+        for side in [0, 1] {
+            let x0: CGFloat = side == 0 ? 88 : 892
+            for row in 0..<pillarSteps {
+                let ty = 422 + CGFloat(row) * 38
+                let hex = tileHexes[(row + side * 2) % tileHexes.count]
+                let rect = CGRect(x: x0, y: ty, width: 44, height: 34)
+                let tile = Path(roundedRect: rect, cornerRadius: 6)
+                g.fill(tile, with: .color(StorybookArt.color(hex)))
+                g.stroke(tile, with: .color(Color(hex: 0xFFF7E6)), lineWidth: 2.5)
+                StorybookArt.highlight(g, in: CGRect(x: rect.minX + 6, y: rect.minY + 5, width: 16, height: 6), opacity: 0.55)
+            }
+        }
+
+        let tiles = 23
+        let startDeg = 181.5
+        let endDeg = 358.5
+        let stepDeg = (endDeg - startDeg) / Double(tiles)
+        for i in 0..<tiles {
+            let a0 = (startDeg + Double(i) * stepDeg + 0.35) * .pi / 180
+            let a1 = (startDeg + Double(i + 1) * stepDeg - 0.35) * .pi / 180
+            var wedge = Path()
+            wedge.move(to: CGPoint(x: center.x + CGFloat(cos(a0)) * innerR, y: center.y + CGFloat(sin(a0)) * innerR))
+            wedge.addArc(center: center, radius: outerR, startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
+            wedge.addArc(center: center, radius: innerR, startAngle: .radians(a1), endAngle: .radians(a0), clockwise: true)
+            wedge.closeSubpath()
+
+            let hex = tileHexes[i % tileHexes.count]
+            g.fill(wedge, with: .color(StorybookArt.color(hex)))
+            g.stroke(wedge, with: .color(Color(hex: 0xFFF7E6)), style: StrokeStyle(lineWidth: 2.6, lineJoin: .round))
+
+            // Delicate painted flower/dot motif centered on each ceramic tile
+            let am = (a0 + a1) * 0.5
+            let midR = (innerR + outerR) * 0.5
+            let mc = CGPoint(x: center.x + CGFloat(cos(am)) * midR, y: center.y + CGFloat(sin(am)) * midR)
+            if i.isMultiple(of: 2) {
+                StorybookArt.sparkle(g, at: mc, radius: 7.5, color: .white, opacity: 0.78)
+            } else {
+                g.fill(Path(ellipseIn: CGRect(x: mc.x - 5.5, y: mc.y - 5.5, width: 11, height: 11)), with: .color(.white.opacity(0.65)))
+                g.fill(Path(ellipseIn: CGRect(x: mc.x - 2.6, y: mc.y - 2.6, width: 5.2, height: 5.2)), with: .color(Color(hex: 0xFFE174)))
+            }
+        }
+
+        // Golden scalloped trim crowning the outer rim of the oven arch
+        let scallops = 30
+        let rimR: CGFloat = outerR + 6
+        for i in 0...scallops {
+            let deg = startDeg + Double(i) / Double(scallops) * (endDeg - startDeg)
+            let rad = deg * .pi / 180
+            let sc = CGPoint(x: center.x + CGFloat(cos(rad)) * rimR, y: center.y + CGFloat(sin(rad)) * rimR)
+            let bead = Path(ellipseIn: CGRect(x: sc.x - 12, y: sc.y - 12, width: 24, height: 24))
+            g.fill(
+                bead,
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xFFF5B8), Color(hex: 0xFFCF4A), Color(hex: 0xD9921A)]),
+                    center: CGPoint(x: sc.x - 3, y: sc.y - 4),
+                    startRadius: 1,
+                    endRadius: 14
+                )
+            )
+            g.stroke(bead, with: .color(goldEdge), lineWidth: 2.2)
+            g.fill(Path(ellipseIn: CGRect(x: sc.x - 5, y: sc.y - 6, width: 5, height: 3.5)), with: .color(.white.opacity(0.75)))
+        }
+
+        // Golden inner bead moulding along the opening edge
+        var innerTrim = Path()
+        innerTrim.move(to: CGPoint(x: 132, y: visibleMaxY + 10))
+        innerTrim.addLine(to: CGPoint(x: 132, y: 422))
+        innerTrim.addArc(center: center, radius: innerR, startAngle: .degrees(181.4), endAngle: .degrees(358.6), clockwise: false)
+        innerTrim.addLine(to: CGPoint(x: 892, y: visibleMaxY + 10))
+        g.stroke(innerTrim, with: .color(goldEdge), lineWidth: 8)
+        g.stroke(innerTrim, with: .color(Color(hex: 0xFFE484)), lineWidth: 4.5)
+
+        // Shimmering golden star keystone medallion at the top center of the arch
+        let crest = CGPoint(x: center.x, y: center.y - outerR + 10)
+        let med = Path(ellipseIn: CGRect(x: crest.x - 30, y: crest.y - 22, width: 60, height: 44))
+        g.fill(
+            med,
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF6BE), Color(hex: 0xFFCF4A), Color(hex: 0xD9921A)]),
+                center: CGPoint(x: crest.x - 6, y: crest.y - 6),
+                startRadius: 2,
+                endRadius: 34
+            )
+        )
+        g.stroke(med, with: .color(goldEdge), lineWidth: 3)
+        var sg = g
+        sg.translateBy(x: crest.x, y: crest.y)
+        sg.fill(star(13), with: .color(.white.opacity(0.95)))
+        sg.stroke(star(13), with: .color(goldEdge), lineWidth: 1.5)
+
+        // Subtle warm sparkles twinkling along the golden trim
+        let sparkleAngles: [Double] = [212, 248, 292, 328]
+        for (idx, deg) in sparkleAngles.enumerated() {
+            let rad = deg * .pi / 180
+            let sp = CGPoint(x: center.x + CGFloat(cos(rad)) * (rimR + 4), y: center.y + CGFloat(sin(rad)) * (rimR + 4))
+            let tw = 0.5 + 0.5 * sin(t * 3.8 + Double(idx) * 1.6)
+            StorybookArt.sparkle(g, at: sp, radius: CGFloat(7 + 5 * tw), color: idx.isMultiple(of: 2) ? .white : Color(hex: 0xFFF3A6), opacity: 0.5 + 0.5 * tw)
+        }
     }
 
     static func drawLogs(_ ctx: GraphicsContext, at p: CGPoint, time t: Double, glow: Double) {
@@ -1086,13 +1278,28 @@ enum PizzaPainter {
 
     /// A pizza wheel: the blade at (0, 0), handle down +y.
     static func cutter(_ g: GraphicsContext, spin: Double) {
+        let starCutter = hasStarCutter
         let handle = Path(roundedRect: CGRect(x: -14, y: 44, width: 28, height: 150), cornerRadius: 14)
         g.fill(handle.offsetBy(dx: 5, dy: 9), with: .color(.black.opacity(0.15)))
         let neck = Path(roundedRect: CGRect(x: -6, y: 0, width: 12, height: 56), cornerRadius: 5)
         g.fill(neck, with: .linearGradient(Gradient(colors: [RGB(0.9, 0.9, 0.93).color, RGB(0.6, 0.62, 0.66).color]),
                                            startPoint: CGPoint(x: -6, y: 0), endPoint: CGPoint(x: 6, y: 0)))
-        g.fill(handle, with: .linearGradient(Gradient(colors: [Color(hex: 0xFF9CC2), Color(hex: 0xE85B93)]),
-                                             startPoint: CGPoint(x: -14, y: 0), endPoint: CGPoint(x: 14, y: 0)))
+        if starCutter {
+            g.fill(
+                handle,
+                with: .linearGradient(
+                    Gradient(colors: [Theme.pink, Theme.peach, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac]),
+                    startPoint: CGPoint(x: 0, y: 44),
+                    endPoint: CGPoint(x: 0, y: 194)
+                )
+            )
+            g.stroke(handle, with: .color(StorybookArt.outline(for: 0xC9B6FF)), lineWidth: 2.2)
+            let collar = Path(roundedRect: CGRect(x: -15, y: 43, width: 30, height: 12), cornerRadius: 6)
+            StorybookArt.fillAndStroke(g, collar, fill: Color(hex: 0xFFDA66), stroke: StorybookArt.outline(for: 0xD9961E), width: 2)
+        } else {
+            g.fill(handle, with: .linearGradient(Gradient(colors: [Color(hex: 0xFF9CC2), Color(hex: 0xE85B93)]),
+                                                 startPoint: CGPoint(x: -14, y: 0), endPoint: CGPoint(x: 14, y: 0)))
+        }
         g.fill(Path(roundedRect: CGRect(x: -8, y: 54, width: 5, height: 130), cornerRadius: 2.5), with: .color(.white.opacity(0.35)))
         let wheel = Path(ellipseIn: CGRect(x: -36, y: -36, width: 72, height: 72))
         g.fill(wheel.offsetBy(dx: 4, dy: 8), with: .color(.black.opacity(0.15)))
@@ -1105,9 +1312,28 @@ enum PizzaPainter {
             spokes.addLine(to: CGPoint(x: CGFloat(cos(a)) * 28, y: CGFloat(sin(a)) * 28))
         }
         g.stroke(spokes, with: .color(RGB(0.55, 0.57, 0.62).color.opacity(0.6)), lineWidth: 2)
-        g.stroke(wheel, with: .color(RGB(0.45, 0.46, 0.5).color), lineWidth: 2.5)
+        g.stroke(wheel, with: .color(starCutter ? Color(hex: 0xD89B24) : RGB(0.45, 0.46, 0.5).color), lineWidth: 2.5)
         g.stroke(Path(ellipseIn: CGRect(x: -33, y: -33, width: 66, height: 66)), with: .color(.white.opacity(0.7)), lineWidth: 1.5)
-        g.fill(Path(ellipseIn: CGRect(x: -9, y: -9, width: 18, height: 18)), with: .color(Color(hex: 0xE85B93)))
+        if starCutter {
+            var hub = g
+            hub.rotate(by: .radians(spin))
+            let starHub = star(17)
+            hub.fill(
+                starHub,
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xFFF7BE), Color(hex: 0xFFCF4A), Color(hex: 0xE0961A)]),
+                    center: CGPoint(x: -3, y: -3),
+                    startRadius: 1,
+                    endRadius: 18
+                )
+            )
+            hub.stroke(starHub, with: .color(StorybookArt.outline(for: 0xD9961E)), style: StrokeStyle(lineWidth: 2.2, lineJoin: .round))
+            hub.fill(Path(ellipseIn: CGRect(x: -4, y: -4, width: 8, height: 8)), with: .color(.white.opacity(0.9)))
+            StorybookArt.sparkle(g, at: CGPoint(x: -22, y: -22), radius: 7, color: Color(hex: 0xFFF2A0), opacity: 0.95)
+            StorybookArt.sparkle(g, at: CGPoint(x: 24, y: -16), radius: 5.5, color: .white, opacity: 0.9)
+        } else {
+            g.fill(Path(ellipseIn: CGRect(x: -9, y: -9, width: 18, height: 18)), with: .color(Color(hex: 0xE85B93)))
+        }
     }
 
     /// A wooden bowl of grated cheese, around (0, 0).

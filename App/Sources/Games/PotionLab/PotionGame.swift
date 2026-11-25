@@ -99,7 +99,7 @@ private struct PotionTileIcon: View {
 
 enum PotionSFX: String, CaseIterable {
     case glug, splash, plop, drip, tink, clink, cork, pop, bloop, fizz, frost, chime, magic, poof, heart, boing, hiccup
-    case shakeOff, yawn, shake, knob, click, whoosh, gurgle, fill, tap
+    case shakeOff, yawn, shake, knob, click, whoosh, gurgle, tap
     case boil, sizzle, fire, stir
 }
 
@@ -108,37 +108,57 @@ final class PotionSound {
     static let looping: Set<PotionSFX> = [.boil, .sizzle, .fire, .stir]
     private var players: [PotionSFX: [AVAudioPlayer]] = [:]
     private var loops: [PotionSFX: AVAudioPlayer] = [:]
+    private var missingLoops: Set<PotionSFX> = []
     private let queue = DispatchQueue(label: "potion.sound", qos: .userInitiated)
     private var loopLevel: [PotionSFX: Float] = [:]
     private var loopSent: [PotionSFX: Float] = [:]
 
     private init() {
         _ = Sound.shared
-        for s in PotionSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "PotionLab") else { continue }
-            if PotionSound.looping.contains(s) {
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.numberOfLoops = -1
-                p?.volume = 0
-                p?.prepareToPlay()
-                loops[s] = p
-            } else {
-                players[s] = (0..<3).compactMap { _ in
-                    let p = try? AVAudioPlayer(contentsOf: url)
-                    p?.enableRate = true
-                    p?.prepareToPlay()
-                    return p
-                }
-            }
+    }
+
+    private func audioURL(for s: PotionSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "PotionLab")
+            ?? GameFiles.url(s.rawValue, "wav", game: "PotionLab")
+    }
+
+    private func playerPool(for s: PotionSFX) -> [AVAudioPlayer] {
+        if let existing = players[s] { return existing }
+        guard let url = audioURL(for: s) else {
+            players[s] = []
+            return []
         }
+        let pool: [AVAudioPlayer] = (0..<3).compactMap { _ in
+            let p = try? AVAudioPlayer(contentsOf: url)
+            p?.enableRate = true
+            p?.prepareToPlay()
+            return p
+        }
+        players[s] = pool
+        return pool
+    }
+
+    private func loopPlayer(for s: PotionSFX) -> AVAudioPlayer? {
+        if let existing = loops[s] { return existing }
+        if missingLoops.contains(s) { return nil }
+        guard let url = audioURL(for: s), let p = try? AVAudioPlayer(contentsOf: url) else {
+            missingLoops.insert(s)
+            return nil
+        }
+        p.numberOfLoops = -1
+        p.volume = 0
+        p.prepareToPlay()
+        loops[s] = p
+        return p
     }
 
     func play(_ s: PotionSFX, volume: Float = 0.85) {
-        guard let pool = players[s], !pool.isEmpty else { return }
         let v = volume * Float.random(in: 0.82...1.0)
         let watery: Set<PotionSFX> = [.plop, .drip, .pop, .bloop, .splash, .glug, .tink, .clink]
         let rate: Float = watery.contains(s) ? Float.random(in: 0.88...1.14) : 1
         queue.async {
+            let pool = self.playerPool(for: s)
+            guard !pool.isEmpty else { return }
             let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
             p.volume = v
             p.rate = rate
@@ -148,7 +168,7 @@ final class PotionSound {
     }
 
     func setLoop(_ s: PotionSFX, volume: Float) {
-        guard let p = loops[s] else { return }
+        guard PotionSound.looping.contains(s) else { return }
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.12
         loopLevel[s] = v
@@ -157,20 +177,24 @@ final class PotionSound {
         guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
         loopSent[s] = on ? v : 0
         queue.async {
-            p.volume = on ? v : 0
             if on {
+                guard let p = self.loopPlayer(for: s) else { return }
+                p.volume = v
                 if !p.isPlaying { p.play() }
-            } else if p.isPlaying {
-                p.pause()
+            } else if let p = self.loops[s] {
+                p.volume = 0
+                if p.isPlaying { p.pause() }
             }
         }
     }
 
     func stopLoops() {
-        for s in loops.keys { loopLevel[s] = 0; loopSent[s] = 0 }
-        let all = Array(loops.values)
+        for s in PotionSound.looping {
+            loopLevel[s] = 0
+            loopSent[s] = 0
+        }
         queue.async {
-            for p in all {
+            for p in self.loops.values {
                 p.pause()
                 p.volume = 0
             }
@@ -701,14 +725,20 @@ private struct PotionRecipeCard: View {
                     Image(systemName: "plus")
                         .font(.system(size: 13, weight: .black))
                         .foregroundStyle(Theme.ink.opacity(0.45))
+                    // Two bold flames visually match the 2-tap Boil setting on the burner dial.
                     ZStack {
-                        Circle().fill(Color(hex: 0xFFE8D4))
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(Color(hex: 0xFF6B3D))
+                        Capsule().fill(Color(hex: 0xFFE3CA))
+                        HStack(spacing: -2) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(Color(hex: 0xFF6B3D))
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 25, weight: .bold))
+                                .foregroundStyle(Color(hex: 0xFF5228))
+                        }
                     }
-                    .frame(width: 42, height: 42)
-                    .overlay(Circle().stroke(Color(hex: 0xFFB888), lineWidth: 2))
+                    .frame(width: 58, height: 42)
+                    .overlay(Capsule().stroke(Color(hex: 0xFF8C52), lineWidth: 2.5))
                 }
 
                 if recipe.requiresMoonlit {

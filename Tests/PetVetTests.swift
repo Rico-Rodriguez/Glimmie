@@ -172,6 +172,30 @@ final class PetVetTests: XCTestCase {
         XCTAssertEqual(grouped.count, VetTool.allCases.count)
         XCTAssertEqual(Set(grouped), Set(VetTool.allCases))
     }
+
+    func testEveryVetSoundResolvesWithoutDeadSqueak() {
+        XCTAssertNil(VetSFX(rawValue: "squeak"), "unused squeak case should be removed")
+        for sfx in VetSFX.allCases {
+            XCTAssertNotNil(VetSound.url(for: sfx), "missing audio asset for \(sfx.rawValue)")
+        }
+    }
+
+    func testPetVetTreasureHooksRespondToOwnership() {
+        Coins.shared.resetForTests(balance: 60)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(VetDraw.heartScopeTreasureID, "petvet/heartScope")
+        XCTAssertEqual(VetDraw.bowBandageTreasureID, "petvet/bowBandage")
+        XCTAssertFalse(VetDraw.hasHeartScope)
+        XCTAssertFalse(VetDraw.hasBowBandage)
+
+        XCTAssertTrue(Coins.shared.buy("petvet/heartScope", price: 10))
+        XCTAssertTrue(VetDraw.hasHeartScope)
+        XCTAssertFalse(VetDraw.hasBowBandage)
+
+        XCTAssertTrue(Coins.shared.buy("petvet/bowBandage", price: 8))
+        XCTAssertTrue(VetDraw.hasBowBandage)
+    }
 }
 
 /// A tiny deterministic generator for tests.

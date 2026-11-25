@@ -256,13 +256,14 @@ struct AquaFishSave: Codable, Equatable {
 
 enum AquaDecorKind: String, Codable, CaseIterable {
     case castle, chest, diver, bubbler, ship, rock, seaweed, coral, anemone, grass, shell, starfish
-    case crystal, rainbowCoral = "coral2", unicorn
+    case crystal, rainbowCoral = "coral2", unicorn, koiBridge
 
     var treasure: String? {
         switch self {
         case .crystal: return "aquarium/crystal"
         case .rainbowCoral: return "aquarium/coral"
         case .unicorn: return "aquarium/unicorn"
+        case .koiBridge: return "aquarium/koiBridge"
         default: return nil
         }
     }
@@ -288,12 +289,13 @@ enum AquaDecorKind: String, Codable, CaseIterable {
         case .crystal: return TreasureArt.crystalSize
         case .rainbowCoral: return TreasureArt.coralSize
         case .unicorn: return TreasureArt.unicornSize
+        case .koiBridge: return CGSize(width: 168, height: 84)
         }
     }
 
     var density: CGFloat {
         switch self {
-        case .rock, .ship, .castle: return 2.6
+        case .rock, .ship, .castle, .koiBridge: return 2.6
         case .chest, .diver, .unicorn, .crystal: return 2.2
         case .bubbler, .shell: return 2.0
         case .coral, .starfish, .rainbowCoral: return 1.6
@@ -304,7 +306,7 @@ enum AquaDecorKind: String, Codable, CaseIterable {
 
     var sways: Bool { self == .seaweed || self == .anemone || self == .grass || self == .rainbowCoral }
 
-    var bubbles: Bool { self == .chest || self == .diver || self == .bubbler || self == .castle }
+    var bubbles: Bool { self == .chest || self == .diver || self == .bubbler || self == .castle || self == .koiBridge }
 }
 
 struct AquaDecorSave: Codable, Equatable {

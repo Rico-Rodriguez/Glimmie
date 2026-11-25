@@ -61,6 +61,7 @@ struct VetExamView: View {
     @State private var consumed = false
     /// A tool tapped on a tray: tapping the patient runs it on that spot, tapping elsewhere puts it down.
     @State private var picked: VetTool?
+    @State private var pickedDragging = false
     @State private var auto = AutoTool()
     @State private var dragFrom: CGPoint?
     @State private var usedThisDrag = false
@@ -118,15 +119,7 @@ struct VetExamView: View {
                     bareHandLayer
 
                     if let pk = picked {
-                        ToolTapLayer(
-                            space: "exam",
-                            onDrag: { p in
-                                if auto.running { auto.cancel() }
-                                drag(pk, p)
-                            },
-                            onEnd: { p in drop(pk, p) },
-                            onTap: { p in autoDo(pk, at: p) }
-                        )
+                        pickedToolLayer(pk)
                     }
 
                     HStack(alignment: .center) {
@@ -201,6 +194,31 @@ struct VetExamView: View {
             if auto.running { auto.cancel() }
             save()
         }
+    }
+
+    private func pickedToolLayer(_ pk: VetTool) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("exam"))
+                    .onChanged { v in
+                        if !pickedDragging && !ToolTap.isTap(v.translation) {
+                            pickedDragging = true
+                        }
+                        if pickedDragging {
+                            if auto.running { auto.cancel() }
+                            drag(pk, v.location)
+                        }
+                    }
+                    .onEnded { v in
+                        if pickedDragging {
+                            drop(pk, v.location)
+                        } else {
+                            autoDo(pk, at: v.location)
+                        }
+                        pickedDragging = false
+                    }
+            )
     }
 
     // MARK: Bare-hand tickle & peelable bows/bandages
@@ -301,6 +319,7 @@ struct VetExamView: View {
         if auto.running { auto.cancel() }
         tool = nil
         picked = nil
+        pickedDragging = false
         lastTip = nil
         consumed = false
         healedAt = nil
@@ -761,7 +780,7 @@ struct VetExamView: View {
                 VetSound.shared.play(.swish, volume: 0.6, gap: 0.28)
             case .stethoscope:
                 VetSound.shared.play(.heartbeat, gap: 0.9)
-                if fx("hb", 0.9) { spawn(.heart(Theme.pink), at: room, vel: CGVector(dx: 0, dy: -90), life: 0.9, scale: 1.1) }
+                if fx("hb", 0.9) { emitHeartbeat(at: room) }
             case .icepack:
                 VetSound.shared.play(.brr, volume: 0.65, gap: 0.65)
                 if fx("chill", 0.45) {
@@ -798,6 +817,7 @@ struct VetExamView: View {
                 effects.wrap(id)
             case .stethoscope:
                 VetSound.shared.play(.heartbeat)
+                if VetDraw.hasHeartScope { emitHeartbeat(at: at) }
             case .comb:
                 VetSound.shared.play(.bugjump)
                 spawn(.prop(["bug", "bugGreen", "bugPink"][id % 3]), at: at,
@@ -922,7 +942,7 @@ struct VetExamView: View {
         case .stethoscope:
             react(.blinkSmile, 0.4)
             VetSound.shared.play(.heartbeat, volume: 0.8, gap: 0.9)
-            if fx("hb", 0.9) { spawn(.heart(Theme.pink), at: room, vel: CGVector(dx: 0, dy: -90), life: 0.9, scale: 1.1) }
+            if fx("hb", 0.9) { emitHeartbeat(at: room) }
         case .thermometer, .toothbrush:
             react(nearMouth ? (t == .toothbrush ? .brushing : .oh) : .oh, 0.3)
             if nearMouth && t == .toothbrush && rubbing {
@@ -972,6 +992,18 @@ struct VetExamView: View {
                        spin: Double = 0, scale: CGFloat = 1) {
         particles.append(VetParticle(kind: k, pos: p, vel: vel, born: Date(), life: life, gravity: gravity, spin: spin, scale: scale))
         if particles.count > 160 { particles.removeFirst(particles.count - 160) }
+    }
+
+    private func emitHeartbeat(at room: CGPoint) {
+        spawn(.heart(Theme.pink), at: room, vel: CGVector(dx: 0, dy: -90), life: 0.9, scale: 1.1)
+        guard VetDraw.hasHeartScope else { return }
+        spawn(.heart(Theme.lilac), at: room, vel: CGVector(dx: -54, dy: -115), life: 1.0, scale: 0.85)
+        spawn(.heart(Color(hex: 0xFF6FA8)), at: room, vel: CGVector(dx: 54, dy: -115), life: 1.0, scale: 0.85)
+        let cols: [Color] = [.white, Theme.lemon, Theme.pink, Theme.lilac]
+        for i in 0..<4 {
+            let dx = CGFloat(i - 1) * 38 - 18
+            spawn(.sparkle(cols[i]), at: room, vel: CGVector(dx: dx, dy: -135 - CGFloat(i % 2) * 28), life: 0.85, scale: 0.9)
+        }
     }
 
     private func burst(at p: CGPoint, count: Int, colors: [Color] = [.white, Theme.lemon, Theme.pink, Theme.mint]) {

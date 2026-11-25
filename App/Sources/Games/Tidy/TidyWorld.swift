@@ -149,16 +149,21 @@ final class TidyWorld: ObservableObject {
     private var touchStart: Double = 0
     private var lastAction: Double = 0
     private var combo = 0
-    private var lastPlace: Double = -10
+    private(set) var lastPlace: Double = -10
     private var zCounter = 0
     private var heldVel = TVec.zero
     private var didReward = false
+    private var launchRNG: TidySeededRNG?
 
     static let gravity: CGFloat = 2300
     static let sub: Double = 1.0 / 240
     /// Unified snap & hover magnet radius so fast flick drops always match glowing slots.
     static let snapRadius: CGFloat = 120
     static let completionRewardCoins = 4
+    static let starBroomTreasureID = "tidy/starBroom"
+    static let plushBearTreasureID = "tidy/plushBear"
+    static var hasStarBroom: Bool { Coins.shared.owns(starBroomTreasureID) }
+    static var hasPlushBear: Bool { Coins.shared.owns(plushBearTreasureID) }
 
     var floorY: CGFloat { size.height - 22 }
     var origin: TVec { TVec((size.width - TidyScene.size.width) / 2, 92) }
@@ -170,8 +175,14 @@ final class TidyWorld: ObservableObject {
         filled = Array(repeating: nil, count: level.slots.count)
         // One item per slot, shuffled so the pile comes out of the box mixed up.
         var order = Array(level.slots.indices)
-        var rng = SystemRandomNumberGenerator()
-        order.shuffle(using: &rng)
+        if let seed = level.scatterSeed {
+            var rng = TidySeededRNG(seed: seed ^ 0xA24B_AED4_963E_E407)
+            order.shuffle(using: &rng)
+            launchRNG = rng
+        } else {
+            var rng = SystemRandomNumberGenerator()
+            order.shuffle(using: &rng)
+        }
         for (n, i) in order.enumerated() {
             let s = level.slots[i]
             let b = TidyBody(id: bodies.count, kind: s.kind, color: s.color)
@@ -386,10 +397,23 @@ final class TidyWorld: ObservableObject {
     private func launch(_ b: TidyBody) {
         b.state = .loose
         let r = boxRect
-        b.pos = TVec(r.midX + CGFloat.random(in: -20...20), r.minY - b.bound * 0.5)
-        b.vel = TVec(CGFloat.random(in: 260...880), CGFloat.random(in: -1250 ... -850))
-        b.angle = CGFloat.random(in: -0.6...0.6)
-        b.spin = CGFloat.random(in: -7...7)
+        if var rng = launchRNG {
+            let ox = CGFloat(Double.random(in: -20...20, using: &rng))
+            let vx = CGFloat(Double.random(in: 240...910, using: &rng))
+            let vy = CGFloat(Double.random(in: -1260 ... -840, using: &rng))
+            let ang = CGFloat(Double.random(in: -0.7...0.7, using: &rng))
+            let sp = CGFloat(Double.random(in: -8...8, using: &rng))
+            launchRNG = rng
+            b.pos = TVec(r.midX + ox, r.minY - b.bound * 0.5)
+            b.vel = TVec(vx, vy)
+            b.angle = ang
+            b.spin = sp
+        } else {
+            b.pos = TVec(r.midX + CGFloat.random(in: -20...20), r.minY - b.bound * 0.5)
+            b.vel = TVec(CGFloat.random(in: 260...880), CGFloat.random(in: -1250 ... -850))
+            b.angle = CGFloat.random(in: -0.6...0.6)
+            b.spin = CGFloat.random(in: -7...7)
+        }
         zCounter += 1
         b.z = zCounter
         boxKick = 1
@@ -488,6 +512,18 @@ final class TidyWorld: ObservableObject {
             particles.append(TidyParticle(kind: .sparkle, pos: b.pos, vel: v, born: time, life: Double.random(in: 0.45...0.75),
                                           size: CGFloat.random(in: 9...16), color: sparkColors[k % 3], rot: 0,
                                           spin: CGFloat.random(in: -6...6)))
+        }
+        if Self.hasStarBroom {
+            rings.append(TidyRing(pos: b.pos, born: time, color: TRGB(0xFFD559), size: max(b.size.width, b.size.height) * 1.25))
+            let starlight: [TRGB] = [TRGB(0xFFCF4A), TRGB(0xFFF3A8), TRGB.white, TRGB(0xFFE07D)]
+            for k in 0..<10 {
+                let a = (Double(k) + 0.5) / 10 * 2 * Double.pi + Double.random(in: -0.18...0.18)
+                let sp = CGFloat.random(in: 190...340)
+                let v = TVec(CGFloat(cos(a)) * sp, CGFloat(sin(a)) * sp - 110)
+                particles.append(TidyParticle(kind: .sparkle, pos: b.pos, vel: v, born: time, life: Double.random(in: 0.6...0.95),
+                                              size: CGFloat.random(in: 12...20), color: starlight[k % starlight.count],
+                                              rot: CGFloat.random(in: 0...(.pi)), spin: CGFloat.random(in: -7...7)))
+            }
         }
         if filled.allSatisfy({ $0 != nil }) && bodies.allSatisfy({ $0.state == .placed || $0.id == b.id }) {
             celebrateAt = time + 0.25

@@ -172,7 +172,7 @@ struct BakeStepView: View {
         }
     }
 
-    // MARK: Choosing the pan
+    // MARK: Choosing the pan / filling
 
     @ViewBuilder private var chooser: some View {
         if treat.kind == .cake {
@@ -182,6 +182,21 @@ struct BakeStepView: View {
                         .padding(16)
                 }
                 .position(x: n == 2 ? 900 : 720, y: CGFloat(170 + n * 160) - (n == 2 ? 80 : 0))
+            }
+        } else if treat.kind == .bungeoppang {
+            ForEach(BungeoppangFilling.allCases, id: \.self) { f in
+                let i = f.rawValue
+                PickPlate(selected: treat.filling == i, size: 118, tap: { chooseFilling(f) }) {
+                    Canvas { ctx, size in
+                        var g = ctx
+                        g.translateBy(x: size.width / 2, y: size.height / 2 + 4)
+                        let s = min(size.width, size.height) / 88
+                        g.scaleBy(x: s, y: s)
+                        BungeoppangArt.drawFillingBowl(g, filling: f)
+                    }
+                    .padding(10)
+                }
+                .position(CGPoint(x: 724 + CGFloat(i % 2) * 144, y: 248 + CGFloat(i / 2) * 136))
             }
         } else {
             ForEach(0..<BakeryPalette.liners.count, id: \.self) { i in
@@ -202,6 +217,13 @@ struct BakeStepView: View {
         Sound.shared.play(.pop)
         Sound.shared.tap()
         treat.tiers = n
+        startPourPhase()
+    }
+
+    private func chooseFilling(_ f: BungeoppangFilling) {
+        BakerySound.shared.play(.scoop, volume: 0.85)
+        Sound.shared.tap()
+        treat.filling = f.rawValue
         startPourPhase()
     }
 
@@ -227,6 +249,9 @@ struct BakeStepView: View {
         let spread = min(1, max(0.12, level / 0.45))
         if treat.kind == .cake {
             return (CGPoint(x: panPos.x, y: panPos.y - 95 + PanView.cakeSurfaceY(level)), 128 * spread, 26 * spread)
+        }
+        if treat.kind == .bungeoppang {
+            return (CGPoint(x: panPos.x, y: panPos.y - 95 + PanView.bungeoppangSurfaceY(level)), 112 * spread, 28 * spread)
         }
         return (CGPoint(x: panPos.x, y: panPos.y - 95 + PanView.linerSurfaceY(level)), 118 * spread, 12 * spread)
     }
@@ -320,7 +345,6 @@ struct BakeStepView: View {
                                     stopped: stopped, phase: now.timeIntervalSince(bowlInAt) * 0.5, gravity: g, wobble: 0.8) {
                 s.draw(in: ctx, color: col)
                 if s.reachesFloor {
-                    // the little heap where it lands
                     let lp = s.land
                     let heap = Path(ellipseIn: CGRect(x: lp.x - 20, y: lp.y - 9, width: 40, height: 15))
                     ctx.fill(heap, with: .color(col.color))
@@ -346,7 +370,6 @@ struct BakeStepView: View {
         bt.translateBy(x: -200, y: -120)
         art.draw("batter", col, in: bt)
         if tilt > 0.4 {
-            // batter sliding over the lip
             var tongue = Path()
             tongue.move(to: CGPoint(x: 300, y: 112))
             tongue.addQuadCurve(to: CGPoint(x: 376, y: 116), control: CGPoint(x: 350, y: 96))
@@ -379,7 +402,6 @@ struct BakeStepView: View {
     private func endPour() {
         guard let p = flow.pressAt else { return }
         let token = pourToken
-        // a quick tap still pours a good glug
         let wait = p.addingTimeInterval(0.8).timeIntervalSinceNow
         if wait > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + wait) { if token == pourToken { stopFlow() } }
@@ -455,6 +477,9 @@ struct BakeStepView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) {
                 BakerySound.shared.play(.oven, volume: 0.6)
                 BakerySound.shared.play(.sizzle, volume: 0.7)
+                if treat.kind == .bungeoppang && t > 2.0 {
+                    Sound.shared.play(.flip, volume: 0.65)
+                }
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + BakeStepView.bakeTime + 0.2) {
@@ -508,7 +533,7 @@ struct BakeStepView: View {
     }
 }
 
-/// The pan (cake) or paper liner (cupcake) with batter that pours in, rises and bakes golden.
+/// The pan (cake), cast-iron fish waffle mold (bungeoppang), or paper liner (cupcake) with batter that pours, rises and bakes golden.
 struct PanView: View {
     let treat: Treat
     let fill: CGFloat
@@ -519,6 +544,7 @@ struct PanView: View {
     /// The batter surface's y in the pan view (300 x 190) as it fills.
     static func cakeSurfaceY(_ level: CGFloat) -> CGFloat { 113 - 6 * level }
     static func linerSurfaceY(_ level: CGFloat) -> CGFloat { 80 - 4 * level }
+    static func bungeoppangSurfaceY(_ level: CGFloat) -> CGFloat { 108 - 8 * level }
 
     var body: some View {
         Canvas { ctx, size in
@@ -545,13 +571,11 @@ struct PanView: View {
                 var shape = Path()
                 let n = 28
                 for k in 0...n {
-                    // the near half of the surface...
                     let a = CGFloat.pi * (1 - CGFloat(k) / CGFloat(n))
                     let pt = CGPoint(x: 150 + rx * cos(a), y: cy + ry * sin(a))
                     if k == 0 { shape.move(to: pt) } else { shape.addLine(to: pt) }
                 }
                 for k in 1...n {
-                    // ...and the dome rising above it
                     let a = -CGFloat.pi * CGFloat(k) / CGFloat(n)
                     shape.addLine(to: CGPoint(x: 150 + rx * cos(a), y: cy + H * sin(a)))
                 }
@@ -561,7 +585,6 @@ struct PanView: View {
                 g.fill(shape, with: .radialGradient(Gradient(colors: [top.color, edge.color]),
                                                     center: CGPoint(x: 132, y: cy - H * 0.55), startRadius: 4, endRadius: rx * 1.15))
                 g.stroke(shape, with: .color(Shades.outline(edge).color), lineWidth: 3.5)
-                // wet batter shines; the shine dulls as it bakes
                 var sh = g
                 sh.opacity = 0.2 + 0.5 * Double(1 - bake)
                 sh.fill(Path(ellipseIn: CGRect(x: 150 - rx * 0.62, y: cy - H * 0.62 - 4, width: rx * 0.5, height: 7 + H * 0.12)),
@@ -574,6 +597,8 @@ struct PanView: View {
             arc.addArc(center: .zero, radius: 1, startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
             g.stroke(arc.applying(CGAffineTransform(a: 140, b: 0, c: 0, d: 30, tx: 150, ty: rim)),
                      with: .color(Shades.outline(RGB(hex: "#C9C6D9")).color), lineWidth: 6)
+        } else if treat.kind == .bungeoppang {
+            paintBungeoppangIron(treat, fill: fill, rise: rise, bake: bake, time: time, raw: raw, flavor: flavor, in: g)
         } else {
             var s = g
             s.translateBy(x: -150, y: -340)
@@ -601,6 +626,130 @@ struct PanView: View {
                 drawCracks(center: CGPoint(x: 300, y: top - 82 * rise), w: 70, bake: bake, color: col, in: s)
             }
             art.draw("liner", TreatPainter.liner(treat.liner), in: s)
+        }
+    }
+
+    private static func paintBungeoppangIron(_ treat: Treat, fill: CGFloat, rise: CGFloat, bake: CGFloat, time: Double,
+                                             raw: RGB, flavor: RGB, in g: GraphicsContext) {
+        let goldenMold = BungeoppangArt.hasGoldenMold
+        // Gentle mid-bake flip animation + warm golden waffle glow
+        let flipPhase = max(0, min(1, (bake - 0.15) / 0.45))
+        let flipScaleY: CGFloat = bake > 0.15 && bake < 0.6 ? max(0.28, abs(cos(flipPhase * .pi))) : 1
+        let glowAlpha = Double(sin(min(1, bake) * .pi) * 0.6 + bake * 0.25)
+
+        var ctx = g
+        ctx.translateBy(x: 150, y: 112)
+        ctx.scaleBy(x: 1, y: flipScaleY)
+        ctx.translateBy(x: -150, y: -112)
+
+        if goldenMold {
+            let aura = 0.35 + 0.18 * sin(time * 3.2) + glowAlpha * 0.4
+            ctx.fill(Path(ellipseIn: CGRect(x: 10, y: 28, width: 280, height: 158)),
+                     with: .radialGradient(
+                        Gradient(colors: [Color(hex: 0xFFF4AA).opacity(min(0.85, aura)), Color(hex: 0xFFCF4A).opacity(0)]),
+                        center: CGPoint(x: 150, y: 108), startRadius: 12, endRadius: 145
+                     ))
+        } else if glowAlpha > 0.05 {
+            ctx.fill(Path(ellipseIn: CGRect(x: 18, y: 34, width: 264, height: 146)),
+                     with: .radialGradient(
+                        Gradient(colors: [Color(hex: 0xFFD96A).opacity(glowAlpha), Color(hex: 0xFF9E3D).opacity(0)]),
+                        center: CGPoint(x: 150, y: 108), startRadius: 10, endRadius: 135
+                     ))
+        }
+
+        // Cast-iron (or shimmering golden treasure) Korean bungeoppang waffle pan with handle
+        let handle = Path(roundedRect: CGRect(x: 248, y: 102, width: 44, height: 18), cornerRadius: 9)
+        let iron = Path(roundedRect: CGRect(x: 22, y: 52, width: 236, height: 116), cornerRadius: 34)
+        if goldenMold {
+            ctx.fill(handle, with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0xFFE784), StorybookArt.color(0xE6A122)]),
+                startPoint: CGPoint(x: 248, y: 102), endPoint: CGPoint(x: 248, y: 120)
+            ))
+            ctx.stroke(handle, with: .color(StorybookArt.color(0x9E6710)), lineWidth: 3)
+            StorybookArt.highlight(ctx, in: CGRect(x: 256, y: 105, width: 24, height: 4.5), opacity: 0.65)
+
+            ctx.fill(iron, with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0xFFF3A6), StorybookArt.color(0xFFCF4A), StorybookArt.color(0xDDA024)]),
+                startPoint: CGPoint(x: 22, y: 52), endPoint: CGPoint(x: 258, y: 168)
+            ))
+            // Animated diagonal golden shimmer sheen sweeping across the mold
+            var clippedIron = ctx
+            clippedIron.clip(to: iron)
+            let sweep = CGFloat((time * 0.45).truncatingRemainder(dividingBy: 1.6)) * 340 - 90
+            var gleam = Path()
+            gleam.move(to: CGPoint(x: sweep, y: 40))
+            gleam.addLine(to: CGPoint(x: sweep + 34, y: 40))
+            gleam.addLine(to: CGPoint(x: sweep - 26, y: 180))
+            gleam.addLine(to: CGPoint(x: sweep - 60, y: 180))
+            gleam.closeSubpath()
+            clippedIron.fill(gleam, with: .color(.white.opacity(0.32)))
+
+            let innerRim = Path(roundedRect: CGRect(x: 29, y: 59, width: 222, height: 102), cornerRadius: 28)
+            ctx.stroke(innerRim, with: .color(StorybookArt.color(0xFFF8D0, alpha: 0.75)), lineWidth: 2.2)
+            ctx.stroke(iron, with: .color(StorybookArt.color(0x9A630E)), lineWidth: 4.5)
+        } else {
+            ctx.fill(handle, with: .color(StorybookArt.color(0x524C5C)))
+            ctx.stroke(handle, with: .color(StorybookArt.color(0x363140)), lineWidth: 3)
+
+            ctx.fill(iron, with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0x635C6E), StorybookArt.color(0x474152)]),
+                startPoint: CGPoint(x: 22, y: 52), endPoint: CGPoint(x: 22, y: 168)
+            ))
+            ctx.stroke(iron, with: .color(StorybookArt.color(0x342F3D)), lineWidth: 4.5)
+        }
+
+        // Recessed fish cavity transformed from BungeoppangArt.bodyPath() into the waffle mold
+        let fishTransform = CGAffineTransform(translationX: -300, y: -396)
+            .concatenating(CGAffineTransform(scaleX: 0.56, y: 0.44))
+            .concatenating(CGAffineTransform(translationX: 140, y: 110))
+        let cavity = BungeoppangArt.bodyPath().applying(fishTransform)
+        ctx.fill(cavity, with: .color(goldenMold ? StorybookArt.color(0x9C6314) : StorybookArt.color(0x35303E)))
+        ctx.stroke(cavity, with: .color(goldenMold ? StorybookArt.color(0xFFF3B8) : StorybookArt.color(0x787085)), lineWidth: 2.5)
+
+        // Batter + sweet filling baking crisp golden inside the fish cavity
+        if fill > 0 {
+            let spread = min(1, max(0.18, fill / 0.5))
+            let bakedGold = RGB(hex: "#F2A94B").mix(flavor, 0.24)
+            let col = raw.mix(bakedGold, Double(bake))
+            var fillCtx = ctx
+            fillCtx.clip(to: cavity)
+            let bx = 140 - 114 * spread
+            let by = 110 - 44 * spread - rise * 6
+            let bw = 228 * spread
+            let bh = 88 * spread + rise * 10
+            fillCtx.fill(Path(ellipseIn: CGRect(x: bx, y: by, width: bw, height: bh)), with: .color(col.color))
+
+            // Sweet filling dollop nestled in the belly before golden crust seals over
+            let filling = treat.bungeoppangFilling
+            let peekAlpha = max(0.28, 1 - Double(bake) * 0.72)
+            fillCtx.fill(
+                Path(ellipseIn: CGRect(x: 108, y: 94, width: 64 * spread, height: 32 * spread)),
+                with: .color(StorybookArt.color(filling.fillHex, alpha: peekAlpha))
+            )
+
+            // Crisp waffle imprint ridges appearing as it bakes
+            if bake > 0.25 {
+                var grid = Path()
+                for k in -4...5 {
+                    let gx = 100 + CGFloat(k) * 16
+                    grid.move(to: CGPoint(x: gx - 35, y: 74)); grid.addLine(to: CGPoint(x: gx + 35, y: 148))
+                    grid.move(to: CGPoint(x: gx + 35, y: 74)); grid.addLine(to: CGPoint(x: gx - 35, y: 148))
+                }
+                fillCtx.stroke(grid, with: .color(RGB(hex: "#B5621E").color.opacity(Double(bake) * 0.5)), lineWidth: 2.4)
+            }
+            drawBubbles(center: CGPoint(x: 140, y: 106), rx: 72 * spread, ry: 22 * spread, rise: rise, bake: bake,
+                        time: time, color: col, in: fillCtx)
+        }
+
+        if goldenMold {
+            let glints: [(CGFloat, CGFloat, CGFloat, Double)] = [
+                (38, 62, 8.5, 0.0), (242, 66, 7.5, 1.4), (44, 154, 7.0, 2.6), (236, 152, 8.0, 3.8), (144, 48, 6.5, 5.0),
+            ]
+            for (sx, sy, rad, phase) in glints {
+                let tw = 0.55 + 0.45 * sin(time * 4.2 + phase)
+                let col = phase.truncatingRemainder(dividingBy: 2) < 1 ? Color.white : Color(hex: 0xFFF3A8)
+                StorybookArt.sparkle(ctx, at: CGPoint(x: sx, y: sy), radius: rad * CGFloat(0.75 + 0.35 * tw), color: col, opacity: tw)
+            }
         }
     }
 

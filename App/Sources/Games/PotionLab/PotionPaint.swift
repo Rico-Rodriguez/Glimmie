@@ -655,7 +655,7 @@ enum PotionPainter {
 
         var inside = g
         inside.clip(to: PotionGeometry.interior)
-        drawPaddle(g, sim: sim)
+        drawPaddle(g, sim: sim, t: t)
 
         for pc in sim.pieces where pc.state == .liquid {
             drawPiece(inside, pc, alpha: 1)
@@ -753,6 +753,10 @@ enum PotionPainter {
         g.stroke(Path(ellipseIn: lip), with: .color(glassLine.c(0.96)), lineWidth: 6.5)
         g.stroke(Path(ellipseIn: lip.insetBy(dx: 3, dy: 3)), with: .color(.white.opacity(0.72)), lineWidth: 2)
 
+        if sim.hasHeartCauldron {
+            drawHeartCauldronAdornments(g, center: C, radius: R, neckHalfWidth: hw, t: t)
+        }
+
         if let kind = sim.rare {
             Twinkles.draw(g, around: C, radius: R + 24, time: t * 1.4, count: 7, alpha: 1)
             if sim.flash > 0 {
@@ -763,7 +767,127 @@ enum PotionPainter {
         }
     }
 
-    private static func drawPaddle(_ g: GraphicsContext, sim: PotionSim) {
+    private static func drawHeartCauldronAdornments(_ g: GraphicsContext, center C: CGPoint, radius R: CGFloat, neckHalfWidth hw: CGFloat, t: CGFloat) {
+        let roseGold = Color(hex: 0xF7B2C4)
+        let roseGoldLight = Color(hex: 0xFFE6C8)
+        let roseGoldStroke = StorybookArt.outline(for: 0xE896A8, factor: 0.65)
+        let lip = CGRect(x: C.x - hw - 16, y: PotionGeometry.rimY - 12, width: (hw + 16) * 2, height: 22)
+
+        // Pastel rose-gold trim wrapping the cauldron rim
+        g.stroke(Path(ellipseIn: lip), with: .color(roseGoldStroke), lineWidth: 9.5)
+        g.stroke(
+            Path(ellipseIn: lip),
+            with: .linearGradient(
+                Gradient(colors: [roseGoldLight, roseGold, Color(hex: 0xFFD998), roseGold]),
+                startPoint: CGPoint(x: lip.minX, y: lip.midY),
+                endPoint: CGPoint(x: lip.maxX, y: lip.midY)
+            ),
+            lineWidth: 5.5
+        )
+        for k in 0..<7 {
+            let a = Double.pi * (0.14 + 0.72 * Double(k) / 6.0)
+            let px = lip.midX + lip.width * 0.5 * CGFloat(cos(a))
+            let py = lip.midY + lip.height * 0.5 * CGFloat(sin(a))
+            let bead = Path(ellipseIn: CGRect(x: px - 4, y: py - 4, width: 8, height: 8))
+            StorybookArt.fillAndStroke(g, bead, fill: Color(hex: 0xFFF9EE), stroke: roseGoldStroke, width: 1.6)
+        }
+
+        // Delicate rose-gold scalloped neck band
+        let jy = PotionGeometry.joinY
+        var collar = Path()
+        collar.move(to: CGPoint(x: C.x - hw - 3, y: jy + 2))
+        collar.addQuadCurve(to: CGPoint(x: C.x + hw + 3, y: jy + 2), control: CGPoint(x: C.x, y: jy + 14))
+        g.stroke(collar, with: .color(roseGoldStroke), style: StrokeStyle(lineWidth: 7.5, lineCap: .round))
+        g.stroke(collar, with: .color(roseGold), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+
+        // Twinkling pastel-gold cauldron runes along the glass curves
+        let runePoints: [(CGPoint, Bool)] = [
+            (CGPoint(x: C.x - 84, y: C.y + 8), true),
+            (CGPoint(x: C.x - 94, y: C.y + 44), false),
+            (CGPoint(x: C.x - 66, y: C.y + 74), true),
+            (CGPoint(x: C.x + 84, y: C.y + 8), true),
+            (CGPoint(x: C.x + 94, y: C.y + 44), false),
+            (CGPoint(x: C.x + 66, y: C.y + 74), true),
+        ]
+        for (idx, (pt, isStar)) in runePoints.enumerated() {
+            let pulse = 0.55 + 0.45 * sin(Double(t) * 2.8 + Double(idx) * 1.1)
+            if isStar {
+                StorybookArt.sparkle(g, at: pt, radius: 7.5 * CGFloat(0.8 + 0.25 * pulse), color: Color(hex: 0xFFE898), opacity: 0.55 + 0.4 * pulse)
+            } else {
+                // Tiny glowing crescent rune
+                let rRect = CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14)
+                var moon = Path(ellipseIn: rRect)
+                moon.addEllipse(in: rRect.offsetBy(dx: 4.5, dy: -2))
+                g.fill(moon, with: .color(Color(hex: 0xFFF0B8).opacity(0.55 + 0.35 * pulse)), style: FillStyle(eoFill: true))
+            }
+        }
+
+        // Glowing faceted heart gem emblem centered on the cauldron front
+        let gemC = CGPoint(x: C.x, y: C.y + 44)
+        let glowPulse = 0.45 + 0.2 * sin(Double(t) * 3.0)
+        var halo = g
+        halo.blendMode = .plusLighter
+        halo.fill(
+            Path(ellipseIn: CGRect(x: gemC.x - 42, y: gemC.y - 42, width: 84, height: 84)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFA6D2).opacity(glowPulse), Color(hex: 0xFFE394).opacity(glowPulse * 0.45), .clear]),
+                center: gemC,
+                startRadius: 6,
+                endRadius: 42
+            )
+        )
+
+        func heartGemPath(center: CGPoint, halfWidth s: CGFloat) -> Path {
+            var p = Path()
+            p.move(to: CGPoint(x: center.x, y: center.y + s * 0.95))
+            p.addCurve(to: CGPoint(x: center.x - s, y: center.y - s * 0.22), control1: CGPoint(x: center.x - s * 0.2, y: center.y + s * 0.72), control2: CGPoint(x: center.x - s, y: center.y + s * 0.24))
+            p.addCurve(to: CGPoint(x: center.x, y: center.y - s * 0.48), control1: CGPoint(x: center.x - s, y: center.y - s * 0.74), control2: CGPoint(x: center.x - s * 0.42, y: center.y - s * 0.92))
+            p.addCurve(to: CGPoint(x: center.x + s, y: center.y - s * 0.22), control1: CGPoint(x: center.x + s * 0.42, y: center.y - s * 0.92), control2: CGPoint(x: center.x + s, y: center.y - s * 0.74))
+            p.addCurve(to: CGPoint(x: center.x, y: center.y + s * 0.95), control1: CGPoint(x: center.x + s, y: center.y + s * 0.24), control2: CGPoint(x: center.x + s * 0.2, y: center.y + s * 0.72))
+            p.closeSubpath()
+            return p
+        }
+
+        // Rose-gold filigree bezel & side scrolls
+        for side in [-1.0, 1.0] as [CGFloat] {
+            var scroll = Path()
+            scroll.move(to: CGPoint(x: gemC.x + side * 24, y: gemC.y - 2))
+            scroll.addQuadCurve(to: CGPoint(x: gemC.x + side * 42, y: gemC.y - 12), control: CGPoint(x: gemC.x + side * 38, y: gemC.y + 4))
+            g.stroke(scroll, with: .color(roseGoldStroke), style: StrokeStyle(lineWidth: 5.5, lineCap: .round))
+            g.stroke(scroll, with: .color(roseGoldLight), style: StrokeStyle(lineWidth: 2.8, lineCap: .round))
+        }
+
+        let bezel = heartGemPath(center: gemC, halfWidth: 26)
+        g.fill(
+            bezel,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFF1B8), Color(hex: 0xF7B2C4), Color(hex: 0xE6A454)]),
+                startPoint: CGPoint(x: gemC.x - 20, y: gemC.y - 22),
+                endPoint: CGPoint(x: gemC.x + 20, y: gemC.y + 24)
+            )
+        )
+        g.stroke(bezel, with: .color(roseGoldStroke), style: StrokeStyle(lineWidth: 2.6, lineJoin: .round))
+
+        let jewel = heartGemPath(center: gemC, halfWidth: 19)
+        g.fill(
+            jewel,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFD4EC), Color(hex: 0xFF68AD), Color(hex: 0xD83A84)]),
+                startPoint: CGPoint(x: gemC.x - 10, y: gemC.y - 16),
+                endPoint: CGPoint(x: gemC.x + 12, y: gemC.y + 18)
+            )
+        )
+        g.stroke(jewel, with: .color(StorybookArt.outline(for: 0xE04688)), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+
+        // Inner faceted diamond cut highlight
+        let facet = heartGemPath(center: CGPoint(x: gemC.x - 1, y: gemC.y - 2), halfWidth: 10)
+        g.fill(facet, with: .color(.white.opacity(0.32)))
+        StorybookArt.highlight(g, in: CGRect(x: gemC.x - 11, y: gemC.y - 12, width: 9, height: 6), opacity: 0.88)
+        StorybookArt.sparkle(g, at: CGPoint(x: gemC.x + 15, y: gemC.y - 16), radius: 7.5, color: .white, opacity: 0.95)
+        _ = R
+    }
+
+    private static func drawPaddle(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
         let blade = sim.spoon
         let C = PotionGeometry.cauldronCenter
         let hw = PotionGeometry.neckHalfWidth
@@ -782,6 +906,90 @@ enum PotionPainter {
         var shaft = Path()
         shaft.move(to: blade)
         shaft.addLine(to: end)
+
+        if sim.hasFairyLadle {
+            let pearlOutline = StorybookArt.outline(for: 0xD8A8F0, factor: 0.65)
+            g.stroke(shaft, with: .color(pearlOutline), style: StrokeStyle(lineWidth: 13.5, lineCap: .round))
+            g.stroke(
+                shaft,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0xFFF5FA), Color(hex: 0xFFD4EC), Color(hex: 0xDFCCFF), Color(hex: 0xFFF5D4)]),
+                    startPoint: blade,
+                    endPoint: end
+                ),
+                style: StrokeStyle(lineWidth: 8.8, lineCap: .round)
+            )
+            g.stroke(shaft, with: .color(.white.opacity(0.62)), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+
+            // Pearlescent fairy ladle scoop inside the cauldron
+            var b = g
+            b.translateBy(x: blade.x, y: blade.y)
+            b.rotate(by: .radians(Double(atan2(uy, ux)) + .pi / 2))
+            let scoop = Path(roundedRect: CGRect(x: -17, y: -30, width: 34, height: 48), cornerRadius: 16)
+            b.fill(
+                scoop,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0xFFF7FC), Color(hex: 0xFFD8EE), Color(hex: 0xDFCCFF)]),
+                    startPoint: CGPoint(x: -16, y: -30),
+                    endPoint: CGPoint(x: 16, y: 18)
+                )
+            )
+            b.stroke(scoop, with: .color(pearlOutline), lineWidth: 2.8)
+            StorybookArt.highlight(b, in: CGRect(x: -9, y: -22, width: 7, height: 28), opacity: 0.55)
+
+            // Glowing golden star topper with mini pearl wings at wand handle tip
+            let pulse = 0.88 + 0.12 * sin(t * 5) + min(0.22, sim.stirSpeed / 900)
+            let glowR: CGFloat = 34 * pulse
+            var halo = g
+            halo.blendMode = .plusLighter
+            halo.fill(
+                Path(ellipseIn: CGRect(x: end.x - glowR, y: end.y - glowR, width: glowR * 2, height: glowR * 2)),
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xFFF3A8).opacity(0.85), Color(hex: 0xFFB8E0).opacity(0.32), .clear]),
+                    center: end,
+                    startRadius: 4,
+                    endRadius: glowR
+                )
+            )
+
+            var top = g
+            top.translateBy(x: end.x, y: end.y)
+            top.rotate(by: .radians(Double(atan2(uy, ux)) + .pi / 2))
+
+            // Mini pearl fairy wings below the golden star
+            for side in [-1.0, 1.0] as [CGFloat] {
+                var wing = Path()
+                wing.move(to: CGPoint(x: side * 6, y: 14))
+                wing.addCurve(to: CGPoint(x: side * 26, y: 2), control1: CGPoint(x: side * 18, y: 20), control2: CGPoint(x: side * 28, y: 10))
+                wing.addCurve(to: CGPoint(x: side * 6, y: 5), control1: CGPoint(x: side * 20, y: -4), control2: CGPoint(x: side * 12, y: 0))
+                wing.closeSubpath()
+                StorybookArt.fillAndStroke(top, wing, fill: .white, stroke: pearlOutline, width: 2)
+            }
+
+            var star = Path()
+            for i in 0..<10 {
+                let a = -Double.pi / 2 + Double(i) * Double.pi / 5
+                let r: CGFloat = i.isMultiple(of: 2) ? 23 : 10.5
+                let pt = CGPoint(x: CGFloat(cos(a)) * r, y: -2 + CGFloat(sin(a)) * r)
+                if i == 0 { star.move(to: pt) } else { star.addLine(to: pt) }
+            }
+            star.closeSubpath()
+            top.fill(
+                star,
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xFFFBE0), Color(hex: 0xFFD44A), Color(hex: 0xF0A628)]),
+                    center: CGPoint(x: -3, y: -6),
+                    startRadius: 2,
+                    endRadius: 24
+                )
+            )
+            top.stroke(star, with: .color(StorybookArt.outline(for: 0xE6A428)), style: StrokeStyle(lineWidth: 2.6, lineJoin: .round))
+            StorybookArt.heart(top, at: CGPoint(x: 0, y: -1), size: 11, color: Color(hex: 0xFF66A8))
+            StorybookArt.sparkle(top, at: CGPoint(x: 18, y: -18), radius: 7 * pulse, color: .white, opacity: 0.95)
+            StorybookArt.sparkle(top, at: CGPoint(x: -18, y: -12), radius: 5.5 * pulse, color: Theme.lemon, opacity: 0.9)
+            return
+        }
+
         g.stroke(shaft, with: .color(StorybookArt.outline(for: woodHex)), style: StrokeStyle(lineWidth: 13, lineCap: .round))
         g.stroke(shaft, with: .color(StorybookArt.color(woodHex)), style: StrokeStyle(lineWidth: 8.5, lineCap: .round))
 
@@ -902,7 +1110,7 @@ enum PotionPainter {
 
     private static func drawTripod(_ g: GraphicsContext, front: Bool) {
         let C = PotionGeometry.cauldronCenter
-        let ring = CGRect(x: C.x - 104, y: C.y + 102, width: 208, height: 22)
+        let ring = CGRect(x: C.x - 84, y: C.y + 102, width: 168, height: 22)
         var half = Path()
         let n = 22
         for k in 0...n {
@@ -914,10 +1122,10 @@ enum PotionPainter {
         g.stroke(half, with: .color(StorybookArt.color(brassHex)), style: StrokeStyle(lineWidth: 5.5, lineCap: .round))
         if front {
             var legs = Path()
-            legs.move(to: CGPoint(x: ring.minX + 4, y: ring.midY + 4))
-            legs.addLine(to: CGPoint(x: ring.minX - 18, y: PotionGeometry.tableY + 2))
-            legs.move(to: CGPoint(x: ring.maxX - 4, y: ring.midY + 4))
-            legs.addLine(to: CGPoint(x: ring.maxX + 18, y: PotionGeometry.tableY + 2))
+            legs.move(to: CGPoint(x: ring.minX + 6, y: ring.midY + 4))
+            legs.addLine(to: CGPoint(x: ring.minX + 14, y: PotionGeometry.tableY + 2))
+            legs.move(to: CGPoint(x: ring.maxX - 6, y: ring.midY + 4))
+            legs.addLine(to: CGPoint(x: ring.maxX - 14, y: PotionGeometry.tableY + 2))
             g.stroke(legs, with: .color(StorybookArt.outline(for: brassHex)), style: StrokeStyle(lineWidth: 10, lineCap: .round))
             g.stroke(legs, with: .color(StorybookArt.color(brassHex)), style: StrokeStyle(lineWidth: 5.5, lineCap: .round))
         }
@@ -930,7 +1138,7 @@ enum PotionPainter {
         // Horizontal glass drain pipe from bottom-right of cauldron to catch basin.
         var pipe = Path()
         pipe.move(to: CGPoint(x: PotionGeometry.cauldronCenter.x + 62, y: PotionGeometry.bottomY - 8))
-        pipe.addQuadCurve(to: CGPoint(x: v.x - 16, y: v.y), control: CGPoint(x: PotionGeometry.cauldronCenter.x + 76, y: v.y))
+        pipe.addQuadCurve(to: CGPoint(x: v.x - 15, y: v.y), control: CGPoint(x: PotionGeometry.cauldronCenter.x + 76, y: v.y))
         pipe.addLine(to: CGPoint(x: mouth.x - 8, y: v.y))
         pipe.addQuadCurve(to: CGPoint(x: mouth.x, y: mouth.y + 10), control: CGPoint(x: mouth.x, y: v.y))
         g.stroke(pipe, with: .color(glassLine.c(0.92)), style: StrokeStyle(lineWidth: 13, lineCap: .round))
@@ -942,17 +1150,16 @@ enum PotionPainter {
         }
 
         // Brass valve hub.
-        StorybookArt.shape(g, Path(ellipseIn: CGRect(x: v.x - 15, y: v.y - 15, width: 30, height: 30)), hex: brassHex, width: 3)
+        StorybookArt.shape(g, Path(ellipseIn: CGRect(x: v.x - 14, y: v.y - 14, width: 28, height: 28)), hex: brassHex, width: 3)
 
-        // Fixed lever: perpendicular (vertical up, angle = 0) when shut, inline with horizontal pipe (angle = +pi/2) when open!
         var lever = g
         lever.translateBy(x: v.x, y: v.y)
         lever.rotate(by: .radians(Double(sim.valveAngle)))
-        let handle = Path(roundedRect: CGRect(x: -6, y: -42, width: 12, height: 42), cornerRadius: 6)
+        let handle = Path(roundedRect: CGRect(x: -5.5, y: -32, width: 11, height: 32), cornerRadius: 5.5)
         StorybookArt.shape(lever, handle, hex: 0x7ED8F8, width: 2.5)
-        let knob = Path(ellipseIn: CGRect(x: -11, y: -52, width: 22, height: 22))
+        let knob = Path(ellipseIn: CGRect(x: -9, y: -47, width: 18, height: 18))
         StorybookArt.shape(lever, knob, hex: 0x7ED8F8, width: 2.5)
-        StorybookArt.highlight(lever, in: CGRect(x: -6, y: -48, width: 8, height: 6), opacity: 0.65)
+        StorybookArt.highlight(lever, in: CGRect(x: -5, y: -43, width: 6.5, height: 5), opacity: 0.65)
     }
 
     private static func drawBasin(_ g: GraphicsContext, sim: PotionSim) {

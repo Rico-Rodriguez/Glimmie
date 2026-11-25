@@ -94,6 +94,7 @@ final class SpaSound {
     static let shared = SpaSound()
     private var players: [SpaSFX: [AVAudioPlayer]] = [:]
     private var loops: [SpaSFX: AVAudioPlayer] = [:]
+    private var missing: Set<SpaSFX> = []
     private var last: [SpaSFX: Date] = [:]
     static let looping: Set<SpaSFX> = [.running, .drain, .fizz, .shower, .scrub]
     private let queue = DispatchQueue(label: "spa.sound", qos: .userInitiated)
@@ -102,30 +103,53 @@ final class SpaSound {
 
     private init() {
         _ = Sound.shared
-        for s in SpaSFX.allCases {
-            guard let url = GameFiles.url(s.rawValue, "wav", game: "Spa") else { continue }
-            if SpaSound.looping.contains(s) {
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.numberOfLoops = -1
-                p?.volume = 0
-                p?.prepareToPlay()
-                loops[s] = p
-            } else {
-                players[s] = (0..<4).compactMap { _ in
-                    let p = try? AVAudioPlayer(contentsOf: url)
-                    p?.prepareToPlay()
-                    return p
-                }
-            }
+    }
+
+    private func soundURL(for s: SpaSFX) -> URL? {
+        GameFiles.url(s.rawValue, "caf", game: "Spa")
+            ?? GameFiles.url(s.rawValue, "wav", game: "Spa")
+    }
+
+    private func ensurePool(for s: SpaSFX) -> [AVAudioPlayer] {
+        if let existing = players[s] { return existing }
+        guard !missing.contains(s), let url = soundURL(for: s) else {
+            missing.insert(s)
+            return []
         }
+        let pool = (0..<4).compactMap { _ -> AVAudioPlayer? in
+            let p = try? AVAudioPlayer(contentsOf: url)
+            p?.prepareToPlay()
+            return p
+        }
+        if pool.isEmpty {
+            missing.insert(s)
+        } else {
+            players[s] = pool
+        }
+        return pool
+    }
+
+    private func ensureLoop(for s: SpaSFX) -> AVAudioPlayer? {
+        if let existing = loops[s] { return existing }
+        guard !missing.contains(s), let url = soundURL(for: s),
+              let p = try? AVAudioPlayer(contentsOf: url) else {
+            missing.insert(s)
+            return nil
+        }
+        p.numberOfLoops = -1
+        p.volume = 0
+        p.prepareToPlay()
+        loops[s] = p
+        return p
     }
 
     func play(_ s: SpaSFX, volume: Float = 0.9, gap: Double = 0) {
         let now = Date()
         if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
         last[s] = now
-        guard let pool = players[s], !pool.isEmpty else { return }
         queue.async {
+            let pool = self.ensurePool(for: s)
+            guard !pool.isEmpty else { return }
             let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
             p.volume = volume
             p.currentTime = 0
@@ -134,7 +158,6 @@ final class SpaSound {
     }
 
     func setLoop(_ s: SpaSFX, volume: Float) {
-        guard let p = loops[s] else { return }
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.15
         loopLevel[s] = v
@@ -143,23 +166,24 @@ final class SpaSound {
         guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
         loopSent[s] = on ? v : 0
         queue.async {
-            p.volume = on ? v : 0
             if on {
+                guard let p = self.ensureLoop(for: s) else { return }
+                p.volume = v
                 if !p.isPlaying { p.play() }
-            } else if p.isPlaying {
-                p.pause()
+            } else if let p = self.loops[s] {
+                p.volume = 0
+                if p.isPlaying { p.pause() }
             }
         }
     }
 
     func stopLoops() {
-        for s in loops.keys {
+        for s in SpaSound.looping {
             loopLevel[s] = 0
             loopSent[s] = 0
         }
-        let all = Array(loops.values)
         queue.async {
-            for p in all {
+            for p in self.loops.values {
                 p.pause()
                 p.volume = 0
             }
@@ -177,6 +201,7 @@ private enum SpaDockItem: Identifiable, Equatable {
     case mask(MaskKind)
     case cucumbers
     case towel
+    case sheepTowel
     case mist
     case toy(ToyKind)
     case wand
@@ -190,6 +215,7 @@ private enum SpaDockItem: Identifiable, Equatable {
         case .mask(let m): return "mask_\(m.rawValue)"
         case .cucumbers: return "cucumbers"
         case .towel: return "towel"
+        case .sheepTowel: return "sheepTowel"
         case .mist: return "mist"
         case .toy(let t): return "toy_\(t.rawValue)"
         case .wand: return "wand"
@@ -199,13 +225,21 @@ private enum SpaDockItem: Identifiable, Equatable {
     static func items(for category: SpaCategory) -> [SpaDockItem] {
         switch category {
         case .fizz:
-            return BombKind.allCases.map { .bomb($0) } + [.soap]
+            return BombKind.available.map { .bomb($0) } + [.soap]
         case .wash:
             return FoamTint.allCases.map { .sponge($0) } + [.shower]
         case .pamper:
-            return MaskKind.allCases.map { .mask($0) } + [.cucumbers, .towel, .mist]
+            return MaskKind.allCases.map { .mask($0) } + [.cucumbers, .towel, .sheepTowel, .mist]
         case .toys:
-            return ToyKind.allCases.map { .toy($0) } + [.wand]
+            return ToyKind.available.map { .toy($0) } + [.wand]
+        }
+    }
+
+    var isTreasure: Bool {
+        switch self {
+        case .bomb(let k): return k.treasure != nil
+        case .toy(let t): return t.treasure != nil
+        default: return false
         }
     }
 
@@ -217,6 +251,7 @@ private enum SpaDockItem: Identifiable, Equatable {
         case .mask(let m): return .mask(m)
         case .cucumbers: return .cucumbers
         case .towel: return .towel
+        case .sheepTowel: return .sheepTowel
         case .mist: return .mist
         case .wand: return .wand
         case .bomb, .toy: return nil
@@ -258,6 +293,9 @@ private enum SpaDockItem: Identifiable, Equatable {
         case .towel:
             c.scaleBy(x: 0.48, y: 0.48)
             ToolPainter.towel(c)
+        case .sheepTowel:
+            c.scaleBy(x: 0.68, y: 0.68)
+            ToolPainter.sheepTowel(c)
         case .mist:
             c.scaleBy(x: 0.64, y: 0.64)
             c.translateBy(x: 0, y: 4)
@@ -318,6 +356,7 @@ struct SpaView: View {
                         showStickerBook: true,
                         showCoins: true,
                         onExit: {
+                            sim.save()
                             SpaSound.shared.stopLoops()
                             exit()
                         },
@@ -358,10 +397,12 @@ struct SpaView: View {
         .onAppear(perform: start)
         .onChange(of: scenePhase) { phase in
             if phase != .active {
+                sim.save()
                 SpaSound.shared.stopLoops()
             }
         }
         .onDisappear {
+            sim.save()
             SpaSound.shared.stopLoops()
         }
     }
@@ -372,6 +413,9 @@ struct SpaView: View {
         _ = SpaSound.shared
         if ProcessInfo.processInfo.arguments.contains("-spaDemo") {
             applyLaunchArguments()
+        } else if let saved = SpaStorage.load() {
+            sim.restore(saved)
+            category = sim.selectedCategory
         } else {
             sim.prepareWarmBath()
         }
@@ -388,9 +432,10 @@ struct SpaView: View {
                 Sound.shared.tap()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
                     category = wish.category
+                    sim.selectedCategory = wish.category
                 }
             } label: {
-                PictorialWishBubble(size: 86) {
+                SpaWishBubble(size: 86) {
                     Canvas { ctx, size in
                         var g = ctx
                         g.translateBy(x: size.width / 2, y: size.height / 2)
@@ -413,8 +458,8 @@ struct SpaView: View {
 
     private var bottomDock: some View {
         let items = SpaDockItem.items(for: category)
-        let tileSize: CGFloat = items.count >= 7 ? 72 : 76
-        let itemSpacing: CGFloat = items.count >= 7 ? 9 : 12
+        let tileSize: CGFloat = items.count >= 8 ? 64 : (items.count >= 7 ? 72 : 76)
+        let itemSpacing: CGFloat = items.count >= 8 ? 6.5 : (items.count >= 7 ? 9 : 14)
 
         return GameTrayCard(cornerRadius: 34, paddingH: 14, paddingV: 10) {
             HStack(spacing: 12) {
@@ -427,6 +472,7 @@ struct SpaView: View {
                             Sound.shared.tap()
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
                                 category = tab
+                                sim.selectedCategory = tab
                             }
                         } label: {
                             GameDockTile(
@@ -462,6 +508,7 @@ struct SpaView: View {
                         dockTile(item, size: tileSize)
                     }
                 }
+                .frame(width: 558, height: 78)
                 .id(category)
                 .transition(.opacity)
             }
@@ -470,7 +517,7 @@ struct SpaView: View {
 
     private func dockTile(_ item: SpaDockItem, size: CGFloat) -> some View {
         let isHidden = carryingID == item.id
-        return GameDockTile(size: size, selected: false, tint: .white, cornerRadius: 22) {
+        return GameDockTile(size: size, selected: false, tint: item.isTreasure ? Color(hex: 0xFFF7DC) : .white, cornerRadius: 22) {
             if !isHidden {
                 Canvas { ctx, sz in
                     var g = ctx
@@ -542,6 +589,8 @@ struct SpaView: View {
             sim.toggleCucumbers()
         case .towel:
             sim.applyCozyTowel()
+        case .sheepTowel:
+            sim.toggleSheepTowel()
         case .mist:
             sim.spritzMistBurst()
         case .toy(let k):
@@ -586,7 +635,7 @@ struct SpaView: View {
         case .shower: return FingerLift.pour
         case .sponge, .towel: return FingerLift.grip
         case .soap, .mist: return FingerLift.carry(below: 50)
-        case .cucumbers: return FingerLift.item
+        case .cucumbers, .sheepTowel: return FingerLift.item
         }
     }
 
@@ -599,6 +648,50 @@ struct SpaView: View {
         StickerBook.shared.demo = true
         let mode = i + 1 < args.count ? args[i + 1] : "bath"
         sim.showcase(mode)
+    }
+}
+
+private struct SpaWishBubble<Content: View>: View {
+    var size: CGFloat = 86
+    let content: () -> Content
+    @State private var bob = false
+
+    init(size: CGFloat = 86, @ViewBuilder content: @escaping () -> Content) {
+        self.size = size
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack {
+            // Tail dots step down-left toward the doll's head instead of straight down into empty tile wall.
+            Circle()
+                .fill(.white)
+                .frame(width: size * 0.18, height: size * 0.18)
+                .overlay(Circle().stroke(Theme.blush, lineWidth: 2.5))
+                .offset(x: -size * 0.42, y: size * 0.40)
+
+            Circle()
+                .fill(.white)
+                .frame(width: size * 0.11, height: size * 0.11)
+                .overlay(Circle().stroke(Theme.blush, lineWidth: 2))
+                .offset(x: -size * 0.62, y: size * 0.56)
+
+            ZStack {
+                Circle()
+                    .fill(.white)
+                content()
+                    .padding(size * 0.14)
+            }
+            .frame(width: size, height: size)
+            .overlay(Circle().stroke(Theme.blush, lineWidth: 3.5))
+            .shadow(color: Theme.ink.opacity(0.14), radius: 8, y: 4)
+        }
+        .offset(y: bob ? -4 : 3)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                bob = true
+            }
+        }
     }
 }
 

@@ -912,6 +912,9 @@ enum SalonFurniture {
 // MARK: - Clips, bows and scrunchies
 
 enum ClipPainter {
+    static let royalDaenggiTreasureID = "salon/royalDaenggi"
+    static var hasRoyalDaenggi: Bool { Coins.shared.owns(royalDaenggiTreasureID) }
+
     static func clipColor(_ i: Int) -> RGB {
         let cloth = DressUpArt.shared.cloth
         return cloth.isEmpty ? RGB(1, 0.6, 0.75) : cloth[min(max(0, i), cloth.count - 1)]
@@ -1020,6 +1023,198 @@ enum ClipPainter {
                 fo(ctx, Path(ellipseIn: pr), RGB(1, 0.98, 0.97), 2)
                 ctx.fill(Path(ellipseIn: CGRect(x: pr.minX + 3, y: pr.minY + 2.5, width: 4, height: 3.5)), with: .color(.white))
             }
+        case .daenggi:
+            // Traditional Korean silk daenggi ribbon with twin swallow-tail drapes and gold geumbak accents.
+            let gold = RGB(0.98, 0.83, 0.36)
+            let goldLight = RGB(1, 0.94, 0.72)
+            let tailShade = Shades.shade(c)
+            for side in [-1.0, 1.0] {
+                let s = CGFloat(side)
+                var tail = Path()
+                tail.move(to: CGPoint(x: s * 1.5, y: -10))
+                tail.addCurve(
+                    to: CGPoint(x: s * 15, y: 17),
+                    control1: CGPoint(x: s * 11, y: -4),
+                    control2: CGPoint(x: s * 14, y: 7)
+                )
+                tail.addLine(to: CGPoint(x: s * 9.5, y: 26))
+                tail.addLine(to: CGPoint(x: s * 2.5, y: 18))
+                tail.addCurve(
+                    to: CGPoint(x: 0, y: -8),
+                    control1: CGPoint(x: s * 3, y: 8),
+                    control2: CGPoint(x: s * 1, y: -1)
+                )
+                tail.closeSubpath()
+                fo(ctx, tail, side < 0 ? c : tailShade, 2.2)
+
+                // Embossed gold geumbak stripes & tiny plum-blossom diamond near the tip
+                var stripe = Path()
+                stripe.move(to: CGPoint(x: s * 4.5, y: 12))
+                stripe.addLine(to: CGPoint(x: s * 13.2, y: 11.2))
+                stripe.move(to: CGPoint(x: s * 5.4, y: 16.5))
+                stripe.addLine(to: CGPoint(x: s * 13.6, y: 15.8))
+                ctx.stroke(stripe, with: .color(gold.color), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+
+                let mx = s * 7.8
+                let my: CGFloat = 3.5
+                var motif = Path()
+                motif.move(to: CGPoint(x: mx, y: my - 3.6))
+                motif.addLine(to: CGPoint(x: mx + 2.8, y: my))
+                motif.addLine(to: CGPoint(x: mx, y: my + 3.6))
+                motif.addLine(to: CGPoint(x: mx - 2.8, y: my))
+                motif.closeSubpath()
+                ctx.fill(motif, with: .color(goldLight.color))
+            }
+            // Side silk bow folds + centered knot with golden ornament
+            for side in [-1.0, 1.0] {
+                let s = CGFloat(side)
+                let ear = Path(ellipseIn: CGRect(x: s * 10 - 6, y: -19, width: 12, height: 10))
+                fo(ctx, ear, c, 2.2)
+            }
+            let knot = Path(roundedRect: CGRect(x: -7.5, y: -20, width: 15, height: 13), cornerRadius: 5.5)
+            fo(ctx, knot, c, 2.3)
+            fo(ctx, Path(ellipseIn: CGRect(x: -3.5, y: -17, width: 7, height: 7)), gold, 1.6)
+            ctx.fill(Path(ellipseIn: CGRect(x: -1.8, y: -15.8, width: 2.4, height: 2.2)), with: .color(.white.opacity(0.85)))
+        case .royalDaenggi:
+            // Golden-embroidered royal crimson/blossom silk daenggi clip with twin hanging tassels.
+            let crimson = RGB(0.88, 0.24, 0.42)
+            let blossom = RGB(1.0, 0.56, 0.72)
+            let gold = RGB(0.99, 0.83, 0.34)
+            let goldLight = RGB(1.0, 0.96, 0.76)
+            let jade = RGB(0.62, 0.89, 0.81)
+
+            // Twin hanging silk & gold-capped norigae tassels dangling beneath the swallow tails
+            for side in [-1.0, 1.0] {
+                let s = CGFloat(side)
+                let tx = s * 10.5
+                var cord = Path()
+                cord.move(to: CGPoint(x: tx, y: 21))
+                cord.addLine(to: CGPoint(x: tx, y: 26))
+                ctx.stroke(cord, with: .color(gold.color), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+
+                var tassel = Path()
+                tassel.move(to: CGPoint(x: tx - 2.2, y: 26))
+                tassel.addLine(to: CGPoint(x: tx + 2.2, y: 26))
+                tassel.addLine(to: CGPoint(x: tx + 4.4, y: 36))
+                tassel.addLine(to: CGPoint(x: tx - 4.4, y: 36))
+                tassel.closeSubpath()
+                fo(ctx, tassel, side < 0 ? blossom : crimson, 1.6)
+                for dx in [CGFloat(-1.5), 0, 1.5] {
+                    var strand = Path()
+                    strand.move(to: CGPoint(x: tx + dx, y: 28))
+                    strand.addLine(to: CGPoint(x: tx + dx * 1.3, y: 35))
+                    ctx.stroke(strand, with: .color(goldLight.color.opacity(0.65)), style: StrokeStyle(lineWidth: 0.9, lineCap: .round))
+                }
+                fo(ctx, Path(ellipseIn: CGRect(x: tx - 3.2, y: 23.5, width: 6.4, height: 4.5)), gold, 1.4)
+            }
+
+            // Cascading royal crimson & blossom silk swallow-tail drapes
+            for side in [-1.0, 1.0] {
+                let s = CGFloat(side)
+                var tail = Path()
+                tail.move(to: CGPoint(x: s * 1.5, y: -11))
+                tail.addCurve(to: CGPoint(x: s * 17.5, y: 17), control1: CGPoint(x: s * 13, y: -4), control2: CGPoint(x: s * 16.5, y: 7))
+                tail.addLine(to: CGPoint(x: s * 10.5, y: 24))
+                tail.addLine(to: CGPoint(x: s * 3.0, y: 17))
+                tail.addCurve(to: CGPoint(x: 0, y: -9), control1: CGPoint(x: s * 3.5, y: 7), control2: CGPoint(x: s * 1.2, y: -1))
+                tail.closeSubpath()
+                fo(ctx, tail, side < 0 ? crimson : blossom, 2.3)
+
+                // Golden geumbak embroidery stripes & blossom crest
+                var trim = Path()
+                trim.move(to: CGPoint(x: s * 4.8, y: 11.5))
+                trim.addLine(to: CGPoint(x: s * 15.2, y: 10.5))
+                trim.move(to: CGPoint(x: s * 5.8, y: 15.8))
+                trim.addLine(to: CGPoint(x: s * 15.6, y: 15.0))
+                ctx.stroke(trim, with: .color(gold.color), style: StrokeStyle(lineWidth: 2.3, lineCap: .round))
+
+                let mx = s * 9.0
+                let my: CGFloat = 2.8
+                let crest = star(4.2, points: 4, inner: 0.45).applying(CGAffineTransform(translationX: mx, y: my))
+                ctx.fill(crest, with: .color(goldLight.color))
+                ctx.stroke(crest, with: .color(gold.color), lineWidth: 0.9)
+            }
+
+            // Pleated royal silk wings + golden lotus knot with jade gem
+            for side in [-1.0, 1.0] {
+                let s = CGFloat(side)
+                let wingRect = CGRect(x: s * 12 - 7.5, y: -21, width: 15, height: 11.5)
+                let wing = Path(ellipseIn: wingRect)
+                fo(ctx, wing, side < 0 ? crimson : blossom, 2.2)
+                ctx.stroke(Path(ellipseIn: wingRect.insetBy(dx: 2.2, dy: 2.2)), with: .color(goldLight.color.opacity(0.75)), lineWidth: 1.2)
+            }
+            let knot = Path(roundedRect: CGRect(x: -8.5, y: -22, width: 17, height: 14), cornerRadius: 6)
+            fo(ctx, knot, gold, 2.2)
+            fo(ctx, Path(ellipseIn: CGRect(x: -4.2, y: -19, width: 8.4, height: 8.4)), jade, 1.6)
+            ctx.fill(Path(ellipseIn: CGRect(x: -2.2, y: -17.5, width: 2.8, height: 2.4)), with: .color(.white.opacity(0.9)))
+            StorybookArt.sparkle(ctx, at: CGPoint(x: 0, y: -27), radius: 5.5, color: Theme.lemon, opacity: 0.95)
+        case .pastelBow:
+            // Soft layered pastel silk ribbon bow clip with fluttering notched tails and pearl center.
+            let cream = RGB(1, 0.97, 0.92)
+            let gold = RGB(0.98, 0.84, 0.42)
+            for side in [-1.0, 1.0] {
+                let s = CGFloat(side)
+                var tail = Path()
+                tail.move(to: CGPoint(x: s * 2, y: 2))
+                tail.addQuadCurve(to: CGPoint(x: s * 16, y: 22), control: CGPoint(x: s * 14, y: 10))
+                tail.addLine(to: CGPoint(x: s * 9, y: 18))
+                tail.addLine(to: CGPoint(x: s * 5, y: 23))
+                tail.addQuadCurve(to: CGPoint(x: 0, y: 3), control: CGPoint(x: s * 3, y: 12))
+                tail.closeSubpath()
+                fo(ctx, tail, Shades.shade(c), 2.1)
+            }
+            var wing = Path()
+            wing.move(to: CGPoint(x: 0, y: -2))
+            wing.addCurve(to: CGPoint(x: -23, y: -15), control1: CGPoint(x: -7, y: -15), control2: CGPoint(x: -18, y: -21))
+            wing.addCurve(to: CGPoint(x: -21, y: 7), control1: CGPoint(x: -29, y: -8), control2: CGPoint(x: -28, y: 4))
+            wing.addCurve(to: CGPoint(x: 0, y: 2), control1: CGPoint(x: -14, y: 11), control2: CGPoint(x: -6, y: 6))
+            wing.closeSubpath()
+            let rWing = wing.applying(CGAffineTransform(scaleX: -1, y: 1))
+            fo(ctx, wing, c, 2.4)
+            fo(ctx, rWing, c, 2.4)
+
+            // Inner satin highlight pleats
+            var g = ctx
+            g.opacity = 0.72
+            g.fill(Path(ellipseIn: CGRect(x: -20, y: -12, width: 11, height: 6.5)), with: .color(Shades.light(c).color))
+            g.fill(Path(ellipseIn: CGRect(x: 9, y: -12, width: 11, height: 6.5)), with: .color(Shades.light(c).color))
+
+            // Satin ribbon center wrap + pearlescent bead
+            let wrap = Path(roundedRect: CGRect(x: -7, y: -8, width: 14, height: 15), cornerRadius: 6)
+            fo(ctx, wrap, Shades.light(c), 2.2)
+            fo(ctx, Path(ellipseIn: CGRect(x: -4.5, y: -5, width: 9, height: 9)), cream, 1.8)
+            ctx.stroke(Path(ellipseIn: CGRect(x: -5.5, y: -6, width: 11, height: 11)), with: .color(gold.color), lineWidth: 1.5)
+            ctx.fill(Path(ellipseIn: CGRect(x: -2.2, y: -3.2, width: 3, height: 2.5)), with: .color(.white))
+        case .heartJewel:
+            // Teenieping-inspired faceted pastel heart gem hairpin set in a scalloped gold & pearl bezel.
+            let gold = RGB(0.98, 0.83, 0.38)
+            let pearl = RGB(1, 0.98, 0.96)
+            let pin = Path(roundedRect: CGRect(x: -24, y: -3.5, width: 48, height: 7), cornerRadius: 3.5)
+            fo(ctx, pin, gold, 2.2)
+            // Twin decorative pearls on the hairpin tip
+            fo(ctx, Path(ellipseIn: CGRect(x: 13.5, y: -4.5, width: 9, height: 9)), pearl, 1.8)
+            ctx.fill(Path(ellipseIn: CGRect(x: 16, y: -2.8, width: 2.8, height: 2.4)), with: .color(.white))
+
+            // Scalloped golden bezel behind the faceted heart jewel
+            var bezel = ctx
+            bezel.translateBy(x: -4, y: 0)
+            fo(bezel, heart(18.5), gold, 2.4)
+            let gem = heart(14)
+            bezel.fill(
+                gem,
+                with: .linearGradient(
+                    Gradient(colors: [Shades.light(c).color, c.color, Shades.shade(c).color]),
+                    startPoint: CGPoint(x: -10, y: -12),
+                    endPoint: CGPoint(x: 10, y: 12)
+                )
+            )
+            bezel.stroke(gem, with: .color(Shades.outline(c).color), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            // Inner crystal facet crown + gloss gleam
+            let facet = heart(7.5).applying(CGAffineTransform(translationX: 0, y: -1))
+            bezel.fill(facet, with: .color(Shades.light(c).color.opacity(0.65)))
+            bezel.stroke(facet, with: .color(.white.opacity(0.75)), lineWidth: 1.2)
+            bezel.fill(Path(ellipseIn: CGRect(x: -8.5, y: -7.5, width: 5.5, height: 3.8)), with: .color(.white.opacity(0.9)))
+            StorybookArt.sparkle(bezel, at: CGPoint(x: 11, y: -10), radius: 5.5, color: Theme.lemon, opacity: 0.95)
         case .leaf:
             var l = Path()
             l.move(to: CGPoint(x: -16, y: 6))

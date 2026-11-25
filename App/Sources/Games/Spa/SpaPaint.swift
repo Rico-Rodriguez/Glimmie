@@ -108,6 +108,7 @@ enum SpaPainter {
         for th in sim.things where !th.held { ThingPainter.draw(ctx, th, time: t) }
         drawWater(ctx, sim: sim)
         drawFoam(ctx, sim: sim)
+        drawYuzuCitrus(ctx, sim: sim)
         drawStream(ctx, sim: sim)
         drawTubFront(ctx, sim: sim)
         for th in sim.things where th.held { ThingPainter.draw(ctx, th, time: t) }
@@ -121,7 +122,10 @@ enum SpaPainter {
 
     // MARK: - Wall shelf, candles & arched vanity mirror
 
-    static func drawWallShelf(_ g: GraphicsContext, t: Double) {
+    static func drawWallShelf(_ ctx: GraphicsContext, t: Double) {
+        // Positioned on the open right wall, clear of the doll's hair, mirror frame, top bar, and brass faucet.
+        var g = ctx
+        g.translateBy(x: 774, y: 12)
         let shelfY: CGFloat = 204
         let shelf = Path(roundedRect: CGRect(x: 42, y: shelfY, width: 158, height: 14), cornerRadius: 7)
         StorybookArt.fillAndStroke(g, shelf, fill: .white, stroke: StorybookArt.outline(for: 0xF0C4D8), width: 2.5)
@@ -593,6 +597,11 @@ enum SpaPainter {
             }
         }
 
+        // Jjimjilbang sheep-horn towel hat (양머리) wrapped snugly above her brow
+        if sim.sheepTowelOn {
+            drawSheepTowelHat(g, tint: sim.sheepTowelTint, time: sim.time)
+        }
+
         // Cozy pink spa-towel wrap glow around her shoulders
         if sim.cozyActive {
             drawCozyTowelWrap(g, time: sim.time)
@@ -692,6 +701,88 @@ enum SpaPainter {
         wrap.closeSubpath()
         StorybookArt.fillAndStroke(g, wrap, fill: hx("#FFB8D4").c(), stroke: StorybookArt.outline(for: 0xF084AE), width: 4)
         StorybookArt.highlight(g, in: CGRect(x: 214, y: 448, width: 54, height: 12), opacity: 0.45)
+    }
+
+    static func sheepTowelPalette(_ tint: FoamTint) -> (base: RGB, trim: RGB) {
+        switch tint {
+        case .cloud: return (hx("#FFF5EE"), hx("#FFB3CF"))
+        case .berry: return (hx("#FFD0E2"), hx("#FFFFFF"))
+        case .lavender: return (hx("#E3D5FF"), hx("#FFFFFF"))
+        case .mint: return (hx("#C7F5E5"), hx("#FFFFFF"))
+        }
+    }
+
+    private static func drawSheepTowelHat(_ g: GraphicsContext, tint: FoamTint, time: Double) {
+        let (base, trim) = sheepTowelPalette(tint)
+        let light = Shades.light(base)
+        let shade = Shades.shade(base)
+        let stroke = Shades.outline(base)
+        let spiralInk = shade.mix(stroke, 0.42)
+
+        // Two plush rolled jjimjilbang sheep-horn buns on left & right temples
+        for side in [CGFloat(-1), 1] {
+            var bun = g
+            bun.translateBy(x: 300 + side * 144, y: 214)
+            bun.rotate(by: .radians(Double(side) * 0.2))
+
+            let outer = Path(ellipseIn: CGRect(x: -42, y: -48, width: 84, height: 96))
+            bun.fill(
+                outer,
+                with: .linearGradient(
+                    Gradient(colors: [light.c(), base.c(), shade.c()]),
+                    startPoint: CGPoint(x: 0, y: -48),
+                    endPoint: CGPoint(x: 0, y: 48)
+                )
+            )
+            bun.stroke(outer, with: .color(stroke.c()), lineWidth: 4.5)
+
+            // Rolled terry-cloth spiral rings
+            var spiral = Path()
+            let steps = 42
+            for k in 0...steps {
+                let u = CGFloat(k) / CGFloat(steps)
+                let a = u * 3.8 * .pi + (side < 0 ? 0.4 : .pi - 0.4)
+                let r = 4 + u * 27
+                let pt = CGPoint(x: cos(a) * r * 0.92 * side, y: sin(a) * r * 1.06)
+                if k == 0 { spiral.move(to: pt) } else { spiral.addLine(to: pt) }
+            }
+            bun.stroke(spiral, with: .color(spiralInk.c(0.85)), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+            StorybookArt.highlight(bun, in: CGRect(x: -24, y: -36, width: 22, height: 12), opacity: 0.65)
+        }
+
+        // Folded arched terry-cloth crown band across her forehead
+        var band = Path()
+        band.move(to: CGPoint(x: 164, y: 236))
+        band.addCurve(to: CGPoint(x: 436, y: 236), control1: CGPoint(x: 222, y: 124), control2: CGPoint(x: 378, y: 124))
+        band.addQuadCurve(to: CGPoint(x: 422, y: 256), control: CGPoint(x: 438, y: 252))
+        band.addCurve(to: CGPoint(x: 178, y: 256), control1: CGPoint(x: 358, y: 204), control2: CGPoint(x: 242, y: 204))
+        band.addQuadCurve(to: CGPoint(x: 164, y: 236), control: CGPoint(x: 162, y: 252))
+        band.closeSubpath()
+
+        g.fill(
+            band,
+            with: .linearGradient(
+                Gradient(colors: [light.c(), base.c(), shade.c()]),
+                startPoint: CGPoint(x: 300, y: 142),
+                endPoint: CGPoint(x: 300, y: 254)
+            )
+        )
+        g.stroke(band, with: .color(stroke.c()), lineWidth: 4.5)
+
+        // Folded towel cuff stripe + terry crease
+        var stripe = Path()
+        stripe.move(to: CGPoint(x: 184, y: 244))
+        stripe.addCurve(to: CGPoint(x: 416, y: 244), control1: CGPoint(x: 246, y: 192), control2: CGPoint(x: 354, y: 192))
+        g.stroke(stripe, with: .color(trim.c(0.85)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+
+        var crease = Path()
+        crease.move(to: CGPoint(x: 196, y: 212))
+        crease.addCurve(to: CGPoint(x: 404, y: 212), control1: CGPoint(x: 252, y: 162), control2: CGPoint(x: 348, y: 162))
+        g.stroke(crease, with: .color(spiralInk.c(0.42)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+
+        StorybookArt.highlight(g, in: CGRect(x: 246, y: 158, width: 64, height: 14), opacity: 0.65)
+        let tw = 0.5 + 0.5 * sin(time * 3.4)
+        StorybookArt.sparkle(g, at: CGPoint(x: 368, y: 152), radius: 10, color: Theme.lemon, opacity: 0.45 + 0.45 * tw)
     }
 
     private static func drawFoamPuffs(_ g: GraphicsContext, sim: SpaSim) {
@@ -841,6 +932,22 @@ enum SpaPainter {
         let s = surfacePath(sim)
         g.stroke(s, with: .color(.white.opacity(0.88)), lineWidth: 3.2)
         g.stroke(s.offsetBy(dx: 0, dy: 5), with: .color(.white.opacity(0.26)), lineWidth: 4)
+        if sim.yuzuCitrus > 0.02 {
+            let glowA = Double(sim.yuzuCitrus) * (0.55 + 0.15 * sin(t * 3.2))
+            g.stroke(
+                s.offsetBy(dx: 0, dy: 2.5),
+                with: .linearGradient(
+                    Gradient(colors: [
+                        Color(hex: 0xFFF5B8).opacity(glowA),
+                        Color(hex: 0xFFD24A).opacity(glowA),
+                        Color(hex: 0xFFF5B8).opacity(glowA),
+                    ]),
+                    startPoint: CGPoint(x: SGeo.tubL, y: 0),
+                    endPoint: CGPoint(x: SGeo.tubR, y: 0)
+                ),
+                lineWidth: 5
+            )
+        }
 
         if sim.drainFlow > 0.05 && sim.vol > 2 {
             var sw = Path()
@@ -875,6 +982,58 @@ enum SpaPainter {
         g.fill(main, with: .color(color.mix(RGB(1, 1, 1), 0.45).c()))
         g.stroke(rims, with: .color(Shades.shade(color).c(0.32)), lineWidth: 1)
         g.fill(hi, with: .color(.white))
+    }
+
+    static func drawYuzuCitrus(_ ctx: GraphicsContext, sim: SpaSim) {
+        guard sim.yuzuCitrus > 0.02, sim.hasWater else { return }
+        var g = ctx
+        g.clip(to: Path(CGRect(x: SGeo.tubL + 10, y: SGeo.lipY - 40, width: SGeo.tubR - SGeo.tubL - 20, height: SGeo.tubBottom - SGeo.lipY + 42)))
+        let t = sim.time
+        let alpha = Double(min(1, sim.yuzuCitrus))
+        let slices: [(baseX: CGFloat, radius: CGFloat, phase: Double)] = [
+            (430, 17, 0.2),
+            (548, 19, 1.8),
+            (668, 16, 3.3),
+            (772, 18, 4.9),
+        ]
+        let rindOutline = StorybookArt.outline(for: 0xF5B82E, factor: 0.65)
+        for (idx, s) in slices.enumerated() {
+            let drift = CGFloat(sin(t * 0.75 + s.phase)) * 16
+            let x = max(SGeo.bodyR + 24, min(SGeo.tubR - 28, s.baseX + drift))
+            let y = sim.surfaceY(x) + 1 + CGFloat(sin(t * 2.4 + s.phase)) * 2.5
+            let tilt = Double(sim.slope(x)) * 0.8 + sin(t * 1.9 + s.phase) * 0.08
+            let r = s.radius * CGFloat(0.6 + 0.4 * alpha)
+
+            var c = g
+            c.opacity = alpha
+            c.translateBy(x: x, y: y)
+            c.rotate(by: .radians(tilt))
+            c.scaleBy(x: 1, y: 0.52)
+
+            let outer = Path(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2))
+            StorybookArt.fillAndStroke(c, outer, fill: Color(hex: 0xFFD23E), stroke: rindOutline, width: 2.2)
+
+            let pithR = r * 0.82
+            let pith = Path(ellipseIn: CGRect(x: -pithR, y: -pithR, width: pithR * 2, height: pithR * 2))
+            c.fill(pith, with: .color(Color(hex: 0xFFF9DE)))
+
+            let pulpR = r * 0.68
+            for seg in 0..<6 {
+                let a0 = CGFloat(seg) / 6 * 2 * .pi + 0.14
+                let a1 = CGFloat(seg + 1) / 6 * 2 * .pi - 0.14
+                var wedge = Path()
+                wedge.move(to: .zero)
+                wedge.addArc(center: .zero, radius: pulpR, startAngle: .radians(Double(a0)), endAngle: .radians(Double(a1)), clockwise: false)
+                wedge.closeSubpath()
+                c.fill(wedge, with: .color(Color(hex: 0xFFE266)))
+            }
+            c.fill(Path(ellipseIn: CGRect(x: -2.2, y: -2.2, width: 4.4, height: 4.4)), with: .color(.white))
+
+            if idx.isMultiple(of: 2) {
+                let tw = 0.65 + 0.35 * sin(t * 4.2 + s.phase)
+                StorybookArt.sparkle(g, at: CGPoint(x: x + r * 0.55, y: y - 9), radius: 5.5 * CGFloat(tw), color: Theme.lemon, opacity: alpha * tw)
+            }
+        }
     }
 
     static func drawFoam(_ ctx: GraphicsContext, sim: SpaSim) {
@@ -1073,6 +1232,7 @@ enum ThingPainter {
         case .toy(let k):
             switch k {
             case .duck: duck(g, body: hx("#FFD84A"), scale: 0.96)
+            case .goldenDuck: goldenDuck(g, scale: 0.96, time: time)
             case .boat: boat(g)
             case .whale: whale(g)
             case .turtle: turtle(g, t: time)
@@ -1116,6 +1276,65 @@ enum ThingPainter {
         g.fill(wing, with: .color(Shades.shade(body).c()))
         g.stroke(wing, with: .color(outline(body)), lineWidth: 2 * s)
         g.fill(Path(ellipseIn: CGRect(x: 4 * s, y: -36 * s, width: 14 * s, height: 8 * s)), with: .color(.white.opacity(0.7)))
+    }
+
+    static func goldenDuck(_ g: GraphicsContext, scale s: CGFloat, time: Double) {
+        let gold = hx("#FFE066")
+        let goldOutline = StorybookArt.outline(for: 0xE6A82E, factor: 0.62)
+
+        // Soft royal shimmer halo behind the golden ducky
+        let glowPulse = 0.32 + 0.14 * sin(time * 3.4)
+        g.fill(
+            Path(ellipseIn: CGRect(x: -46 * s, y: -56 * s, width: 100 * s, height: 92 * s)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF5B8).opacity(glowPulse), Color(hex: 0xFFF5B8).opacity(0)]),
+                center: CGPoint(x: 4 * s, y: -12 * s),
+                startRadius: 6 * s,
+                endRadius: 50 * s
+            )
+        )
+
+        duck(g, body: gold, scale: s)
+
+        // Pearlescent wing highlight & rose-gold necklace ribbon
+        g.fill(Path(ellipseIn: CGRect(x: -14 * s, y: 5 * s, width: 14 * s, height: 6 * s)), with: .color(.white.opacity(0.65)))
+        var collar = Path()
+        collar.move(to: CGPoint(x: 2 * s, y: -2 * s))
+        collar.addQuadCurve(to: CGPoint(x: 32 * s, y: 1 * s), control: CGPoint(x: 18 * s, y: 8 * s))
+        g.stroke(collar, with: .color(Theme.pink), style: StrokeStyle(lineWidth: 3.4 * s, lineCap: .round))
+        StorybookArt.heart(g, at: CGPoint(x: 18 * s, y: 6 * s), size: 9 * s, color: Theme.pink)
+
+        // Royal golden crown perched on its head
+        var crown = Path()
+        crown.move(to: CGPoint(x: 3 * s, y: -36 * s))
+        crown.addLine(to: CGPoint(x: 0 * s, y: -54 * s))
+        crown.addLine(to: CGPoint(x: 10 * s, y: -45 * s))
+        crown.addLine(to: CGPoint(x: 19 * s, y: -58 * s))
+        crown.addLine(to: CGPoint(x: 27 * s, y: -45 * s))
+        crown.addLine(to: CGPoint(x: 36 * s, y: -53 * s))
+        crown.addLine(to: CGPoint(x: 33 * s, y: -36 * s))
+        crown.addQuadCurve(to: CGPoint(x: 3 * s, y: -36 * s), control: CGPoint(x: 18 * s, y: -31 * s))
+        crown.closeSubpath()
+        g.fill(
+            crown,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFF7B8), Color(hex: 0xFFD242), Color(hex: 0xF2A628)]),
+                startPoint: CGPoint(x: 18 * s, y: -58 * s),
+                endPoint: CGPoint(x: 18 * s, y: -34 * s)
+            )
+        )
+        g.stroke(crown, with: .color(goldOutline), style: StrokeStyle(lineWidth: 2.3 * s, lineJoin: .round))
+
+        // Pearl crown tips & pink ruby heart gem
+        for pt in [CGPoint(x: 0 * s, y: -55 * s), CGPoint(x: 19 * s, y: -60 * s), CGPoint(x: 36 * s, y: -54 * s)] {
+            let pearl = Path(ellipseIn: CGRect(x: pt.x - 3 * s, y: pt.y - 3 * s, width: 6 * s, height: 6 * s))
+            StorybookArt.fillAndStroke(g, pearl, fill: .white, stroke: goldOutline, width: 1.5 * s)
+        }
+        StorybookArt.heart(g, at: CGPoint(x: 18 * s, y: -41 * s), size: 9 * s, color: Color(hex: 0xFF5D9E))
+
+        let tw = 0.72 + 0.28 * sin(time * 4.5)
+        StorybookArt.sparkle(g, at: CGPoint(x: 34 * s, y: -58 * s), radius: 7 * s * CGFloat(tw), color: .white, opacity: tw)
+        StorybookArt.sparkle(g, at: CGPoint(x: -24 * s, y: -22 * s), radius: 5.5 * s * CGFloat(1.3 - tw * 0.4), color: Theme.lemon, opacity: 0.9)
     }
 
     static func boat(_ g: GraphicsContext) {
@@ -1241,6 +1460,16 @@ enum ThingPainter {
                     endRadius: r * 1.35
                 )
             )
+        } else if k == .yuzu {
+            g.fill(
+                p,
+                with: .radialGradient(
+                    Gradient(colors: [hx("#FFF6B8").c(), hx("#FFD842").c(), hx("#F5A628").c()]),
+                    center: CGPoint(x: -r * 0.32, y: -r * 0.38),
+                    startRadius: 1,
+                    endRadius: r * 1.35
+                )
+            )
         } else {
             g.fill(
                 p,
@@ -1261,6 +1490,18 @@ enum ThingPainter {
         }
         g.fill(sp, with: .color(k.glitter ? hx("#FFF6C8").c() : Color.white.opacity(0.82)))
         g.fill(Path(ellipseIn: CGRect(x: -r * 0.55, y: -r * 0.62, width: r * 0.5, height: r * 0.32)), with: .color(.white.opacity(0.6)))
+        if k == .yuzu {
+            let leafOutline = StorybookArt.outline(for: 0x62C48A, factor: 0.6)
+            var leaf = Path()
+            leaf.move(to: CGPoint(x: 0, y: -r * 0.88))
+            leaf.addQuadCurve(to: CGPoint(x: r * 0.52, y: -r * 1.18), control: CGPoint(x: r * 0.24, y: -r * 1.24))
+            leaf.addQuadCurve(to: CGPoint(x: 0, y: -r * 0.88), control: CGPoint(x: r * 0.32, y: -r * 0.84))
+            leaf.closeSubpath()
+            StorybookArt.fillAndStroke(g, leaf, fill: Color(hex: 0x7CE0A0), stroke: leafOutline, width: 2)
+            let stem = Path(roundedRect: CGRect(x: -2.2, y: -r * 1.08, width: 4.4, height: r * 0.24), cornerRadius: 2)
+            StorybookArt.fillAndStroke(g, stem, fill: Color(hex: 0xA88856), stroke: StorybookArt.outline(for: 0x8A6A3C), width: 1.4)
+            StorybookArt.sparkle(g, at: CGPoint(x: -r * 0.42, y: -r * 0.92), radius: 5.5, color: .white, opacity: 0.92)
+        }
     }
 }
 
@@ -1296,6 +1537,12 @@ enum ToolPainter {
             b.rotate(by: .radians(Double(max(-0.25, min(0.25, sim.toolV.dx / 4000)))))
             b.scaleBy(x: 1.25, y: 1.25)
             towel(b)
+        case .sheepTowel:
+            var b = g
+            b.translateBy(x: p.x, y: p.y)
+            b.rotate(by: .radians(Double(max(-0.22, min(0.22, sim.toolV.dx / 3800)))))
+            b.scaleBy(x: 1.4, y: 1.4)
+            sheepTowel(b, tint: sim.sheepTowelTint)
         case .mask(let k):
             maskBrush(g, tip: p, finger: sim.toolFinger, kind: k)
         case .cucumbers:
@@ -1418,6 +1665,63 @@ enum ToolPainter {
         g.stroke(t, with: .color(Shades.outline(c).c()), lineWidth: 3)
         g.fill(Path(CGRect(x: -54, y: 4, width: 116, height: 7)), with: .color(.white.opacity(0.85)))
         g.fill(Path(CGRect(x: -54, y: 15, width: 116, height: 3)), with: .color(.white.opacity(0.7)))
+    }
+
+    static func sheepTowel(_ g: GraphicsContext, tint: FoamTint = .cloud) {
+        let (base, trim) = SpaPainter.sheepTowelPalette(tint)
+        let light = Shades.light(base)
+        let shade = Shades.shade(base)
+        let stroke = Shades.outline(base)
+        let spiralInk = shade.mix(stroke, 0.45)
+
+        // Miniature left & right rolled sheep-horn buns
+        for side in [CGFloat(-1), 1] {
+            var bun = g
+            bun.translateBy(x: side * 24, y: 4)
+            bun.rotate(by: .radians(Double(side) * 0.16))
+            let outer = Path(ellipseIn: CGRect(x: -13, y: -15, width: 26, height: 30))
+            bun.fill(
+                outer,
+                with: .linearGradient(
+                    Gradient(colors: [light.c(), base.c(), shade.c()]),
+                    startPoint: CGPoint(x: 0, y: -15),
+                    endPoint: CGPoint(x: 0, y: 15)
+                )
+            )
+            bun.stroke(outer, with: .color(stroke.c()), lineWidth: 2.6)
+            var spiral = Path()
+            for k in 0...26 {
+                let u = CGFloat(k) / 26
+                let a = u * 3.4 * .pi
+                let r = 1.5 + u * 8.2
+                let pt = CGPoint(x: cos(a) * r * side, y: sin(a) * r * 1.05)
+                if k == 0 { spiral.move(to: pt) } else { spiral.addLine(to: pt) }
+            }
+            bun.stroke(spiral, with: .color(spiralInk.c(0.85)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+        }
+
+        // Miniature folded arched towel crown
+        var band = Path()
+        band.move(to: CGPoint(x: -22, y: 6))
+        band.addCurve(to: CGPoint(x: 22, y: 6), control1: CGPoint(x: -14, y: -26), control2: CGPoint(x: 14, y: -26))
+        band.addLine(to: CGPoint(x: 18, y: 12))
+        band.addCurve(to: CGPoint(x: -18, y: 12), control1: CGPoint(x: 8, y: -2), control2: CGPoint(x: -8, y: -2))
+        band.closeSubpath()
+        g.fill(
+            band,
+            with: .linearGradient(
+                Gradient(colors: [light.c(), base.c(), shade.c()]),
+                startPoint: CGPoint(x: 0, y: -18),
+                endPoint: CGPoint(x: 0, y: 12)
+            )
+        )
+        g.stroke(band, with: .color(stroke.c()), lineWidth: 2.6)
+
+        var cuff = Path()
+        cuff.move(to: CGPoint(x: -16, y: 8))
+        cuff.addCurve(to: CGPoint(x: 16, y: 8), control1: CGPoint(x: -6, y: -4), control2: CGPoint(x: 6, y: -4))
+        g.stroke(cuff, with: .color(trim.c(0.9)), style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
+        StorybookArt.highlight(g, in: CGRect(x: -10, y: -13, width: 14, height: 5), opacity: 0.7)
     }
 
     static func mistBottle(_ g: GraphicsContext) {

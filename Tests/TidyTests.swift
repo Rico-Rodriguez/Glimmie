@@ -212,4 +212,108 @@ final class TidyTests: XCTestCase {
         XCTAssertEqual(plate.state, .loose)
         XCTAssertEqual(cupboard.hint?.slot, bottomPlateSlot)
     }
+
+    func testShuffledLevelsStayInBoundsAndCompletable() {
+        for roomIndex in 0..<TidyLevels.all.count {
+            for seed: UInt64 in [1, 42, 999] {
+                let level = TidyLevels.shuffled(roomIndex: roomIndex, seed: seed)
+                XCTAssertTrue(level.isShuffle)
+                XCTAssertEqual(level.scene, TidyLevels.all[roomIndex].scene)
+                XCTAssertGreaterThanOrEqual(level.slots.count, 4, level.id)
+                XCTAssertLessThanOrEqual(level.slots.count, 16, level.id)
+
+                for s in level.slots {
+                    let sz = s.kind.size
+                    let w = abs(cos(s.rot)) * sz.width + abs(sin(s.rot)) * sz.height
+                    let h = abs(sin(s.rot)) * sz.width + abs(cos(s.rot)) * sz.height
+                    XCTAssertGreaterThanOrEqual(s.pos.x - w / 2, 0, "\(level.id) \(s.kind)")
+                    XCTAssertLessThanOrEqual(s.pos.x + w / 2, TidyScene.size.width, "\(level.id) \(s.kind)")
+                    XCTAssertGreaterThanOrEqual(s.pos.y - h / 2, -4, "\(level.id) \(s.kind)")
+                    XCTAssertLessThanOrEqual(s.pos.y + h / 2, TidyScene.size.height + 4, "\(level.id) \(s.kind)")
+                }
+
+                // Every shuffled room must be 100% completable without locked stacks or mismatched strict colors.
+                let w = TidyWorld(level: level)
+                for _ in 0..<level.slots.count { w.placeSome(1) }
+                XCTAssertTrue(w.filled.allSatisfy { $0 != nil }, "shuffled room should be completable: \(level.id)")
+            }
+        }
+
+        // Verify different seeds generate distinct shuffled clutter variations and settle cleanly on screen.
+        let a = TidyLevels.shuffled(roomIndex: 0, seed: 11)
+        let b = TidyLevels.shuffled(roomIndex: 0, seed: 777)
+        let sigA = a.slots.map { "\($0.kind.rawValue)-\($0.color)-\(Int($0.pos.x))-\(Int($0.pos.y))" }
+        let sigB = b.slots.map { "\($0.kind.rawValue)-\($0.color)-\(Int($0.pos.x))-\(Int($0.pos.y))" }
+        XCTAssertNotEqual(sigA, sigB, "different seeds should vary shuffled clutter")
+
+        let simWorld = TidyWorld(level: a)
+        simWorld.size = CGSize(width: 1024, height: 834)
+        simWorld.simulate(seconds: 7)
+        for body in simWorld.bodies {
+            XCTAssertEqual(body.state, .loose)
+            XCTAssertGreaterThan(body.pos.x, -5)
+            XCTAssertLessThan(body.pos.x, simWorld.size.width + 5)
+            XCTAssertLessThan(body.pos.y, simWorld.floorY + 2)
+        }
+    }
+
+    func testEveryTidySoundResolves() {
+        for sfx in TidySFX.allCases {
+            XCTAssertNotNil(TidySound.url(for: sfx), "missing audio asset for \(sfx.rawValue)")
+        }
+    }
+
+    func testTidyTreasureHooksRespondToOwnershipAndEmitExtraStarlight() {
+        Coins.shared.resetForTests(balance: 60)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(TidyWorld.starBroomTreasureID, "tidy/starBroom")
+        XCTAssertEqual(TidyWorld.plushBearTreasureID, "tidy/plushBear")
+        XCTAssertFalse(TidyWorld.hasStarBroom)
+        XCTAssertFalse(TidyWorld.hasPlushBear)
+
+        func snapOneAndCountSparkles() -> (sparkles: Int, rings: Int, lastPlace: Double) {
+            let w = TidyWorld(level: TidyLevels.fridge1)
+            w.simulate(seconds: 4)
+            guard let pick = w.bodies.first(where: { $0.state == .loose }) else {
+                XCTFail("expected loose item")
+                return (0, 0, -10)
+            }
+            w.touchDown(pick.pos.pt)
+            guard let h = w.held else {
+                XCTFail("expected held item")
+                return (0, 0, -10)
+            }
+            let held = w.bodies[h]
+            guard let slot = w.eligible(for: held).first else {
+                XCTFail("expected eligible slot")
+                return (0, 0, -10)
+            }
+            let target = w.finger(toHold: held, at: w.slotPos(slot).pt)
+            w.touchMoved(target)
+            w.simulate(seconds: 0.35)
+            w.touchUp(target)
+            for _ in 0..<40 where held.state != .placed {
+                w.simulate(seconds: 0.03)
+            }
+            XCTAssertEqual(held.state, .placed)
+            let sparkles = w.particles.filter { $0.kind == .sparkle }.count
+            return (sparkles, w.rings.count, w.lastPlace)
+        }
+
+        let baseline = snapOneAndCountSparkles()
+        XCTAssertEqual(baseline.sparkles, 9)
+        XCTAssertEqual(baseline.rings, 1)
+        XCTAssertGreaterThan(baseline.lastPlace, 0)
+
+        XCTAssertTrue(Coins.shared.buy(TidyWorld.starBroomTreasureID, price: 8))
+        XCTAssertTrue(Coins.shared.buy(TidyWorld.plushBearTreasureID, price: 10))
+        XCTAssertTrue(TidyWorld.hasStarBroom)
+        XCTAssertTrue(TidyWorld.hasPlushBear)
+
+        let upgraded = snapOneAndCountSparkles()
+        XCTAssertEqual(upgraded.sparkles, 19)
+        XCTAssertEqual(upgraded.rings, 2)
+        XCTAssertGreaterThan(upgraded.lastPlace, 0)
+    }
 }

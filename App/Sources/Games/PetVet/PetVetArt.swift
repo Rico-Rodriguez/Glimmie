@@ -128,6 +128,11 @@ private struct VetRawFile: Decodable {
 // MARK: - Drawing
 
 enum VetDraw {
+    static let heartScopeTreasureID = "petvet/heartScope"
+    static let bowBandageTreasureID = "petvet/bowBandage"
+    static var hasHeartScope: Bool { Coins.shared.owns(heartScopeTreasureID) }
+    static var hasBowBandage: Bool { Coins.shared.owns(bowBandageTreasureID) }
+
     /// Draws shapes into `ctx`, which is already in art coordinates.
     static func shapes(_ list: [VetShape], in ctx: GraphicsContext, opacity: Double = 1) {
         for s in list {
@@ -150,6 +155,101 @@ enum VetDraw {
         if rotation != 0 { g.rotate(by: .degrees(rotation)) }
         g.scaleBy(x: scale, y: scale)
         shapes(list, in: g, opacity: opacity)
+        if name == "bandage" && hasBowBandage {
+            bowBandageAccent(in: g, opacity: opacity)
+        }
+    }
+
+    /// Shiny pastel faceted heart-gem medallion for the upgraded stethoscope chestpiece.
+    static func heartScopeMedallion(in ctx: GraphicsContext, at center: CGPoint) {
+        var g = ctx
+        g.translateBy(x: center.x, y: center.y)
+        let goldEdge = StorybookArt.outline(for: 0xD9961E)
+
+        let bezel = Path(ellipseIn: CGRect(x: -20, y: -20, width: 40, height: 40))
+        g.fill(
+            bezel,
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF5B8), Color(hex: 0xFFCF4A), Color(hex: 0xDE981C)]),
+                center: CGPoint(x: -5, y: -6),
+                startRadius: 2,
+                endRadius: 22
+            )
+        )
+        g.stroke(bezel, with: .color(goldEdge), lineWidth: 2.8)
+        g.stroke(Path(ellipseIn: CGRect(x: -16, y: -16, width: 32, height: 32)), with: .color(.white.opacity(0.6)), lineWidth: 1.4)
+
+        let gem = VetExamView.heart(13.5)
+        g.fill(
+            gem,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFB8DA), Color(hex: 0xFF6FA8), Color(hex: 0xC9B6FF)]),
+                startPoint: CGPoint(x: -11, y: -12),
+                endPoint: CGPoint(x: 11, y: 13)
+            )
+        )
+        g.stroke(gem, with: .color(StorybookArt.outline(for: 0xE85792)), style: StrokeStyle(lineWidth: 2.2, lineJoin: .round))
+
+        let facet = VetExamView.heart(7.2).applying(CGAffineTransform(translationX: 0, y: -1))
+        g.fill(facet, with: .color(Color(hex: 0xFFE3F2, alpha: 0.72)))
+        g.stroke(facet, with: .color(.white.opacity(0.85)), lineWidth: 1.2)
+        StorybookArt.highlight(g, in: CGRect(x: -8.5, y: -7.5, width: 5.5, height: 3.6), opacity: 0.92)
+        StorybookArt.sparkle(g, at: CGPoint(x: 14, y: -13), radius: 6, color: .white, opacity: 0.95)
+        StorybookArt.sparkle(g, at: CGPoint(x: -15, y: 12), radius: 4.5, color: Theme.lemon, opacity: 0.9)
+    }
+
+    /// Cute pastel polka dots and a sweet satin ribbon bow perched atop applied bandages.
+    static func bowBandageAccent(in ctx: GraphicsContext, opacity: Double = 1) {
+        var g = ctx
+        if opacity < 1 { g.opacity = opacity }
+        g.rotate(by: .degrees(-20))
+
+        let dots: [(CGFloat, CGFloat, Color)] = [
+            (-39, -5.5, Theme.pink), (-31, 5.5, Theme.sky), (-24, -6.5, Theme.mint), (-36, 7.5, Theme.lemon), (-22, 6, Theme.lilac),
+            (24, -6, Theme.lilac), (31, 6, Theme.mint), (39, -5.5, Theme.pink), (36, 7.5, Theme.sky), (23, 6.5, Theme.lemon),
+        ]
+        for (dx, dy, col) in dots {
+            let dot = Path(ellipseIn: CGRect(x: dx - 3.2, y: dy - 3.2, width: 6.4, height: 6.4))
+            g.fill(dot, with: .color(col))
+            g.stroke(dot, with: .color(.white.opacity(0.7)), lineWidth: 0.9)
+        }
+
+        var bow = g
+        bow.translateBy(x: 0, y: -13)
+        satinBow(in: bow)
+    }
+
+    static func satinBow(in bow: GraphicsContext) {
+        let ribbonFill = Color(hex: 0xFF8EC2)
+        let ribbonShade = Color(hex: 0xF06BA8)
+        let ribbonEdge = StorybookArt.outline(for: 0xE85792)
+
+        for side in [-1.0, 1.0] {
+            let s = CGFloat(side)
+            var tail = Path()
+            tail.move(to: CGPoint(x: s * 2, y: 2))
+            tail.addQuadCurve(to: CGPoint(x: s * 14, y: 16), control: CGPoint(x: s * 11, y: 8))
+            tail.addLine(to: CGPoint(x: s * 8, y: 13))
+            tail.addLine(to: CGPoint(x: s * 4, y: 17))
+            tail.closeSubpath()
+            StorybookArt.fillAndStroke(bow, tail, fill: ribbonShade, stroke: ribbonEdge, width: 1.8)
+        }
+
+        for side in [-1.0, 1.0] {
+            let s = CGFloat(side)
+            var loop = Path()
+            loop.move(to: .zero)
+            loop.addCurve(to: CGPoint(x: s * 19, y: -10), control1: CGPoint(x: s * 6, y: -11), control2: CGPoint(x: s * 15, y: -15))
+            loop.addCurve(to: CGPoint(x: s * 17, y: 7), control1: CGPoint(x: s * 23, y: -4), control2: CGPoint(x: s * 22, y: 5))
+            loop.addCurve(to: .zero, control1: CGPoint(x: s * 11, y: 9), control2: CGPoint(x: s * 5, y: 5))
+            loop.closeSubpath()
+            StorybookArt.fillAndStroke(bow, loop, fill: ribbonFill, stroke: ribbonEdge, width: 2.1)
+            StorybookArt.highlight(bow, in: CGRect(x: s < 0 ? -15 : 6, y: -8, width: 8.5, height: 4.5), opacity: 0.65)
+        }
+
+        let knot = Path(roundedRect: CGRect(x: -5.5, y: -5.5, width: 11, height: 11), cornerRadius: 5)
+        StorybookArt.fillAndStroke(bow, knot, fill: Color(hex: 0xFFB8DA), stroke: ribbonEdge, width: 2)
+        StorybookArt.highlight(bow, in: CGRect(x: -2.8, y: -3.5, width: 4, height: 2.5), opacity: 0.8)
     }
 
     /// Maps `box` into `size`, fitting and centering.
@@ -239,6 +339,14 @@ struct VetToolPicture: View {
             var g = ctx
             VetDraw.fit(&g, box: CGRect(x: 0, y: 0, width: 140, height: 140), into: size)
             VetDraw.shapes(t.shapes, in: g)
+            if tool == .stethoscope && VetDraw.hasHeartScope {
+                VetDraw.heartScopeMedallion(in: g, at: t.tip)
+            } else if tool == .bandage && VetDraw.hasBowBandage {
+                var bg = g
+                bg.translateBy(x: t.tip.x, y: t.tip.y)
+                bg.scaleBy(x: 1.1, y: 1.1)
+                VetDraw.bowBandageAccent(in: bg)
+            }
         }
     }
 }

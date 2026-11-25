@@ -249,7 +249,7 @@ enum GardenPainter {
         for i in 0..<18 {
             let x = r.minX + gdRand(i, 41) * r.width
             let y = 636 + gdRand(i, 42) * 184
-            if abs(x - GGeo.basket.x) < 76 && y > 710 { continue }
+            if abs(x - GGeo.basket.x) < 76 && y > 725 { continue }
             if abs(x - 512) < 210 && y > 716 { continue }
             let col = i % 3 == 0 ? GRGB(0xFFD1E3) : (i % 3 == 1 ? GRGB(0xFFFFFF) : GRGB(0xFFF3B8))
             GardenPlants.daisyHead(g, at: CGPoint(x: x, y: y), open: 1, color: col.mix(GRGB(0x7C84B5), dusk), size: 0.38, spin: CGFloat(i))
@@ -936,7 +936,7 @@ enum GardenPainter {
         GardenPlants.shadow(b, at: CGPoint(x: 0, y: 28), width: 126)
         var handle = Path()
         handle.move(to: CGPoint(x: -48, y: -10))
-        handle.addCurve(to: CGPoint(x: 48, y: -10), control1: CGPoint(x: -44, y: -78), control2: CGPoint(x: 44, y: -78))
+        handle.addCurve(to: CGPoint(x: 48, y: -10), control1: CGPoint(x: -44, y: -54), control2: CGPoint(x: 44, y: -54))
         b.stroke(handle, with: .color(StorybookArt.outline(for: 0xDAA05C)), style: StrokeStyle(lineWidth: 10.5, lineCap: .round))
         b.stroke(handle, with: .color(wicker.color), style: StrokeStyle(lineWidth: 6.5, lineCap: .round))
         b.fill(Path(ellipseIn: CGRect(x: -56, y: -20, width: 112, height: 20)), with: .color(wicker.shade(-0.42).color))
@@ -1000,6 +1000,19 @@ enum GardenPainter {
             glow.fill(Path(ellipseIn: CGRect(x: c.x - 86, y: c.y - 86, width: 172, height: 172)),
                       with: .radialGradient(Gradient(colors: [Color(hex: 0xFFC766, alpha: 0.55 * a), Color(hex: 0xFFC766, alpha: 0)]),
                                             center: c, startRadius: 4, endRadius: 86))
+        }
+        for d in sim.decor where d.kind == .lotus {
+            let c = CGPoint(x: d.x, y: d.y - 64)
+            let pulse = 0.9 + 0.1 * sin(t * 2.4 + CGFloat(d.id))
+            let a = (0.34 + 0.66 * n) * Double(pulse)
+            glow.fill(Path(ellipseIn: CGRect(x: c.x - 98, y: c.y - 98, width: 196, height: 196)),
+                      with: .radialGradient(
+                          Gradient(colors: [
+                              Color(hex: 0xFFE3A8, alpha: 0.56 * a),
+                              Color(hex: 0xFFB0D6, alpha: 0.34 * a),
+                              Color(hex: 0xFFB0D6, alpha: 0),
+                          ]),
+                          center: c, startRadius: 6, endRadius: 98))
         }
         for (i, f) in sim.fireflies.enumerated() {
             let pulse = 0.5 + 0.5 * sin(f.phase * 3 + CGFloat(i))
@@ -1223,6 +1236,7 @@ enum GardenDecorPainter {
         case .crystal: TreasureArt.crystals(c, glow: night)
         case .rainbow: TreasureArt.rainbow(c)
         case .unicorn: TreasureArt.unicorn(c)
+        case .lotus: lotus(c, night: night, t: t)
         }
     }
 
@@ -1457,5 +1471,167 @@ enum GardenDecorPainter {
                                         startPoint: CGPoint(x: 0, y: -126), endPoint: CGPoint(x: len, y: -100)))
         c.stroke(f, with: .color(Color(hex: 0xA275D8, alpha: 0.7)), lineWidth: 1.4)
         c.fill(Twinkle().path(in: CGRect(x: 14, y: -120, width: 16, height: 16)), with: .color(.white.opacity(0.9)))
+    }
+
+    private static func lotus(_ c: GraphicsContext, night: CGFloat, t: CGFloat) {
+        let pulse = 0.88 + 0.12 * sin(t * 2.6)
+        let glowStrength = Double(0.28 + 0.62 * night) * Double(pulse)
+
+        // Warm pastel aura behind the lotus lantern, brightest at dusk/night
+        c.fill(
+            Path(ellipseIn: CGRect(x: -54, y: -112, width: 108, height: 96)),
+            with: .radialGradient(
+                Gradient(colors: [
+                    Color(hex: 0xFFF2B8, alpha: 0.72 * glowStrength),
+                    Color(hex: 0xFFB8DC, alpha: 0.42 * glowStrength),
+                    Color(hex: 0xFFB8DC, alpha: 0),
+                ]),
+                center: CGPoint(x: 0, y: -64),
+                startRadius: 6,
+                endRadius: 54
+            )
+        )
+
+        // Soft mossy garden stone pedestal
+        var stone = Path()
+        stone.move(to: CGPoint(x: -36, y: 0))
+        stone.addQuadCurve(to: CGPoint(x: -30, y: -24), control: CGPoint(x: -40, y: -16))
+        stone.addQuadCurve(to: CGPoint(x: 30, y: -24), control: CGPoint(x: 0, y: -30))
+        stone.addQuadCurve(to: CGPoint(x: 36, y: 0), control: CGPoint(x: 40, y: -16))
+        stone.addQuadCurve(to: CGPoint(x: -36, y: 0), control: CGPoint(x: 0, y: 4))
+        stone.closeSubpath()
+        let stoneCol = GRGB(0xCEC8D8)
+        c.fill(
+            stone,
+            with: .linearGradient(
+                Gradient(colors: [stoneCol.shade(0.18).color, stoneCol.color, stoneCol.shade(-0.22).color]),
+                startPoint: CGPoint(x: 0, y: -28),
+                endPoint: CGPoint(x: 0, y: 2)
+            )
+        )
+        c.stroke(stone, with: .color(StorybookArt.outline(for: 0xB8B0C8)), style: StrokeStyle(lineWidth: 2.4, lineJoin: .round))
+        StorybookArt.highlight(c, in: CGRect(x: -22, y: -16, width: 18, height: 6), opacity: 0.42)
+
+        // Soft pastel moss tufts hugging the stone shoulder
+        let mossOutline = StorybookArt.outline(for: 0x7ED89E)
+        let mossTufts: [(CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            (-26, -22, 11, 7), (-13, -25, 12, 7.5), (0, -26, 13, 7), (14, -25, 12, 7.5), (26, -22, 10.5, 6.8),
+        ]
+        var mossPath = Path()
+        for (mx, my, rx, ry) in mossTufts {
+            mossPath.addEllipse(in: CGRect(x: mx - rx, y: my - ry, width: rx * 2, height: ry * 2))
+        }
+        StorybookArt.fillAndStroke(c, mossPath, fill: Color(hex: 0x8CE2A8), stroke: mossOutline, width: 2.0)
+
+        // Lotus pad leaves fanning beneath the lantern
+        let leafOutline = StorybookArt.outline(for: 0x62C498)
+        for side in [-1.0, 1.0] as [CGFloat] {
+            var leaf = Path()
+            leaf.move(to: CGPoint(x: 0, y: -28))
+            leaf.addQuadCurve(to: CGPoint(x: side * 40, y: -38), control: CGPoint(x: side * 24, y: -22))
+            leaf.addQuadCurve(to: CGPoint(x: 0, y: -36), control: CGPoint(x: side * 22, y: -48))
+            leaf.closeSubpath()
+            StorybookArt.fillAndStroke(c, leaf, fill: Color(hex: 0x78D8AA), stroke: leafOutline, width: 2.2)
+        }
+
+        // Golden lotus pedestal cup
+        let cradle = Path(roundedRect: CGRect(x: -18, y: -36, width: 36, height: 11), cornerRadius: 5.5)
+        StorybookArt.shape(c, cradle, hex: 0xFFD972, width: 2.2)
+
+        // Helper to draw a pointed Korean lotus lantern petal
+        func petalPath(tip: CGPoint, base: CGPoint, width: CGFloat) -> Path {
+            let dx = tip.x - base.x
+            let dy = tip.y - base.y
+            let len = max(1, hypot(dx, dy))
+            let nx = -dy / len
+            let ny = dx / len
+            let mid = CGPoint(x: base.x + dx * 0.45, y: base.y + dy * 0.45)
+            var p = Path()
+            p.move(to: base)
+            p.addQuadCurve(to: tip, control: CGPoint(x: mid.x + nx * width, y: mid.y + ny * width))
+            p.addQuadCurve(to: base, control: CGPoint(x: mid.x - nx * width, y: mid.y - ny * width))
+            p.closeSubpath()
+            return p
+        }
+
+        let lanternCenter = CGPoint(x: 0, y: -34)
+        let backPetalOutline = StorybookArt.outline(for: 0xD6A6FF)
+        let pinkOutline = StorybookArt.outline(for: 0xFF8FB8)
+
+        // Back ring of soft lilac-rose petals
+        for (dx, dy, w) in [(-34.0, -48.0, 15.0), (34.0, -48.0, 15.0), (-20.0, -58.0, 15.0), (20.0, -58.0, 15.0)] as [(CGFloat, CGFloat, CGFloat)] {
+            let p = petalPath(tip: CGPoint(x: dx, y: lanternCenter.y + dy), base: lanternCenter, width: w)
+            c.fill(
+                p,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0xF5D6FF), Color(hex: 0xFFB8DC)]),
+                    startPoint: CGPoint(x: 0, y: -96),
+                    endPoint: lanternCenter
+                )
+            )
+            c.stroke(p, with: .color(backPetalOutline), style: StrokeStyle(lineWidth: 2.1, lineJoin: .round))
+        }
+
+        // Glowing warm lantern core inside the lotus blossom
+        let core = Path(ellipseIn: CGRect(x: -24, y: -88, width: 48, height: 52))
+        c.fill(
+            core,
+            with: .radialGradient(
+                Gradient(colors: [
+                    Color(hex: 0xFFFBE0),
+                    Color(hex: 0xFFE394, alpha: 0.92),
+                    Color(hex: 0xFFA6C8, alpha: 0.78),
+                ]),
+                center: CGPoint(x: 0, y: -64),
+                startRadius: 3,
+                endRadius: 30
+            )
+        )
+
+        // Front pastel pink & cream upturned lotus petals
+        let frontPetals: [(CGFloat, CGFloat, CGFloat, UInt32, UInt32)] = [
+            (-28, -42, 14, 0xFF9AC8, 0xFFE6F2),
+            (28, -42, 14, 0xFF9AC8, 0xFFE6F2),
+            (-14, -56, 15, 0xFFAAD2, 0xFFF3DC),
+            (14, -56, 15, 0xFFAAD2, 0xFFF3DC),
+            (0, -62, 16, 0xFFB5DA, 0xFFF9E6),
+        ]
+        for (dx, dy, w, tipHex, baseHex) in frontPetals {
+            let tip = CGPoint(x: dx, y: lanternCenter.y + dy)
+            let p = petalPath(tip: tip, base: lanternCenter, width: w)
+            c.fill(
+                p,
+                with: .linearGradient(
+                    Gradient(colors: [StorybookArt.color(tipHex), StorybookArt.color(baseHex)]),
+                    startPoint: tip,
+                    endPoint: lanternCenter
+                )
+            )
+            c.stroke(p, with: .color(pinkOutline), style: StrokeStyle(lineWidth: 2.2, lineJoin: .round))
+        }
+
+        // Inner sunlit golden glow sheen across the petals
+        c.fill(
+            Path(ellipseIn: CGRect(x: -16, y: -76, width: 32, height: 32)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF9D0, alpha: 0.52 + 0.32 * Double(night)), Color(hex: 0xFFF9D0, alpha: 0)]),
+                center: CGPoint(x: 0, y: -60),
+                startRadius: 2,
+                endRadius: 18
+            )
+        )
+
+        // Golden lotus lantern crown finial & hanging pearl charm
+        let cap = Path(ellipseIn: CGRect(x: -10, y: -101, width: 20, height: 9))
+        StorybookArt.shape(c, cap, hex: 0xFFD966, width: 2.0)
+        let finial = Path(ellipseIn: CGRect(x: -5, y: -110, width: 10, height: 11))
+        StorybookArt.shape(c, finial, hex: 0xFFE68A, width: 2.0)
+        StorybookArt.highlight(c, in: CGRect(x: -2.5, y: -108, width: 3.5, height: 3.5), opacity: 0.85)
+
+        // Twinkling pastel starlight sparks around the lotus lantern
+        let sparkAlpha = 0.55 + 0.45 * Double(night)
+        StorybookArt.sparkle(c, at: CGPoint(x: -32, y: -92), radius: 5.5 * pulse, color: Theme.lemon, opacity: sparkAlpha)
+        StorybookArt.sparkle(c, at: CGPoint(x: 32, y: -88), radius: 4.8 * pulse, color: .white, opacity: sparkAlpha)
+        StorybookArt.sparkle(c, at: CGPoint(x: 0, y: -114), radius: 5.0 * pulse, color: Color(hex: 0xFFF7BE), opacity: sparkAlpha)
     }
 }

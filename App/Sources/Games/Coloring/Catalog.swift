@@ -41,14 +41,16 @@ enum ColoringCatalog {
     static func thumbnail(_ page: String) -> UIImage? {
         if ColoringCustom.isCustom(page) { return ColoringCustom.shared.thumbnail(page) }
         if let t = thumbs.object(forKey: page as NSString) { return t }
-        guard let url = GameFiles.url(page + "_t", "png", game: game), let img = UIImage(contentsOfFile: url.path) else { return nil }
+        guard let url = GameFiles.url(page + "_t", "png", game: game) ?? GameFiles.url(page + "_t", "webp", game: game),
+              let img = UIImage(contentsOfFile: url.path) else { return nil }
         thumbs.setObject(img, forKey: page as NSString)
         return img
     }
 
     static func lineArt(_ page: String) -> CGImage? {
         if ColoringCustom.isCustom(page) { return ColoringCustom.shared.lineArt(page) }
-        guard page != blank, let url = GameFiles.url(page, "png", game: game) else { return nil }
+        guard page != blank,
+              let url = GameFiles.url(page, "webp", game: game) ?? GameFiles.url(page, "png", game: game) else { return nil }
         return UIImage(contentsOfFile: url.path)?.cgImage
     }
 }
@@ -65,5 +67,10 @@ enum ColoringPalette {
 }
 
 enum ColoringStickers {
-    static let all: [String] = ColoringVectorSticker.allCases.map(\.rawValue)
+    static let all: [String] = ColoringVectorSticker.allCases.filter { !$0.isBonusTreasure }.map(\.rawValue)
+    static let bonusStarStamp: [String] = ColoringVectorSticker.bonusStarStampCases.map(\.rawValue)
+
+    static var available: [String] {
+        Coins.shared.owns(ColoringVectorSticker.starStampTreasureID) ? all + bonusStarStamp : all
+    }
 }
