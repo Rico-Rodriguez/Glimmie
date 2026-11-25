@@ -243,7 +243,7 @@ enum BakeryFind: String, CaseIterable {
             endPoint: CGPoint(x: 0, y: 36)
         ))
 
-        g.stroke(glass, with: .color(StorybookArt.outline(for: 0x9CD0EC)), width: 3.4)
+        g.stroke(glass, with: .color(StorybookArt.outline(for: 0x9CD0EC)), lineWidth: 3.4)
         StorybookArt.highlight(g, in: CGRect(x: -16, y: -6, width: 6, height: 30), opacity: 0.55)
 
         // Whipped cream cloud cap

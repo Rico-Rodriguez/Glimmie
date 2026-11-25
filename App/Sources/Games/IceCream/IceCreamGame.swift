@@ -186,7 +186,7 @@ private struct ICStationSwitcher: View {
                     endPoint: CGPoint(x: 0, y: 44)
                 )
             )
-            g.stroke(glass, with: .color(StorybookArt.outline(for: 0x9CD0EC)), width: 2.4)
+            g.stroke(glass, with: .color(StorybookArt.outline(for: 0x9CD0EC)), lineWidth: 2.4)
             let cap = Path(ellipseIn: CGRect(x: 14.5, y: 10.5, width: 19, height: 9))
             StorybookArt.shape(g, cap, hex: 0xFFFDFB, width: 1.9)
             StorybookArt.highlight(g, in: CGRect(x: 17, y: 21, width: 3.5, height: 15), opacity: 0.55)
