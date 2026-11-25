@@ -6,7 +6,8 @@ enum DressUpGame {
         title: "Dress Up",
         tint: Color(hex: 0xFF9EC0),
         icon: { AnyView(DressUpTileIcon()) },
-        play: { exit in AnyView(DressUpView(exit: exit)) }
+        play: { exit in AnyView(DressUpView(exit: exit)) },
+        stickers: DressUpFind.stickers
     )
 }
 

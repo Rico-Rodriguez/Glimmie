@@ -128,7 +128,21 @@ final class BeautyWorld {
         ctx.translateBy(x: -box.minX, y: -box.minY)
     }
 
-    var tipOnStage: CGPoint? { finger.map { CGPoint(x: $0.x, y: $0.y - lift) } }
+    var tipOnStage: CGPoint? {
+        finger.map {
+            FingerLift.point(
+                $0,
+                lift: lift,
+                top: 0,
+                bottom: size.height > 0 ? size.height : nil,
+                width: size.width > 0 ? size.width : nil
+            )
+        }
+    }
+
+    var hasNailArt: Bool {
+        cells.contains { $0.contains { $0 >= 0.3 } } || gems.contains { !$0.isEmpty }
+    }
 
     // MARK: Fingers
 
@@ -689,6 +703,29 @@ final class BeautyWorld {
             g.fill(Path(ellipseIn: CGRect(x: d.p.x - r, y: d.p.y - r * 0.8, width: r * 2, height: r * 2.1)), with: .color(d.color.color))
             g.fill(Path(ellipseIn: CGRect(x: d.p.x - r * 0.5, y: d.p.y - r * 0.5, width: r * 0.6, height: r * 0.6)), with: .color(.white.opacity(0.7)))
         }
+        // live gem hover preview under tweezers before release
+        if tool == .gem, let stageTip = tipOnStage {
+            let artTip = toArt(stageTip)
+            let pulse = 0.88 + 0.12 * sin(now * 6)
+            if let i = CloseHand.nail(at: artTip, slack: 0.05), gems[i].count < 6 {
+                let (u, v) = CloseHand.toNail(i, artTip)
+                let snapped = CloseHand.fromNail(i, u: max(-0.7, min(0.7, u)), v: max(0.15, min(0.85, v)))
+                let gemSize = CloseHand.fingers[i].width * 0.3
+                let ringR = gemSize * 0.68 * CGFloat(pulse)
+                g.stroke(
+                    Path(ellipseIn: CGRect(x: snapped.x - ringR, y: snapped.y - ringR, width: ringR * 2, height: ringR * 2)),
+                    with: .color(.white.opacity(0.88)),
+                    style: StrokeStyle(lineWidth: 2.8, dash: [5, 4])
+                )
+                var preview = g
+                preview.opacity = 0.78
+                CloseHand.drawGem(gemKind, color: RGB(hex: gemColor), at: snapped, size: gemSize, turn: 0, t: now, in: preview)
+            } else {
+                var ghost = g
+                ghost.opacity = 0.38
+                CloseHand.drawGem(gemKind, color: RGB(hex: gemColor), at: artTip, size: 22, turn: 0, t: now, in: ghost)
+            }
+        }
     }
 
     private func drawBits(in g: GraphicsContext) {
@@ -726,11 +763,20 @@ final class BeautyWorld {
         }
     }
 
-    /// The tool in her hand: its tip `lift` points above her finger, its handle reaching down toward her hand.
     private func drawTool(at f: CGPoint, in ctx: GraphicsContext) {
-        let tip = CGPoint(x: f.x, y: f.y - lift)
-        let hand = CGPoint(x: f.x, y: max(f.y, tip.y + Self.handle))
-        BeautyTools.draw(tool, color: color, gem: (gemKind, gemColor), load: load, tip: tip, finger: hand, t: now, in: ctx)
+        guard let tip = tipOnStage else { return }
+        let dist = max(Self.handle, hypot(f.x - tip.x, f.y - tip.y))
+        if tool == .glitter || tool == .wipe {
+            let hand = CGPoint(x: tip.x, y: tip.y + dist)
+            BeautyTools.draw(tool, color: color, gem: (gemKind, gemColor), load: load, tip: tip, finger: hand, t: now, in: ctx)
+            return
+        }
+        let h = FingerLift.handle(tip: tip, finger: f, length: dist)
+        let angle = atan2(-Double(h.dir.dx), Double(h.dir.dy))
+        var g = ctx
+        g.translateBy(x: tip.x, y: tip.y)
+        g.rotate(by: .radians(angle))
+        BeautyTools.draw(tool, color: color, gem: (gemKind, gemColor), load: load, tip: .zero, finger: CGPoint(x: 0, y: dist), t: now, in: g)
     }
 }
 
@@ -739,115 +785,202 @@ final class BeautyWorld {
 enum BeautyTools {
     static func draw(_ tool: BeautyWorld.Tool, color: String, gem: (String, String), load: Double, tip: CGPoint, finger f: CGPoint,
                      t: Double, in ctx: GraphicsContext) {
-        let ink = Color(hex: 0x5B3A68)
+        let ink = Theme.ink
         let c = BeautyColors.rgb(color == "glitter" ? "#F4E9FF" : color, Int(t * 6))
+        let cOut = Shades.outline(c).color
         var g = ctx
-        g.addFilter(.shadow(color: ink.opacity(0.25), radius: 6, x: 0, y: 5))
+        g.addFilter(.shadow(color: ink.opacity(0.24), radius: 6, x: 0, y: 5))
         func rr(_ r: CGRect, _ rad: CGFloat) -> Path { Path(roundedRect: r, cornerRadius: rad) }
         switch tool {
         case .blush:
-            g.fill(rr(CGRect(x: tip.x - 8, y: tip.y + 34, width: 16, height: f.y - tip.y), 8), with: .color(Color(hex: 0xF45C9A)))
-            g.fill(rr(CGRect(x: tip.x - 11, y: tip.y + 20, width: 22, height: 22), 5), with: .color(Color(hex: 0xD9D4E0)))
-            g.fill(Path(ellipseIn: CGRect(x: tip.x - 22, y: tip.y - 12, width: 44, height: 44)), with: .color(Color(hex: 0xF2DFC8)))
-            g.fill(Path(ellipseIn: CGRect(x: tip.x - 18, y: tip.y - 10, width: 36, height: 22)), with: .color(c.color.opacity(0.85)))
+            let hLen = max(46, f.y - tip.y)
+            var handle = Path()
+            handle.move(to: CGPoint(x: tip.x - 8, y: tip.y + 38))
+            handle.addQuadCurve(to: CGPoint(x: tip.x - 6, y: tip.y + 36 + hLen), control: CGPoint(x: tip.x - 9, y: tip.y + 36 + hLen * 0.5))
+            handle.addQuadCurve(to: CGPoint(x: tip.x + 6, y: tip.y + 36 + hLen), control: CGPoint(x: tip.x, y: tip.y + 44 + hLen))
+            handle.addQuadCurve(to: CGPoint(x: tip.x + 8, y: tip.y + 38), control: CGPoint(x: tip.x + 9, y: tip.y + 36 + hLen * 0.5))
+            handle.closeSubpath()
+            StorybookArt.fillAndStroke(g, handle, fill: StorybookArt.color(0xFF7FB3), stroke: StorybookArt.outline(for: 0xF45C9A), width: 2.6)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 4.5, y: tip.y + 44, width: 3.5, height: max(18, hLen * 0.6)), opacity: 0.45)
+
+            let ferrule = rr(CGRect(x: tip.x - 11.5, y: tip.y + 19, width: 23, height: 22), 6)
+            StorybookArt.fillAndStroke(g, ferrule, fill: StorybookArt.color(0xF6D99A), stroke: StorybookArt.outline(for: 0xD9A441), width: 2.4)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 7, y: tip.y + 22, width: 4, height: 15), opacity: 0.6)
+
+            var puff = Path()
+            puff.move(to: CGPoint(x: tip.x - 11, y: tip.y + 22))
+            puff.addCurve(to: CGPoint(x: tip.x - 23, y: tip.y + 4), control1: CGPoint(x: tip.x - 20, y: tip.y + 20), control2: CGPoint(x: tip.x - 25, y: tip.y + 12))
+            puff.addCurve(to: CGPoint(x: tip.x, y: tip.y - 14), control1: CGPoint(x: tip.x - 20, y: tip.y - 8), control2: CGPoint(x: tip.x - 10, y: tip.y - 14))
+            puff.addCurve(to: CGPoint(x: tip.x + 23, y: tip.y + 4), control1: CGPoint(x: tip.x + 10, y: tip.y - 14), control2: CGPoint(x: tip.x + 20, y: tip.y - 8))
+            puff.addCurve(to: CGPoint(x: tip.x + 11, y: tip.y + 22), control1: CGPoint(x: tip.x + 25, y: tip.y + 12), control2: CGPoint(x: tip.x + 20, y: tip.y + 20))
+            puff.closeSubpath()
+            StorybookArt.fillAndStroke(g, puff, fill: StorybookArt.color(0xF8EAD8), stroke: StorybookArt.outline(for: 0xDFC4A6), width: 2.6)
+            var tipClip = g
+            tipClip.clip(to: puff)
+            tipClip.fill(Path(ellipseIn: CGRect(x: tip.x - 22, y: tip.y - 16, width: 44, height: 24)), with: .color(c.color.opacity(0.86)))
+            StorybookArt.highlight(tipClip, in: CGRect(x: tip.x - 12, y: tip.y - 10, width: 12, height: 6), opacity: 0.5)
+
         case .shadow:
-            g.fill(rr(CGRect(x: tip.x - 4, y: tip.y + 22, width: 8, height: f.y - tip.y - 4), 4), with: .color(Color(hex: 0x9B79E0)))
+            let hLen = max(42, f.y - tip.y - 4)
+            let wand = rr(CGRect(x: tip.x - 4.5, y: tip.y + 22, width: 9, height: hLen), 4.5)
+            StorybookArt.fillAndStroke(g, wand, fill: StorybookArt.color(0xB394EE), stroke: StorybookArt.outline(for: 0x8B6AD0), width: 2.4)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 2.2, y: tip.y + 28, width: 2.2, height: max(16, hLen * 0.65)), opacity: 0.5)
+
             var sp = Path()
-            sp.move(to: CGPoint(x: tip.x, y: tip.y - 6))
-            sp.addCurve(to: CGPoint(x: tip.x, y: tip.y + 26), control1: CGPoint(x: tip.x + 22, y: tip.y + 4), control2: CGPoint(x: tip.x + 14, y: tip.y + 26))
-            sp.addCurve(to: CGPoint(x: tip.x, y: tip.y - 6), control1: CGPoint(x: tip.x - 14, y: tip.y + 26), control2: CGPoint(x: tip.x - 22, y: tip.y + 4))
-            g.fill(sp, with: .color(Color(hex: 0x3A3346)))
-            g.fill(sp.applying(CGAffineTransform(translationX: 0, y: -2)).applying(.identity), with: .color(c.color.opacity(0.9)))
+            sp.move(to: CGPoint(x: tip.x, y: tip.y - 8))
+            sp.addCurve(to: CGPoint(x: tip.x, y: tip.y + 26), control1: CGPoint(x: tip.x + 22, y: tip.y + 2), control2: CGPoint(x: tip.x + 15, y: tip.y + 26))
+            sp.addCurve(to: CGPoint(x: tip.x, y: tip.y - 8), control1: CGPoint(x: tip.x - 15, y: tip.y + 26), control2: CGPoint(x: tip.x - 22, y: tip.y + 2))
+            sp.closeSubpath()
+            StorybookArt.fillAndStroke(g, sp, fill: StorybookArt.color(0x524568), stroke: StorybookArt.outline(for: 0x524568), width: 2.4)
+            var spClip = g
+            spClip.clip(to: sp)
+            spClip.fill(Path(ellipseIn: CGRect(x: tip.x - 18, y: tip.y - 10, width: 36, height: 26)), with: .color(c.color.opacity(0.95)))
+            StorybookArt.highlight(spClip, in: CGRect(x: tip.x - 8, y: tip.y - 4, width: 8, height: 5), opacity: 0.55)
+
         case .lip:
-            g.fill(rr(CGRect(x: tip.x - 15, y: tip.y + 30, width: 30, height: max(30, f.y - tip.y - 20)), 6),
-                   with: .linearGradient(Gradient(colors: [Color(hex: 0xFFE9A8), Color(hex: 0xD9A441)]),
-                                         startPoint: CGPoint(x: tip.x - 15, y: 0), endPoint: CGPoint(x: tip.x + 15, y: 0)))
+            let tubeH = max(36, f.y - tip.y - 22)
+            let tube = rr(CGRect(x: tip.x - 15, y: tip.y + 34, width: 30, height: tubeH), 7)
+            g.fill(
+                tube,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0xFFF0B3), Color(hex: 0xF5C95B), Color(hex: 0xD9A441)]),
+                    startPoint: CGPoint(x: tip.x - 15, y: 0),
+                    endPoint: CGPoint(x: tip.x + 15, y: 0)
+                )
+            )
+            g.stroke(tube, with: .color(StorybookArt.outline(for: 0xD9A441)), lineWidth: 2.6)
+            let collar = rr(CGRect(x: tip.x - 12, y: tip.y + 26, width: 24, height: 11), 4)
+            StorybookArt.fillAndStroke(g, collar, fill: StorybookArt.color(0xFFF3C4), stroke: StorybookArt.outline(for: 0xD9A441), width: 2.2)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 10, y: tip.y + 38, width: 5, height: max(12, tubeH - 12)), opacity: 0.5)
+
             var bullet = Path()
-            bullet.move(to: CGPoint(x: tip.x - 11, y: tip.y + 32))
-            bullet.addLine(to: CGPoint(x: tip.x - 11, y: tip.y + 8))
-            bullet.addQuadCurve(to: CGPoint(x: tip.x + 11, y: tip.y - 6), control: CGPoint(x: tip.x - 6, y: tip.y - 8))
-            bullet.addLine(to: CGPoint(x: tip.x + 11, y: tip.y + 32))
+            bullet.move(to: CGPoint(x: tip.x - 10.5, y: tip.y + 28))
+            bullet.addLine(to: CGPoint(x: tip.x - 10.5, y: tip.y + 8))
+            bullet.addQuadCurve(to: CGPoint(x: tip.x + 10.5, y: tip.y - 6), control: CGPoint(x: tip.x - 5, y: tip.y - 9))
+            bullet.addLine(to: CGPoint(x: tip.x + 10.5, y: tip.y + 28))
             bullet.closeSubpath()
-            g.fill(bullet, with: .color(c.color))
-            g.fill(rr(CGRect(x: tip.x - 7, y: tip.y + 6, width: 4, height: 20), 2), with: .color(.white.opacity(0.4)))
+            StorybookArt.fillAndStroke(g, bullet, fill: c.color, stroke: cOut, width: 2.4)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 6.5, y: tip.y + 5, width: 4, height: 18), opacity: 0.55)
+
         case .glitter:
             let shake = CGFloat(sin(t * 30)) * 3
-            let jar = CGRect(x: tip.x - 24 + shake, y: tip.y + 10, width: 48, height: 58)
-            g.fill(rr(jar, 12), with: .color(.white.opacity(0.85)))
+            let jarRect = CGRect(x: tip.x - 24 + shake, y: tip.y + 10, width: 48, height: 58)
+            let jar = rr(jarRect, 14)
+            StorybookArt.fillAndStroke(g, jar, fill: StorybookArt.color(0xFFFDFB, alpha: 0.92), stroke: StorybookArt.outline(for: 0xC9B6FF), width: 2.8)
             var inner = g
-            inner.clip(to: rr(jar.insetBy(dx: 4, dy: 4), 9))
-            inner.fill(Path(jar.insetBy(dx: 4, dy: 4)), with: .color(c.color.opacity(0.9)))
+            inner.clip(to: rr(jarRect.insetBy(dx: 4, dy: 4), 10))
+            inner.fill(Path(jarRect.insetBy(dx: 4, dy: 4)), with: .color(c.color.opacity(0.9)))
             for k in 0..<10 {
                 let h = BeautyPainter.hash(k)
-                inner.fill(Path(ellipseIn: CGRect(x: jar.minX + CGFloat(h % 40) + 4, y: jar.minY + CGFloat((h >> 8) % 50) + 4, width: 3, height: 3)),
+                inner.fill(Path(ellipseIn: CGRect(x: jarRect.minX + CGFloat(h % 38) + 5, y: jarRect.minY + CGFloat((h >> 8) % 48) + 5, width: 3.5, height: 3.5)),
                            with: .color(.white.opacity(0.9)))
             }
-            g.fill(rr(CGRect(x: tip.x - 20 + shake, y: tip.y - 2, width: 40, height: 16), 5), with: .color(Color(hex: 0xC9B6FF)))
+            StorybookArt.highlight(inner, in: CGRect(x: jarRect.minX + 7, y: jarRect.minY + 9, width: 7, height: 32), opacity: 0.55)
+            let lid = rr(CGRect(x: tip.x - 21 + shake, y: tip.y - 3, width: 42, height: 16), 6)
+            StorybookArt.fillAndStroke(g, lid, fill: Theme.lilac, stroke: StorybookArt.outline(for: 0xA88EE8), width: 2.6)
             for k in -1...1 {
-                g.fill(Path(ellipseIn: CGRect(x: tip.x + CGFloat(k) * 10 - 2 + shake, y: tip.y + 2, width: 4, height: 4)), with: .color(ink.opacity(0.6)))
+                g.fill(Path(ellipseIn: CGRect(x: tip.x + CGFloat(k) * 10 - 2.2 + shake, y: tip.y + 2, width: 4.4, height: 4.4)), with: .color(ink.opacity(0.6)))
             }
+
         case .wipe:
-            g.fill(Path(ellipseIn: CGRect(x: tip.x - 30, y: tip.y - 26, width: 60, height: 60)), with: .color(.white))
+            let pad = Path(ellipseIn: CGRect(x: tip.x - 31, y: tip.y - 27, width: 62, height: 62))
+            StorybookArt.fillAndStroke(g, pad, fill: StorybookArt.color(0xFFFDFB), stroke: StorybookArt.outline(for: 0xECC4D6), width: 3)
+            g.stroke(Path(ellipseIn: CGRect(x: tip.x - 24, y: tip.y - 20, width: 48, height: 48)),
+                     with: .color(Theme.blush.opacity(0.75)), style: StrokeStyle(lineWidth: 2, dash: [4, 4]))
             for k in 0..<7 {
                 let a = Double(k) * .pi * 2 / 7
-                g.fill(Path(ellipseIn: CGRect(x: tip.x + CGFloat(cos(a)) * 16 - 2, y: tip.y + 4 + CGFloat(sin(a)) * 16 - 2, width: 4, height: 4)),
-                       with: .color(Color(hex: 0xE6D6E0)))
+                g.fill(Path(ellipseIn: CGRect(x: tip.x + CGFloat(cos(a)) * 14 - 2.2, y: tip.y + 4 + CGFloat(sin(a)) * 14 - 2.2, width: 4.4, height: 4.4)),
+                       with: .color(Theme.blush))
             }
-            g.stroke(Path(ellipseIn: CGRect(x: tip.x - 30, y: tip.y - 26, width: 60, height: 60)), with: .color(Color(hex: 0xE6D6E0)), lineWidth: 2)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 18, y: tip.y - 19, width: 20, height: 10), opacity: 0.75)
+
         case .polish:
             let glitter = color == "glitter"
-            let cap = CGRect(x: tip.x - 15, y: tip.y + 44, width: 30, height: max(40, f.y - tip.y - 30))
-            g.fill(rr(cap, 9), with: .linearGradient(Gradient(colors: [Color(hex: 0x4A4258), Color(hex: 0x2A2433)]),
-                                                     startPoint: CGPoint(x: cap.minX, y: 0), endPoint: CGPoint(x: cap.maxX, y: 0)))
-            g.fill(rr(CGRect(x: cap.minX + 5, y: cap.minY + 6, width: 5, height: cap.height - 12), 2.5), with: .color(.white.opacity(0.25)))
-            g.fill(Path(CGRect(x: tip.x - 2, y: tip.y + 22, width: 4, height: 24)), with: .color(Color(hex: 0x8F8799)))
+            let capH = max(44, f.y - tip.y - 30)
+            let capRect = CGRect(x: tip.x - 15, y: tip.y + 42, width: 30, height: capH)
+            let cap = rr(capRect, 10)
+            g.fill(
+                cap,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0x7A5A8E), Color(hex: 0x5B3A68)]),
+                    startPoint: CGPoint(x: capRect.minX, y: 0),
+                    endPoint: CGPoint(x: capRect.maxX, y: 0)
+                )
+            )
+            g.stroke(cap, with: .color(StorybookArt.outline(for: 0x5B3A68)), lineWidth: 2.6)
+            StorybookArt.highlight(g, in: CGRect(x: capRect.minX + 5, y: capRect.minY + 7, width: 5, height: max(14, capRect.height - 16)), opacity: 0.38)
+
+            let stem = rr(CGRect(x: tip.x - 2.6, y: tip.y + 21, width: 5.2, height: 24), 2.5)
+            StorybookArt.fillAndStroke(g, stem, fill: StorybookArt.color(0xC9C0D8), stroke: StorybookArt.outline(for: 0x9C92B0), width: 1.6)
+
             var bristles = Path()
-            bristles.move(to: CGPoint(x: tip.x - 8, y: tip.y + 24))
-            bristles.addQuadCurve(to: CGPoint(x: tip.x, y: tip.y - 4), control: CGPoint(x: tip.x - 9, y: tip.y + 4))
-            bristles.addQuadCurve(to: CGPoint(x: tip.x + 8, y: tip.y + 24), control: CGPoint(x: tip.x + 9, y: tip.y + 4))
+            bristles.move(to: CGPoint(x: tip.x - 8.5, y: tip.y + 24))
+            bristles.addQuadCurve(to: CGPoint(x: tip.x, y: tip.y - 5), control: CGPoint(x: tip.x - 9.5, y: tip.y + 4))
+            bristles.addQuadCurve(to: CGPoint(x: tip.x + 8.5, y: tip.y + 24), control: CGPoint(x: tip.x + 9.5, y: tip.y + 4))
             bristles.closeSubpath()
-            g.fill(bristles, with: .color(Color(hex: 0xEDE4D6)))
+            StorybookArt.fillAndStroke(g, bristles, fill: StorybookArt.color(0xF4E8D8), stroke: StorybookArt.outline(for: 0xD8C2A8), width: 2.2)
             if load > 0.02 {
                 var wetB = g
-                wetB.opacity = 0.35 + 0.65 * load
-                wetB.fill(bristles, with: .color(glitter ? Color(hex: 0xF4E9FF) : c.color))
+                wetB.opacity = 0.4 + 0.6 * load
+                StorybookArt.fillAndStroke(wetB, bristles, fill: glitter ? Color(hex: 0xF4E9FF) : c.color, stroke: glitter ? StorybookArt.outline(for: 0xC9B6FF) : cOut, width: 2.2)
                 if glitter {
                     for k in 0..<5 {
                         BeautyPainter.fleck(at: CGPoint(x: tip.x - 4 + CGFloat(k * 2), y: tip.y + 4 + CGFloat((k * 7) % 16)), index: k + 3,
                                             color: "rainbow", t: t, scale: 1.2, in: wetB)
                     }
                 }
-                // a bead of polish waiting to fall off a loaded brush
                 if load > 0.6 {
                     let r = CGFloat(2 + 3 * load)
                     wetB.fill(Path(ellipseIn: CGRect(x: tip.x + 2, y: tip.y + 14, width: r * 2, height: r * 2.3)), with: .color(glitter ? .white : c.color))
                 }
-                g.fill(Path(ellipseIn: CGRect(x: tip.x - 4, y: tip.y + 4, width: 3, height: 10)), with: .color(.white.opacity(0.6)))
+                StorybookArt.highlight(g, in: CGRect(x: tip.x - 4.5, y: tip.y + 3, width: 3.4, height: 11), opacity: 0.68)
             }
+
         case .remover:
-            g.fill(rr(CGRect(x: tip.x - 3, y: tip.y + 10, width: 6, height: f.y - tip.y + 10), 3), with: .color(Color(hex: 0xF7F0F4)))
-            g.fill(Path(ellipseIn: CGRect(x: tip.x - 11, y: tip.y - 12, width: 22, height: 32)), with: .color(.white))
-            g.stroke(Path(ellipseIn: CGRect(x: tip.x - 11, y: tip.y - 12, width: 22, height: 32)), with: .color(Color(hex: 0xE6D6E0)), lineWidth: 2)
-            g.fill(Path(ellipseIn: CGRect(x: tip.x - 11, y: f.y - 6, width: 22, height: 30)), with: .color(.white))
+            let stem = rr(CGRect(x: tip.x - 3.5, y: tip.y + 10, width: 7, height: max(48, f.y - tip.y + 6)), 3.5)
+            StorybookArt.fillAndStroke(g, stem, fill: StorybookArt.color(0xFFEAF2), stroke: StorybookArt.outline(for: 0xE6B8CC), width: 2)
+            let topBud = Path(ellipseIn: CGRect(x: tip.x - 11.5, y: tip.y - 13, width: 23, height: 33))
+            StorybookArt.fillAndStroke(g, topBud, fill: .white, stroke: StorybookArt.outline(for: 0xE6C2D4), width: 2.4)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 6, y: tip.y - 7, width: 6, height: 12), opacity: 0.8)
+            let endBud = Path(ellipseIn: CGRect(x: tip.x - 11.5, y: f.y - 6, width: 23, height: 30))
+            StorybookArt.fillAndStroke(g, endBud, fill: .white, stroke: StorybookArt.outline(for: 0xE6C2D4), width: 2.4)
+
         case .dryer:
-            g.fill(rr(CGRect(x: tip.x - 10, y: tip.y + 30, width: 20, height: f.y - tip.y), 9), with: .color(Color(hex: 0x46B7B0)))
-            let head = CGRect(x: tip.x - 34, y: tip.y - 30, width: 68, height: 68)
-            g.fill(Path(ellipseIn: head), with: .color(Color(hex: 0x9FE3CF)))
-            g.stroke(Path(ellipseIn: head), with: .color(.white), lineWidth: 4)
+            let hLen = max(46, f.y - tip.y)
+            let handle = rr(CGRect(x: tip.x - 10, y: tip.y + 30, width: 20, height: hLen), 10)
+            StorybookArt.fillAndStroke(g, handle, fill: StorybookArt.color(0x5AC7BE), stroke: StorybookArt.outline(for: 0x46B7B0), width: 2.8)
+            StorybookArt.highlight(g, in: CGRect(x: tip.x - 5.5, y: tip.y + 38, width: 4.5, height: max(18, hLen * 0.55)), opacity: 0.45)
+
+            let headRect = CGRect(x: tip.x - 35, y: tip.y - 31, width: 70, height: 70)
+            let head = Path(ellipseIn: headRect)
+            StorybookArt.fillAndStroke(g, head, fill: Theme.mint, stroke: StorybookArt.outline(for: 0x46B7B0), width: 3.2)
+            g.stroke(Path(ellipseIn: headRect.insetBy(dx: 4, dy: 4)), with: .color(.white.opacity(0.9)), lineWidth: 3)
+
             var blades = g
             blades.translateBy(x: tip.x, y: tip.y + 4)
             blades.rotate(by: .radians(t * 24))
             for k in 0..<4 {
                 var b = blades
                 b.rotate(by: .degrees(Double(k) * 90))
-                b.fill(Path(ellipseIn: CGRect(x: -6, y: -27, width: 12, height: 26)), with: .color(.white.opacity(0.85)))
+                let blade = Path(ellipseIn: CGRect(x: -6.5, y: -27, width: 13, height: 26))
+                StorybookArt.fillAndStroke(b, blade, fill: .white.opacity(0.92), stroke: StorybookArt.outline(for: 0x6EC8B8), width: 1.6)
             }
-            blades.fill(Path(ellipseIn: CGRect(x: -6, y: -6, width: 12, height: 12)), with: .color(Color(hex: 0x46B7B0)))
+            let hub = Path(ellipseIn: CGRect(x: -7, y: -7, width: 14, height: 14))
+            StorybookArt.fillAndStroke(blades, hub, fill: StorybookArt.color(0x46B7B0), stroke: StorybookArt.outline(for: 0x3A9992), width: 2)
+
         case .gem:
-            var tw = Path()
-            tw.move(to: CGPoint(x: tip.x - 3, y: tip.y + 12)); tw.addLine(to: CGPoint(x: tip.x - 8, y: f.y))
-            tw.move(to: CGPoint(x: tip.x + 3, y: tip.y + 12)); tw.addLine(to: CGPoint(x: tip.x + 8, y: f.y))
-            g.stroke(tw, with: .color(Color(hex: 0xB9B3C6)), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            let endY = max(tip.y + 72, f.y)
+            var leftArm = Path()
+            leftArm.move(to: CGPoint(x: tip.x - 3, y: tip.y + 10))
+            leftArm.addQuadCurve(to: CGPoint(x: tip.x - 10, y: endY), control: CGPoint(x: tip.x - 11, y: (tip.y + endY) * 0.5))
+            var rightArm = Path()
+            rightArm.move(to: CGPoint(x: tip.x + 3, y: tip.y + 10))
+            rightArm.addQuadCurve(to: CGPoint(x: tip.x + 10, y: endY), control: CGPoint(x: tip.x + 11, y: (tip.y + endY) * 0.5))
+            for arm in [leftArm, rightArm] {
+                g.stroke(arm, with: .color(StorybookArt.outline(for: 0xB9B3C6)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                g.stroke(arm, with: .color(StorybookArt.color(0xE0D9EE)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+                g.stroke(arm, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            }
             CloseHand.drawGem(gem.0, color: RGB(hex: gem.1), at: tip, size: 26, turn: 0, t: t, in: ctx)
         }
     }
@@ -874,12 +1007,14 @@ struct BeautyToolIcon: View {
 // MARK: - The studio screen
 
 struct BeautyStudio: View {
+    let cancel: () -> Void
     let done: (Look) -> Void
     @State private var world: BeautyWorld
     @State private var mode: BeautyWorld.Mode
     @State private var tick = 0
 
-    init(look: Look, mode: BeautyWorld.Mode, done: @escaping (Look) -> Void) {
+    init(look: Look, mode: BeautyWorld.Mode, cancel: @escaping () -> Void = {}, done: @escaping (Look) -> Void) {
+        self.cancel = cancel
         self.done = done
         _world = State(initialValue: BeautyWorld(look: look, mode: mode))
         _mode = State(initialValue: mode)
@@ -930,9 +1065,58 @@ struct BeautyStudio: View {
                 }
                 .onEnded { _ in
                     world.release()
+                    if world.mode == .nails && world.hasNailArt {
+                        DressUpFind.nailArtist.unlock()
+                    }
                     tick += 1
                 }
         )
+    }
+
+    /// Walks evenly around a rounded rectangle's true perimeter so vanity bulbs track the frame cleanly.
+    private static func roundedRectPerimeterPoint(in r: CGRect, cornerRadius: CGFloat, distance raw: CGFloat) -> CGPoint {
+        let cr = min(cornerRadius, min(r.width, r.height) / 2)
+        let topW = max(0, r.width - 2 * cr)
+        let sideH = max(0, r.height - 2 * cr)
+        let arc = (.pi / 2) * cr
+        let total = 2 * topW + 2 * sideH + 4 * arc
+        guard total > 0 else { return CGPoint(x: r.midX, y: r.midY) }
+        var d = raw.truncatingRemainder(dividingBy: total)
+        if d < 0 { d += total }
+
+        if d < topW {
+            return CGPoint(x: r.minX + cr + d, y: r.minY)
+        }
+        d -= topW
+        if d < arc {
+            let a = -CGFloat.pi / 2 + d / cr
+            return CGPoint(x: r.maxX - cr + cos(a) * cr, y: r.minY + cr + sin(a) * cr)
+        }
+        d -= arc
+        if d < sideH {
+            return CGPoint(x: r.maxX, y: r.minY + cr + d)
+        }
+        d -= sideH
+        if d < arc {
+            let a = d / cr
+            return CGPoint(x: r.maxX - cr + cos(a) * cr, y: r.maxY - cr + sin(a) * cr)
+        }
+        d -= arc
+        if d < topW {
+            return CGPoint(x: r.maxX - cr - d, y: r.maxY)
+        }
+        d -= topW
+        if d < arc {
+            let a = CGFloat.pi / 2 + d / cr
+            return CGPoint(x: r.minX + cr + cos(a) * cr, y: r.maxY - cr + sin(a) * cr)
+        }
+        d -= arc
+        if d < sideH {
+            return CGPoint(x: r.minX, y: r.maxY - cr - d)
+        }
+        d -= sideH
+        let a = CGFloat.pi + d / cr
+        return CGPoint(x: r.minX + cr + cos(a) * cr, y: r.minY + cr + sin(a) * cr)
     }
 
     /// A lit vanity mirror for makeup, a manicure towel for nails.
@@ -941,29 +1125,38 @@ struct BeautyStudio: View {
         if world.mode == .makeup {
             ctx.fill(Path(rect), with: .color(Color(hex: 0xF7D9E6)))
             let mirror = rect.insetBy(dx: 26, dy: 26)
-            ctx.fill(Path(roundedRect: mirror, cornerRadius: 200),
+            let cr: CGFloat = 200
+            ctx.fill(Path(roundedRect: mirror, cornerRadius: cr),
                      with: .linearGradient(Gradient(colors: [Color(hex: 0xE9F4FF), Color(hex: 0xFFF3FA)]),
                                            startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: size.width, y: size.height)))
-            // a soft reflection streak
             var streak = Path()
             streak.move(to: CGPoint(x: mirror.minX + 70, y: mirror.minY + 140))
             streak.addLine(to: CGPoint(x: mirror.minX + 160, y: mirror.minY + 50))
             ctx.stroke(streak, with: .color(.white.opacity(0.6)), style: StrokeStyle(lineWidth: 20, lineCap: .round))
-            ctx.stroke(Path(roundedRect: mirror, cornerRadius: 200), with: .color(Color(hex: 0xFFFFFF)), lineWidth: 14)
-            // the bulbs around the mirror, glowing
-            let n = 14
+            ctx.stroke(Path(roundedRect: mirror, cornerRadius: cr), with: .color(.white), lineWidth: 14)
+
+            let topW = max(0, mirror.width - 2 * cr)
+            let sideH = max(0, mirror.height - 2 * cr)
+            let per = 2 * topW + 2 * sideH + 2 * .pi * cr
+            let n = 16
             for k in 0..<n {
-                let a = Double(k) / Double(n) * 2 * .pi
-                let p = CGPoint(x: size.width / 2 + CGFloat(cos(a)) * (size.width / 2 - 20), y: size.height / 2 + CGFloat(sin(a)) * (size.height / 2 - 20))
+                let d = topW / 2 + per * CGFloat(k) / CGFloat(n)
+                let p = Self.roundedRectPerimeterPoint(in: mirror, cornerRadius: cr, distance: d)
                 let glow = 0.75 + 0.25 * sin(t * 1.7 + Double(k))
-                ctx.fill(Path(ellipseIn: CGRect(x: p.x - 22, y: p.y - 22, width: 44, height: 44)), with: .color(Color(hex: 0xFFF1B8).opacity(0.35 * glow)))
-                ctx.fill(Path(ellipseIn: CGRect(x: p.x - 11, y: p.y - 11, width: 22, height: 22)), with: .color(Color(hex: 0xFFF7DC)))
-                ctx.stroke(Path(ellipseIn: CGRect(x: p.x - 11, y: p.y - 11, width: 22, height: 22)), with: .color(Color(hex: 0xF2C14E).opacity(0.6)), lineWidth: 2)
+                ctx.fill(Path(ellipseIn: CGRect(x: p.x - 22, y: p.y - 22, width: 44, height: 44)),
+                         with: .color(Color(hex: 0xFFF1B8).opacity(0.38 * glow)))
+                StorybookArt.fillAndStroke(
+                    ctx,
+                    Path(ellipseIn: CGRect(x: p.x - 11, y: p.y - 11, width: 22, height: 22)),
+                    fill: StorybookArt.color(0xFFF9E4),
+                    stroke: StorybookArt.outline(for: 0xF2C14E),
+                    width: 2.2
+                )
+                StorybookArt.highlight(ctx, in: CGRect(x: p.x - 6, y: p.y - 6.5, width: 6, height: 4), opacity: 0.9)
             }
         } else {
             ctx.fill(Path(rect), with: .linearGradient(Gradient(colors: [Color(hex: 0xFFF3F7), Color(hex: 0xFCE1EC)]),
                                                        startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
-            // a fluffy towel under her hand
             let towel = CGRect(x: 20, y: size.height * 0.58, width: size.width - 40, height: size.height * 0.5)
             ctx.fill(Path(roundedRect: towel, cornerRadius: 40), with: .color(Color(hex: 0xC9F0E4)))
             for y in stride(from: towel.minY + 24, to: towel.maxY, by: 26) {
@@ -978,15 +1171,19 @@ struct BeautyStudio: View {
 
     private var panel: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 modeButton(.makeup, symbol: "paintbrush.pointed.fill")
                 modeButton(.nails, symbol: "hand.raised.fill")
-                Spacer()
-                RoundButton(symbol: "arrow.uturn.backward", tint: Color(hex: 0x9B79E0), size: 60) {
+                Spacer(minLength: 4)
+                RoundButton(symbol: "arrow.uturn.backward", tint: Color(hex: 0x9B79E0), size: 54) {
                     world.undo(); tick += 1
                 }
                 .opacity(world.canUndo ? 1 : 0.4)
-                RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B), size: 60) {
+                RoundButton(symbol: "xmark", tint: Theme.pink, size: 54) {
+                    Sound.shared.play(.whoosh, volume: 0.6)
+                    cancel()
+                }
+                RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B), size: 54) {
                     Sound.shared.play(.fanfare, volume: 0.7)
                     done(world.finished())
                 }
@@ -997,11 +1194,10 @@ struct BeautyStudio: View {
                     colorGrid
                     HStack {
                         if world.mode == .nails && world.tool == .polish {
-                            Button { world.dip(); tick += 1 } label: { panelLabel("drop.fill", "Dip", Color(hex: 0xF45C9A)) }
-                                .buttonStyle(Squish())
+                            dipButton
                         }
                         Spacer()
-                        Button { world.clearAll(); tick += 1 } label: { panelLabel("trash.fill", nil, Color(hex: 0xE8475A)) }
+                        Button { world.clearAll(); tick += 1 } label: { panelLabel("trash.fill", Color(hex: 0xE8475A)) }
                             .buttonStyle(Squish())
                     }
                 }
@@ -1009,12 +1205,50 @@ struct BeautyStudio: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(.white.opacity(0.9)))
-        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 5))
+        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream.opacity(0.96)))
+        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(Theme.blush, lineWidth: 4))
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, y: 8)
     }
 
-    private func panelLabel(_ symbol: String, _ text: String?, _ tint: Color) -> some View {
+    private var dipButton: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 24)) { tl in
+            let dry = world.load < 0.05
+            let t = tl.date.timeIntervalSinceReferenceDate
+            let pulse: CGFloat = dry ? 1 + 0.13 * CGFloat(sin(t * 7)) : 1
+            let activeColor = BeautyColors.rgb(world.color == "glitter" ? "#C9B6FF" : world.color).color
+            Button {
+                world.dip()
+                Sound.shared.tap()
+                tick += 1
+            } label: {
+                ZStack {
+                    if dry {
+                        Capsule()
+                            .fill(Theme.lemon.opacity(0.45 + 0.35 * sin(t * 7)))
+                            .frame(width: 84, height: 68)
+                    }
+                    HStack(spacing: 5) {
+                        Image(systemName: "drop.fill")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundStyle(.white)
+                        if dry {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 18, weight: .heavy))
+                                .foregroundStyle(Theme.lemon)
+                        }
+                    }
+                    .frame(width: dry ? 74 : 64, height: 56)
+                    .background(Capsule().fill(activeColor))
+                    .overlay(Capsule().stroke(dry ? Theme.lemon : .white, lineWidth: dry ? 4 : 3))
+                    .shadow(color: dry ? Theme.lemon.opacity(0.6) : Theme.ink.opacity(0.16), radius: dry ? 8 : 4, y: 2)
+                }
+                .scaleEffect(pulse)
+            }
+            .buttonStyle(Squish())
+        }
+    }
+
+    private func panelLabel(_ symbol: String, _ tint: Color) -> some View {
         Image(systemName: symbol)
             .font(.system(size: 26, weight: .bold))
             .foregroundStyle(.white)
@@ -1033,11 +1267,11 @@ struct BeautyStudio: View {
             tick += 1
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 30, weight: .bold))
+                .font(.system(size: 26, weight: .bold))
                 .foregroundStyle(world.mode == m ? .white : Theme.pink)
-                .frame(width: 84, height: 64)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(world.mode == m ? Theme.pink.opacity(0.9) : Theme.blush.opacity(0.7)))
+                .frame(width: 58, height: 54)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(world.mode == m ? Theme.pink.opacity(0.92) : Theme.blush.opacity(0.7)))
         }
         .buttonStyle(Squish())
     }
@@ -1066,6 +1300,7 @@ struct BeautyStudio: View {
                     world.tool = t
                     let cs = colors(for: t)
                     if !cs.isEmpty, !cs.contains(world.color) { world.color = cs[0] }
+                    if t == .polish && world.load < 0.05 { world.dip() }
                     tick += 1
                 } label: {
                     BeautyToolIcon(tool: t, color: colors(for: t).contains(world.color) ? world.color : (colors(for: t).first ?? "#FF8FB8"))
@@ -1138,38 +1373,54 @@ struct BeautyStudio: View {
         return out
     }
 
-    /// A pan of powder, a lipstick or a polish bottle.
     @ViewBuilder private func swatch(_ hex: String, on: Bool) -> some View {
+        let dryActive = world.tool == .polish && on && world.load < 0.05
         Canvas { ctx, size in
             let w = size.width, h = size.height
             let c = BeautyColors.rgb(hex == "glitter" ? "#F4E9FF" : hex)
+            let outline = hex == "glitter" ? StorybookArt.outline(for: 0xC9B6FF) : Shades.outline(c).color
             switch world.tool {
             case .polish:
-                // a little bottle with a black cap
-                let body = CGRect(x: w * 0.22, y: h * 0.42, width: w * 0.56, height: h * 0.5)
-                ctx.fill(Path(roundedRect: CGRect(x: w * 0.38, y: h * 0.06, width: w * 0.24, height: h * 0.38), cornerRadius: 5), with: .color(Color(hex: 0x2E2A3A)))
-                ctx.fill(Path(roundedRect: body, cornerRadius: 12), with: .color(c.color))
-                if hex == "glitter" || hex == "#FFFFFF" {
-                    ctx.stroke(Path(roundedRect: body, cornerRadius: 12), with: .color(Color(hex: 0xE6D6E0)), lineWidth: 2)
-                }
+                let capRect = CGRect(x: w * 0.37, y: h * 0.06, width: w * 0.26, height: h * 0.34)
+                let cap = Path(roundedRect: capRect, cornerRadius: 6)
+                StorybookArt.fillAndStroke(ctx, cap, fill: StorybookArt.color(0x6B4B7E), stroke: StorybookArt.outline(for: 0x5B3A68), width: 2.2)
+                StorybookArt.highlight(ctx, in: CGRect(x: capRect.minX + 3, y: capRect.minY + 4, width: 3.5, height: capRect.height - 9), opacity: 0.4)
+
+                var bottle = Path()
+                bottle.move(to: CGPoint(x: w * 0.32, y: h * 0.38))
+                bottle.addQuadCurve(to: CGPoint(x: w * 0.68, y: h * 0.38), control: CGPoint(x: w * 0.5, y: h * 0.34))
+                bottle.addCurve(to: CGPoint(x: w * 0.78, y: h * 0.84), control1: CGPoint(x: w * 0.78, y: h * 0.48), control2: CGPoint(x: w * 0.8, y: h * 0.7))
+                bottle.addQuadCurve(to: CGPoint(x: w * 0.22, y: h * 0.84), control: CGPoint(x: w * 0.5, y: h * 0.94))
+                bottle.addCurve(to: CGPoint(x: w * 0.32, y: h * 0.38), control1: CGPoint(x: w * 0.2, y: h * 0.7), control2: CGPoint(x: w * 0.22, y: h * 0.48))
+                bottle.closeSubpath()
+                StorybookArt.fillAndStroke(ctx, bottle, fill: c.color, stroke: outline, width: 2.5)
                 if hex == "glitter" {
-                    for k in 0..<14 {
-                        BeautyPainter.fleck(at: CGPoint(x: body.minX + CGFloat(BeautyPainter.hash(k) % Int(body.width)),
-                                                        y: body.minY + CGFloat(BeautyPainter.hash(k + 99) % Int(body.height))),
-                                            index: k, color: "rainbow", t: 0, scale: 1.6, in: ctx)
+                    var gl = ctx
+                    gl.clip(to: bottle)
+                    for k in 0..<12 {
+                        BeautyPainter.fleck(
+                            at: CGPoint(x: w * 0.26 + CGFloat(BeautyPainter.hash(k) % max(1, Int(w * 0.48))),
+                                        y: h * 0.42 + CGFloat(BeautyPainter.hash(k + 99) % max(1, Int(h * 0.42)))),
+                            index: k,
+                            color: "rainbow",
+                            t: 0,
+                            scale: 1.5,
+                            in: gl
+                        )
                     }
                 }
-                ctx.fill(Path(roundedRect: CGRect(x: body.minX + 6, y: body.minY + 6, width: 6, height: body.height - 12), cornerRadius: 3),
-                         with: .color(.white.opacity(0.45)))
+                StorybookArt.highlight(ctx, in: CGRect(x: w * 0.29, y: h * 0.47, width: w * 0.11, height: h * 0.26), opacity: 0.55)
             default:
                 let r = min(w, h) * 0.4
                 let ce = CGPoint(x: w / 2, y: h / 2)
-                ctx.fill(Path(ellipseIn: CGRect(x: ce.x - r - 5, y: ce.y - r - 5, width: r * 2 + 10, height: r * 2 + 10)), with: .color(Color(hex: 0xEDE4F2)))
+                let ring = Path(ellipseIn: CGRect(x: ce.x - r - 5, y: ce.y - r - 5, width: r * 2 + 10, height: r * 2 + 10))
+                StorybookArt.fillAndStroke(ctx, ring, fill: StorybookArt.color(0xF6EDF8), stroke: Theme.blush, width: 2)
+                let pan = Path(ellipseIn: CGRect(x: ce.x - r, y: ce.y - r, width: r * 2, height: r * 2))
                 if hex == "rainbow" {
-                    ctx.fill(Path(ellipseIn: CGRect(x: ce.x - r, y: ce.y - r, width: r * 2, height: r * 2)),
-                             with: .conicGradient(Gradient(colors: (0..<7).map { BeautyColors.rgb("rainbow", $0).color }), center: ce))
+                    ctx.fill(pan, with: .conicGradient(Gradient(colors: (0..<7).map { BeautyColors.rgb("rainbow", $0).color }), center: ce))
+                    ctx.stroke(pan, with: .color(StorybookArt.outline(for: 0xFF8FB8)), lineWidth: 2)
                 } else {
-                    ctx.fill(Path(ellipseIn: CGRect(x: ce.x - r, y: ce.y - r, width: r * 2, height: r * 2)), with: .color(c.color))
+                    StorybookArt.fillAndStroke(ctx, pan, fill: c.color, stroke: outline, width: 2)
                 }
                 if world.tool == .glitter {
                     for k in 0..<10 {
@@ -1178,11 +1429,14 @@ struct BeautyStudio: View {
                                             color: "#FFFFFF", t: 0, scale: 1.4, in: ctx)
                     }
                 }
-                ctx.fill(Path(ellipseIn: CGRect(x: ce.x - r * 0.6, y: ce.y - r * 0.7, width: r * 0.7, height: r * 0.35)), with: .color(.white.opacity(0.35)))
+                StorybookArt.highlight(ctx, in: CGRect(x: ce.x - r * 0.6, y: ce.y - r * 0.7, width: r * 0.7, height: r * 0.35), opacity: 0.42)
             }
         }
         .frame(height: 76)
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(on ? Theme.blush : Color(hex: 0xFFF7FA)))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(on ? Theme.pink : Color(hex: 0xF5DDE8), lineWidth: on ? 5 : 3))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(dryActive ? Theme.lemon : (on ? Theme.pink : Color(hex: 0xF5DDE8)), lineWidth: on ? 5 : 3)
+        )
     }
 }

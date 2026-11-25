@@ -19,6 +19,7 @@ struct DressUpView: View {
     @State private var beauty: BeautyWorld.Mode?
     @State private var danceID = 0
     @State private var battle: BattleState?
+    @State private var showBook = false
     /// Her skirt and hair swing (a class: it changes every frame).
     @State private var motion = DollMotion()
 
@@ -44,6 +45,7 @@ struct DressUpView: View {
                         .padding(.vertical, 18)
                         .padding(.trailing, 18)
                 }
+                .coinPurse(game: LookStore.game)
             }
             if flash {
                 Color.white.ignoresSafeArea().transition(.opacity)
@@ -59,19 +61,26 @@ struct DressUpView: View {
                     .zIndex(2)
             }
             if let photo = studio {
-                PhotoStudio(look: photo) { look in
-                    store.update(look)
-                    withAnimation(.spring(response: 0.4)) { studio = nil }
-                    galleryBounce = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        withAnimation(.spring(response: 0.3)) { galleryBounce = false }
+                PhotoStudio(
+                    look: photo,
+                    cancel: {
+                        withAnimation(.spring(response: 0.4)) { studio = nil }
+                    },
+                    done: { look in
+                        store.update(look)
+                        withAnimation(.spring(response: 0.4)) { studio = nil }
+                        galleryBounce = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            withAnimation(.spring(response: 0.3)) { galleryBounce = false }
+                        }
                     }
-                }
+                )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(2)
             }
             if let b = battle, b.phase == .intro {
                 BattleIntroView(state: b,
+                                mine: store.current,
                                 start: {
                                     Sound.shared.play(.sparkle)
                                     store.current.bg = b.theme.scene
@@ -93,11 +102,24 @@ struct DressUpView: View {
                     .zIndex(4)
             }
             if let mode = beauty {
-                BeautyStudio(look: store.current, mode: mode) { look in
-                    store.current = look
-                    withAnimation(.spring(response: 0.4)) { beauty = nil }
-                    cheer()
-                }
+                BeautyStudio(
+                    look: store.current,
+                    mode: mode,
+                    cancel: {
+                        withAnimation(.spring(response: 0.4)) { beauty = nil }
+                    },
+                    done: { look in
+                        store.current = look
+                        if look.makeup.contains(where: \.hasPoints) {
+                            DressUpFind.glamMakeup.unlock()
+                        }
+                        if look.nails.contains(where: \.hasArt) {
+                            DressUpFind.nailArtist.unlock()
+                        }
+                        withAnimation(.spring(response: 0.4)) { beauty = nil }
+                        cheer()
+                    }
+                )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(3)
             }
@@ -120,6 +142,20 @@ struct DressUpView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(3)
             }
+            DesignCanvas {
+                StickerToast(game: LookStore.game, target: GameChromeLayout.stickerTarget)
+            }
+            .allowsHitTesting(false)
+            .zIndex(5)
+            if showBook {
+                StickerBookView(game: LookStore.game) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(6)
+            }
         }
         .animation(.easeInOut(duration: 0.35), value: store.current.bg)
         .task { await blinkLoop() }
@@ -128,95 +164,116 @@ struct DressUpView: View {
     }
 
     private var stage: some View {
-        ZStack(alignment: .top) {
-            ZStack(alignment: .bottom) {
-                Ellipse()
-                    .fill(Theme.ink.opacity(0.18))
-                    .frame(width: 250, height: 40)
-                    .offset(y: -6)
-                // Frame her from hat tip to shoe soles so she fills the stage and stands on the floor.
-                LiveDollView(look: store.current, expression: expression, box: Self.stageBox, motion: motion,
-                             windy: ["bg_park", "bg_beach", "bg_garden", "bg_snow", "bg_sunset", "bg_forest", "bg_rainbow"].contains(store.current.bg))
-                    .frame(width: Self.stageBox.width * Self.stageScale, height: Self.stageBox.height * Self.stageScale)
-                    .offset(y: hop ? -26 : 0)
-                    .contentShape(Rectangle())
-                    .onTapGesture { cheer() }
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 6)
-                            .onChanged { motion.drag($0.location) }
-                            .onEnded { _ in motion.endDrag() }
-                    )
-                TwinkleBurst()
-                    .id(burst)
-                    .offset(y: -420)
-                if danceID > 0 {
-                    MusicNotes().id(danceID).offset(y: -380)
-                }
+        ZStack(alignment: .bottom) {
+            Ellipse()
+                .fill(Theme.ink.opacity(0.18))
+                .frame(width: 250, height: 40)
+                .offset(y: -6)
+            // Frame her from hat tip to shoe soles so she fills the stage and stands on the floor.
+            LiveDollView(look: store.current, expression: expression, box: Self.stageBox, motion: motion,
+                         windy: ["bg_park", "bg_beach", "bg_garden", "bg_snow", "bg_sunset", "bg_forest", "bg_rainbow"].contains(store.current.bg))
+                .frame(width: Self.stageBox.width * Self.stageScale, height: Self.stageBox.height * Self.stageScale)
+                .offset(y: hop ? -26 : 0)
+                .contentShape(Rectangle())
+                .onTapGesture { cheer() }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 6)
+                        .onChanged { motion.drag($0.location) }
+                        .onEnded { _ in motion.endDrag() }
+                )
+            TwinkleBurst()
+                .id(burst)
+                .offset(y: -420)
+            if danceID > 0 {
+                MusicNotes().id(danceID).offset(y: -380)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .padding(.bottom, 0)
-
-            HStack(spacing: 18) {
-                HomeButton { store.flush(); exit() }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .overlay(alignment: .top) {
+            HStack(spacing: 14) {
+                HomeButton(size: GameChromeLayout.buttonSize) { store.flush(); exit() }
+                StickerBookButton(game: LookStore.game, size: GameChromeLayout.buttonSize) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = true
+                    }
+                }
                 Spacer()
-                RoundButton(symbol: "pawprint.fill", tint: Color(hex: 0xFFA24C)) {
-                    Sound.shared.play(.whoosh)
-                    withAnimation(.spring(response: 0.4)) { showPets = true }
+                CoinCounter(game: LookStore.game, height: GameChromeLayout.buttonSize)
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+        }
+        .overlay(alignment: .topLeading) {
+            if battle?.phase != .dressing {
+                VStack(spacing: 10) {
+                    RoundButton(symbol: "pawprint.fill", tint: Color(hex: 0xFFA24C), size: 56) {
+                        Sound.shared.play(.whoosh)
+                        withAnimation(.spring(response: 0.4)) { showPets = true }
+                    }
+                    RoundButton(symbol: "trophy.fill", tint: Color(hex: 0xF2B83E), size: 56) {
+                        Sound.shared.play(.whoosh)
+                        withAnimation(.spring(response: 0.4)) { battle = .new() }
+                    }
+                    RoundButton(symbol: "paintbrush.pointed.fill", tint: Color(hex: 0xF45C9A), size: 56) {
+                        Sound.shared.play(.whoosh)
+                        withAnimation(.spring(response: 0.4)) { beauty = .makeup }
+                    }
+                    RoundButton(symbol: "theatermasks.fill", tint: Color(hex: 0x9B79E0), size: 56) {
+                        Sound.shared.play(.whoosh)
+                        store.flush()
+                        withAnimation(.spring(response: 0.4)) { showStory = true }
+                    }
+                    RoundButton(symbol: "music.note", tint: Color(hex: 0x46B7B0), size: 56) { dance() }
                 }
-                RoundButton(symbol: "trophy.fill", tint: Color(hex: 0xF2B83E)) {
-                    Sound.shared.play(.whoosh)
-                    withAnimation(.spring(response: 0.4)) { battle = .new() }
-                }
-                RoundButton(symbol: "dice.fill", tint: Color(hex: 0x9B79E0)) { surprise() }
-                RoundButton(symbol: "camera.fill", tint: Color(hex: 0xF45C9A)) { snap() }
-                RoundButton(symbol: "photo.on.rectangle.angled", tint: Color(hex: 0x46B7B0)) {
-                    Sound.shared.play(.whoosh)
-                    withAnimation(.spring(response: 0.4)) { showGallery = true }
-                }
-                .scaleEffect(galleryBounce ? 1.25 : 1)
-                .overlay(alignment: .topTrailing) {
-                    if !store.gallery.isEmpty {
-                        Text("\(store.gallery.count)")
-                            .font(.system(size: 18, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Capsule().fill(Color(hex: 0xF45C9A)))
-                            .offset(x: 6, y: -6)
+                .padding(.leading, 26)
+                .padding(.top, 102)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .top) {
+            if let b = battle, b.phase == .dressing {
+                BattleBanner(
+                    state: b,
+                    cancel: {
+                        withAnimation(.spring(response: 0.4)) { battle = nil }
+                    },
+                    done: {
+                        Sound.shared.play(.fanfare, volume: 0.7)
+                        store.flush()
+                        withAnimation(.spring(response: 0.5)) { battle?.phase = .runway }
+                    }
+                )
+                .padding(.top, 98)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            GameTrayCard(cornerRadius: 36, paddingH: 10, paddingV: 8) {
+                HStack(spacing: 10) {
+                    RoundButton(symbol: "dice.fill", tint: Color(hex: 0x9B79E0), size: 56) { surprise() }
+                    RoundButton(symbol: "camera.fill", tint: Color(hex: 0xF45C9A), size: 56) { snap() }
+                    RoundButton(symbol: "photo.on.rectangle.angled", tint: Color(hex: 0x46B7B0), size: 56) {
+                        Sound.shared.play(.whoosh)
+                        withAnimation(.spring(response: 0.4)) { showGallery = true }
+                    }
+                    .scaleEffect(galleryBounce ? 1.25 : 1)
+                    .overlay(alignment: .topTrailing) {
+                        if !store.gallery.isEmpty {
+                            ZStack {
+                                Circle().fill(Color(hex: 0xF45C9A))
+                                Image(systemName: "sparkle")
+                                    .font(.system(size: 11, weight: .black))
+                                    .foregroundStyle(Theme.lemon)
+                            }
+                            .frame(width: 22, height: 22)
+                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                            .offset(x: 4, y: -4)
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 26)
-            .padding(.top, 22)
-
-            VStack(spacing: 16) {
-                RoundButton(symbol: "music.note", tint: Color(hex: 0x46B7B0)) { dance() }
-                RoundButton(symbol: "theatermasks.fill", tint: Color(hex: 0x9B79E0)) {
-                    Sound.shared.play(.whoosh)
-                    store.flush()
-                    withAnimation(.spring(response: 0.4)) { showStory = true }
-                }
-                RoundButton(symbol: "paintbrush.pointed.fill", tint: Color(hex: 0xF45C9A)) {
-                    Sound.shared.play(.whoosh)
-                    withAnimation(.spring(response: 0.4)) { beauty = .makeup }
-                }
-                RoundButton(symbol: "hand.raised.fill", tint: Color(hex: 0xFF8F6B)) {
-                    Sound.shared.play(.whoosh)
-                    withAnimation(.spring(response: 0.4)) { beauty = .nails }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 26)
-            .padding(.top, 112)
-
-            if let b = battle, b.phase == .dressing {
-                BattleBanner(state: b) {
-                    Sound.shared.play(.fanfare, volume: 0.7)
-                    store.flush()
-                    withAnimation(.spring(response: 0.5)) { battle?.phase = .runway }
-                }
-                .padding(.top, 112)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
+            .padding(.leading, 22)
+            .padding(.bottom, 18)
         }
     }
 
@@ -400,16 +457,20 @@ private struct Tray: View {
             swatches
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(.white.opacity(0.88)))
-        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 5))
+        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream.opacity(0.96)))
+        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(Theme.blush, lineWidth: 4))
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, y: 8)
         .overlay {
             if mixing {
-                ColorMixer(palette: art.cloth, close: { withAnimation(.spring(response: 0.35)) { mixing = false } }) { hex in
+                ColorMixer(
+                    palette: ColorMixer.palette(forCategory: cat, art: art),
+                    close: { withAnimation(.spring(response: 0.35)) { mixing = false } }
+                ) { hex in
                     store.current.mixed[mixKey] = hex
                     store.mixes.removeAll { $0 == hex }
                     store.mixes.insert(hex, at: 0)
                     if store.mixes.count > 12 { store.mixes.removeLast(store.mixes.count - 12) }
+                    DressUpFind.colorAlchemist.unlock()
                     withAnimation(.spring(response: 0.35)) { mixing = false }
                     onPick()
                 }
@@ -537,6 +598,7 @@ private struct Tray: View {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                         store.current = set.apply(to: store.current).sanitized()
                     }
+                    DressUpFind.outfitSet.unlock()
                     onPick()
                 }
             }
