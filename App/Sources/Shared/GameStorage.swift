@@ -46,4 +46,8 @@ enum GameFiles {
     static func url(_ name: String, _ ext: String, game: String) -> URL? {
         Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Games/\(game)")
     }
+
+    static func sound(_ name: String, game: String) -> URL? {
+        url(name, "caf", game: game) ?? url(name, "wav", game: game)
+    }
 }

@@ -36,6 +36,22 @@ final class CoinsTests: XCTestCase {
         XCTAssertEqual(c.flying(game: "icecream", at: at.addingTimeInterval(Coins.land(2) + 0.01)), 0)
     }
 
+    func testPaymentAnimationTracksActiveWindowAndSettles() throws {
+        let c = Coins.shared
+        XCTAssertFalse(c.isAnimating(game: "bakery"))
+        XCTAssertFalse(c.isShowerAnimating(game: "bakery"))
+
+        c.earn(3, game: "bakery")
+        let at = try XCTUnwrap(c.lastPay?.at)
+        XCTAssertTrue(c.isAnimating(game: "bakery", at: at))
+        XCTAssertTrue(c.isAnimating(game: nil, at: at))
+        XCTAssertFalse(c.isAnimating(game: "pizza", at: at))
+        XCTAssertTrue(c.isShowerAnimating(game: "bakery", at: at))
+        XCTAssertFalse(c.isShowerAnimating(game: "bakery", at: at.addingTimeInterval(Coins.showerDuration(amount: 3) + 0.01)))
+        XCTAssertTrue(c.isAnimating(game: "bakery", at: at.addingTimeInterval(Coins.land(2) + 0.1)))
+        XCTAssertFalse(c.isAnimating(game: "bakery", at: at.addingTimeInterval(Coins.counterDuration(amount: 3) + 0.01)))
+    }
+
     func testBuyingTakesCoinsOnceAndNeverGoesBelowZero() {
         let c = Coins.shared
         c.earn(10, game: "bakery")
@@ -53,8 +69,8 @@ final class CoinsTests: XCTestCase {
     }
 
     func testTheCoinSoundsShip() {
-        for name in ["coin", "till"] {
-            XCTAssertNotNil(Bundle.main.url(forResource: name, withExtension: "wav"), name)
+        for sfx in [SFX.coin, .till] {
+            XCTAssertNotNil(Sound.url(for: sfx), sfx.rawValue)
         }
     }
 
@@ -66,15 +82,42 @@ final class CoinsTests: XCTestCase {
 
     func testEveryTreasureShowsUpInItsGameOnceBought() {
         let gameIDs = Set(GameRegistry.all.map(\.id))
-        var inGames = Set(DecorKind.allCases.compactMap(\.treasure) + AquaDecorKind.allCases.compactMap(\.treasure))
-        inGames.formUnion(ArtCategory.treasureItems.values)
-        XCTAssertEqual(Set(Treasures.all.map(\.id)).count, Treasures.all.count)
+        let allIDs = Set(Treasures.all.map(\.id))
+        XCTAssertEqual(Treasures.all.count, 30)
+        XCTAssertEqual(allIDs.count, Treasures.all.count)
+
+        let legacyIDs = [
+            "garden/crystal", "garden/rainbow", "garden/unicorn",
+            "aquarium/crystal", "aquarium/coral", "aquarium/unicorn",
+            "dressup/h_moonband",
+        ]
+        for id in legacyIDs {
+            XCTAssertTrue(allIDs.contains(id), "\(id) preserved for save compatibility")
+        }
+
         for t in Treasures.all {
             XCTAssertTrue(gameIDs.contains(t.game), t.id)
             XCTAssertTrue(t.id.hasPrefix(t.game + "/"), t.id)
-            XCTAssertTrue(inGames.contains(t.id), "\(t.id) has a place in its game")
-            XCTAssertGreaterThan(t.price, 0)
+            XCTAssertGreaterThan(t.price, 0, t.id)
+            XCTAssertGreaterThan(t.size.width, 0, t.id)
+            XCTAssertGreaterThan(t.size.height, 0, t.id)
         }
+
+        XCTAssertEqual(GameRegistry.all.count, 12)
+        for game in GameRegistry.all {
+            XCTAssertGreaterThanOrEqual(
+                Treasures.items(for: game.id).count,
+                2,
+                "\(game.id) should have at least 2 treasures"
+            )
+        }
+
+        var inGames = Set(DecorKind.allCases.compactMap(\.treasure) + AquaDecorKind.allCases.compactMap(\.treasure))
+        inGames.formUnion(ArtCategory.treasureItems.values)
+        for id in inGames {
+            XCTAssertTrue(allIDs.contains(id), "\(id) must exist in Treasures.all")
+        }
+
         Coins.shared.resetForTests(balance: 100)
         XCTAssertTrue(Coins.shared.buy("garden/unicorn", price: 15))
         XCTAssertTrue(Coins.shared.buy("aquarium/coral", price: 12))

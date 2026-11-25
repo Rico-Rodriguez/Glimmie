@@ -23,22 +23,70 @@ struct Treasure: Identifiable {
 
 enum Treasures {
     static let all: [Treasure] = [
+        // Garden (4)
         Treasure(id: "garden/crystal", game: "garden", price: 8, size: TreasureArt.crystalSize) { TreasureArt.crystals($0, glow: 0.4) },
         Treasure(id: "garden/rainbow", game: "garden", price: 12, size: TreasureArt.rainbowSize) { TreasureArt.rainbow($0) },
         Treasure(id: "garden/unicorn", game: "garden", price: 15, size: TreasureArt.unicornSize) { TreasureArt.unicorn($0) },
+        Treasure(id: "garden/lotus", game: "garden", price: 10, size: TreasureArt.lotusSize) { TreasureArt.lotusLantern($0) },
+
+        // Aquarium (4)
         Treasure(id: "aquarium/crystal", game: "aquarium", price: 8, size: TreasureArt.crystalSize) { TreasureArt.crystals($0, glow: 0.4, underwater: true) },
         Treasure(id: "aquarium/coral", game: "aquarium", price: 12, size: TreasureArt.coralSize) { TreasureArt.rainbowCoral($0, sway: 0) },
         Treasure(id: "aquarium/unicorn", game: "aquarium", price: 15, size: TreasureArt.unicornSize) { TreasureArt.unicorn($0, underwater: true) },
+        Treasure(id: "aquarium/koiBridge", game: "aquarium", price: 12, size: TreasureArt.koiBridgeSize) { TreasureArt.koiBridge($0) },
+
+        // Dress Up (3)
         Treasure(id: "dressup/h_moonband", game: "dressup", price: 10, size: CGSize(width: 110, height: 78)) { TreasureArt.moonBand($0) },
+        Treasure(id: "dressup/h_hanbokCrown", game: "dressup", price: 12, size: TreasureArt.hanbokCrownSize) { TreasureArt.hanbokCrown($0) },
+        Treasure(id: "dressup/p_fairyWand", game: "dressup", price: 14, size: TreasureArt.fairyWandSize) { TreasureArt.fairyWand($0) },
+
+        // Fairies (3)
+        Treasure(id: "fairies/chandelier", game: "fairies", price: 10, size: TreasureArt.chandelierSize) { TreasureArt.chandelier($0) },
+        Treasure(id: "fairies/carousel", game: "fairies", price: 14, size: TreasureArt.carouselSize) { TreasureArt.carousel($0) },
+        Treasure(id: "fairies/hanbokTea", game: "fairies", price: 12, size: TreasureArt.hanbokTeaSize) { TreasureArt.hanbokTea($0) },
+
+        // Bubble Spa (2)
+        Treasure(id: "spa/yuzuBomb", game: "spa", price: 8, size: TreasureArt.yuzuBombSize) { TreasureArt.yuzuBomb($0) },
+        Treasure(id: "spa/goldenDuck", game: "spa", price: 10, size: TreasureArt.goldenDuckSize) { TreasureArt.goldenDuck($0) },
+
+        // Potion Lab (2)
+        Treasure(id: "potionlab/heartCauldron", game: "potionlab", price: 12, size: TreasureArt.heartCauldronSize) { TreasureArt.heartCauldron($0) },
+        Treasure(id: "potionlab/fairyLadle", game: "potionlab", price: 10, size: TreasureArt.fairyLadleSize) { TreasureArt.fairyLadle($0) },
+
+        // Bakery (2)
+        Treasure(id: "bakery/goldenBungeo", game: "bakery", price: 10, size: TreasureArt.goldenBungeoSize) { TreasureArt.goldenBungeo($0) },
+        Treasure(id: "bakery/rainbowBingsu", game: "bakery", price: 12, size: TreasureArt.rainbowBingsuSize) { TreasureArt.rainbowBingsu($0) },
+
+        // Pizza (2)
+        Treasure(id: "pizza/goldOven", game: "pizza", price: 12, size: TreasureArt.goldOvenSize) { TreasureArt.goldOven($0) },
+        Treasure(id: "pizza/starCutter", game: "pizza", price: 8, size: TreasureArt.starCutterSize) { TreasureArt.starCutter($0) },
+
+        // Coloring (2)
+        Treasure(id: "coloring/starStamp", game: "coloring", price: 8, size: TreasureArt.starStampSize) { TreasureArt.starStamp($0) },
+        Treasure(id: "coloring/rainbowBrush", game: "coloring", price: 12, size: TreasureArt.rainbowBrushSize) { TreasureArt.rainbowBrush($0) },
+
+        // Pet Vet (2)
+        Treasure(id: "petvet/heartScope", game: "petvet", price: 8, size: TreasureArt.heartScopeSize) { TreasureArt.heartScope($0) },
+        Treasure(id: "petvet/bowBandage", game: "petvet", price: 10, size: TreasureArt.bowBandageSize) { TreasureArt.bowBandage($0) },
+
+        // Salon (2)
+        Treasure(id: "salon/royalDaenggi", game: "salon", price: 10, size: TreasureArt.royalDaenggiSize) { TreasureArt.royalDaenggi($0) },
+        Treasure(id: "salon/starDryer", game: "salon", price: 12, size: TreasureArt.starDryerSize) { TreasureArt.starDryer($0) },
+
+        // Tidy Up (2)
+        Treasure(id: "tidy/starBroom", game: "tidy", price: 8, size: TreasureArt.starBroomSize) { TreasureArt.starBroom($0) },
+        Treasure(id: "tidy/plushBear", game: "tidy", price: 10, size: TreasureArt.plushBearSize) { TreasureArt.plushBear($0) },
     ]
 
     static func item(_ id: String) -> Treasure? { all.first { $0.id == id } }
+
+    static func items(for game: String) -> [Treasure] { all.filter { $0.game == game } }
 }
 
 // MARK: - Drawings
 //
 // Flat and cute like the rest of the app: color-derived outlines (never black), one light and one shade per color.
-// Every drawing stands on (0, 0) and goes up into negative y.
+// Every drawing stands on (0, 0) and goes up into negative y. Extra drawings live in `TreasureArtExtras.swift`.
 
 enum TreasureArt {
     static let pink = Theme.pink
@@ -51,23 +99,131 @@ enum TreasureArt {
     static let gold = Color(hex: 0xFFCF4A)
     static let goldLine = StorybookArt.outline(for: 0xFFCF4A)
 
-    private static func oval(_ cx: CGFloat, _ cy: CGFloat, _ rx: CGFloat, _ ry: CGFloat) -> Path {
+    static func oval(_ cx: CGFloat, _ cy: CGFloat, _ rx: CGFloat, _ ry: CGFloat) -> Path {
         Path(ellipseIn: CGRect(x: cx - rx, y: cy - ry, width: rx * 2, height: ry * 2))
     }
 
-    private static func poly(_ pts: [CGPoint]) -> Path {
+    static func rrect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat, _ r: CGFloat) -> Path {
+        Path(roundedRect: CGRect(x: x, y: y, width: w, height: h), cornerRadius: r)
+    }
+
+    static func poly(_ pts: [CGPoint]) -> Path {
         var p = Path()
         p.addLines(pts)
         p.closeSubpath()
         return p
     }
 
-    private static func blob(_ g: GraphicsContext, _ p: Path, _ fill: Color, _ stroke: Color, _ w: CGFloat = 3) {
+    static func blob(_ g: GraphicsContext, _ p: Path, _ fill: Color, _ stroke: Color, _ w: CGFloat = 3) {
         g.fill(p, with: .color(fill))
         g.stroke(p, with: .color(stroke), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
     }
 
-    private static func aquaBubble(_ g: GraphicsContext, cx: CGFloat, cy: CGFloat, r: CGFloat) {
+    static func strokePath(_ g: GraphicsContext, _ p: Path, _ color: Color, _ w: CGFloat = 2.5) {
+        g.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
+    }
+
+    static func heartPath(cx: CGFloat, cy: CGFloat, size: CGFloat) -> Path {
+        let r = size * 0.5
+        var p = Path()
+        p.move(to: CGPoint(x: cx, y: cy - r * 0.25))
+        p.addCurve(
+            to: CGPoint(x: cx + r, y: cy - r * 0.15),
+            control1: CGPoint(x: cx + r * 0.35, y: cy - r * 1.05),
+            control2: CGPoint(x: cx + r * 1.08, y: cy - r * 0.82)
+        )
+        p.addCurve(
+            to: CGPoint(x: cx, y: cy + r * 0.88),
+            control1: CGPoint(x: cx + r * 0.96, y: cy + r * 0.35),
+            control2: CGPoint(x: cx + r * 0.35, y: cy + r * 0.65)
+        )
+        p.addCurve(
+            to: CGPoint(x: cx - r, y: cy - r * 0.15),
+            control1: CGPoint(x: cx - r * 0.35, y: cy + r * 0.65),
+            control2: CGPoint(x: cx - r * 0.96, y: cy + r * 0.35)
+        )
+        p.addCurve(
+            to: CGPoint(x: cx, y: cy - r * 0.25),
+            control1: CGPoint(x: cx - r * 1.08, y: cy - r * 0.82),
+            control2: CGPoint(x: cx - r * 0.35, y: cy - r * 1.05)
+        )
+        p.closeSubpath()
+        return p
+    }
+
+    static func starPath(
+        cx: CGFloat,
+        cy: CGFloat,
+        outer: CGFloat,
+        inner: CGFloat,
+        points: Int = 5,
+        startAngle: CGFloat = -.pi / 2
+    ) -> Path {
+        var pts: [CGPoint] = []
+        let total = points * 2
+        for i in 0..<total {
+            let r = i % 2 == 0 ? outer : inner
+            let a = startAngle + CGFloat(i) * .pi / CGFloat(points)
+            pts.append(CGPoint(x: cx + cos(a) * r, y: cy + sin(a) * r))
+        }
+        return poly(pts)
+    }
+
+    static func twinkle(_ g: GraphicsContext, _ x: CGFloat, _ y: CGFloat, _ r: CGFloat, _ color: Color = Color(hex: 0xFFF4B0)) {
+        let s = Twinkle().path(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
+        g.fill(s, with: .color(color))
+    }
+
+    static func blossom(
+        _ g: GraphicsContext,
+        cx: CGFloat,
+        cy: CGFloat,
+        r: CGFloat,
+        petal: Color,
+        stroke: Color,
+        center: Color = gold
+    ) {
+        let pr = r * 0.46
+        let dist = r * 0.56
+        for i in 0..<5 {
+            let a = CGFloat(i) * 2 * .pi / 5 - .pi / 2
+            let px = cx + cos(a) * dist
+            let py = cy + sin(a) * dist
+            blob(g, oval(px, py, pr, pr), petal, stroke, max(1.6, r * 0.16))
+        }
+        blob(g, oval(cx, cy, r * 0.3, r * 0.3), center, goldLine, max(1.4, r * 0.13))
+    }
+
+    static func ribbonBow(
+        _ g: GraphicsContext,
+        cx: CGFloat,
+        cy: CGFloat,
+        scale s: CGFloat,
+        fill: Color,
+        stroke: Color
+    ) {
+        for side in [-1.0, 1.0] as [CGFloat] {
+            var loop = Path()
+            loop.move(to: CGPoint(x: cx, y: cy))
+            loop.addCurve(
+                to: CGPoint(x: cx + side * 22 * s, y: cy),
+                control1: CGPoint(x: cx + side * 8 * s, y: cy - 16 * s),
+                control2: CGPoint(x: cx + side * 24 * s, y: cy - 14 * s)
+            )
+            loop.addCurve(
+                to: CGPoint(x: cx, y: cy),
+                control1: CGPoint(x: cx + side * 24 * s, y: cy + 14 * s),
+                control2: CGPoint(x: cx + side * 8 * s, y: cy + 14 * s)
+            )
+            loop.closeSubpath()
+            blob(g, loop, fill, stroke, 2.4)
+            g.fill(oval(cx + side * 12 * s, cy - 4 * s, 4.5 * s, 2.4 * s), with: .color(.white.opacity(0.45)))
+        }
+        blob(g, oval(cx, cy, 6.2 * s, 6.2 * s), fill, stroke, 2.4)
+        g.fill(oval(cx - 1.5 * s, cy - 2 * s, 2 * s, 1.6 * s), with: .color(.white.opacity(0.6)))
+    }
+
+    static func aquaBubble(_ g: GraphicsContext, cx: CGFloat, cy: CGFloat, r: CGFloat) {
         let rim = StorybookArt.outline(for: 0x7EDFF4, factor: 0.72)
         blob(g, oval(cx, cy, r, r), Color(hex: 0xCFF6FF, alpha: 0.72), rim, 1.8)
         g.fill(oval(cx - r * 0.32, cy - r * 0.34, r * 0.32, r * 0.24), with: .color(.white.opacity(0.9)))
@@ -99,7 +255,6 @@ enum TreasureArt {
         let shade = Color(hex: 0xEDE4FF)
         let aquaLine = StorybookArt.outline(for: 0x7AD9E8)
         if underwater {
-            // Scalloped mother-of-pearl shell pedestal
             var shell = Path()
             shell.move(to: CGPoint(x: -46, y: -3))
             shell.addQuadCurve(to: CGPoint(x: -42, y: -18), control: CGPoint(x: -50, y: -12))
@@ -128,21 +283,18 @@ enum TreasureArt {
             blob(g, stone, Color(hex: 0xDCCFF7), line)
             g.fill(Path(roundedRect: CGRect(x: -40, y: -15, width: 80, height: 5), cornerRadius: 2.5), with: .color(.white.opacity(0.55)))
         }
-        // tail: three soft curls at the back
         let tailCurls: [(CGFloat, CGFloat, CGFloat, Color)] = underwater
             ? [(-38, -64, 9, Color(hex: 0x76E4F0)), (-45, -51, 8, mint), (-43, -38, 7, sky)]
             : [(-38, -64, 9, lilac), (-45, -51, 8, pink), (-43, -38, 7, lemon)]
         for (x, y, r, c) in tailCurls {
             blob(g, oval(x, y, r, r), c, underwater ? aquaLine : line, 2.5)
         }
-        // legs (the far pair a little darker)
-        for (x, far) in [(-18.0, true), (22.0, true), (-32.0, false), (6.0, false)] {
+        for (x, far) in [(-18.0, true), (22.0, true), (-32.0, false), (6.0, false)] as [(CGFloat, Bool)] {
             let leg = Path(roundedRect: CGRect(x: x, y: -52, width: 11, height: 36), cornerRadius: 5)
             blob(g, leg, far ? shade : white, line, 2.5)
             blob(g, Path(roundedRect: CGRect(x: x - 0.5, y: -24, width: 12, height: 8), cornerRadius: 3), gold, goldLine, 2)
         }
         if underwater {
-            // Swept aqua sea-fin crest behind the neck mane
             var fin = Path()
             fin.move(to: CGPoint(x: 28, y: -116))
             fin.addQuadCurve(to: CGPoint(x: 4, y: -102), control: CGPoint(x: 11, y: -120))
@@ -158,7 +310,6 @@ enum TreasureArt {
                 g.stroke(ray, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
             }
         }
-        // ear, neck and head (the body goes over the bottom of the neck)
         blob(g, poly([CGPoint(x: 47, y: -110), CGPoint(x: 55, y: -125), CGPoint(x: 57, y: -106)]), white, line, 2.5)
         let neck = poly([CGPoint(x: 12, y: -70), CGPoint(x: 26, y: -100), CGPoint(x: 42, y: -94), CGPoint(x: 30, y: -58)])
         blob(g, neck, white, line)
@@ -167,10 +318,8 @@ enum TreasureArt {
         g.fill(oval(56, -96, 1.6, 1.6), with: .color(Color(hex: 0xC4789A)))
         g.fill(neck, with: .color(white)) // hides the head's outline where it meets the neck
         g.fill(oval(36, -96, 9, 8), with: .color(white))
-        // body
         blob(g, oval(-4, -60, 36, 21), white, line)
         g.fill(oval(-6, -50, 26, 7), with: .color(shade.opacity(0.8)))
-        // horn: a gold cone with stripes
         let horn = poly([CGPoint(x: 39, y: -114), CGPoint(x: 52, y: -142), CGPoint(x: 48, y: -112)])
         blob(g, horn, gold, goldLine, 2.5)
         for k in 0..<3 {
@@ -180,7 +329,6 @@ enum TreasureArt {
             s.addLine(to: CGPoint(x: 48 + 4 * t, y: -112 - 30 * t))
             g.stroke(s, with: .color(goldLine.opacity(0.7)), lineWidth: 1.6)
         }
-        // mane down the neck
         let mane: [(CGFloat, CGFloat, CGFloat, Color)] = underwater
             ? [(30, -112, 8, Color(hex: 0x7CE6F4)), (24, -100, 8, mint), (20, -88, 8, sky),
                (16, -76, 7.5, lilac), (13, -65, 7, pink)]
@@ -190,7 +338,6 @@ enum TreasureArt {
             blob(g, oval(x, y, r, r), c, underwater ? aquaLine : line, 2.2)
             g.fill(oval(x - r * 0.3, y - r * 0.35, r * 0.35, r * 0.25), with: .color(.white.opacity(0.6)))
         }
-        // face: a closed happy eye and a blush
         var eye = Path()
         eye.move(to: CGPoint(x: 39, y: -103))
         eye.addQuadCurve(to: CGPoint(x: 47, y: -103), control: CGPoint(x: 43, y: -107))
@@ -212,7 +359,6 @@ enum TreasureArt {
                       Color(hex: 0x8FE0A4), sky, lilac]
         let band: CGFloat = 7.5
         let outer: CGFloat = 62
-        // a soft outline behind all the bands
         var back = Path()
         back.addArc(center: CGPoint(x: 0, y: -12), radius: outer - band * 3, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
         g.stroke(back, with: .color(line.opacity(0.7)), style: StrokeStyle(lineWidth: band * 6 + 4, lineCap: .butt))
@@ -222,11 +368,9 @@ enum TreasureArt {
                        startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
             g.stroke(arc, with: .color(c), style: StrokeStyle(lineWidth: band + 0.5, lineCap: .butt))
         }
-        // a shine along the top
         var shine = Path()
         shine.addArc(center: CGPoint(x: 0, y: -12), radius: outer - 3, startAngle: .degrees(205), endAngle: .degrees(250), clockwise: false)
         g.stroke(shine, with: .color(.white.opacity(0.6)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-        // the clouds at its feet
         for side in [-1.0, 1.0] as [CGFloat] {
             let cx = side * (outer - band * 3)
             var cloud = Path()
@@ -258,7 +402,6 @@ enum TreasureArt {
             let body = poly([CGPoint(x: -w / 2, y: 0), CGPoint(x: -w / 2, y: -h * 0.7), CGPoint(x: 0, y: -h),
                              CGPoint(x: w / 2, y: -h * 0.7), CGPoint(x: w / 2, y: 0)])
             p.fill(body, with: .color(c))
-            // the light facet on the left, the shaded one on the right
             p.fill(poly([CGPoint(x: -w / 2, y: 0), CGPoint(x: -w / 2, y: -h * 0.7), CGPoint(x: 0, y: -h), CGPoint(x: -w * 0.1, y: 0)]),
                    with: .color(.white.opacity(0.45)))
             p.fill(poly([CGPoint(x: w * 0.18, y: 0), CGPoint(x: w * 0.18, y: -h * 0.78), CGPoint(x: w / 2, y: -h * 0.7), CGPoint(x: w / 2, y: 0)]),
@@ -280,7 +423,6 @@ enum TreasureArt {
             crystal(0, 24, 66, 0, pink, StorybookArt.outline(for: 0xFF8FB8))
             blob(g, oval(0, -3, 34, 7), Color(hex: 0xBDB1D6), StorybookArt.outline(for: 0xBDB1D6), 2.5)
         }
-        // sparkles
         for (x, y, r) in [(-30.0, -52.0, 5.0), (30.0, -58.0, 4.0), (6.0, -74.0, 4.5)] as [(CGFloat, CGFloat, CGFloat)] {
             let s = Twinkle().path(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
             g.fill(s, with: .color(Color(hex: 0xFFF4B0).opacity(0.6 + 0.4 * Double(glow))))
@@ -309,7 +451,6 @@ enum TreasureArt {
             var p = Path()
             p.move(to: start)
             p.addQuadCurve(to: tip, control: mid)
-            // a little side twig halfway up
             let twigA = a + (i % 2 == 0 ? -0.7 : 0.7)
             var twig = Path()
             twig.move(to: mid)

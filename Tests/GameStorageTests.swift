@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import Glimmie
 
@@ -31,5 +32,61 @@ final class GameStorageTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: retained.appendingPathComponent("state.json").path))
         XCTAssertTrue(GameStorage.isRetiredGameRecord("unicornstable/crown"))
         XCTAssertFalse(GameStorage.isRetiredGameRecord("garden/unicorn"))
+    }
+
+    func testGameFilesSoundResolvesBundledAudioAndNilWhenMissing() {
+        let url = GameFiles.sound("bloop", game: "Aquarium")
+        XCTAssertNotNil(url)
+        XCTAssertTrue(["caf", "wav"].contains(url?.pathExtension ?? ""))
+        XCTAssertNil(GameFiles.sound("missing-sound-asset", game: "Aquarium"))
+    }
+
+    func testEverySharedSFXShipsWithBundledAudio() {
+        for sfx in SFX.allCases {
+            XCTAssertNotNil(Sound.url(for: sfx), sfx.rawValue)
+        }
+    }
+
+    func testStickerBookConsumeUnseenSnapshotsBeforeClearing() {
+        let book = StickerBook.shared
+        book.resetForTests()
+        XCTAssertTrue(book.find(game: "garden", id: "frog"))
+        XCTAssertTrue(book.find(game: "garden", id: "bunny"))
+        XCTAssertTrue(book.find(game: "aquarium", id: "crab"))
+        XCTAssertEqual(book.unseenKeys(game: "garden"), ["garden/frog", "garden/bunny"])
+
+        let snapshot = book.consumeUnseen(game: "garden")
+        XCTAssertEqual(snapshot, ["garden/frog", "garden/bunny"])
+        XCTAssertFalse(book.hasUnseen(game: "garden"))
+        XCTAssertTrue(book.unseenKeys(game: "garden").isEmpty)
+        XCTAssertTrue(book.hasUnseen(game: "aquarium"))
+        XCTAssertTrue(book.consumeUnseen(game: "garden").isEmpty)
+    }
+
+    func testStickerBookPageCompletionAndToastTiming() throws {
+        let book = StickerBook.shared
+        book.resetForTests()
+        let stickers = [
+            Sticker(id: "one") { _, _ in },
+            Sticker(id: "two") { _, _ in },
+        ]
+        XCTAssertFalse(book.isPageComplete(game: "sample", stickers: []))
+        XCTAssertFalse(book.isPageComplete(game: "sample", stickers: stickers))
+        XCTAssertFalse(book.isToastAnimating(for: "sample"))
+        XCTAssertFalse(book.isLandingBumpActive(for: "sample"))
+
+        XCTAssertTrue(book.find(game: "sample", id: "one"))
+        let foundAt = try XCTUnwrap(book.lastFind?.at)
+        XCTAssertTrue(book.isToastAnimating(for: "sample", at: foundAt))
+        XCTAssertFalse(book.isToastAnimating(for: "other", at: foundAt))
+        XCTAssertFalse(book.isToastAnimating(for: "sample", at: foundAt.addingTimeInterval(StickerToast.flight + 0.01)))
+        XCTAssertTrue(book.isLandingBumpActive(for: "sample", at: foundAt.addingTimeInterval(StickerToast.flight + 0.2)))
+        XCTAssertFalse(book.isLandingBumpActive(for: "sample", at: foundAt.addingTimeInterval(StickerBook.landingWindow + 0.01)))
+        XCTAssertEqual(book.progress(game: "sample", stickers: stickers), StickerBook.PageProgress(found: 1, total: 2))
+        XCTAssertFalse(book.isPageComplete(game: "sample", stickers: stickers))
+
+        XCTAssertTrue(book.find(game: "sample", id: "two"))
+        XCTAssertEqual(book.progress(game: "sample", stickers: stickers), StickerBook.PageProgress(found: 2, total: 2))
+        XCTAssertTrue(book.isPageComplete(game: "sample", stickers: stickers))
     }
 }

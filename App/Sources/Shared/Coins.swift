@@ -18,7 +18,7 @@ import SwiftUI
 //
 // Saves live in their own folder (`coins`), so a game never touches another game's saves.
 
-final class Coins {
+final class Coins: ObservableObject {
     static let shared = Coins()
     static let folder = "coins"
 
@@ -38,15 +38,18 @@ final class Coins {
     }
 
     /// Coins in the purse right now (including any still flying in).
-    private(set) var balance: Int
+    @Published private(set) var balance: Int
     /// Ids ("<game>/<item>") of the extras she has bought.
-    private(set) var owned: Set<String>
+    @Published private(set) var owned: Set<String>
     /// Every coin she has ever been paid.
-    private(set) var earned: Int
+    @Published private(set) var earned: Int
     /// The latest payment, for the coins that fly into the counter.
-    private(set) var lastPay: Payment?
+    @Published private(set) var lastPay: Payment?
+    @Published private(set) var isAnimatingPayment = false
     /// Screenshots and demos don't keep their coins.
     var demo = false
+
+    private var settleWorkItem: DispatchWorkItem?
 
     private init() {
         let s = GameStorage.load(Save.self, game: Coins.folder, file: "purse.json")
@@ -71,14 +74,34 @@ final class Coins {
     /// The flight of one coin: hops out at `hop(i)` seconds after the payment and lands in the purse at `land(i)`.
     static func hop(_ i: Int) -> Double { Double(i) * 0.16 }
     static let flight = 0.75
+    static let bumpDuration = 0.3
     static func land(_ i: Int) -> Double { hop(i) + flight }
+
+    static func showerDuration(amount: Int) -> Double {
+        guard amount > 0 else { return 0 }
+        return land(amount - 1) + 0.1
+    }
+
+    static func counterDuration(amount: Int) -> Double {
+        guard amount > 0 else { return 0 }
+        return land(amount - 1) + bumpDuration + 0.05
+    }
 
     /// She was paid `n` coins in `game`. The coins hop out of `from` and fly into that game's `CoinCounter`.
     func earn(_ n: Int, game: String, from: CGPoint = CGPoint(x: 512, y: 400)) {
         guard n > 0 else { return }
         balance += n
         earned += n
-        lastPay = Payment(game: game, amount: n, from: from, at: Date())
+        let payment = Payment(game: game, amount: n, from: from, at: Date())
+        lastPay = payment
+        isAnimatingPayment = true
+        settleWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.lastPay?.at == payment.at else { return }
+            self.isAnimatingPayment = false
+        }
+        settleWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Coins.counterDuration(amount: n), execute: work)
         Sound.shared.play(.till, volume: 0.55)
         for i in 0..<n {
             DispatchQueue.main.asyncAfter(deadline: .now() + Coins.land(i)) {
@@ -95,6 +118,18 @@ final class Coins {
         let a = now.timeIntervalSince(p.at)
         guard a >= 0 else { return 0 }
         return (0..<p.amount).filter { a < Coins.land($0) }.count
+    }
+
+    func isAnimating(game: String?, at now: Date = Date()) -> Bool {
+        guard isAnimatingPayment, let p = lastPay, game == nil || p.game == game else { return false }
+        let a = now.timeIntervalSince(p.at)
+        return a >= 0 && a < Coins.counterDuration(amount: p.amount)
+    }
+
+    func isShowerAnimating(game: String, at now: Date = Date()) -> Bool {
+        guard isAnimatingPayment, let p = lastPay, p.game == game else { return false }
+        let a = now.timeIntervalSince(p.at)
+        return a >= 0 && a < Coins.showerDuration(amount: p.amount)
     }
 
     // MARK: Spending
@@ -131,6 +166,9 @@ final class Coins {
     #if DEBUG
     /// Tests only: an empty purse that never saves.
     func resetForTests(balance: Int = 0) {
+        settleWorkItem?.cancel()
+        settleWorkItem = nil
+        isAnimatingPayment = false
         demo = true
         self.balance = balance
         owned = []
@@ -174,12 +212,19 @@ struct CoinCounter: View {
     var height: CGFloat = 72
     /// Tap to open the treasure shop (home screen); nil in games.
     var action: (() -> Void)?
+    @ObservedObject private var coins = Coins.shared
+
+    init(game: String? = nil, height: CGFloat = 72, action: (() -> Void)? = nil) {
+        self.game = game
+        self.height = height
+        self.action = action
+    }
 
     var body: some View {
-        let pill = TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
-            let coins = Coins.shared
-            let shown = coins.balance - coins.flying(game: game, at: tl.date)
-            let bump = landBump(tl.date)
+        let animating = coins.isAnimating(game: game)
+        let pill = TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !animating)) { tl in
+            let shown = coins.balance - (animating ? coins.flying(game: game, at: tl.date) : 0)
+            let bump = animating ? landBump(tl.date) : 0
             HStack(spacing: height * 0.12) {
                 CoinIcon()
                     .frame(width: height * 0.72, height: height * 0.72)
@@ -220,10 +265,10 @@ struct CoinCounter: View {
 
     /// 0...1 over the 0.3 s after each coin of this game's latest payment lands.
     private func landBump(_ now: Date) -> Double {
-        guard let p = Coins.shared.lastPay, game == nil || p.game == game else { return 0 }
+        guard let p = coins.lastPay, game == nil || p.game == game else { return 0 }
         let a = now.timeIntervalSince(p.at)
         for i in 0..<p.amount {
-            let k = (a - Coins.land(i)) / 0.3
+            let k = (a - Coins.land(i)) / Coins.bumpDuration
             if k >= 0 && k < 1 { return k }
         }
         return 0
@@ -266,13 +311,20 @@ private struct CoinShowerLayer: ViewModifier {
 struct CoinShower: View {
     let game: String
     let target: CGPoint
+    @ObservedObject private var coins = Coins.shared
+
+    init(game: String, target: CGPoint) {
+        self.game = game
+        self.target = target
+    }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+        let animating = coins.isShowerAnimating(game: game)
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !animating)) { tl in
             ZStack {
-                if let p = Coins.shared.lastPay, p.game == game {
+                if animating, let p = coins.lastPay, p.game == game {
                     let a = tl.date.timeIntervalSince(p.at)
-                    if a >= 0 && a < Coins.land(p.amount - 1) + 0.1 {
+                    if a >= 0 && a < Coins.showerDuration(amount: p.amount) {
                         ForEach(0..<p.amount, id: \.self) { i in
                             coin(i, of: p, age: a)
                         }

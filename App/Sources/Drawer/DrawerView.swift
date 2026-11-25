@@ -17,8 +17,7 @@ struct DrawerView: View {
                     .overlay(alignment: .trailing) {
                         // the sticker book: every game's surprises in one place
                         HStack(spacing: 16) {
-                            // her play coins, from serving customers in the shops: tap to open the treasure shop
-                            CoinCounter(height: 64) { withAnimation(.easeOut(duration: 0.2)) { shop = true } }
+                            TreasureShopButton { withAnimation(.easeOut(duration: 0.2)) { shop = true } }
                             if !StickerBook.pages.isEmpty {
                                 StickerBookButton(size: 64) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
                             }
@@ -115,6 +114,34 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+private struct TreasureShopButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            Sound.shared.play(.coin, volume: 0.6)
+            Sound.shared.tap()
+            action()
+        } label: {
+            HStack(spacing: -14) {
+                CoinCounter(height: 64)
+                ZStack {
+                    Circle()
+                        .fill(Theme.pink)
+                    Image(systemName: "gift.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 44, height: 44)
+                .overlay(Circle().stroke(.white, lineWidth: 3.5))
+                .shadow(color: Theme.ink.opacity(0.24), radius: 5, y: 3)
+            }
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel("Treasure Shop")
     }
 }
 

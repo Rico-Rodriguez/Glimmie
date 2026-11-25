@@ -9,8 +9,7 @@ import SwiftUI
 //   hold, through the game's own drag code), and a drag anywhere on the scene uses it directly, without
 //   going back to the tray. Tapping the picked tool again puts it down.
 //
-// `ToolTapLayer` is the touch layer a game puts over its scene while a tool is picked, and `AutoTool`
-// plays the little "do it by itself" motion into the game's drag handlers.
+// `AutoTool` plays the little "do it by itself" motion into the game's drag handlers.
 
 /// Was this touch a tap (not a drag)?
 enum ToolTap {
@@ -93,51 +92,3 @@ final class AutoTool {
     }
 }
 
-/// The touch layer over a game's scene while a tool is picked: a drag uses the tool directly (it starts
-/// once her finger has moved a little), a tap asks the tool to do that spot by itself.
-struct ToolTapLayer: View {
-    let space: String
-    let onDrag: (CGPoint) -> Void
-    let onEnd: (CGPoint) -> Void
-    let onTap: (CGPoint) -> Void
-
-    @State private var dragging = false
-
-    var body: some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
-                    .onChanged { v in
-                        if !dragging && !ToolTap.isTap(v.translation) { dragging = true }
-                        if dragging { onDrag(v.location) }
-                    }
-                    .onEnded { v in
-                        if dragging { onEnd(v.location) } else { onTap(v.location) }
-                        dragging = false
-                    }
-            )
-    }
-}
-
-/// The pink ring a picked tool wears on its tray.
-struct PickedRing: ViewModifier {
-    let on: Bool
-    var corner: CGFloat = 26
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .stroke(Theme.pink, lineWidth: 7)
-                    .padding(-6)
-                    .opacity(on ? 1 : 0)
-            )
-            .scaleEffect(on ? 1.08 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: on)
-    }
-}
-
-extension View {
-    func picked(_ on: Bool, corner: CGFloat = 26) -> some View { modifier(PickedRing(on: on, corner: corner)) }
-}
