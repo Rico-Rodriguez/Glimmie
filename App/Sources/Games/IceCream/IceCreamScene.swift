@@ -466,6 +466,10 @@ enum ICScene {
         let bt = ICGeo.blendButton
         let glow = sim.blending ? 1.0 : 0.0
         let button = ICArt.circle(bt, 24)
+        if sim.blendingToggle {
+            let pulse = 31 + sin(t * 7) * 3.5
+            g.stroke(ICArt.circle(bt, pulse), with: .color(Theme.lemon.opacity(0.85)), lineWidth: 4.5)
+        }
         g.fill(ICArt.circle(bt, 30), with: .color(.white.opacity(0.9)))
         g.fill(button, with: .color(ICColor(0x7EDB8C).mix(ICColor(0xFFE27A), CGFloat(glow)).color))
         g.stroke(button, with: .color(ICColor(0x3E9B54).color), lineWidth: 3)
@@ -474,7 +478,7 @@ enum ICScene {
         let wa = Double(sim.bladeAngle) * 0.4
         whirl.addArc(center: bt, radius: 11, startAngle: .radians(wa), endAngle: .radians(wa + 4.5), clockwise: false)
         g.stroke(whirl, with: .color(.white), style: StrokeStyle(lineWidth: 4, lineCap: .round))
-        if sim.held != .milk && !sim.returning.contains(where: { $0.held == .milk }) {
+        if sim.held != .milk && sim.autoPour != .milk && !sim.returning.contains(where: { $0.held == .milk }) {
             var m = g
             m.translateBy(x: ICGeo.milkHome.x, y: ICGeo.milkHome.y)
             ICArt.milkJug(m)
@@ -593,6 +597,9 @@ enum ICScene {
     // MARK: Held and returning things
 
     private static func heldThing(_ g: GraphicsContext, _ sim: IceSim, _ t: CGFloat) {
+        if sim.autoPour == .milk {
+            draw(g, .milk, at: sim.autoMilkPos, sim: sim, t: t, finger: nil, tilt: 0)
+        }
         guard let h = sim.held else { return }
         let working: Bool
         switch h {

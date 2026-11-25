@@ -233,4 +233,76 @@ final class IceCreamTests: XCTestCase {
         XCTAssertNil(sim.build.base)
         XCTAssertNotNil(sim.servedPoint())
     }
+
+    func testRealBlendedStrawberriesMatchSmoothieOrder() {
+        let sim = freshSim()
+        sim.setStation(.smoothie)
+        for _ in 0..<3 {
+            sim.dropFruit(.strawberry, at: CGPoint(x: sim.jarP.x, y: sim.jarP.y - 320), v: .zero)
+            run(sim, seconds: 0.3)
+        }
+        run(sim, seconds: 0.8)
+        sim.jarVolume = 0.25
+        sim.jarPaint.add(IceSim.milk, 0.25)
+        sim.blending = true
+        run(sim, seconds: 8)
+        sim.blending = false
+
+        sim.autoPourJar()
+        run(sim, seconds: 4.5)
+        sim.autoTopping(.straw)
+
+        let order = ICOrder(customer: 0, kind: .smoothie, base: .glass, flavors: [ICFruit.strawberry.rawValue], topping: .straw)
+        XCTAssertGreaterThan(sim.build.fill, 0.4)
+        XCTAssertGreaterThan(sim.build.fruitIn[ICFruit.strawberry.rawValue], 0.05)
+        XCTAssertTrue(order.matches(.base, sim.build))
+        XCTAssertTrue(order.matches(.flavor, sim.build), "2-3 real blended strawberries must satisfy smoothie flavor match")
+        XCTAssertEqual(order.stars(for: sim.build), 3)
+        XCTAssertTrue(sim.jarOnBase)
+    }
+
+    func testScoopAutoPlacesWaffleConeAndClearsSmallResidue() {
+        let sim = freshSim()
+        XCTAssertNil(sim.build.base)
+        let c = ICGeo.tubs[2]
+        sim.pickUp(.scoop, at: c)
+        for k in 0..<40 {
+            sim.carry(to: CGPoint(x: c.x - 30 + CGFloat(k % 15) * 4, y: c.y), finger: CGPoint(x: c.x, y: c.y + 110))
+            sim.step(dt: 1.0 / 60)
+        }
+        XCTAssertGreaterThan(sim.ball, 0.5)
+        sim.carry(to: CGPoint(x: sim.S.x, y: sim.S.y - 120), finger: CGPoint(x: sim.S.x, y: sim.S.y))
+        sim.step(dt: 1.0 / 60)
+        sim.release()
+        run(sim, seconds: 1.5)
+        XCTAssertEqual(sim.build.base, .waffle)
+        XCTAssertEqual(sim.build.scoops.count, 1)
+
+        // Small dipper residue (< 0.2) clears cleanly when released
+        sim.pickUp(.scoop, at: c)
+        sim.ball = 0.12
+        sim.ballFlavor = .mint
+        sim.release()
+        XCTAssertEqual(sim.ball, 0)
+        XCTAssertNil(sim.ballFlavor)
+    }
+
+    func testSoftServeIgnoresLeverAfterTippedPeak() {
+        let sim = freshSim()
+        sim.setStation(.soft)
+        sim.placeBase(.waffle)
+        run(sim, seconds: 0.4)
+        sim.pressLever(ICSoft.vanilla.rawValue)
+        run(sim, seconds: 2.2)
+        sim.pressLever(nil)
+        run(sim, seconds: 1.2)
+        XCTAssertTrue(sim.build.ropeTipped)
+        let beadCount = sim.build.rope.count
+
+        sim.pressLever(ICSoft.chocolate.rawValue)
+        run(sim, seconds: 0.8)
+        XCTAssertNil(sim.lever)
+        XCTAssertTrue(sim.build.ropeTipped)
+        XCTAssertEqual(sim.build.rope.count, beadCount)
+    }
 }

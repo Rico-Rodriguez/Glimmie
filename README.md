@@ -11,7 +11,7 @@ A drawer of kids' games for iPad (also iPhone, landscape). Every game is complet
 
 ## Games
 
-The home screen shows every game at once. Play Bakery, Pizza, Garden, Bubble Spa, Aquarium and Potions to earn play coins. Tap the purse on the home screen for the Treasure Shop. It sells decorations for Garden and Aquarium and a moon headband for Dress Up. The book button opens the sticker book for discoveries from Garden, Bubble Spa, Aquarium and Potion Lab.
+The home screen shows every game at once. Every game awards play coins and fills its own page in the shared 11-game sticker book. Tap the purse on the home screen for the Treasure Shop, or tap the book button to open the sticker book.
 
 | Game | What it is |
 |---|---|

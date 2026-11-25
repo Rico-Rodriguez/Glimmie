@@ -85,6 +85,7 @@ struct BakeStepView: View {
     @State private var doneAt: Date?
     @State private var burst = 0
     @State private var nudge = false
+    @State private var ovenNudge = false
     @State private var frozenAt: Date?
 
     static let bakeTime = 4.6
@@ -133,13 +134,25 @@ struct BakeStepView: View {
                 .position(ovenC)
                 .allowsHitTesting(false)
             if phase == .ready {
-                Circle().stroke(Color.white, lineWidth: 8)
-                    .frame(width: 90, height: 90)
-                    .scaleEffect(nudge ? 1.25 : 0.9)
-                    .opacity(nudge ? 0.2 : 0.95)
-                    .position(x: ovenC.x, y: ovenC.y - 230 + 64)
-                    .allowsHitTesting(false)
-                    .onAppear { withAnimation(.easeOut(duration: 0.9).repeatForever(autoreverses: false)) { nudge = true } }
+                ZStack {
+                    RoundedRectangle(cornerRadius: 34, style: .continuous)
+                        .stroke(Color(hex: 0xFFD24A), lineWidth: 9)
+                        .frame(width: 344, height: 224)
+                        .scaleEffect(ovenNudge ? 1.07 : 0.96)
+                        .opacity(ovenNudge ? 0.22 : 0.95)
+                        .position(windowC)
+                    Circle().stroke(Color(hex: 0xFFE38A), lineWidth: 7)
+                        .frame(width: 86, height: 86)
+                        .scaleEffect(ovenNudge ? 1.25 : 0.9)
+                        .opacity(ovenNudge ? 0.2 : 0.95)
+                        .position(x: ovenC.x, y: ovenC.y - 230 + 64)
+                }
+                .allowsHitTesting(false)
+                .onAppear {
+                    ovenNudge = false
+                    withAnimation(.easeOut(duration: 0.95).repeatForever(autoreverses: false)) { ovenNudge = true }
+                }
+                .onDisappear { ovenNudge = false }
             }
             Color.clear
                 .frame(width: 480, height: 460)
@@ -395,14 +408,14 @@ struct BakeStepView: View {
     private func poured() {
         guard bowlOutAt == nil else { return }
         Sound.shared.play(.sparkle, volume: 0.6)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             bowlOutAt = Date()
             Sound.shared.play(.whoosh, volume: 0.6)
-            withAnimation(.spring(response: 0.8, dampingFraction: 0.75).delay(0.35)) {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
                 panPos = CGPoint(x: windowC.x, y: windowC.y + 10)
                 panScale = 0.85
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
                 withAnimation(.spring()) { phase = .ready }
             }
         }

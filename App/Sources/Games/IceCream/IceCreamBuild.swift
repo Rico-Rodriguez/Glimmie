@@ -335,4 +335,87 @@ struct ICBuild: Equatable {
         }
         rebuildProfile()
     }
+
+    /// Converts a served parlor treat into a Bakery `Treat` so it displays in `TreatCase`.
+    func toBakeryTreat() -> Treat {
+        var t = Treat(kind: .iceCream)
+        switch base {
+        case .choco?: t.cone = "choco"
+        case .cup?: t.cone = "cup"; t.liner = 0
+        case .glass?: t.cone = "cup"; t.liner = 1
+        default: t.cone = "waffle"
+        }
+
+        switch kind {
+        case .scoops:
+            t.scoops = scoops.prefix(4).map { Self.bakeryFlavor(for: $0.flavor) }
+        case .soft:
+            switch softFlavor ?? .vanilla {
+            case .vanilla: t.scoops = [0, 0]
+            case .chocolate: t.scoops = [1, 1]
+            case .twist: t.scoops = [0, 1]
+            case .strawberry: t.scoops = [2, 2]
+            }
+        case .smoothie:
+            let ranked = fruitIn.enumerated()
+                .filter { $0.element > 0.005 }
+                .sorted { $0.element > $1.element }
+                .compactMap { ICFruit(rawValue: $0.offset) }
+                .prefix(2)
+                .map { Self.bakeryFlavor(for: $0) }
+            t.scoops = ranked.isEmpty ? [2] : Array(ranked)
+        }
+        if t.scoops.isEmpty { t.scoops = [0] }
+
+        if has(.chocoSauce) { t.sauce = 0 }
+        else if has(.berrySauce) { t.sauce = 1 }
+
+        let art = BakeryArt.shared
+        let topY = art.scoopY0 - CGFloat(max(0, min(4, t.scoops.count) - 1)) * art.scoopDY
+        if has(.whip) {
+            t.toppings.append(PlacedTopping(sprite: "top_cream", x: 300, y: Double(topY - 68), scale: 0.9, color: 11))
+        }
+        if has(.cherry) {
+            t.toppings.append(PlacedTopping(sprite: "top_cherry", x: 300, y: Double(topY - 94), scale: 1.05))
+        }
+        if has(.wafer) {
+            t.toppings.append(PlacedTopping(sprite: "top_wafer", x: 344, y: Double(topY - 62), rot: 18, scale: 0.95))
+        }
+        if has(.straw) {
+            t.toppings.append(PlacedTopping(sprite: "top_cane", x: 338, y: Double(topY - 76), rot: 14, scale: 0.95))
+        }
+        if has(.sprinkles) {
+            let spots: [(Double, Double, Double, Int)] = [
+                (268, Double(topY - 54), 25, 0), (322, Double(topY - 48), 110, 4),
+                (288, Double(topY - 34), 70, 5), (336, Double(topY - 26), 145, 7),
+                (258, Double(topY - 28), 15, 9), (305, Double(topY - 64), 95, 2),
+            ]
+            for (x, y, rot, c) in spots {
+                t.toppings.append(PlacedTopping(sprite: "bit_sprinkle", x: x, y: y, rot: rot, scale: 1, color: c))
+            }
+        }
+        return t
+    }
+
+    private static func bakeryFlavor(for f: ICFlavor) -> Int {
+        switch f {
+        case .vanilla: return 0
+        case .chocolate: return 1
+        case .strawberry: return 2
+        case .blueberry: return 3
+        case .mint: return 5
+        case .mango: return 12
+        }
+    }
+
+    private static func bakeryFlavor(for f: ICFruit) -> Int {
+        switch f {
+        case .strawberry: return 2
+        case .banana: return 4
+        case .blueberry: return 3
+        case .mango: return 12
+        case .kiwi: return 10
+        case .ice: return 8
+        }
+    }
 }

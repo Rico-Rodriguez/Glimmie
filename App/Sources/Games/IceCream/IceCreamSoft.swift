@@ -59,11 +59,15 @@ extension IceSim {
             guard station == .soft else { return }
             if build.base == nil { placeBase(.waffle) }
             if build.base == .glass && build.fill > 0.01 { return }
+            // Never extrude a second messy blob onto a finished, already-tipped swirl peak
+            if softFull || build.ropeTipped {
+                IceSound.shared.play(.plop, volume: 0.35)
+                Sound.shared.tap()
+                return
+            }
             lever = i
             IceSound.shared.play(.lever, volume: 0.7)
             Sound.shared.tap()
-            if softFull { IceSound.shared.play(.plop, volume: 0.3) }
-            build.ropeTipped = false
             if build.ropeFlavor == nil { build.ropeFlavor = ICSoft(rawValue: i) }
         } else if lever != nil {
             lever = nil

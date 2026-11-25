@@ -270,7 +270,7 @@ struct ICOrder: Equatable {
                 return b.softFlavor?.rawValue == flavors.first
             case .smoothie:
                 let total = b.fruitIn.reduce(0, +)
-                guard total > 0.5 else { return false }
+                guard total > 0.05 else { return false }
                 return flavors.allSatisfy { f in f < b.fruitIn.count && b.fruitIn[f] / total > 0.18 }
             }
         case .topping:

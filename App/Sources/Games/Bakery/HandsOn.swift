@@ -345,6 +345,7 @@ final class HandsOnBowl {
         drawStreams(g, now)
         drawBroken(g, now)
         drawButterDrops(g, now)
+        drawEggRimGuide(g, now)
         drawHeld(g, now)
     }
 
@@ -510,6 +511,34 @@ final class HandsOnBowl {
             guard t >= 0, t < tl else { continue }
             let y = d.from.y + 0.5 * BowlGeo.gravity * CGFloat(t * t)
             HandsOnBowl.drawButterBlock(g, at: CGPoint(x: d.from.x - 10 * CGFloat(t / tl), y: y), rot: -20 * t / tl)
+        }
+    }
+
+    private func drawEggRimGuide(_ g: GraphicsContext, _ now: Date) {
+        guard holding == .eggs else { return }
+        let pulse = 0.5 + 0.5 * sin(now.timeIntervalSinceReferenceDate * 5.2)
+        var arc = Path()
+        let x0 = 200 - HandsOnBowl.rimRX + 24
+        let x1 = 200 + HandsOnBowl.rimRX - 24
+        let steps = 28
+        for k in 0...steps {
+            let x = x0 + (x1 - x0) * CGFloat(k) / CGFloat(steps)
+            let p = CGPoint(x: x, y: HandsOnBowl.rimY(x))
+            if k == 0 { arc.move(to: p) } else { arc.addLine(to: p) }
+        }
+        var glow = g
+        glow.opacity = 0.28 + 0.26 * pulse
+        glow.stroke(arc, with: .color(StorybookArt.color(0xFFE07D)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+        glow.opacity = 0.55 + 0.35 * pulse
+        glow.stroke(arc, with: .color(.white), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+        if parked {
+            let ringR = 32 + CGFloat(pulse) * 9
+            let ring = Path(ellipseIn: CGRect(x: hand.x - ringR, y: hand.y - ringR, width: ringR * 2, height: ringR * 2))
+            var pg = g
+            pg.opacity = 0.72 - 0.38 * pulse
+            pg.stroke(ring, with: .color(StorybookArt.color(0xFFE07D)), lineWidth: 5)
+            pg.opacity = 0.8 - 0.4 * pulse
+            pg.stroke(ring, with: .color(.white), lineWidth: 2)
         }
     }
 

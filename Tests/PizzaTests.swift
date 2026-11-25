@@ -161,4 +161,63 @@ final class PizzaTests: XCTestCase {
         XCTAssertFalse(sim.inOven)
         XCTAssertFalse(sim.ball)
     }
+
+    func testPizzaFindsDefinesSixUniqueStickersWiredToEntry() {
+        let stickers = PizzaFind.stickers
+        XCTAssertEqual(stickers.count, 6)
+        XCTAssertEqual(Set(stickers.map { $0.id }).count, 6)
+        XCTAssertEqual(PizzaGame.entry.stickers.map { $0.id }, PizzaFind.allCases.map { $0.rawValue })
+    }
+
+    func testServingFirstSliceAwardsCoinsOnceWithoutDoublePaying() {
+        Coins.shared.resetForTests(balance: 0)
+        let sim = freshSim()
+        sim.demoDisc(220)
+        sim.go(.slice)
+        sim.addCut(0)
+        sim.addCut(.pi / 2)
+        for k in 0..<2 {
+            sim.place(.pepperoni, at: CGPoint(x: PGeo.center.x + CGFloat(k) * 35, y: PGeo.center.y), from: nil)
+            sim.place(.olive, at: CGPoint(x: PGeo.center.x - CGFloat(k + 1) * 35, y: PGeo.center.y), from: nil)
+        }
+        let slices = sim.slices
+        let firstMid = (slices[0].0 + slices[0].1) / 2
+        sim.serveSlice(at: CGPoint(x: PGeo.center.x + CGFloat(cos(firstMid)) * 100, y: PGeo.center.y + CGFloat(sin(firstMid)) * 100))
+        XCTAssertEqual(sim.stars, 3)
+        XCTAssertTrue(sim.paidThisPizza)
+        let expectedPay = Coins.reward(stars: 3)
+        XCTAssertEqual(Coins.shared.balance, expectedPay)
+
+        run(sim, seconds: LiftedSlice.duration + 0.15)
+        for s in slices.dropFirst() {
+            let mid = (s.0 + s.1) / 2
+            sim.serveSlice(at: CGPoint(x: PGeo.center.x + CGFloat(cos(mid)) * 100, y: PGeo.center.y + CGFloat(sin(mid)) * 100))
+            run(sim, seconds: LiftedSlice.duration + 0.15)
+        }
+        XCTAssertTrue(sim.allEaten)
+        XCTAssertEqual(Coins.shared.balance, expectedPay, "subsequent slices must never double-pay")
+
+        sim.newPizza()
+        XCTAssertFalse(sim.paidThisPizza)
+    }
+
+    func testToppingsReadyMatchesExactWantedOrder() {
+        let sim = freshSim()
+        sim.demoDisc(220)
+        sim.order = PizzaOrder(customer: 0, wants: [.basil])
+        sim.place(.basil, at: PGeo.center, from: nil)
+        XCTAssertFalse(sim.ready(.toppings))
+        sim.place(.basil, at: CGPoint(x: PGeo.center.x + 40, y: PGeo.center.y), from: nil)
+        XCTAssertTrue(sim.ready(.toppings))
+    }
+
+    func testShorterRadialCutSplitsPizza() {
+        let sim = freshSim()
+        sim.demoDisc(220)
+        let span = sim.meanR * 0.36
+        sim.stroke = [CGPoint(x: PGeo.center.x - span, y: PGeo.center.y), CGPoint(x: PGeo.center.x + span, y: PGeo.center.y)]
+        sim.finishCut()
+        XCTAssertEqual(sim.cuts.count, 1)
+        XCTAssertEqual(sim.slices.count, 2)
+    }
 }
