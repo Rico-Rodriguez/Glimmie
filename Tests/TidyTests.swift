@@ -188,6 +188,7 @@ final class TidyTests: XCTestCase {
             return XCTFail("expected red book and blue/red slots")
         }
         // Move far enough from redSlot (>120pt) or test against cupboard locked stack where distance is distinct
+        redBook.pos = TVec(140, 260)
         shelf.touchDown(redBook.pos.pt)
         XCTAssertEqual(shelf.held, redBook.id)
         // Place red book near blue slot while outside red slot's snap radius
@@ -202,6 +203,7 @@ final class TidyTests: XCTestCase {
         let topPlateSlot = plateSlots.min { TidyLevels.cupboard1.slots[$0].pos.y < TidyLevels.cupboard1.slots[$1].pos.y }!
         let bottomPlateSlot = plateSlots.max { TidyLevels.cupboard1.slots[$0].pos.y < TidyLevels.cupboard1.slots[$1].pos.y }!
         let plate = cupboard.bodies.first(where: { $0.kind == .plate })!
+        plate.pos = TVec(140, 260)
         cupboard.touchDown(plate.pos.pt)
         XCTAssertEqual(cupboard.held, plate.id)
         // Put plate above the locked top plate slot (>120pt from bottom plate slot, within 120pt of top plate slot).
