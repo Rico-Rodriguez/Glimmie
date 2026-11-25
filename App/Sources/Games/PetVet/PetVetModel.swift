@@ -11,6 +11,13 @@ import CoreGraphics
 enum VetTool: String, CaseIterable, Codable {
     case sponge, shower, towel, tweezers, swab, bandage, thermometer, syrup, tissue, toothbrush
     case icepack, comb, cream, stethoscope, wrap, brush, treat, bow, spray, feather
+
+    var isPamper: Bool {
+        switch self {
+        case .treat, .bow, .spray, .feather: return true
+        default: return false
+        }
+    }
 }
 
 enum VetAction: Equatable {
@@ -161,6 +168,18 @@ struct VetVisit: Codable, Equatable {
     var openAilments: [VetAilment] { ailments.filter { a in spots.contains { $0.ailment == a && !$0.healed } } }
     var neededTools: Set<VetTool> { Set(spots.compactMap { $0.step?.tool }) }
     func has(_ a: VetAilment) -> Bool { spots.contains { $0.ailment == a && !$0.healed } }
+
+    /// When cold or tummy still needs its stage-0 exam tool, syrup should guide to that tool instead of being consumed.
+    var syrupPrerequisite: VetTool? {
+        guard !neededTools.contains(.syrup) else { return nil }
+        if spots.contains(where: { $0.ailment == .cold && !$0.healed && $0.stage == 0 }) {
+            return .thermometer
+        }
+        if spots.contains(where: { $0.ailment == .tummy && !$0.healed && $0.stage == 0 }) {
+            return .stethoscope
+        }
+        return nil
+    }
 
     /// A new visit with 2 or 3 different ailments on free spots.
     static func random<G: RandomNumberGenerator>(animal: String, using rng: inout G) -> VetVisit {
