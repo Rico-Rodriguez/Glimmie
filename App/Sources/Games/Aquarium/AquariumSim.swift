@@ -988,7 +988,7 @@ final class AquariumSim {
                 }
             } else {
                 f.curious = nil
-                if time >= f.activityCooldown && night < 0.45 && time >= f.restUntil {
+                if lightsOn && time >= f.activityCooldown && night < 0.45 && time >= f.restUntil {
                     tryStartDecorActivity(for: &f)
                 }
                 if time > f.nextThink || hypot(goal.x - f.p.x, goal.y - f.p.y) < 24 {
@@ -2909,6 +2909,7 @@ final class AquariumSim {
             }
         } else {
             for i in fish.indices where !fish[i].caught {
+                if case .hiding = fish[i].activity { fish[i].activity = .cruising }
                 fish[i].activityCooldown = min(fish[i].activityCooldown, time)
             }
             fulfillWishIfMatching({ $0 == .nightGlow }, at: CGPoint(x: 512, y: 240))
