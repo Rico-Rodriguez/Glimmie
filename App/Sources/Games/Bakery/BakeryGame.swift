@@ -231,12 +231,14 @@ struct ShopView: View {
     private var topBar: some View {
         HStack(spacing: 18) {
             HomeButton { store.save(); exit() }
+            ScoopStationButton { openStation(.scoop) }
+                .accessibilityLabel("Ice Cream Scoops")
             RoundButton(symbol: "snowflake", tint: Color(hex: 0x9B79E0)) { openStation(.soft) }
                 .accessibilityLabel("Soft Serve")
             RoundButton(symbol: "cup.and.saucer.fill", tint: Color(hex: 0x46B7B0)) { openStation(.smoothie) }
                 .accessibilityLabel("Smoothie Bar")
             Spacer()
-            CoinCounter(game: "bakery")
+            CoinCounter(game: "bakery", height: 64)
             ZStack(alignment: .bottomTrailing) {
                 Sprite("heartjar", box: Box.thing).frame(width: 86, height: 86)
                 Text("\(store.hearts)")
@@ -385,6 +387,58 @@ private struct FloatingHeart: View {
             .onAppear {
                 withAnimation(.easeOut(duration: 1.6).delay(Double(index) * 0.12)) { go = true }
             }
+    }
+}
+
+private struct ScoopStationButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Canvas { ctx, size in
+                let s = min(size.width, size.height) / 48
+                var g = ctx
+                g.translateBy(x: (size.width - 48 * s) / 2, y: (size.height - 48 * s) / 2)
+                g.scaleBy(x: s, y: s)
+
+                var cone = Path()
+                cone.move(to: CGPoint(x: 15.5, y: 26))
+                cone.addLine(to: CGPoint(x: 32.5, y: 26))
+                cone.addQuadCurve(to: CGPoint(x: 24, y: 44.5), control: CGPoint(x: 29, y: 38))
+                cone.addQuadCurve(to: CGPoint(x: 15.5, y: 26), control: CGPoint(x: 19, y: 38))
+                cone.closeSubpath()
+                StorybookArt.shape(g, cone, hex: 0xF2B572, width: 2.2)
+
+                var grid = Path()
+                grid.move(to: CGPoint(x: 19, y: 27.5))
+                grid.addLine(to: CGPoint(x: 27.5, y: 36.5))
+                grid.move(to: CGPoint(x: 29, y: 27.5))
+                grid.addLine(to: CGPoint(x: 20.5, y: 36.5))
+                g.stroke(
+                    grid,
+                    with: .color(StorybookArt.outline(for: 0xF2B572, factor: 0.72).opacity(0.6)),
+                    style: StrokeStyle(lineWidth: 1.4, lineCap: .round)
+                )
+
+                let bottomScoop = Path(ellipseIn: CGRect(x: 14.5, y: 15.5, width: 19, height: 15))
+                StorybookArt.shape(g, bottomScoop, hex: 0x9BE3CA, width: 2.2)
+                StorybookArt.highlight(g, in: CGRect(x: 17.5, y: 18, width: 4.5, height: 2.8), opacity: 0.55)
+
+                let topScoop = Path(ellipseIn: CGRect(x: 16, y: 7, width: 16, height: 13.5))
+                StorybookArt.shape(g, topScoop, hex: 0xFF8FB8, width: 2.2)
+                StorybookArt.highlight(g, in: CGRect(x: 18.8, y: 9.2, width: 4.2, height: 2.6), opacity: 0.55)
+
+                let cherry = Path(ellipseIn: CGRect(x: 21, y: 3.5, width: 6, height: 6))
+                StorybookArt.shape(g, cherry, hex: 0xF45B7A, width: 1.6)
+                StorybookArt.highlight(g, in: CGRect(x: 22.3, y: 4.5, width: 2, height: 1.6), opacity: 0.7)
+            }
+            .frame(width: 48, height: 48)
+            .frame(width: 72, height: 72)
+            .background(Circle().fill(.white))
+            .overlay(Circle().stroke(Theme.peach.opacity(0.35), lineWidth: 4))
+            .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+        }
+        .buttonStyle(Squish())
     }
 }
 

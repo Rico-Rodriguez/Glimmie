@@ -18,9 +18,9 @@ struct DrawerView: View {
                         // the sticker book: every game's surprises in one place
                         HStack(spacing: 16) {
                             // her play coins, from serving customers in the shops: tap to open the treasure shop
-                            CoinCounter(height: 60) { withAnimation(.easeOut(duration: 0.2)) { shop = true } }
+                            CoinCounter(height: 64) { withAnimation(.easeOut(duration: 0.2)) { shop = true } }
                             if !StickerBook.pages.isEmpty {
-                                StickerBookButton(size: 66) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
+                                StickerBookButton(size: 64) { withAnimation(.easeOut(duration: 0.2)) { book = true } }
                             }
                         }
                         .padding(.trailing, DrawerLayout.sidePadding)
