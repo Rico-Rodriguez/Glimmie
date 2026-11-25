@@ -242,30 +242,32 @@ struct StickerBookView: View {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture(perform: shut)
-            HStack(spacing: 0) {
-                tabs
-                pageView
-            }
-            .frame(width: 940, height: 680)
-            .background(Theme.cream)
-            .clipShape(RoundedRectangle(cornerRadius: 44, style: .continuous))
-            .shadow(color: Theme.ink.opacity(0.35), radius: 20, y: 10)
-            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(.white, lineWidth: 8))
-            .overlay(alignment: .topTrailing) {
-                Button(action: shut) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 28, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 66, height: 66)
-                        .background(Circle().fill(Theme.pink))
-                        .overlay(Circle().stroke(.white, lineWidth: 5))
-                        .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+            DesignCanvas {
+                HStack(spacing: 0) {
+                    tabs
+                    pageView
                 }
-                .buttonStyle(Squish())
-                .offset(x: 18, y: -18)
+                .frame(width: 940, height: 680)
+                .background(Theme.cream)
+                .clipShape(RoundedRectangle(cornerRadius: 44, style: .continuous))
+                .shadow(color: Theme.ink.opacity(0.35), radius: 20, y: 10)
+                .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(.white, lineWidth: 8))
+                .overlay(alignment: .topTrailing) {
+                    Button(action: shut) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 28, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 66, height: 66)
+                            .background(Circle().fill(Theme.pink))
+                            .overlay(Circle().stroke(.white, lineWidth: 5))
+                            .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+                    }
+                    .buttonStyle(Squish())
+                    .offset(x: 18, y: -18)
+                }
+                .scaleEffect(shown ? 1 : 0.85)
+                .opacity(shown ? 1 : 0)
             }
-            .scaleEffect(shown ? 1 : 0.85)
-            .opacity(shown ? 1 : 0)
         }
         .onAppear {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { shown = true }

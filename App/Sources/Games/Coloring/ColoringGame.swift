@@ -122,7 +122,7 @@ struct ColoringBookView: View {
                                     .frame(width: 84, height: 84)
                                     .background(RoundedRectangle(cornerRadius: 24).fill(c.cover == nil ? c.tint : .white))
                                     .clipShape(RoundedRectangle(cornerRadius: 24))
-                                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(category == c.id ? Theme.ink : .white, lineWidth: category == c.id ? 6 : 4))
+                                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(category == c.id ? Theme.pink : .white, lineWidth: category == c.id ? 6 : 4))
                                     .scaleEffect(category == c.id ? 1.08 : 1)
                                     .shadow(color: Theme.ink.opacity(0.2), radius: 4, y: 3)
                             }
@@ -208,20 +208,167 @@ private struct ColoringPageTile: View {
 /// The drawer tile picture: a paint palette with a brush.
 struct ColoringIcon: View {
     var body: some View {
-        GeometryReader { g in
-            let s = min(g.size.width, g.size.height)
-            ZStack {
-                Image(systemName: "paintpalette.fill")
-                    .symbolRenderingMode(.multicolor)
-                    .font(.system(size: s * 0.72, weight: .bold))
-                Image(systemName: "paintbrush.pointed.fill")
-                    .font(.system(size: s * 0.36, weight: .bold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.25), radius: 2)
-                    .offset(x: s * 0.26, y: s * 0.24)
+        Canvas { ctx, size in
+            let s = min(size.width, size.height) / 200
+            var g = ctx
+            g.translateBy(x: (size.width - 200 * s) / 2, y: (size.height - 200 * s) / 2)
+            g.scaleBy(x: s, y: s)
+
+            let palette = Self.palettePath()
+            var thickness = g
+            thickness.translateBy(x: 0, y: 7)
+            StorybookArt.fillAndStroke(
+                thickness,
+                palette,
+                fill: StorybookArt.shade(for: 0xF7DFC2, factor: 0.84),
+                stroke: StorybookArt.outline(for: 0xF7DFC2),
+                width: 5.5
+            )
+
+            StorybookArt.fillAndStroke(
+                g,
+                palette,
+                fill: StorybookArt.color(0xFBF0DF),
+                stroke: StorybookArt.outline(for: 0xF7DFC2),
+                width: 5
+            )
+            StorybookArt.highlight(g, in: CGRect(x: 42, y: 40, width: 42, height: 14), opacity: 0.5)
+
+            var thumbCtx = g
+            thumbCtx.translateBy(x: 76, y: 138)
+            thumbCtx.rotate(by: .degrees(-12))
+            let hole = Path(ellipseIn: CGRect(x: -14, y: -10.5, width: 28, height: 21))
+            StorybookArt.fillAndStroke(
+                thumbCtx,
+                hole,
+                fill: StorybookArt.color(0xD8CAFF),
+                stroke: StorybookArt.outline(for: 0xF7DFC2),
+                width: 4
+            )
+
+            let blobs: [(CGPoint, CGSize, UInt32)] = [
+                (CGPoint(x: 52, y: 92), CGSize(width: 26, height: 22), 0xFF7FB3),
+                (CGPoint(x: 68, y: 62), CGSize(width: 25, height: 22), 0xFFB07C),
+                (CGPoint(x: 102, y: 54), CGSize(width: 26, height: 22), 0xFFE27A),
+                (CGPoint(x: 136, y: 66), CGSize(width: 25, height: 22), 0x8DE0C4),
+                (CGPoint(x: 148, y: 96), CGSize(width: 24, height: 21), 0x82C0FF),
+            ]
+            for (center, sz, hex) in blobs {
+                let shadowRect = CGRect(
+                    x: center.x - sz.width / 2 + 1.5,
+                    y: center.y - sz.height / 2 + 2.5,
+                    width: sz.width,
+                    height: sz.height
+                )
+                g.fill(
+                    Path(ellipseIn: shadowRect),
+                    with: .color(StorybookArt.shade(for: 0xF7DFC2, factor: 0.84).opacity(0.65))
+                )
+                let rect = CGRect(
+                    x: center.x - sz.width / 2,
+                    y: center.y - sz.height / 2,
+                    width: sz.width,
+                    height: sz.height
+                )
+                StorybookArt.shape(g, Path(ellipseIn: rect), hex: hex, width: 3.2)
+                StorybookArt.highlight(
+                    g,
+                    in: CGRect(
+                        x: rect.minX + sz.width * 0.2,
+                        y: rect.minY + sz.height * 0.18,
+                        width: sz.width * 0.3,
+                        height: sz.height * 0.24
+                    ),
+                    opacity: 0.65
+                )
             }
-            .frame(width: g.size.width, height: g.size.height)
+
+            var brush = g
+            brush.translateBy(x: 98, y: 104)
+            brush.rotate(by: .degrees(38))
+
+            let handle = Self.brushHandlePath()
+            var brushShadow = brush
+            brushShadow.translateBy(x: 2, y: 6)
+            brushShadow.fill(handle, with: .color(StorybookArt.shade(for: 0xF7DFC2, factor: 0.78).opacity(0.45)))
+
+            StorybookArt.shape(brush, handle, hex: 0xFF8FB8, width: 4)
+            StorybookArt.highlight(brush, in: CGRect(x: 46, y: -6.5, width: 42, height: 4.5), opacity: 0.5)
+
+            let bristles = Self.bristlesPath()
+            brush.fill(bristles, with: .color(StorybookArt.color(0xFFF3E2)))
+
+            var paintTip = brush
+            paintTip.clip(to: bristles)
+            var dip = Path()
+            dip.move(to: CGPoint(x: -6, y: -14))
+            dip.addLine(to: CGPoint(x: 11, y: -14))
+            dip.addQuadCurve(to: CGPoint(x: 9, y: 0), control: CGPoint(x: 14, y: -6))
+            dip.addQuadCurve(to: CGPoint(x: 11, y: 14), control: CGPoint(x: 5, y: 7))
+            dip.addLine(to: CGPoint(x: -6, y: 14))
+            dip.closeSubpath()
+            paintTip.fill(dip, with: .color(StorybookArt.color(0xFF6FA8)))
+
+            brush.stroke(
+                bristles,
+                with: .color(StorybookArt.outline(for: 0xD8A880)),
+                style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+            )
+            var tipEdge = brush
+            tipEdge.clip(to: dip)
+            tipEdge.stroke(
+                bristles,
+                with: .color(StorybookArt.outline(for: 0xFF6FA8)),
+                style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+            )
+            StorybookArt.highlight(brush, in: CGRect(x: 3, y: -4.2, width: 7, height: 3.0), opacity: 0.6)
+
+            let ferrule = Path(roundedRect: CGRect(x: 20, y: -8, width: 18, height: 16), cornerRadius: 4)
+            StorybookArt.fillAndStroke(
+                brush,
+                ferrule,
+                fill: StorybookArt.color(0xFFE7A8),
+                stroke: StorybookArt.outline(for: 0xE6B85C),
+                width: 3.5
+            )
+            StorybookArt.highlight(brush, in: CGRect(x: 23, y: -5.5, width: 12, height: 3.5), opacity: 0.65)
+
+            StorybookArt.sparkle(g, at: CGPoint(x: 168, y: 40), radius: 11, color: Theme.lemon)
+            StorybookArt.sparkle(g, at: CGPoint(x: 32, y: 164), radius: 8, color: .white, opacity: 0.9)
         }
+    }
+
+    private static func palettePath() -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: 26, y: 98))
+        p.addCurve(to: CGPoint(x: 94, y: 34), control1: CGPoint(x: 26, y: 54), control2: CGPoint(x: 54, y: 34))
+        p.addCurve(to: CGPoint(x: 170, y: 84), control1: CGPoint(x: 138, y: 34), control2: CGPoint(x: 170, y: 52))
+        p.addCurve(to: CGPoint(x: 138, y: 120), control1: CGPoint(x: 170, y: 108), control2: CGPoint(x: 154, y: 116))
+        p.addCurve(to: CGPoint(x: 156, y: 154), control1: CGPoint(x: 124, y: 124), control2: CGPoint(x: 166, y: 134))
+        p.addCurve(to: CGPoint(x: 88, y: 170), control1: CGPoint(x: 144, y: 172), control2: CGPoint(x: 116, y: 170))
+        p.addCurve(to: CGPoint(x: 26, y: 98), control1: CGPoint(x: 48, y: 170), control2: CGPoint(x: 26, y: 140))
+        p.closeSubpath()
+        return p
+    }
+
+    private static func brushHandlePath() -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: 36, y: -7))
+        p.addCurve(to: CGPoint(x: 100, y: -9.5), control1: CGPoint(x: 58, y: -9), control2: CGPoint(x: 84, y: -11))
+        p.addCurve(to: CGPoint(x: 100, y: 9.5), control1: CGPoint(x: 111, y: -8), control2: CGPoint(x: 111, y: 8))
+        p.addCurve(to: CGPoint(x: 36, y: 7), control1: CGPoint(x: 84, y: 11), control2: CGPoint(x: 58, y: 9))
+        p.closeSubpath()
+        return p
+    }
+
+    private static func bristlesPath() -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: -4, y: 0))
+        p.addCurve(to: CGPoint(x: 22, y: -9), control1: CGPoint(x: 4, y: -10), control2: CGPoint(x: 15, y: -11))
+        p.addLine(to: CGPoint(x: 22, y: 9))
+        p.addCurve(to: CGPoint(x: -4, y: 0), control1: CGPoint(x: 15, y: 11), control2: CGPoint(x: 4, y: 10))
+        p.closeSubpath()
+        return p
     }
 }
 

@@ -2,227 +2,302 @@ import XCTest
 @testable import Glimmie
 
 final class PotionLabTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        StickerBook.shared.demo = true
+        Coins.shared.resetForTests(balance: 0)
+    }
+
     private func freshSim() -> PotionSim {
         let sim = PotionSim(save: nil)
         sim.demo = true
+        sim.trackRewards = true
         return sim
     }
 
     private func run(_ sim: PotionSim, seconds: Double) {
-        for _ in 0..<Int(seconds * 60) { sim.step(dt: 1.0 / 60) }
+        let frames = max(1, Int((seconds * 60).rounded()))
+        for _ in 0..<frames {
+            sim.step(dt: 1.0 / 60)
+        }
     }
 
-    func testTheLevelFollowsTheVolumeAndTheFlasksShape() {
+    func testCauldronLevelFollowsVolumeAndShape() {
         XCTAssertEqual(PotionGeometry.level(for: 0), PotionGeometry.bottomY, accuracy: 0.5)
         XCTAssertEqual(PotionGeometry.level(for: PotionGeometry.capacity), PotionGeometry.rimY, accuracy: 0.5)
         var last = PotionGeometry.bottomY + 1
         for k in 1..<20 {
             let v = PotionGeometry.capacity * CGFloat(k) / 20
             let y = PotionGeometry.level(for: v)
-            XCTAssertLessThan(y, last, "more potion, higher surface")
-            XCTAssertEqual(PotionGeometry.volume(below: y), v, accuracy: v * 0.01)
+            XCTAssertLessThan(y, last)
+            XCTAssertEqual(PotionGeometry.volume(below: y), v, accuracy: v * 0.015)
             last = y
         }
-        // the round body is wider than the neck, so the same amount rises less in the middle than in the neck
-        let mid = PotionGeometry.level(for: PotionGeometry.capacity * 0.5) - PotionGeometry.level(for: PotionGeometry.capacity * 0.55)
-        let neck = PotionGeometry.level(for: PotionGeometry.capacity * 0.9) - PotionGeometry.level(for: PotionGeometry.capacity * 0.95)
-        XCTAssertGreaterThan(neck, mid)
     }
 
-    func testBottleShapesHoldLiquidThatStaysLevelWhenTipped() {
-        for s in PBottleShape.allCases {
-            XCTAssertGreaterThan(s.area, 2500, "\(s) holds something")
-            let poly = PPoly.transform(s.outline, at: .zero, angle: 0.9, scale: 1)
+    func testBottleShapesHoldLiquidLevelWhenTipped() {
+        for shape in PBottleShape.allCases {
+            XCTAssertGreaterThan(shape.area, 2500, "\(shape) should hold potion")
+            let poly = PPoly.transform(shape.outline, at: .zero, angle: 0.85, scale: 1)
             let y = PPoly.level(poly, fill: 0.5)
-            XCTAssertEqual(PPoly.area(PPoly.below(poly, y)), s.area * 0.5, accuracy: s.area * 0.03, "\(s)")
+            XCTAssertEqual(PPoly.area(PPoly.below(poly, y)), shape.area * 0.5, accuracy: shape.area * 0.03, "\(shape)")
         }
     }
 
-    func testPouringAddsLiquidAndColorsThePotion() {
+    func testAddingIngredientGuaranteesIntegerScoopsAndLuminousColor() {
         let sim = freshSim()
-        let before = sim.volume
-        XCTAssertEqual(sim.meanColor().1, 0, accuracy: 0.001, "it starts as clear water")
-        sim.pickUp(.ingredient(.nectar), finger: CGPoint(x: 470, y: 220), at: CGPoint(x: 470, y: 110))
-        for _ in 0..<150 {
-            sim.carry(to: CGPoint(x: 470, y: 110), finger: CGPoint(x: 470, y: 220))
+        XCTAssertTrue(sim.ingredients.isEmpty)
+        XCTAssertEqual(sim.meanColor().1, 0, accuracy: 0.001)
+
+        sim.addIngredient(.fairyRose)
+        XCTAssertEqual(sim.ingredients[.fairyRose], 1)
+        sim.addIngredient(.fairyRose, from: CGPoint(x: 520, y: 310))
+        XCTAssertEqual(sim.ingredients[.fairyRose], 2)
+
+        run(sim, seconds: 0.3)
+        let (color, strength) = sim.meanColor()
+        XCTAssertGreaterThan(strength, 0.05)
+        XCTAssertGreaterThan(color.r, color.g)
+
+        // Mixing complementary hues stays luminous and never collapses to muddy grey/brown.
+        let muddyInput = RGB(0.50, 0.48, 0.47)
+        let boosted = PotionColor.luminous(muddyInput)
+        let spread = max(boosted.r, max(boosted.g, boosted.b)) - min(boosted.r, min(boosted.g, boosted.b))
+        XCTAssertGreaterThan(spread, 0.35, "luminous boost must keep mixed potions vibrant")
+    }
+
+    func testDirectFingerStirringMovesPaddleSwirlsFluidAndPlaysHarpChimes() {
+        let sim = freshSim()
+        sim.addIngredient(.fairyRose)
+        sim.addIngredient(.starGlitter)
+
+        let center = PotionGeometry.cauldronCenter
+        sim.beginStir(at: CGPoint(x: center.x - 55, y: center.y + 10))
+        for k in 0..<45 {
+            let a = CGFloat(k) / 45 * 2 * .pi
+            sim.moveStir(to: CGPoint(x: center.x + cos(a) * 65, y: center.y + 15 + sin(a) * 55))
             sim.step(dt: 1.0 / 60)
         }
-        sim.release()
-        run(sim, seconds: 2)
-        XCTAssertGreaterThan(sim.volume, before + 2000, "the stream lands in the flask")
-        let (c, a) = sim.meanColor()
-        XCTAssertGreaterThan(a, 0.05)
-        XCTAssertGreaterThan(c.r, c.g, "and turns it pink")
-        XCTAssertGreaterThan(sim.doses[.nectar] ?? 0, 0.5)
+        sim.endStir()
+
+        XCTAssertTrue(PotionGeometry.inside(sim.spoon), "stirring paddle stays inside glass")
+        XCTAssertGreaterThan(sim.swirl, 0.5, "stirring swirls the liquid")
+        XCTAssertFalse(sim.harpNotes.isEmpty, "sweeping the paddle emits harp chimes")
+        XCTAssertEqual(sim.rare, .love)
     }
 
-    func testAFlowerPetalFallsThroughTheOpenRim() {
+    func testThreeStepBurnerCyclesCleanlyAndBoils() {
         let sim = freshSim()
-        let start = CGPoint(x: PotionGeometry.C.x, y: PotionGeometry.rimY - 16)
-        sim.addPiece(.petals, at: start, v: CGVector(dx: 0, dy: 40))
-        run(sim, seconds: 1.2)
-        XCTAssertTrue(sim.pieces.contains { $0.kind == .petals && $0.state == .liquid })
-    }
+        XCTAssertEqual(sim.burner, .off)
 
-    func testHeavyLiquidSinksAndStirringMixesIt() {
-        let sim = freshSim()
-        // a layer of heavy night sky poured in on top
-        for x in stride(from: CGFloat(440), through: 584, by: 16) {
-            sim.addLiquid(at: CGPoint(x: x, y: sim.level + 10), vol: 1500, color: PIngredient.night.color, conc: 1.25, density: PIngredient.night.density, v: .zero)
-        }
-        sim.updateLiquid()
-        func depthOfColor() -> CGFloat {
-            var sum: CGFloat = 0, w: CGFloat = 0
-            for k in sim.da.indices where sim.liquid[k] {
-                let y = PotionGeometry.cellCenter(k % PotionSim.NX, k / PotionSim.NX).y
-                sum += y * CGFloat(sim.da[k]); w += CGFloat(sim.da[k])
-            }
-            return sum / max(0.001, w)
-        }
-        let start = depthOfColor()
-        run(sim, seconds: 6)
-        XCTAssertGreaterThan(depthOfColor(), start + 20, "it sinks to the bottom")
+        sim.cycleBurner()
+        XCTAssertEqual(sim.burner, .simmer)
 
-        func spread() -> Float {
-            var vals: [Float] = []
-            for k in sim.da.indices where sim.liquid[k] { vals.append(sim.da[k]) }
-            let m = vals.reduce(0, +) / Float(max(1, vals.count))
-            return vals.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Float(max(1, vals.count))
-        }
-        let unmixed = spread()
-        sim.pickUp(.spoon, finger: PotionGeometry.C, at: sim.spoon)
-        for i in 0..<(60 * 6) {
-            let a = CGFloat(i) / 60 * 5
-            sim.carry(to: CGPoint(x: PotionGeometry.C.x + cos(a) * 110, y: PotionGeometry.C.y + 40 + sin(a) * 80), finger: PotionGeometry.C)
-            sim.step(dt: 1.0 / 60)
-        }
-        sim.release()
-        XCTAssertLessThan(spread(), unmixed * 0.6, "stirring mixes the layers")
-    }
-
-    func testSecretCombosMakeRarePotions() {
-        let sim = freshSim()
-        XCTAssertNil(sim.rareKind())
-        sim.doses = [.night: 1, .stars: 2]
-        XCTAssertEqual(sim.rareKind(), .galaxy)
-        sim.doses = [.nectar: 1, .petals: 2]
-        XCTAssertEqual(sim.rareKind(), .love)
-        sim.doses = [.hair: 1, .nectar: 1, .mermaid: 1, .moon: 1]
-        XCTAssertEqual(sim.rareKind(), .rainbow)
-        sim.doses = [.stars: 2, .dragon: 1, .moon: 1]
-        XCTAssertEqual(sim.rareKind(), .golden, "golden comes before galaxy and dream")
-        sim.doses = [.moon: 1]
-        XCTAssertNil(sim.rareKind())
-        sim.night = 1
-        XCTAssertEqual(sim.rareKind(), .moonlight, "moon milk glows into moonlight with the lights off")
-        sim.night = 0
-        sim.doses = [.dragon: 1]
-        sim.boilTime = 3
-        XCTAssertEqual(sim.rareKind(), .dragon)
-        sim.doses = [.nectar: 1, .mermaid: 1, .dragon: 1, .night: 1, .stars: 2, .berries: 2, .lavender: 2]
-        XCTAssertEqual(sim.rareKind(), .wild)
-        // every rare potion has a picture recipe that really makes it
-        for k in PotionKind.allCases {
-            let s = freshSim()
-            for ing in k.recipe { s.doses[ing] = ing.need + 0.1 }
-            if k.needsFire { s.boilTime = 3 }
-            if k.needsNight { s.night = 1 }
-            XCTAssertEqual(s.rareKind(), k, "the hint card's recipe for \(k)")
-        }
-    }
-
-    func testDippingABottleFillsItAndTheRareOneGoesOnTheRack() {
-        let sim = freshSim()
-        sim.doses = [.night: 2, .stars: 3]
-        run(sim, seconds: 1)
-        XCTAssertEqual(sim.rare, .galaxy)
-        let before = sim.volume
-        sim.pickUp(.empty, finger: CGPoint(x: 512, y: 200), at: CGPoint(x: 512, y: 100))
-        // down through the mouth into the potion
-        for k in 0...105 {
-            let y = 100 + CGFloat(k) * 4
-            sim.carry(to: CGPoint(x: 512, y: y), finger: CGPoint(x: 512, y: y + 100))
-            sim.step(dt: 1.0 / 60)
-        }
-        XCTAssertTrue(sim.dipInside, "it goes in through the mouth")
-        for _ in 0..<180 {
-            sim.carry(to: CGPoint(x: 512, y: 520), finger: CGPoint(x: 512, y: 620))
-            sim.step(dt: 1.0 / 60)
-        }
-        XCTAssertGreaterThan(sim.dipFill, 0.8)
-        XCTAssertLessThan(sim.volume, before - 3000, "the potion went into the bottle")
-        sim.release()
-        XCTAssertEqual(sim.rack.last?.kind, PotionKind.galaxy.rawValue)
-        XCTAssertEqual(sim.rack.last?.bottleShape, PotionKind.galaxy.shape)
-    }
-
-    func testABottleCantGoThroughTheGlass() {
-        let sim = freshSim()
-        sim.pickUp(.empty, finger: CGPoint(x: 800, y: 500), at: CGPoint(x: 800, y: 400))
-        for k in 0...60 {
-            let x = 800 - CGFloat(k) * 5
-            sim.carry(to: CGPoint(x: x, y: 460), finger: CGPoint(x: x, y: 560))
-        }
-        XCTAssertFalse(sim.dipInside)
-        XCTAssertFalse(PotionGeometry.inside(sim.heldPos), "it stays outside the round body")
-    }
-
-    func testTheTapDrainsItAll() {
-        let sim = freshSim()
-        sim.addLiquid(at: CGPoint(x: 512, y: 500), vol: 4000, color: PIngredient.mermaid.color, conc: 1, density: 0, v: .zero)
-        sim.toggleDrain()
-        run(sim, seconds: 12)
-        XCTAssertEqual(sim.volume, 0, accuracy: 1)
-        XCTAssertFalse(sim.draining)
-        XCTAssertGreaterThan(sim.bucketFill, 0.2)
-    }
-
-    func testBoilingMakesBubblesAndFrostCoolsIt() {
-        let sim = freshSim()
-        sim.setHeat(3)
-        run(sim, seconds: 25)
-        XCTAssertGreaterThan(sim.boiling, 0.3)
+        sim.cycleBurner()
+        XCTAssertEqual(sim.burner, .boil)
+        run(sim, seconds: 2.0)
+        XCTAssertGreaterThan(sim.boiling, 0.5)
         XCTAssertFalse(sim.bubbles.isEmpty)
-        let hot = sim.temp
-        for k in 0..<4 { sim.addPiece(.frost, at: CGPoint(x: 480 + CGFloat(k) * 20, y: 150), v: CGVector(dx: 0, dy: 100)) }
-        sim.setHeat(0)
-        run(sim, seconds: 3)
-        XCTAssertLessThan(sim.temp, hot)
+
+        sim.cycleBurner()
+        XCTAssertEqual(sim.burner, .off)
+        let hotTemp = sim.temp
+        run(sim, seconds: 3.0)
+        XCTAssertLessThan(sim.temp, hotTemp)
     }
 
-    func testAPotionPouredOnTheUnicornChangesHer() {
+    func testFixedDrainValveOrientationAndCleanCauldronReset() {
         let sim = freshSim()
-        sim.rack = [PotionBottle(id: 1, r: 1, g: 0.54, b: 0.82, fill: 1, shape: PBottleShape.star.rawValue, kind: PotionKind.rainbow.rawValue,
-                                 magic: ["rainbow": 1], glow: 0.5, sparkle: 0.7)]
-        sim.pickUp(.rack(0), finger: CGPoint(x: 250, y: 470), at: CGPoint(x: 250, y: 360))
-        for _ in 0..<150 {
-            sim.carry(to: CGPoint(x: 250, y: 360), finger: CGPoint(x: 250, y: 470))
-            sim.step(dt: 1.0 / 60)
+        XCTAssertFalse(sim.draining)
+        XCTAssertEqual(sim.valveAngle, 0, accuracy: 0.001, "lever is perpendicular to horizontal pipe when shut")
+
+        sim.addIngredient(.mermaidWave)
+        sim.addIngredient(.bubbleBerry)
+        run(sim, seconds: 0.6)
+        XCTAssertEqual(sim.rare, .mermaid)
+
+        sim.toggleDrain()
+        XCTAssertTrue(sim.draining)
+        XCTAssertEqual(sim.valveAngle, .pi / 2, accuracy: 0.001, "lever aligns inline with horizontal pipe when open")
+
+        run(sim, seconds: 2.5)
+        XCTAssertFalse(sim.draining)
+        XCTAssertEqual(sim.valveAngle, 0, accuracy: 0.001)
+        XCTAssertTrue(sim.ingredients.isEmpty)
+        XCTAssertNil(sim.rare)
+        XCTAssertEqual(sim.meanColor().1, 0, accuracy: 0.01, "cauldron resets sparkling clean")
+        XCTAssertGreaterThan(sim.volume, PotionGeometry.baseVolume * 0.9, "cauldron refills with crystal water ready to brew")
+    }
+
+    func testAllTenRarePotionRecipesUnlockStickersAwardCoinsAndBottleOntoStand() {
+        for kind in PotionKind.allCases {
+            Coins.shared.resetForTests(balance: 0)
+            let sim = freshSim()
+            if kind.recipe.requiresBoil { sim.setBurner(.boil) }
+            if kind.recipe.requiresMoonlit { sim.setMoonlit(true) }
+
+            for ing in kind.recipe.ingredients {
+                sim.addIngredient(ing)
+            }
+            run(sim, seconds: 0.6)
+
+            XCTAssertEqual(sim.rare, kind, "expected recipe for \(kind)")
+            XCTAssertTrue(StickerBook.shared.has(game: PotionSim.gameID, id: kind.rawValue), "instant sticker unlock for \(kind)")
+            XCTAssertEqual(Coins.shared.balance, 4, "instant 4 Play Coins reward for \(kind)")
+            XCTAssertEqual(sim.stand.last?.potion, kind, "tasting stand receives bottled \(kind)")
+            XCTAssertEqual(sim.stand.last?.bottleShape, kind.shape, "bottle uses specialty shape for \(kind)")
         }
-        sim.release()
-        run(sim, seconds: 1)
-        XCTAssertGreaterThan(sim.uni.rainbow, 0, "rainbow potion makes a rainbow unicorn")
-        XCTAssertGreaterThan(sim.uni.tintAmt, 0)
     }
 
-    func testSavesComeBack() {
+    func testConditionalRecipesRequireBoilOrMoonlitAndWildWorksForAnyFourDistinct() {
+        // Moonlight needs moonlit == true.
+        let moonSim = freshSim()
+        moonSim.addIngredient(.sleepyLavender)
+        moonSim.addIngredient(.starGlitter)
+        run(moonSim, seconds: 0.6)
+        XCTAssertNil(moonSim.rare)
+        moonSim.setMoonlit(true)
+        XCTAssertEqual(moonSim.rare, .moonlight)
+
+        // Dragon needs burner == .boil.
+        let dragonSim = freshSim()
+        dragonSim.addIngredient(.dragonChili)
+        dragonSim.addIngredient(.starGlitter)
+        run(dragonSim, seconds: 0.6)
+        XCTAssertNil(dragonSim.rare)
+        dragonSim.setBurner(.simmer)
+        XCTAssertNil(dragonSim.rare)
+        dragonSim.setBurner(.boil)
+        XCTAssertEqual(dragonSim.rare, .dragon)
+
+        // Wild triggers for any 4+ distinct ingredients.
+        let wildSim = freshSim()
+        wildSim.addIngredient(.frostFlake)
+        wildSim.addIngredient(.dragonChili)
+        wildSim.addIngredient(.rainbowMane)
+        wildSim.addIngredient(.sleepyLavender)
+        run(wildSim, seconds: 0.6)
+        XCTAssertEqual(wildSim.rare, .wild)
+    }
+
+    func testCustomBrewBottlingAndFiveSlotTastingStandCap() {
         let sim = freshSim()
-        sim.rack = [PotionBottle(id: 4, r: 0.2, g: 0.3, b: 0.9, fill: 0.5, shape: 1, kind: nil, magic: ["bubble": 0.6], glow: 0, sparkle: 0)]
-        let save = PotionSave(bottles: sim.rack, nextID: 5, volume: 50000, pr: 0.2, pg: 0.1, pb: 0.3, pa: 0.4, doses: ["nectar": 1], lightsOn: false, heat: 2, made: 3)
-        let data = try! JSONEncoder().encode(save)
-        let back = try! JSONDecoder().decode(PotionSave.self, from: data)
-        let s2 = PotionSim(save: back)
-        XCTAssertEqual(s2.rack.count, 1)
-        XCTAssertEqual(s2.heat, 2)
-        XCTAssertFalse(s2.lightsOn)
-        XCTAssertEqual(s2.volume, 50000, accuracy: 1)
-        XCTAssertEqual(s2.doses[.nectar] ?? 0, 1, accuracy: 0.001)
+        sim.addIngredient(.fairyRose)
+        sim.addIngredient(.frostFlake)
+        run(sim, seconds: 0.6)
+        XCTAssertNil(sim.rare)
+        XCTAssertTrue(sim.canBottle)
+
+        for _ in 0..<7 {
+            let bottled = sim.bottleCurrentBrew()
+            XCTAssertNotNil(bottled)
+        }
+        XCTAssertEqual(sim.stand.count, PotionGeometry.standCapacity)
+        XCTAssertEqual(sim.stand.count, 5)
     }
 
-    func testTheStickerPageHasEveryRarePotionAndTheUnicorn() {
+    func testSwitchableCreaturesTransformUnlockStickersAndResetWithWater() {
+        let sim = freshSim()
+        XCTAssertEqual(LabCreature.allCases, [.unicorn, .dragon, .kitty, .frog])
+
+        for friend in LabCreature.allCases {
+            sim.selectCreature(friend)
+            XCTAssertEqual(sim.creature, friend)
+        }
+
+        // Mermaid/bubble potion floats creature high and unlocks floatingUnicorn sticker.
+        sim.addIngredient(.mermaidWave)
+        sim.addIngredient(.bubbleBerry)
+        run(sim, seconds: 0.6)
+        let floatEffect = sim.serveBottle(at: 0)
+        XCTAssertEqual(floatEffect, .mermaid)
+        XCTAssertTrue(sim.hasActiveEffect)
+        XCTAssertTrue(StickerBook.shared.has(game: PotionSim.gameID, id: "floatingUnicorn"))
+        run(sim, seconds: 1.2)
+        XCTAssertLessThan(sim.creatureState.floatY, -80, "creature floats high inside giant bubble")
+
+        // Water drop reset splashes droplets, shakes off effects, and lands smoothly back on cushion.
+        sim.resetCreatureEffects()
+        XCTAssertNil(sim.creatureState.activeEffect)
+        XCTAssertFalse(sim.hasActiveEffect)
+        XCTAssertGreaterThan(sim.creatureState.shake, 0.5)
+        run(sim, seconds: 1.5)
+        XCTAssertEqual(sim.creatureState.floatY, 0, accuracy: 0.5)
+
+        // Rainbow potion triggers rainbow transformation & unlocks rainbowUnicorn sticker.
+        let rainbowSim = freshSim()
+        rainbowSim.selectCreature(.dragon)
+        rainbowSim.addIngredient(.rainbowMane)
+        rainbowSim.addIngredient(.fairyRose)
+        rainbowSim.addIngredient(.mermaidWave)
+        run(rainbowSim, seconds: 0.6)
+        rainbowSim.tapCreature()
+        XCTAssertEqual(rainbowSim.creatureState.activeEffect, .rainbow)
+        XCTAssertTrue(StickerBook.shared.has(game: PotionSim.gameID, id: "rainbowUnicorn"))
+    }
+
+    func testSaveLoadRoundTripAndLegacySaveCompatibility() throws {
+        let sim = freshSim()
+        sim.selectCreature(.kitty)
+        sim.setMoonlit(true)
+        sim.setBurner(.boil)
+        sim.addIngredient(.fairyRose)
+        sim.addIngredient(.starGlitter)
+        run(sim, seconds: 0.6)
+
+        let encoded = try JSONEncoder().encode(sim.makeSave())
+        let decoded = try JSONDecoder().decode(PotionSave.self, from: encoded)
+        let restored = PotionSim(save: decoded)
+
+        XCTAssertEqual(restored.creature, .kitty)
+        XCTAssertTrue(restored.moonlit)
+        XCTAssertEqual(restored.burner, .boil)
+        XCTAssertEqual(restored.ingredients[.fairyRose], 1)
+        XCTAssertEqual(restored.ingredients[.starGlitter], 1)
+        XCTAssertEqual(restored.stand.count, 1)
+        XCTAssertEqual(restored.stand.first?.potion, .love)
+
+        // Legacy potionlab.json format without new fields decodes cleanly.
+        let legacyJSON = """
+        {
+            "bottles": [],
+            "nextID": 5,
+            "volume": 32000,
+            "pr": 0.4,
+            "pg": 0.2,
+            "pb": 0.6,
+            "pa": 0.8,
+            "doses": { "nectar": 1.0, "stars": 2.0 },
+            "lightsOn": false,
+            "heat": 3,
+            "made": 4
+        }
+        """.data(using: .utf8)!
+        let legacySave = try JSONDecoder().decode(PotionSave.self, from: legacyJSON)
+        let fromLegacy = PotionSim(save: legacySave)
+        XCTAssertTrue(fromLegacy.moonlit)
+        XCTAssertEqual(fromLegacy.burner, .boil)
+        XCTAssertEqual(fromLegacy.creature, .unicorn)
+        XCTAssertEqual(fromLegacy.ingredients[.fairyRose], 1)
+        XCTAssertEqual(fromLegacy.ingredients[.starGlitter], 2)
+    }
+
+    func testStickerBookHasAllTwelvePotionStickers() {
         let ids = Set(PotionGame.entry.stickers.map(\.id))
-        for k in PotionKind.allCases { XCTAssertTrue(ids.contains(k.rawValue)) }
+        XCTAssertEqual(ids.count, 12)
+        for kind in PotionKind.allCases {
+            XCTAssertTrue(ids.contains(kind.rawValue))
+        }
         XCTAssertTrue(ids.contains("rainbowUnicorn"))
         XCTAssertTrue(ids.contains("floatingUnicorn"))
+    }
+
+    func testBundledPotionLabAudioExists() {
+        for sfx in PotionSFX.allCases {
+            XCTAssertNotNil(
+                GameFiles.url(sfx.rawValue, "wav", game: "PotionLab"),
+                "missing bundled audio \(sfx.rawValue).wav"
+            )
+        }
     }
 }

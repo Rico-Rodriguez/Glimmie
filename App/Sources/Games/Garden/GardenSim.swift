@@ -1,17 +1,5 @@
 import SwiftUI
 
-// MARK: - The garden, simulated
-//
-// The soil is a height field: one surface height per 4-point column across the bed (`h`), plus how wet each column is
-// (`wet`). The shovel carves the columns down to its blade and carries what it took as a load; a flick throws the load
-// as clods that fly, bounce and settle back into the field where they land, so no soil is ever made or lost. Loose soil
-// slides until no slope is steeper than it can hold (wet soil holds steeper walls).
-//
-// Water is particles. A drop that reaches the surface soaks into its column; wetness spreads sideways, sinks in
-// (drawn as a darker soak line under the surface), dries in the sun, and pools into flat puddles in hollows.
-// Plants only grow while their soil is damp, and drink it as they grow. Every plant and weed is a damped spring
-// that the wind, rain, water and her finger push on.
-
 enum GardenTool: Equatable {
     case shovel
     case can
@@ -20,7 +8,7 @@ enum GardenTool: Equatable {
 }
 
 enum GPart {
-    case water, splash, clod, seed, rain, petal, leaf, sparkle, dust, ripple
+    case water, splash, clod, seed, rain, petal, leaf, sparkle, dust, ripple, heart
 }
 
 struct GParticle {
@@ -33,23 +21,21 @@ struct GParticle {
     var color: GRGB
     var rot: CGFloat = 0
     var spin: CGFloat = 0
-    /// Soil a clod carries (column points), put back into the field where it settles.
     var mass: CGFloat = 0
     var seed: PlantKind?
     var bounces = 0
-    /// Rain outside the bed lands on the lawn at this height.
     var groundY: CGFloat = 0
     var resting = false
 }
 
 enum GFlyerKind {
-    case crop(PlantKind, Int)
+    case crop(PlantKind, Int, Bool)
+    case flowerToVase(PlantKind, Int)
+    case flyingSeed(PlantKind, Int)
     case weed(Int)
     case uprooted(Plant)
-    case decor(DecorKind)
 }
 
-/// Something thrown along a ballistic arc: picked crops land in the basket, pulled weeds tumble away.
 struct GFlyer {
     var kind: GFlyerKind
     var p0: CGPoint
@@ -58,6 +44,7 @@ struct GFlyer {
     var dur: Double
     var spin: CGFloat
     var toBasket: Bool
+    var toVase: Bool = false
 
     static let gravity: CGFloat = 1500
 
@@ -66,28 +53,60 @@ struct GFlyer {
         return CGPoint(x: p0.x + v0.dx * s, y: p0.y + v0.dy * s + 0.5 * GFlyer.gravity * s * s)
     }
 
-    /// The launch speed that lands at `to` after `dur` seconds.
     static func aim(from: CGPoint, to: CGPoint, dur: Double) -> CGVector {
         let T = CGFloat(dur)
         return CGVector(dx: (to.x - from.x) / T, dy: (to.y - from.y - 0.5 * gravity * T * T) / T)
     }
 }
 
+struct SurprisePop {
+    var surprise: BuriedSurprise
+    var origin: CGPoint
+    var start: Double
+    var dur: Double = 1.3
+}
+
 struct GPlot {
-    var plant: Plant?
+    var state: GardenPlotState = .empty(surprise: .coins)
+    var surpriseReady = true
+    var surpriseResetAt: Double = 0
+    var moundPop: CGFloat = 0
+    var moundPopV: CGFloat = 0
     var bend: CGFloat = 0
     var bendV: CGFloat = 0
     var pop: CGFloat = 0
     var popV: CGFloat = 0
-    /// Seconds the soil has been too dry to grow.
     var dry: CGFloat = 0
     var digWork: CGFloat = 0
+    var waterPulse: CGFloat = 0
     var fillUntil: Double = 0
-    /// Carrot being pulled up (0...1).
     var pull: CGFloat = 0
     var pullV: CGFloat = 0
     var held = false
     var sad = false
+
+    var plant: Plant? {
+        get {
+            switch state {
+            case .empty: return nil
+            case .growing(let p), .ripe(let p): return p
+            }
+        }
+        set {
+            if let p = newValue {
+                state = p.growth >= 1 ? .ripe(p) : .growing(p)
+            } else {
+                if case .empty = state { return }
+                state = .empty(surprise: BuriedSurprise.random())
+                surpriseReady = true
+            }
+        }
+    }
+
+    var surprise: BuriedSurprise? {
+        if case .empty(let s) = state { return s }
+        return nil
+    }
 }
 
 struct GWeed {
@@ -174,32 +193,34 @@ struct GFirefly {
 final class GardenSim {
     static let gameID = "garden"
     static let gravity: CGFloat = 1700
+    static let maxBouquet = 6
 
-    let spring = GardenSpring()
-    private var storedChannels: [Int]?
-    private var caughtFruit = false
-
-    // Soil
+    // Soil height & wetness fields
     var h: [CGFloat]
     var wet: [CGFloat]
-    // Things in the garden
+
+    // World entities
     var plots: [GPlot]
     var weeds: [GWeed] = []
     var decor: [GDecor] = []
     var particles: [GParticle] = []
     var flyers: [GFlyer] = []
+    var surprisePops: [SurprisePop] = []
     var butterflies: [GButterfly] = []
     var bee: GBee?
     var ladybug: GLadybug
     var worm: GWorm
     var fireflies: [GFirefly] = []
-    /// Animals dropping in (see GardenFinds).
     var visitors: [GVisitor] = []
     var nextVisit: Double = 7
-    var stamps: [GardenStamp] = []
+
     var basket: [String] = []
     var basketBounce: CGFloat = 0
     var basketBounceV: CGFloat = 0
+
+    var bouquet: [BouquetFlower] = []
+    var vaseBounce: CGFloat = 0
+    var vaseBounceV: CGFloat = 0
 
     // Weather
     var weather: Weather = .sun
@@ -215,13 +236,13 @@ final class GardenSim {
     var time: Double = 0
     private var last: Date?
     private var lastSave: Double = 0
-    private var nextWeed: Double = 16
+    private var nextWeed: Double = 18
     private var nextLeaf: Double = 0
     private var rainAcc: CGFloat = 0
     private var waterAcc: CGFloat = 0
     private var nextDecorID = 1
 
-    // The carried tool
+    // Carried tool
     var tool: GardenTool?
     var toolP = CGPoint.zero
     var hold = CGPoint.zero
@@ -231,13 +252,13 @@ final class GardenSim {
     var tiltV: CGFloat = 0
     var load: CGFloat = 0
     var flow: CGFloat = 0
+    var autoShovelActive = false
     private var lastToolP = CGPoint.zero
     private var seedTimer: CGFloat = 0
     private var digSound: Double = 0
-    /// A tool flying back to its place on the dock.
     var returning: (tool: GardenTool, from: CGPoint, to: CGPoint, start: Double, tilt: CGFloat)?
 
-    // The bare hand
+    // Bare hand
     private enum Grab {
         case weed(Int)
         case carrot(Int)
@@ -251,25 +272,33 @@ final class GardenSim {
     var handV = CGVector.zero
     var handDown = false
 
-    /// Screenshot mode: never saves over her garden.
+    var isDraggingDecor: Bool {
+        if case .decor? = grab { return true }
+        if case .decor? = tool { return true }
+        return false
+    }
+    var overReturnBadge = false
+
+    func isOverReturnBadge(_ p: CGPoint) -> Bool {
+        hypot(p.x - GGeo.returnBadge.x, p.y - GGeo.returnBadge.y) < 76
+    }
+
+    /// Screenshot / test mode: prevents overwriting persisted garden.json.
     var demo = false
 
     // MARK: Setup
 
     init(save: GardenSave? = GardenStorage.load()) {
         let n = GGeo.columns
-        var hh = [CGFloat](repeating: GGeo.soilY, count: n)
-        for i in 0..<n {
-            let a = sin(CGFloat(i) * 0.21) * 1.2
-            let b = sin(CGFloat(i) * 0.07 + 1.3) * 1.5
-            hh[i] = GGeo.soilY + a + b
-        }
-        h = hh
+        h = GardenSim.flatSoil(count: n)
         wet = [CGFloat](repeating: 0.06, count: n)
-        plots = [GPlot](repeating: GPlot(), count: GGeo.plotX.count)
-        ladybug = GLadybug(x: 330, dir: 1, p: CGPoint(x: 330, y: GGeo.soilY))
-        worm = GWorm(x: 520, depth: 80, dir: 1)
-        if let s = save, s.soil.count == n, s.wet.count == n {
+        let starterSurprises: [BuriedSurprise] = [.worm, .mysteryBulb, .ladybug, .coins, .worm, .coins]
+        plots = GGeo.plotX.indices.map { i in
+            GPlot(state: .empty(surprise: starterSurprises[i % starterSurprises.count]))
+        }
+        ladybug = GLadybug(x: 310, dir: 1, p: CGPoint(x: 310, y: GGeo.soilY))
+        worm = GWorm(x: 470, depth: 52, dir: 1)
+        if let s = save {
             restore(s)
         } else {
             starterGarden()
@@ -277,98 +306,85 @@ final class GardenSim {
         for i in 0..<2 { spawnButterfly(i, fromEdge: false) }
     }
 
+    private static func flatSoil(count n: Int) -> [CGFloat] {
+        (0..<n).map { i -> CGFloat in
+            let fi = CGFloat(i)
+            let waveA: CGFloat = sin(fi * 0.21) * 1.1
+            let waveB: CGFloat = sin(fi * 0.07 + 1.3) * 1.2
+            return GGeo.soilY + waveA + waveB
+        }
+    }
+
     private func starterGarden() {
-        plots[0].plant = Plant(kind: .sunflower, growth: 0.22, left: 0, variant: 0)
-        plots[2].plant = Plant(kind: .tomato, growth: 0.5, left: 0, variant: 0)
+        plots[0].plant = Plant(kind: .sunflower, growth: 0.35, left: 0, variant: 0)
+        plots[2].plant = Plant(kind: .tomato, growth: 0.65, left: 0, variant: 0)
         plots[4].plant = Plant(kind: .tulip, growth: 1, left: 1, variant: 0)
-        carveHole(plot: 1)
         for i in 0..<GGeo.columns {
             let x = GGeo.colX(i)
-            if abs(x - GGeo.plotX[4]) < 60 { wet[i] = 0.4 }
+            if abs(x - GGeo.plotX[4]) < 56 { wet[i] = 0.55 }
         }
-        weeds = [GWeed(x: 356, growth: 0.8, seed: 3), GWeed(x: 662, growth: 0.55, seed: 8)]
-        addDecor(.pinwheel, x: 214, falling: false)
-        addDecor(.birdbath, x: 812, falling: false)
+        weeds = [GWeed(x: 308, growth: 0.85, seed: 3), GWeed(x: 564, growth: 0.65, seed: 8)]
+        addDecor(.pinwheel, x: 196, falling: false)
+        addDecor(.birdbath, x: 724, falling: false)
     }
 
     private func restore(_ s: GardenSave) {
-        storedChannels = s.channels
-        h = s.soil.map { CGFloat($0) }
-        wet = s.wet.map { CGFloat($0) }
-        for i in 0..<min(plots.count, s.plots.count) { plots[i].plant = s.plots[i] }
-        weeds = s.weeds.map { GWeed(x: CGFloat($0.x), growth: CGFloat($0.growth), seed: $0.seed) }
-        for d in s.decor {
-            addDecor(d.kind, x: CGFloat(d.x), falling: false)
-            decor[decor.count - 1].water = CGFloat(d.water)
+        let n = GGeo.columns
+        // Resample soil and wetness cleanly so legacy 224-column saves migrate without losing crops.
+        if s.soil.count == n {
+            let avg = s.soil.reduce(0, +) / Double(n)
+            h = s.soil.map { val in
+                let offset = CGFloat(val - avg)
+                return max(GGeo.soilY - 22, min(GGeo.soilY + GGeo.maxDepth, GGeo.soilY + offset))
+            }
+        } else {
+            h = GardenSim.flatSoil(count: n)
         }
-        stamps = s.stamps ?? []
-        basket = s.basket
+        if s.wet.count == n {
+            wet = s.wet.map { max(0, min(1.15, CGFloat($0))) }
+        } else if !s.wet.isEmpty {
+            wet = (0..<n).map { i in
+                let idx = min(s.wet.count - 1, Int(Double(i) / Double(n) * Double(s.wet.count)))
+                return max(0, min(1.15, CGFloat(s.wet[idx])))
+            }
+        }
+        for i in 0..<min(plots.count, s.plots.count) {
+            plots[i].plant = s.plots[i]
+        }
+        weeds = s.weeds.map { w in
+            let x = max(GGeo.bedLeft + 18, min(GGeo.bedRight - 18, CGFloat(w.x)))
+            return GWeed(x: x, growth: CGFloat(w.growth), seed: w.seed)
+        }
+        decor = []
+        for d in s.decor {
+            let idx = addDecor(d.kind, x: CGFloat(d.x), falling: false)
+            decor[idx].water = CGFloat(d.water)
+        }
+        basket = Array(s.basket.suffix(60))
+        bouquet = Array((s.bouquet ?? []).suffix(GardenSim.maxBouquet))
         weather = s.weather
         rain = weather == .rain ? 1 : 0
         night = weather == .night ? 1 : 0
         wind = weather == .wind ? 1 : (weather == .rain ? 0.35 : 0.08)
-        cloud = weather == .rain ? 1 : (weather == .wind ? 0.4 : 0.12)
+        cloud = weather == .rain ? 1 : (weather == .wind ? 0.45 : 0.12)
     }
 
     func makeSave() -> GardenSave {
-        GardenSave(plots: plots.map { $0.plant },
-                   soil: h.map { Double($0) },
-                   wet: wet.map { Double($0) },
-                   weeds: weeds.map { WeedSave(x: Double($0.x), growth: Double($0.growth), seed: $0.seed) },
-                   decor: decor.map { DecorSave(kind: $0.kind, x: Double($0.x), water: Double($0.water)) },
-                   basket: Array(basket.suffix(40)),
-                   weather: weather, stamps: stamps, channels: spring.enabled ? spring.dug.sorted() : storedChannels)
+        GardenSave(
+            plots: plots.map { $0.plant },
+            soil: h.map { Double($0) },
+            wet: wet.map { Double($0) },
+            weeds: weeds.map { WeedSave(x: Double($0.x), growth: Double($0.growth), seed: $0.seed) },
+            decor: decor.map { DecorSave(kind: $0.kind, x: Double($0.x), water: Double($0.water)) },
+            basket: Array(basket.suffix(40)),
+            weather: weather,
+            bouquet: bouquet.isEmpty ? nil : Array(bouquet.suffix(GardenSim.maxBouquet))
+        )
     }
 
     func save() {
         guard !demo else { return }
         GardenStorage.save(makeSave())
-    }
-
-    func openSpring() {
-        guard !demo, !spring.enabled else { return }
-        spring.prepare(storedChannels)
-        if storedChannels == nil, plots[1].plant == nil {
-            plant(.pumpkin, plot: 1)
-            plots[1].plant?.growth = 0.42
-        }
-    }
-
-    func rootDepth(_ i: Int) -> CGFloat { surface(GGeo.plotX[i]) + 48 }
-
-    private func rollPumpkin(_ dt: CGFloat) {
-        guard var fruit = spring.pumpkin else { return }
-        fruit.velocity.dy += 860 * dt
-        fruit.position.y += fruit.velocity.dy * dt
-        fruit.position.x += fruit.velocity.dx * dt
-        let floor = surface(fruit.position.x) - 22
-        if fruit.position.y > floor && fruit.position.x < 900 {
-            fruit.position.y = floor
-            fruit.velocity.dy *= -0.32
-            fruit.velocity.dx = min(250, fruit.velocity.dx + 70 * dt)
-        }
-        fruit.angle += fruit.velocity.dx * dt / 27
-        spring.pumpkin = fruit
-        if fruit.position.y > 705 {
-            let landing = CGPoint(x:min(945,fruit.position.x),y:705)
-            splash(at:landing,v:fruit.velocity,n:18)
-            ripple(at:landing,small:false)
-            water(at:GGeo.plotX.last ?? 885,amount:0.3)
-            GardenSound.shared.play(.splash,volume:0.7)
-            spring.pumpkin = nil
-        }
-    }
-
-    private func catchPumpkin() {
-        guard let fruit = spring.pumpkin else { return }
-        basket.append("pumpkin:\(fruit.variant)")
-        basket = Array(basket.suffix(60))
-        let duration = 0.48
-        flyers.append(GFlyer(kind: .crop(.pumpkin, fruit.variant), p0: fruit.position,
-                             v0: GFlyer.aim(from: fruit.position, to: GGeo.basket, dur: duration),
-                             start: time, dur: duration, spin: 6, toBasket: true))
-        spring.pumpkin = nil
-        GardenSound.shared.play(.pluck)
     }
 
     // MARK: Soil helpers
@@ -392,40 +408,8 @@ final class GardenSim {
         return n > 0 ? s / n : 0
     }
 
-    func depth(plot: Int) -> CGFloat {
-        let c = GGeo.column(GGeo.plotX[plot])
-        var deepest: CGFloat = -100
-        for i in max(0, c - 3)...min(GGeo.columns - 1, c + 3) { deepest = max(deepest, h[i] - GGeo.soilY) }
-        return deepest
-    }
-
-    func hasHole(plot: Int) -> Bool { plots[plot].plant == nil && depth(plot: plot) > 14 }
-
     var totalSoil: CGFloat { h.reduce(0) { $0 + (GGeo.bedBottom - $1) } }
 
-    /// Digs a ready hole at a plot with mounds beside it (used for the starting garden and tests).
-    func carveHole(plot: Int) {
-        let cx = GGeo.plotX[plot]
-        var moved: CGFloat = 0
-        for i in 0..<GGeo.columns {
-            let d = (GGeo.colX(i) - cx) / 18
-            let dh = 26 * exp(-d * d)
-            if dh > 0.2 { h[i] += dh; moved += dh }
-        }
-        for side in [-1.0, 1.0] {
-            let mx = cx + CGFloat(side) * 44
-            var wsum: CGFloat = 0
-            var ws = [CGFloat](repeating: 0, count: GGeo.columns)
-            for i in 0..<GGeo.columns {
-                let d = (GGeo.colX(i) - mx) / 26
-                ws[i] = exp(-d * d)
-                wsum += ws[i]
-            }
-            for i in 0..<GGeo.columns { h[i] -= moved * 0.5 * ws[i] / max(wsum, 0.001) }
-        }
-    }
-
-    /// Puts soil (column points) back around x.
     private func deposit(_ mass: CGFloat, at x: CGFloat) {
         let c = GGeo.column(x)
         let lo = max(0, c - 2)
@@ -451,7 +435,6 @@ final class GardenSim {
         stepWeather(dt)
         stepTool(dt)
         stepSoil(dt)
-        if spring.enabled { spring.advance(dt); rollPumpkin(dt) }
         stepPlants(dt)
         stepWeeds(dt)
         stepParticles(dt)
@@ -459,7 +442,7 @@ final class GardenSim {
         stepDecor(dt)
         stepCritters(dt)
         stepFinds(dt)
-        stepBasket(dt)
+        stepProps(dt)
         stepSound()
         if time - lastSave > 20 { lastSave = time; save() }
     }
@@ -470,6 +453,7 @@ final class GardenSim {
         guard w != weather else { return }
         if weather == .rain && (w == .sun || w == .wind) { rainbowAt = time }
         weather = w
+        if w == .rain { fulfillRainVisitors() }
     }
 
     var rainbow: CGFloat {
@@ -483,7 +467,7 @@ final class GardenSim {
         let nightT: CGFloat = weather == .night ? 1 : 0
         let windT: CGFloat = weather == .wind ? 1 : (weather == .rain ? 0.35 : 0.08)
         let cloudT: CGFloat = weather == .rain ? 1 : (weather == .wind ? 0.45 : 0.12)
-        let k = min(1, dt * 0.9)
+        let k = min(1, dt * 1.1)
         rain += (rainT - rain) * k
         night += (nightT - night) * k
         wind += (windT - wind) * k
@@ -493,23 +477,21 @@ final class GardenSim {
         windNow = wind * gust + 0.03 * sin(t * 0.7)
         cloudDrift += dt * (6 + wind * 70)
 
-        // Rain falls across the whole sky.
-        rainAcc += rain * 300 * dt
+        rainAcc += rain * 260 * dt
         while rainAcc >= 1 {
             rainAcc -= 1
-            let x = CGFloat.random(in: -140...1164)
-            let drop = GParticle(kind: .rain, p: CGPoint(x: x, y: CGFloat.random(in: -60 ... -10)),
-                                 v: CGVector(dx: windNow * 260 + 30, dy: CGFloat.random(in: 1000...1250)),
-                                 life: 2, size: CGFloat.random(in: 1.2...2.2), color: GRGB(0xDDEBFA),
-                                 groundY: CGFloat.random(in: 470...560))
+            let x = CGFloat.random(in: -80...1104)
+            let drop = GParticle(kind: .rain, p: CGPoint(x: x, y: CGFloat.random(in: -40 ... -6)),
+                                 v: CGVector(dx: windNow * 240 + 25, dy: CGFloat.random(in: 980...1220)),
+                                 life: 1.8, size: CGFloat.random(in: 1.2...2.2), color: GRGB(0xDDEBFA),
+                                 groundY: CGFloat.random(in: 480...620))
             particles.append(drop)
         }
-        // Leaves blow through on windy days.
         if wind > 0.4 && time > nextLeaf {
-            nextLeaf = time + Double.random(in: 0.25...0.9) / Double(wind)
+            nextLeaf = time + Double.random(in: 0.25...0.85) / Double(wind)
             let colors = [GRGB(0x9CCB5A), GRGB(0xE8B44A), GRGB(0xE07B39), GRGB(0x6FB04B)]
-            let leaf = GParticle(kind: .leaf, p: CGPoint(x: -120, y: CGFloat.random(in: 120...520)),
-                                 v: CGVector(dx: 260, dy: 0), life: 9, size: CGFloat.random(in: 9...14),
+            let leaf = GParticle(kind: .leaf, p: CGPoint(x: -60, y: CGFloat.random(in: 110...480)),
+                                 v: CGVector(dx: 260, dy: 0), life: 8, size: CGFloat.random(in: 9...14),
                                  color: colors.randomElement() ?? colors[0], rot: CGFloat.random(in: 0...6),
                                  spin: CGFloat.random(in: -4...4))
             particles.append(leaf)
@@ -521,14 +503,17 @@ final class GardenSim {
     func pickUp(_ t: GardenTool, at p: CGPoint) {
         tool = t
         finger = p
+        hold = p
         toolP = p
         lastToolP = p
         toolV = .zero
         tilt = 0
         tiltV = 0
         load = 0
+        autoShovelActive = false
         digSound = 0
         returning = nil
+        overReturnBadge = false
         for i in plots.indices { plots[i].digWork = 0 }
         switch t {
         case .shovel: GardenSound.shared.play(.plunk, volume: 0.5)
@@ -538,23 +523,40 @@ final class GardenSim {
         }
     }
 
-    /// `p` is where the tool goes, `hand` where her finger really is (the shovel's shaft runs back to it).
     func carry(to p: CGPoint, hand h: CGPoint? = nil) {
         finger = p
         hold = h ?? p
+        if case .decor? = tool {
+            overReturnBadge = isOverReturnBadge(hold) || isOverReturnBadge(p)
+        }
     }
 
-    /// Lets go of the carried tool. `home` is where it flies back to.
     func release(home: CGPoint) {
         guard let t = tool else { return }
         if load > 1 { dropLoad(throwV: CGVector(dx: toolV.dx * 0.3, dy: 0)) }
-        if case .decor(let k) = t, toolP.y < 700 {
-            let d = addDecor(k, x: toolP.x, falling: true)
-            decor[d].y = min(toolP.y + k.size.height * 0.5, decor[d].baseY)
-            Sound.shared.play(.whoosh, volume: 0.5)
-        } else {
+        switch t {
+        case .decor(let k):
+            if isOverReturnBadge(hold) || isOverReturnBadge(toolP) {
+                Sound.shared.play(.whoosh, volume: 0.5)
+            } else {
+                let d = addDecor(k, x: toolP.x, falling: true)
+                decor[d].y = min(toolP.y + k.size.height * 0.45, decor[d].baseY)
+                Sound.shared.play(.whoosh, volume: 0.5)
+            }
+        case .seeds(let k):
+            // Dropping a seed packet over an empty plot plants it immediately.
+            if toolP.y < GGeo.bedBottom + 50,
+               let idx = GGeo.plotX.indices.min(by: { abs(GGeo.plotX[$0] - toolP.x) < abs(GGeo.plotX[$1] - toolP.x) }),
+               abs(GGeo.plotX[idx] - toolP.x) < 60,
+               plots[idx].plant == nil {
+                plant(k, plot: idx)
+            }
+            returning = (t, toolP, home, time, tilt)
+        case .shovel, .can:
             returning = (t, toolP, home, time, tilt)
         }
+        overReturnBadge = false
+        autoShovelActive = false
         tool = nil
         flow = 0
     }
@@ -569,14 +571,14 @@ final class GardenSim {
         let vy = (toolP.y - prev.y) / dt
         toolV.dx += (vx - toolV.dx) * min(1, dt * 18)
         toolV.dy += (vy - toolV.dy) * min(1, dt * 18)
-        let overGarden = toolP.y < 712 && toolP.x > 20 && toolP.x < 1004
+        let overGarden = toolP.y < GGeo.bedBottom + 36 && toolP.x > 20 && toolP.x < 1004
 
         var target: CGFloat = 0
         switch t {
         case .can: target = overGarden ? 0.95 - toolV.dx * 0.0004 : 0
         case .shovel: target = max(-0.5, min(0.5, toolV.dx * 0.0009))
         case .seeds: target = overGarden ? 2.25 + sin(CGFloat(time) * 9) * 0.12 : 0
-        case .decor: target = max(-0.4, min(0.4, toolV.dx * 0.0012))
+        case .decor: target = max(-0.38, min(0.38, toolV.dx * 0.0012))
         }
         tiltV += ((target - tilt) * 140 - tiltV * 15) * dt
         tilt += tiltV * dt
@@ -590,7 +592,6 @@ final class GardenSim {
         lastToolP = toolP
     }
 
-    /// Where the watering can's sprinkler head is, and the way the water leaves it.
     func canSpout() -> (CGPoint, CGVector) {
         let a = -tilt
         let local = CGPoint(x: -112, y: -6)
@@ -606,41 +607,45 @@ final class GardenSim {
         flow = gdClamp((tilt - 0.35) / 0.45)
         guard flow > 0 else { return }
         let (spout, dir) = canSpout()
-        waterAcc += flow * 420 * dt
+        waterAcc += flow * 400 * dt
         let perp = CGVector(dx: -dir.dy, dy: dir.dx)
         while waterAcc >= 1 {
             waterAcc -= 1
-            let speed = CGFloat.random(in: 170...260)
-            // a wide shower, so the water lands well past her fingertip (see `FingerLift.spread`)
+            let speed = CGFloat.random(in: 170...255)
             let spread = CGFloat.random(in: -1...1)
             let j = CGFloat.random(in: -7...7) * FingerLift.spread
-            let v = CGVector(dx: dir.dx * speed + perp.dx * spread * 70 * FingerLift.spread + toolV.dx * 0.3,
-                             dy: dir.dy * speed + perp.dy * spread * 70 * FingerLift.spread + toolV.dy * 0.3)
+            let v = CGVector(dx: dir.dx * speed + perp.dx * spread * 66 * FingerLift.spread + toolV.dx * 0.3,
+                             dy: dir.dy * speed + perp.dy * spread * 66 * FingerLift.spread + toolV.dy * 0.3)
             let drop = GParticle(kind: .water, p: CGPoint(x: spout.x + perp.dx * j, y: spout.y + perp.dy * j), v: v,
-                                 life: 3, size: CGFloat.random(in: 3...5), color: GRGB(0xBFE3FF))
+                                 life: 2.8, size: CGFloat.random(in: 3...5), color: GRGB(0xBFE3FF))
             particles.append(drop)
         }
     }
 
-    /// The shovel blade's tip is the touch point. Soil above the tip within the blade's width comes away onto the blade.
+    // MARK: Fun Shovel Job
+
     private func dig(_ dt: CGFloat, from prev: CGPoint) {
         let tip = toolP
         let moved = hypot(tip.x - prev.x, tip.y - prev.y)
         if GGeo.inBed(tip.x) {
             let surf = surface(tip.x)
-            if tip.y > surf - 2 {
+            // Pop weeds in one generous scoop near the soil.
+            if tip.y > surf - 36,
+               let wi = weeds.firstIndex(where: { abs($0.x - tip.x) < 30 * FingerLift.spread }) {
+                popWeed(wi, v: CGVector(dx: toolV.dx * 0.35 + CGFloat.random(in: -90...90), dy: -620))
+            }
+            if tip.y > surf - 8 {
                 let c = GGeo.column(tip.x)
                 var took: CGFloat = 0
                 let floor = GGeo.soilY + GGeo.maxDepth
                 let tipY = min(tip.y, floor)
-                // the blade takes a scoop wider than her fingertip (see `FingerLift.spread`)
-                let reach = Int((6 * FingerLift.spread).rounded())
+                let reach = Int((5 * FingerLift.spread).rounded())
                 for i in max(0, c - reach)...min(GGeo.columns - 1, c + reach) {
-                    let d = CGFloat(i - c) / (5.5 * FingerLift.spread)
+                    let d = CGFloat(i - c) / (5.0 * FingerLift.spread)
                     let w = exp(-d * d * 1.4)
-                    let want = (tipY - 3 * d * d) - h[i]
+                    let want = (tipY - 2.5 * d * d) - h[i]
                     if want > 0 {
-                        let dh = min(want, 7 * w)
+                        let dh = min(want, 6 * w)
                         h[i] += dh
                         took += dh * GGeo.col
                     }
@@ -652,32 +657,35 @@ final class GardenSim {
                         GardenSound.shared.play(.dig, volume: 0.7)
                         Sound.shared.tap()
                     }
-                    for _ in 0..<Int(min(4, took / 30)) {
-                        let dust = GParticle(kind: .dust, p: CGPoint(x: tip.x + CGFloat.random(in: -16...16) * FingerLift.spread, y: surf),
-                                             v: CGVector(dx: CGFloat.random(in: -40...40), dy: CGFloat.random(in: -60 ... -20)),
-                                             life: 0.7, size: CGFloat.random(in: 8...14), color: GRGB(0xB08660))
-                        particles.append(dust)
+                    for _ in 0..<Int(min(4, took / 24)) {
+                        particles.append(GParticle(kind: .dust,
+                                                   p: CGPoint(x: tip.x + CGFloat.random(in: -16...16) * FingerLift.spread, y: surf),
+                                                   v: CGVector(dx: CGFloat.random(in: -40...40), dy: CGFloat.random(in: -60 ... -20)),
+                                                   life: 0.7, size: CGFloat.random(in: 8...14), color: GRGB(0xB08660)))
                     }
                 }
-                // Too much on the blade spills off the sides.
-                if load > 1100 {
-                    let spill = load - 1100
-                    load = 1100
-                    deposit(spill * 0.5, at: tip.x - 30)
-                    deposit(spill * 0.5, at: tip.x + 30)
+                if load > 900 {
+                    let spill = load - 900
+                    load = 900
+                    deposit(spill * 0.5, at: tip.x - 28)
+                    deposit(spill * 0.5, at: tip.x + 28)
                 }
-                // A weed in the way pops out.
-                if let wi = weeds.firstIndex(where: { abs($0.x - tip.x) < 18 * FingerLift.spread }) { popWeed(wi, v: CGVector(dx: toolV.dx * 0.4, dy: -620)) }
-                // Digging hard at a plant lifts it out.
-                for i in plots.indices where plots[i].plant != nil {
-                    if abs(GGeo.plotX[i] - tip.x) < 20 * FingerLift.spread {
-                        plots[i].digWork += moved
-                        plots[i].bendV += (tip.x - prev.x) * 0.02
-                        if plots[i].digWork > 160 { uproot(i) }
+                // Check each plot: single decisive manual scoop uproots a plant, or unearths a buried surprise on an empty plot.
+                for i in plots.indices where abs(GGeo.plotX[i] - tip.x) < 38 {
+                    if plots[i].plant != nil && !autoShovelActive {
+                        plots[i].digWork += max(moved, dt * 45)
+                        plots[i].bendV += (tip.x - prev.x) * 0.025
+                        if plots[i].digWork >= 22 {
+                            uproot(i)
+                        }
+                    } else if plots[i].plant == nil && plots[i].surpriseReady {
+                        plots[i].digWork += max(moved, dt * 60)
+                        if plots[i].digWork >= 10 {
+                            unearthSurprise(plot: i)
+                        }
                     }
                 }
-            } else if load > 1 && tip.y < surf - 12 && toolV.dy < -240 {
-                // A flick up and out: throw the soil.
+            } else if load > 1 && tip.y < surf - 14 && toolV.dy < -240 {
                 dropLoad(throwV: CGVector(dx: toolV.dx * 0.55, dy: toolV.dy * 0.6))
                 GardenSound.shared.play(.toss, volume: 0.7)
             }
@@ -687,16 +695,113 @@ final class GardenSim {
         }
     }
 
-    /// The soil on the blade leaves as clods.
+    @discardableResult
+    func unearthSurprise(plot i: Int) -> BuriedSurprise? {
+        guard plots.indices.contains(i) else { return nil }
+        guard case .empty(let surprise) = plots[i].state, plots[i].surpriseReady else { return nil }
+        plots[i].surpriseReady = false
+        plots[i].surpriseResetAt = time + 5.0
+        plots[i].digWork = 0
+        plots[i].moundPopV += 10
+        let x = GGeo.plotX[i]
+        let surf = surface(x)
+        let origin = CGPoint(x: x, y: surf - 16)
+        burstSoil(at: CGPoint(x: x, y: surf), n: 9)
+        sparkle(at: origin, count: 12)
+        GardenSound.shared.play(.dig, volume: 0.8)
+        Sound.shared.play(.sparkle, volume: 0.55)
+        Sound.shared.tap()
+        surprisePops.append(SurprisePop(surprise: surprise, origin: origin, start: time))
+        switch surprise {
+        case .worm:
+            worm.x = x
+            worm.peek = 0.45
+            worm.peekUntil = time + 4.5
+            worm.wiggle = time
+            GardenSound.shared.play(.squeak, volume: 0.85)
+            heartBurst(at: CGPoint(x: x, y: surf - 26), count: 4)
+        case .ladybug:
+            ladybug.x = x
+            ladybug.p = CGPoint(x: x, y: surf - 8)
+            ladybugTakeOff()
+        case .coins:
+            earnCoins(2, from: CGPoint(x: x, y: surf - 24))
+        case .mysteryBulb:
+            let kind = PlantKind.allCases.randomElement() ?? .tulip
+            let rareVariant = Plant.specialVariant + Int.random(in: 0..<6)
+            plant(kind, plot: i, forcedVariant: rareVariant)
+            GardenSound.shared.play(.grow, volume: 0.85)
+        }
+        return surprise
+    }
+
+    func bestShovelTarget() -> CGPoint {
+        if let w = weeds.first {
+            return CGPoint(x: w.x, y: surface(w.x) + 4)
+        }
+        if let i = plots.indices.first(where: { plots[$0].plant == nil && plots[$0].surpriseReady }) {
+            let x = GGeo.plotX[i]
+            return CGPoint(x: x, y: surface(x) + 10)
+        }
+        if let i = plots.indices.first(where: { plots[$0].plant == nil }) {
+            let x = GGeo.plotX[i]
+            return CGPoint(x: x, y: surface(x) + 10)
+        }
+        return CGPoint(x: 436, y: GGeo.soilY + 6)
+    }
+
+    func bestWaterTarget() -> CGPoint {
+        let growing = plots.indices.filter {
+            guard let p = plots[$0].plant else { return false }
+            return p.growth < 1
+        }
+        if let thirstiest = growing.max(by: { a, b in
+            if abs(plots[a].dry - plots[b].dry) > 0.25 { return plots[a].dry < plots[b].dry }
+            return wetAt(GGeo.plotX[a]) > wetAt(GGeo.plotX[b])
+        }) {
+            let x = GGeo.plotX[thirstiest]
+            return CGPoint(x: x, y: surface(x) - 34)
+        }
+        if let pumpkinIdx = plots.indices.first(where: {
+            guard let p = plots[$0].plant else { return false }
+            return p.kind == .pumpkin && p.growth >= 1 && p.left > 0 && !p.giant
+        }) {
+            let x = GGeo.plotX[pumpkinIdx]
+            return CGPoint(x: x, y: surface(x) - 34)
+        }
+        return CGPoint(x: GGeo.plotX[2], y: GGeo.soilY - 34)
+    }
+
+    /// Single-tap dock action for the shovel (pops weed or digs buried surprise, never uproots planted flowers).
+    func autoShovel(at spot: CGPoint) {
+        if let wi = weeds.indices.min(by: { abs(weeds[$0].x - spot.x) < abs(weeds[$1].x - spot.x) }),
+           abs(weeds[wi].x - spot.x) < 56 {
+            popWeed(wi, v: CGVector(dx: CGFloat.random(in: -90...90), dy: -620))
+            return
+        }
+        if let i = plots.indices.min(by: { abs(GGeo.plotX[$0] - spot.x) < abs(GGeo.plotX[$1] - spot.x) }),
+           abs(GGeo.plotX[i] - spot.x) < 60,
+           plots[i].plant == nil {
+            if plots[i].surpriseReady {
+                unearthSurprise(plot: i)
+            } else {
+                let x = GGeo.plotX[i]
+                plots[i].moundPopV += 6
+                burstSoil(at: CGPoint(x: x, y: surface(x)), n: 6)
+                GardenSound.shared.play(.dig, volume: 0.7)
+            }
+        }
+    }
+
     private func dropLoad(throwV: CGVector) {
-        let n = max(3, min(18, Int(load / 50)))
+        let n = max(3, min(14, Int(load / 50)))
         let each = load / CGFloat(n)
         let browns = [GRGB(0x8A5A36), GRGB(0x7A4E2E), GRGB(0x9C6A42), GRGB(0x6B4428)]
         for k in 0..<n {
             let jx = CGFloat.random(in: -14...14)
-            let v = CGVector(dx: throwV.dx + CGFloat.random(in: -120...120), dy: throwV.dy + CGFloat.random(in: -140...40))
+            let v = CGVector(dx: throwV.dx + CGFloat.random(in: -110...110), dy: throwV.dy + CGFloat.random(in: -130...40))
             let clod = GParticle(kind: .clod, p: CGPoint(x: toolP.x + jx, y: toolP.y - 18 - CGFloat(k % 3) * 4), v: v,
-                                 life: 6, size: CGFloat.random(in: 4...8.5), color: browns[k % browns.count],
+                                 life: 5, size: CGFloat.random(in: 4...8), color: browns[k % browns.count],
                                  rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -9...9), mass: each)
             particles.append(clod)
         }
@@ -707,28 +812,74 @@ final class GardenSim {
         guard tilt > 1.5 else { return }
         seedTimer -= dt
         if seedTimer > 0 { return }
-        seedTimer = 0.13
+        seedTimer = 0.12
         let a = tilt
         let local = CGPoint(x: 0, y: -46)
         let p = CGPoint(x: toolP.x + local.x * cos(a) - local.y * sin(a), y: toolP.y + local.x * sin(a) + local.y * cos(a))
-        let s = GParticle(kind: .seed, p: p, v: CGVector(dx: toolV.dx * 0.2 + CGFloat.random(in: -40...40), dy: CGFloat.random(in: 0...60)),
-                          life: 5, size: kind == .pumpkin ? 5 : (kind == .sunflower ? 4.4 : 3.2), color: kind.seedColor,
+        let s = GParticle(kind: .seed, p: p, v: CGVector(dx: toolV.dx * 0.2 + CGFloat.random(in: -36...36), dy: CGFloat.random(in: 0...60)),
+                          life: 4, size: kind == .pumpkin ? 5 : (kind == .sunflower ? 4.4 : 3.2), color: kind.seedColor,
                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -8...8), seed: kind)
         particles.append(s)
         if Int(time * 7.7) % 3 == 0 { GardenSound.shared.play(.seeds, volume: 0.35, gap: 0.25) }
     }
 
-    /// Direct sowing follows the six planting sites. A stroke can pass over existing plants safely.
+    // MARK: Zero-Friction Planting & Watering
+
+    func plant(_ kind: PlantKind, plot i: Int, forcedVariant: Int? = nil) {
+        guard plots.indices.contains(i), plots[i].plant == nil else { return }
+        let p = Plant(kind: kind, growth: 0.08, left: 0, variant: forcedVariant ?? GardenSim.rollVariant())
+        plots[i].state = .growing(p)
+        plots[i].fillUntil = time + 0.65
+        plots[i].dry = 0
+        plots[i].waterPulse = 0
+        plots[i].digWork = 0
+        plots[i].pop = 0
+        plots[i].popV = 8
+        plots[i].moundPopV += 9
+        GardenSound.shared.play(.pat, volume: 0.8)
+        let x = GGeo.plotX[i]
+        for _ in 0..<8 {
+            particles.append(GParticle(kind: .dust, p: CGPoint(x: x + CGFloat.random(in: -26...26), y: surface(x) - 4),
+                                       v: CGVector(dx: CGFloat.random(in: -70...70), dy: CGFloat.random(in: -70 ... -20)),
+                                       life: 0.85, size: CGFloat.random(in: 10...17), color: GRGB(0xB58C66)))
+        }
+        sparkle(at: CGPoint(x: x, y: surface(x) - 20), count: 7)
+    }
+
+    /// Tapping a seed packet in the tray arcs a seed directly into the nearest open plot.
+    @discardableResult
+    func tossSeed(_ kind: PlantKind, from start: CGPoint) -> Int? {
+        let reserved = Set(flyers.compactMap { flyer -> Int? in
+            if case .flyingSeed(_, let idx) = flyer.kind { return idx }
+            return nil
+        })
+        let open = plots.indices.filter { plots[$0].plant == nil && !reserved.contains($0) }
+        guard let targetIdx = open.min(by: { abs(GGeo.plotX[$0] - start.x) < abs(GGeo.plotX[$1] - start.x) }) else {
+            for i in plots.indices { plots[i].popV += 2.5 }
+            Sound.shared.play(.boing, volume: 0.3)
+            return nil
+        }
+        let x = GGeo.plotX[targetIdx]
+        let dest = CGPoint(x: x, y: surface(x) - 4)
+        let dur = 0.34
+        flyers.append(GFlyer(kind: .flyingSeed(kind, targetIdx),
+                             p0: start,
+                             v0: GFlyer.aim(from: start, to: dest, dur: dur),
+                             start: time, dur: dur, spin: 8, toBasket: false))
+        GardenSound.shared.play(.seeds, volume: 0.7)
+        Sound.shared.tap()
+        return targetIdx
+    }
+
     func sowRow(_ kind: PlantKind, from a: CGPoint, to b: CGPoint) {
         for i in plots.indices where plots[i].plant == nil {
             let x = GGeo.plotX[i]
             let dx = b.x - a.x
             let t = abs(dx) < 1 ? 1 : min(1, max(0, (x - a.x) / dx))
             let px = a.x + dx * t, py = a.y + (b.y - a.y) * t
-            guard abs(px - x) < 64, abs(py - surface(x)) < 86 else { continue }
-            if !hasHole(plot: i) { carveHole(plot: i) }
+            guard abs(px - x) < 62, abs(py - surface(x)) < 90 else { continue }
             plant(kind, plot: i)
-            waterBed(at: x, amount: 0.20)
+            waterBed(at: x, amount: 0.28)
         }
     }
 
@@ -744,44 +895,29 @@ final class GardenSim {
         let x = GGeo.plotX[plot]
         let ground = surface(x)
         let top = head(plot: plot)?.y ?? ground
-        guard point.y >= top - 80, point.y <= ground + 86 else { return }
-        waterBed(at: x, amount: 0.42)
-        plots[plot].popV += 3
-        for _ in 0..<12 {
-            particles.append(GParticle(kind: .water, p: CGPoint(x: x + CGFloat.random(in: -20...20), y: top - 48),
-                                       v: CGVector(dx: 0, dy: 160), life: 2, size: 3, color: GRGB(0x8AD8FF)))
+        guard point.y >= top - 90, point.y <= ground + 90 else { return }
+        waterBed(at: x, amount: 0.65)
+        plots[plot].popV += 4
+        plots[plot].moundPopV += 4
+        for _ in 0..<14 {
+            particles.append(GParticle(kind: .water, p: CGPoint(x: x + CGFloat.random(in: -22...22), y: top - 52),
+                                       v: CGVector(dx: CGFloat.random(in: -20...20), dy: 180), life: 1.8, size: 3.4, color: GRGB(0x8AD8FF)))
         }
-        GardenSound.shared.play(.splash, volume: 0.55, gap: 0.1)
+        GardenSound.shared.play(.splash, volume: 0.6, gap: 0.1)
+        fulfillRainVisitors()
     }
 
-    // MARK: Planting
-
-    func plant(_ kind: PlantKind, plot i: Int) {
-        guard plots[i].plant == nil else { return }
-        plots[i].plant = Plant(kind: kind, growth: 0.02, left: 0, variant: GardenSim.rollVariant())
-        plots[i].fillUntil = time + 0.9
-        plots[i].dry = 0
-        plots[i].pop = 0
-        plots[i].popV = 5
-        GardenSound.shared.play(.pat, volume: 0.8)
-        let x = GGeo.plotX[i]
-        for _ in 0..<8 {
-            let dust = GParticle(kind: .dust, p: CGPoint(x: x + CGFloat.random(in: -30...30), y: surface(x) - 4),
-                                 v: CGVector(dx: CGFloat.random(in: -70...70), dy: CGFloat.random(in: -70 ... -20)),
-                                 life: 0.9, size: CGFloat.random(in: 10...18), color: GRGB(0xB58C66))
-            particles.append(dust)
-        }
-        sparkle(at: CGPoint(x: x, y: GGeo.soilY - 20), count: 6)
-    }
-
-    private func uproot(_ i: Int) {
-        guard let p = plots[i].plant else { return }
-        plots[i].plant = nil
+    func uproot(_ i: Int) {
+        guard plots.indices.contains(i), let p = plots[i].plant else { return }
+        plots[i].state = .empty(surprise: BuriedSurprise.random())
+        plots[i].surpriseReady = false
+        plots[i].surpriseResetAt = time + 4.0
         plots[i].digWork = 0
         plots[i].pull = 0
+        plots[i].waterPulse = 0
         let base = CGPoint(x: GGeo.plotX[i], y: surface(GGeo.plotX[i]))
-        let side: CGFloat = base.x < 512 ? -1 : 1
-        flyers.append(GFlyer(kind: .uprooted(p), p0: base, v0: CGVector(dx: side * 260, dy: -700), start: time, dur: 1.4,
+        let side: CGFloat = base.x < 440 ? -1 : 1
+        flyers.append(GFlyer(kind: .uprooted(p), p0: base, v0: CGVector(dx: side * 240, dy: -660), start: time, dur: 1.3,
                              spin: side * 5, toBasket: false))
         GardenSound.shared.play(.pluck)
         burstSoil(at: base, n: 8)
@@ -791,11 +927,10 @@ final class GardenSim {
 
     private func stepSoil(_ dt: CGFloat) {
         let n = GGeo.columns
-        // Loose soil slides until the slope is one it can hold. Wet soil holds steeper walls.
         for _ in 0..<2 {
             for i in 0..<(n - 1) {
                 let d = h[i + 1] - h[i]
-                let hold = 5 + 3 * min(wet[i], wet[i + 1])
+                let hold = 4.5 + 2.5 * min(wet[i], wet[i + 1])
                 let ad = abs(d)
                 if ad > hold {
                     let t = (ad - hold) * 0.25
@@ -803,24 +938,22 @@ final class GardenSim {
                 }
             }
         }
-        // Freshly planted holes fill back in and get patted flat.
         for i in plots.indices where time < plots[i].fillUntil {
             let c = GGeo.column(GGeo.plotX[i])
-            let lo = max(1, c - 16)
-            let hi = min(n - 2, c + 16)
+            let lo = max(1, c - 14)
+            let hi = min(n - 2, c + 14)
             var next = h
             let k = min(0.45, 14 * dt)
             for j in lo...hi { next[j] = h[j] + k * ((h[j - 1] + h[j + 1]) * 0.5 - h[j]) }
             h = next
             if plots[i].fillUntil - time < Double(dt) * 1.5 {
-                for j in max(0, c - 7)...min(n - 1, c + 7) where h[j] > GGeo.soilY + 3 { h[j] = GGeo.soilY + 3 }
+                for j in max(0, c - 6)...min(n - 1, c + 6) where h[j] > GGeo.soilY + 2 { h[j] = GGeo.soilY + 2 }
             }
         }
-        for i in 0..<n { h[i] = max(GGeo.soilY - 46, min(GGeo.soilY + GGeo.maxDepth, h[i])) }
+        for i in 0..<n { h[i] = max(GGeo.soilY - 22, min(GGeo.soilY + GGeo.maxDepth, h[i])) }
 
-        // Water spreads sideways and dries in the sun.
         let sunny = (1 - cloud) * (1 - night)
-        let dry = (0.004 + 0.014 * sunny) * (1 - rain)
+        let dry = (0.004 + 0.012 * sunny) * (1 - rain)
         var w = wet
         let D = min(0.4, 5 * dt)
         for i in 0..<n {
@@ -834,19 +967,37 @@ final class GardenSim {
 
     func water(at x: CGFloat, amount: CGFloat) {
         guard GGeo.inBed(x) else { return }
-        let c = min(wet.count - 1, GGeo.column(x))
+        let c = max(0, min(wet.count - 1, GGeo.column(x)))
         wet[c] = min(1.15, wet[c] + amount)
         if c > 0 { wet[c - 1] = min(1.15, wet[c - 1] + amount * 0.5) }
         if c < GGeo.columns - 1 { wet[c + 1] = min(1.15, wet[c + 1] + amount * 0.5) }
+
+        // Watering a ripe pumpkin once more puffs it into a comical giant prize pumpkin.
+        for i in plots.indices where abs(GGeo.plotX[i] - x) < 48 {
+            if var p = plots[i].plant, p.kind == .pumpkin, p.growth >= 1, p.left > 0, !p.giant {
+                plots[i].waterPulse += amount * 0.5
+                if plots[i].waterPulse >= 0.45 {
+                    p.giant = true
+                    plots[i].state = .ripe(p)
+                    plots[i].waterPulse = 0
+                    plots[i].popV += 14
+                    let center = CGPoint(x: GGeo.plotX[i] + 12, y: surface(GGeo.plotX[i]) - 42)
+                    sparkle(at: center, count: 16)
+                    Sound.shared.play(.boing, volume: 0.75)
+                    Sound.shared.play(.sparkle, volume: 0.55)
+                    GardenSound.shared.play(.grow, volume: 0.9)
+                    discover(.giantPumpkin, at: center)
+                }
+            }
+        }
     }
 
-    // MARK: Plants
+    // MARK: Plants (~4 second brisk growth)
 
-    static let stages: [Double] = [0.12, 0.3, 0.55, 0.8, 1.0]
+    static let stages: [Double] = [0.25, 0.5, 0.75, 1.0]
 
-    /// The top of a plant (where its flower or head is), after sway.
     func head(plot i: Int) -> CGPoint? {
-        guard let p = plots[i].plant else { return nil }
+        guard plots.indices.contains(i), let p = plots[i].plant else { return nil }
         let base = CGPoint(x: GGeo.plotX[i], y: surface(GGeo.plotX[i]))
         let hgt = GardenPlants.stemHeight(p)
         let b = plots[i].bend
@@ -854,42 +1005,50 @@ final class GardenSim {
     }
 
     func bloomed(_ i: Int) -> Bool {
-        guard let p = plots[i].plant else { return false }
+        guard plots.indices.contains(i), let p = plots[i].plant else { return false }
         return p.kind.isFlower && p.growth >= 0.95
     }
 
     private func stepPlants(_ dt: CGFloat) {
         let t = CGFloat(time)
         for i in plots.indices {
-            guard var p = plots[i].plant else {
+            plots[i].moundPopV += (-160 * plots[i].moundPop - 11 * plots[i].moundPopV) * dt
+            plots[i].moundPop += plots[i].moundPopV * dt
+            if plots[i].plant == nil {
                 plots[i].bend *= 0.9
+                if !plots[i].surpriseReady && time >= plots[i].surpriseResetAt {
+                    plots[i].state = .empty(surprise: BuriedSurprise.random())
+                    plots[i].surpriseReady = true
+                }
                 continue
             }
+            guard var p = plots[i].plant else { continue }
             let x = GGeo.plotX[i]
-            let irrigated = spring.irrigates(x: x, y: rootDepth(i))
-            if irrigated { water(at: x, amount: dt * 2) }
             let moist = wetAt(x, span: 5)
-            let weedy = weeds.contains { abs($0.x - x) < 80 && $0.growth > 0.3 }
+            let weedy = weeds.contains { abs($0.x - x) < 74 && $0.growth > 0.3 }
             plots[i].sad = weedy
             if p.growth < 1 {
                 if moist > 0.1 {
-                    var rate: Double = irrigated ? 0.65 : 1.0 / 17
-                    if weather == .sun { rate *= 1.35 }
-                    if weather == .night { rate *= 0.7 }
-                    if weedy { rate *= 0.5 }
+                    var rate: Double = 0.25
+                    if weather == .sun { rate *= 1.15 }
+                    if weather == .night { rate *= 0.85 }
+                    if weedy { rate *= 0.65 }
                     let before = p.growth
                     p.growth = min(1, p.growth + rate * Double(dt))
                     plots[i].dry = 0
                     let c = GGeo.column(x)
-                    for j in max(0, c - 6)...min(GGeo.columns - 1, c + 6) { wet[j] = max(0, wet[j] - 0.016 * dt) }
+                    for j in max(0, c - 6)...min(GGeo.columns - 1, c + 6) {
+                        wet[j] = max(0, wet[j] - 0.014 * dt)
+                    }
                     for s in GardenSim.stages where before < s && p.growth >= s {
-                        plots[i].popV += 7
+                        plots[i].popV += 8
                         let top = CGPoint(x: x, y: surface(x) - GardenPlants.stemHeight(p) - 10)
                         if s >= 1 {
                             p.left = p.kind.crop
-                            sparkle(at: top, count: 12)
+                            plots[i].waterPulse = 0
+                            sparkle(at: top, count: 14)
                             GardenSound.shared.play(.grow, volume: 0.9)
-                            Sound.shared.play(.sparkle, volume: 0.4)
+                            Sound.shared.play(.sparkle, volume: 0.45)
                         } else {
                             sparkle(at: top, count: 5)
                             GardenSound.shared.play(.grow, volume: 0.5)
@@ -901,20 +1060,14 @@ final class GardenSim {
             } else {
                 plots[i].dry = 0
             }
-            if irrigated && p.kind == .pumpkin && p.growth == 1 && spring.pumpkin == nil {
-                spring.pumpkin = (CGPoint(x: x+18, y: surface(x)-32), CGVector(dx: 100, dy: -125), 0, p.variant)
-                p.left = 0
-                p.growth = 0.28
-            }
             plots[i].plant = p
 
-            // Sway: a damped spring the wind leans on.
             let hgt = max(30, GardenPlants.stemHeight(p))
-            let k = 30 + 2600 / hgt
-            let droop: CGFloat = (plots[i].dry > 1.5 ? 0.12 : 0) + (plots[i].sad ? 0.06 : 0)
+            let k = 30 + 2400 / hgt
+            let droop: CGFloat = (plots[i].dry > 1.5 ? 0.14 : 0) + (plots[i].sad ? 0.05 : 0)
             let rest = windNow * 0.34 + sin(t * 1.7 + CGFloat(i)) * 0.025 + droop * (i % 2 == 0 ? 1 : -1)
             var f = (rest - plots[i].bend) * k - plots[i].bendV * 3.4
-            if rain > 0.2 { f += CGFloat.random(in: -1...1) * rain * 9 }
+            if rain > 0.2 { f += CGFloat.random(in: -1...1) * rain * 8 }
             plots[i].bendV += f * dt
             plots[i].bend += plots[i].bendV * dt
             plots[i].bend = max(-1.0, min(1.0, plots[i].bend))
@@ -932,7 +1085,7 @@ final class GardenSim {
     private func stepWeeds(_ dt: CGFloat) {
         let t = CGFloat(time)
         for i in weeds.indices {
-            weeds[i].growth = min(1, weeds[i].growth + dt / 16)
+            weeds[i].growth = min(1, weeds[i].growth + dt / 14)
             let rest = windNow * 0.4 + sin(t * 2.1 + CGFloat(weeds[i].seed)) * 0.03
             weeds[i].bendV += ((rest - weeds[i].bend) * 70 - weeds[i].bendV * 4) * dt
             weeds[i].bend += weeds[i].bendV * dt
@@ -942,14 +1095,14 @@ final class GardenSim {
             }
         }
         if time > nextWeed {
-            nextWeed = time + Double.random(in: 24...40)
-            guard weeds.count < 4 else { return }
+            nextWeed = time + Double.random(in: 22...36)
+            guard weeds.count < 3 else { return }
             for _ in 0..<12 {
                 let x = CGFloat.random(in: (GGeo.bedLeft + 24)...(GGeo.bedRight - 24))
                 let nearPlot = GGeo.plotX.contains { abs($0 - x) < 34 }
-                let nearWeed = weeds.contains { abs($0.x - x) < 50 }
+                let nearWeed = weeds.contains { abs($0.x - x) < 52 }
                 if !nearPlot && !nearWeed {
-                    weeds.append(GWeed(x: x, growth: 0.02, seed: Int.random(in: 0..<1000)))
+                    weeds.append(GWeed(x: x, growth: 0.05, seed: Int.random(in: 0..<1000)))
                     GardenSound.shared.play(.grow, volume: 0.25)
                     break
                 }
@@ -960,25 +1113,23 @@ final class GardenSim {
     private func popWeed(_ i: Int, v: CGVector) {
         let w = weeds.remove(at: i)
         let base = CGPoint(x: w.x, y: surface(w.x))
-        flyers.append(GFlyer(kind: .weed(w.seed), p0: CGPoint(x: base.x, y: base.y - 10), v0: v, start: time, dur: 1.6,
+        flyers.append(GFlyer(kind: .weed(w.seed), p0: CGPoint(x: base.x, y: base.y - 10), v0: v, start: time, dur: 1.5,
                              spin: v.dx >= 0 ? 6 : -6, toBasket: false))
         GardenSound.shared.play(.pluck)
         Sound.shared.tap()
         burstSoil(at: base, n: 7)
-        // A small hollow where the root came out.
         let c = GGeo.column(w.x)
-        for j in max(0, c - 2)...min(GGeo.columns - 1, c + 2) { h[j] += 3 }
-        sparkle(at: CGPoint(x: base.x, y: base.y - 30), count: 6)
+        for j in max(0, c - 2)...min(GGeo.columns - 1, c + 2) { h[j] += 2 }
+        sparkle(at: CGPoint(x: base.x, y: base.y - 26), count: 7)
     }
 
     private func burstSoil(at p: CGPoint, n: Int) {
         let browns = [GRGB(0x8A5A36), GRGB(0x7A4E2E), GRGB(0x9C6A42)]
         for k in 0..<n {
-            let clod = GParticle(kind: .clod, p: CGPoint(x: p.x + CGFloat.random(in: -10...10), y: p.y - 4),
-                                 v: CGVector(dx: CGFloat.random(in: -220...220), dy: CGFloat.random(in: -520 ... -220)),
-                                 life: 4, size: CGFloat.random(in: 3...6), color: browns[k % 3], rot: CGFloat.random(in: 0...6),
-                                 spin: CGFloat.random(in: -9...9), mass: 0)
-            particles.append(clod)
+            particles.append(GParticle(kind: .clod, p: CGPoint(x: p.x + CGFloat.random(in: -10...10), y: p.y - 4),
+                                       v: CGVector(dx: CGFloat.random(in: -210...210), dy: CGFloat.random(in: -480 ... -200)),
+                                       life: 3.5, size: CGFloat.random(in: 3...6), color: browns[k % 3], rot: CGFloat.random(in: 0...6),
+                                       spin: CGFloat.random(in: -9...9), mass: 0))
         }
     }
 
@@ -1015,19 +1166,19 @@ final class GardenSim {
             case .petal, .leaf:
                 let t = CGFloat(time)
                 let flutter = sin(t * 5 + q.rot * 3) * 40
-                let push = windNow * 300 + 20
+                let push = windNow * 280 + 20
                 q.v.dx += (push - q.v.dx) * dt * 1.2
                 q.v.dy += (70 + flutter - q.v.dy) * dt * 1.6
                 q.p.x += q.v.dx * dt
                 q.p.y += q.v.dy * dt
                 q.rot += q.spin * dt
-                let ground = GGeo.inBed(q.p.x) ? surface(q.p.x) : GGeo.yardY + 20
+                let ground = GGeo.inBed(q.p.x) ? surface(q.p.x) : GGeo.lawnY + 20
                 if q.p.y > ground {
                     q.p.y = ground
                     q.v = .zero
                     q.spin = 0
                 }
-                if q.p.x > 1200 { continue }
+                if q.p.x > 1160 { continue }
             case .sparkle:
                 q.v.dy += 60 * dt
                 q.v.dx *= (1 - dt * 2)
@@ -1035,6 +1186,12 @@ final class GardenSim {
                 q.p.x += q.v.dx * dt
                 q.p.y += q.v.dy * dt
                 q.rot += q.spin * dt
+            case .heart:
+                q.v.dx += sin(CGFloat(time) * 5 + q.rot) * 45 * dt
+                q.v.dx *= (1 - dt * 1.6)
+                q.v.dy += (-110 - q.v.dy) * dt * 1.8
+                q.p.x += q.v.dx * dt
+                q.p.y += q.v.dy * dt
             case .dust:
                 q.v.dx *= (1 - dt * 3)
                 q.v.dy *= (1 - dt * 3)
@@ -1046,28 +1203,25 @@ final class GardenSim {
             }
             keep.append(q)
         }
-        if keep.count > 1800 { keep.removeFirst(keep.count - 1800) }
+        if keep.count > 1600 { keep.removeFirst(keep.count - 1600) }
         particles = keep
     }
 
-    /// A falling drop meets a birdbath, a plant or the ground. Returns true when it is used up.
     private func hitWater(_ q: inout GParticle) -> Bool {
-        // Birdbaths catch water.
         for i in decor.indices where decor[i].kind == .birdbath && !decor[i].held {
             let top = decor[i].y - 70
             if abs(q.p.x - decor[i].x) < 44 && q.p.y > top && q.p.y < top + 20 {
-                decor[i].water = min(1, decor[i].water + (q.kind == .rain ? 0.004 : 0.01))
+                decor[i].water = min(1, decor[i].water + (q.kind == .rain ? 0.005 : 0.012))
                 if Int.random(in: 0..<5) == 0 { ripple(at: CGPoint(x: q.p.x, y: top + 4), small: true) }
                 return true
             }
         }
-        // Drops tap the leaves they fall through.
         if q.kind == .water {
             for i in plots.indices {
                 guard let p = plots[i].plant else { continue }
                 let x = GGeo.plotX[i]
                 let top = surface(x) - GardenPlants.stemHeight(p)
-                if abs(q.p.x - x) < p.kind.reach * 0.6 && q.p.y > top && q.p.y < top + 40 {
+                if abs(q.p.x - x) < p.kind.reach * 0.6 && q.p.y > top && q.p.y < top + 44 {
                     plots[i].bendV += q.v.dx * 0.0006 + CGFloat.random(in: -0.02...0.02)
                 }
             }
@@ -1075,14 +1229,14 @@ final class GardenSim {
         if GGeo.inBed(q.p.x) {
             let s = surface(q.p.x)
             if q.p.y >= s {
-                water(at: q.p.x, amount: q.kind == .rain ? 0.03 : 0.011)
+                water(at: q.p.x, amount: q.kind == .rain ? 0.032 : 0.015)
                 let c = GGeo.column(q.p.x)
-                let puddle = wet[c] > 0.85
+                let puddle = c >= 0 && c < wet.count && wet[c] > 0.85
                 if puddle && Int.random(in: 0..<(q.kind == .rain ? 6 : 3)) == 0 {
                     ripple(at: CGPoint(x: q.p.x, y: s - 1), small: q.kind == .rain)
                 }
-                splash(at: CGPoint(x: q.p.x, y: s - 1), v: q.v, n: q.kind == .rain ? (Int.random(in: 0..<3) == 0 ? 1 : 0) : (Int.random(in: 0..<2)))
-                // A water drop may nudge the worm out.
+                splash(at: CGPoint(x: q.p.x, y: s - 1), v: q.v, n: q.kind == .rain ? (Int.random(in: 0..<3) == 0 ? 1 : 0) : Int.random(in: 0..<2))
+                if q.kind == .water { fulfillRainVisitors() }
                 return true
             }
         } else {
@@ -1091,8 +1245,7 @@ final class GardenSim {
                 splash(at: CGPoint(x: q.p.x, y: ground), v: q.v, n: Int.random(in: 0..<3) == 0 ? 1 : 0)
                 return true
             }
-            // Water landing on the bed's wooden rims runs off.
-            if q.p.y > 1000 { return true }
+            if q.p.y > 900 { return true }
         }
         return false
     }
@@ -1100,26 +1253,25 @@ final class GardenSim {
     private func splash(at p: CGPoint, v: CGVector, n: Int) {
         guard n > 0 else { return }
         for _ in 0..<n {
-            let s = GParticle(kind: .splash, p: p,
-                              v: CGVector(dx: v.dx * 0.15 + CGFloat.random(in: -90...90), dy: -CGFloat.random(in: 110...260)),
-                              life: 0.35, size: CGFloat.random(in: 1.2...2.2), color: GRGB(0xD6EEFF))
-            particles.append(s)
+            particles.append(GParticle(kind: .splash, p: p,
+                                       v: CGVector(dx: v.dx * 0.15 + CGFloat.random(in: -85...85), dy: -CGFloat.random(in: 100...240)),
+                                       life: 0.35, size: CGFloat.random(in: 1.2...2.2), color: GRGB(0xD6EEFF)))
         }
     }
 
     private func ripple(at p: CGPoint, small: Bool) {
-        particles.append(GParticle(kind: .ripple, p: p, v: .zero, life: small ? 0.45 : 0.7, size: small ? 2 : 3,
-                                   color: GRGB(0xFFFFFF)))
+        particles.append(GParticle(kind: .ripple, p: p, v: .zero, life: small ? 0.45 : 0.7, size: small ? 2 : 3, color: GRGB(0xFFFFFF)))
     }
 
-    /// A clod or seed reaches the ground. Returns true when it is used up.
     private func landSolid(_ q: inout GParticle) -> Bool {
         let ground: CGFloat = GGeo.inBed(q.p.x) ? surface(q.p.x) - q.size * 0.4 : GGeo.lawnY + 4
         guard q.p.y >= ground else { return false }
         q.p.y = ground
         let speed = hypot(q.v.dx, q.v.dy)
         if q.kind == .seed, let k = q.seed, GGeo.inBed(q.p.x) {
-            if let i = GGeo.plotX.firstIndex(where: { abs($0 - q.p.x) < 26 }), hasHole(plot: i) {
+            if let i = GGeo.plotX.indices.min(by: { abs(GGeo.plotX[$0] - q.p.x) < abs(GGeo.plotX[$1] - q.p.x) }),
+               abs(GGeo.plotX[i] - q.p.x) < 48,
+               plots[i].plant == nil {
                 plant(k, plot: i)
                 return true
             }
@@ -1130,7 +1282,6 @@ final class GardenSim {
             q.v.dx *= 0.55
             q.spin *= 0.5
             if q.kind == .clod && speed > 500 && q.size > 5 {
-                // A hard landing breaks off a crumb.
                 var crumb = q
                 crumb.size *= 0.55
                 crumb.mass *= 0.3
@@ -1143,17 +1294,16 @@ final class GardenSim {
         if q.kind == .clod {
             if GGeo.inBed(q.p.x) { deposit(q.mass, at: q.p.x) }
             if Int.random(in: 0..<2) == 0 {
-                particles.append(GParticle(kind: .dust, p: q.p, v: CGVector(dx: 0, dy: -12), life: 0.5, size: q.size * 1.6,
-                                           color: GRGB(0xA27A55)))
+                particles.append(GParticle(kind: .dust, p: q.p, v: CGVector(dx: 0, dy: -12), life: 0.5, size: q.size * 1.6, color: GRGB(0xA27A55)))
             }
             if GGeo.inBed(q.p.x) { return true }
             q.resting = true
-            q.life = q.age + 1.2
+            q.life = q.age + 1.1
             return false
         }
         q.resting = true
         q.v = .zero
-        q.life = q.age + 1.4
+        q.life = q.age + 1.2
         return false
     }
 
@@ -1161,14 +1311,26 @@ final class GardenSim {
         let colors = [GRGB(0xFFFFFF), GRGB(0xFFE38A), GRGB(0xFFB3CF)]
         for k in 0..<count {
             let a = CGFloat(k) / CGFloat(max(1, count)) * 2 * .pi + CGFloat.random(in: -0.3...0.3)
-            let sp = CGFloat.random(in: 90...190)
-            particles.append(GParticle(kind: .sparkle, p: p, v: CGVector(dx: cos(a) * sp, dy: sin(a) * sp - 40), life: 0.8,
+            let sp = CGFloat.random(in: 85...180)
+            particles.append(GParticle(kind: .sparkle, p: p, v: CGVector(dx: cos(a) * sp, dy: sin(a) * sp - 35), life: 0.8,
                                        size: CGFloat.random(in: 7...13), color: colors[k % 3], rot: 0,
                                        spin: CGFloat.random(in: -3...3)))
         }
     }
 
-    // MARK: Flyers and the basket
+    func heartBurst(at p: CGPoint, count: Int) {
+        let colors = [GRGB(0xFF7CA8), GRGB(0xFF9EC2), GRGB(0xFFB3CF)]
+        for k in 0..<count {
+            let dx = (CGFloat(k) - CGFloat(count - 1) / 2) * 28 + CGFloat.random(in: -14...14)
+            particles.append(GParticle(kind: .heart,
+                                       p: CGPoint(x: p.x + CGFloat.random(in: -14...14), y: p.y),
+                                       v: CGVector(dx: dx, dy: CGFloat.random(in: -160 ... -90)),
+                                       life: 1.15, size: CGFloat.random(in: 14...20),
+                                       color: colors[k % colors.count], rot: CGFloat.random(in: 0...6)))
+        }
+    }
+
+    // MARK: Flyers, basket, vase & surprise pops
 
     private func stepFlyers() {
         var keep: [GFlyer] = []
@@ -1177,23 +1339,35 @@ final class GardenSim {
                 keep.append(f)
                 continue
             }
+            if case .flyingSeed(let kind, let idx) = f.kind {
+                plant(kind, plot: idx)
+            }
             if f.toBasket {
                 basketBounceV += 9
                 GardenSound.shared.play(.basket, volume: 0.9)
                 Sound.shared.play(.ding, volume: 0.35)
                 sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 30), count: 6)
             }
+            if f.toVase {
+                vaseBounceV += 10
+                GardenSound.shared.play(.basket, volume: 0.7)
+                Sound.shared.play(.ding, volume: 0.4)
+                sparkle(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 68), count: 8)
+            }
         }
         flyers = keep
     }
 
-    private func stepBasket(_ dt: CGFloat) {
+    private func stepProps(_ dt: CGFloat) {
         basketBounceV += (-160 * basketBounce - 10 * basketBounceV) * dt
         basketBounce += basketBounceV * dt
+        vaseBounceV += (-170 * vaseBounce - 10 * vaseBounceV) * dt
+        vaseBounce += vaseBounceV * dt
+        surprisePops.removeAll { time - $0.start >= $0.dur }
     }
 
-    private func harvest(_ i: Int) {
-        guard var p = plots[i].plant, p.growth >= 1, p.left > 0 else { return }
+    func harvest(_ i: Int) {
+        guard plots.indices.contains(i), var p = plots[i].plant, p.growth >= 1, p.left > 0 else { return }
         let x = GGeo.plotX[i]
         let base = CGPoint(x: x, y: surface(x))
         var from = head(plot: i) ?? base
@@ -1205,35 +1379,64 @@ final class GardenSim {
         case .strawberry:
             let s = GardenPlants.berrySpots[(p.kind.crop - p.left) % GardenPlants.berrySpots.count]
             from = CGPoint(x: base.x + s.x, y: base.y - s.y)
-        case .pumpkin: from = CGPoint(x: base.x + 26, y: base.y - 28)
-        case .carrot: from = CGPoint(x: base.x, y: base.y + 10)
+        case .pumpkin:
+            from = CGPoint(x: base.x + 12, y: base.y - (p.giant ? 42 : 28))
+        case .carrot:
+            from = CGPoint(x: base.x, y: base.y + 8)
         default: break
         }
+        let wasGiant = p.giant
         basket.append("\(p.kind.rawValue):\(p.variant)")
         if basket.count > 60 { basket.removeFirst(basket.count - 60) }
         p.left -= 1
-        let dur = 0.75 + Double(abs(GGeo.basket.x - from.x)) / 2400
-        flyers.append(GFlyer(kind: .crop(p.kind, p.variant), p0: from,
-                             v0: GFlyer.aim(from: from, to: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 20), dur: dur),
-                             start: time, dur: dur, spin: CGFloat.random(in: -7...7), toBasket: true))
+
+        if p.kind.isFlower {
+            bouquet.append(BouquetFlower(kind: p.kind, variant: p.variant))
+            if bouquet.count > GardenSim.maxBouquet {
+                bouquet.removeFirst(bouquet.count - GardenSim.maxBouquet)
+            }
+            let target = CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 64)
+            let dur = 0.62 + Double(abs(target.x - from.x)) / 2400
+            flyers.append(GFlyer(kind: .flowerToVase(p.kind, p.variant), p0: from,
+                                 v0: GFlyer.aim(from: from, to: target, dur: dur),
+                                 start: time, dur: dur, spin: CGFloat.random(in: -5...5),
+                                 toBasket: false, toVase: true))
+            petals(at: from, color: p.kind.bloom(p.variant), n: 6)
+        } else {
+            let target = CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 20)
+            let dur = 0.65 + Double(abs(target.x - from.x)) / 2400
+            flyers.append(GFlyer(kind: .crop(p.kind, p.variant, wasGiant), p0: from,
+                                 v0: GFlyer.aim(from: from, to: target, dur: dur),
+                                 start: time, dur: dur, spin: CGFloat.random(in: -6...6),
+                                 toBasket: true, toVase: false))
+            if wasGiant {
+                sparkle(at: from, count: 16)
+                Sound.shared.play(.sparkle, volume: 0.6)
+            }
+        }
+
         GardenSound.shared.play(.pluck, volume: 0.8)
         Sound.shared.tap()
         plots[i].bendV += CGFloat.random(in: -1.5...1.5)
-        plots[i].popV += 4
-        if p.kind.isFlower {
-            petals(at: from, color: p.kind.bloom(p.variant), n: 5)
-        }
+        plots[i].popV += 5
+        fulfillMatchingVisitors(harvested: p.kind)
+
         if p.left <= 0 {
             switch p.kind {
             case .carrot:
-                plots[i].plant = nil
+                plots[i].state = .empty(surprise: BuriedSurprise.random())
+                plots[i].surpriseReady = true
                 plots[i].pull = 0
                 burstSoil(at: base, n: 9)
                 let c = GGeo.column(x)
-                for j in max(0, c - 4)...min(GGeo.columns - 1, c + 4) { h[j] += 5 }
+                for j in max(0, c - 4)...min(GGeo.columns - 1, c + 4) { h[j] += 4 }
                 return
-            case .pumpkin: p.growth = 0.62
-            default: p.growth = 0.8
+            case .pumpkin:
+                p.growth = 0.55
+                p.giant = false
+                plots[i].waterPulse = 0
+            default:
+                p.growth = 0.65
             }
             p.left = 0
         }
@@ -1243,26 +1446,27 @@ final class GardenSim {
     private func petals(at p: CGPoint, color: GRGB, n: Int) {
         for _ in 0..<n {
             particles.append(GParticle(kind: .petal, p: p, v: CGVector(dx: CGFloat.random(in: -80...80), dy: CGFloat.random(in: -120 ... -30)),
-                                       life: 3.5, size: CGFloat.random(in: 6...9), color: color, rot: CGFloat.random(in: 0...6),
+                                       life: 3.2, size: CGFloat.random(in: 6...9), color: color, rot: CGFloat.random(in: 0...6),
                                        spin: CGFloat.random(in: -5...5)))
         }
     }
 
-    // MARK: The bare hand
+    // MARK: Bare hand (foreground plants/weeds/carrots always beat background decor)
+
+    func plantHit(_ p: CGPoint) -> Int? {
+        for i in plots.indices {
+            guard let pl = plots[i].plant else { continue }
+            let x = GGeo.plotX[i]
+            let base = surface(x)
+            let top = base - GardenPlants.stemHeight(pl) - 38
+            if abs(p.x - x) < pl.kind.reach + 14 && p.y > top && p.y < base + 42 {
+                return i
+            }
+        }
+        return nil
+    }
 
     func handBegan(_ p: CGPoint) {
-        caughtFruit = false
-        if let f = spring.pumpkin, hypot(f.position.x-p.x, f.position.y-p.y) < 52 {
-            catchPumpkin()
-            caughtFruit = true
-            return
-        }
-        if spring.enabled && GardenSpring.area.contains(p) && p.y > surface(p.x)+10 {
-            spring.previous = nil
-            _ = spring.stroke(p)
-            GardenSound.shared.play(.pat, volume: 0.5)
-            return
-        }
         pickedThisStroke.removeAll(keepingCapacity: true)
         handDown = true
         handP = p
@@ -1270,42 +1474,48 @@ final class GardenSim {
         handV = .zero
         grabStart = p
         grab = nil
-        // Decorations first (they stand in front of the fence).
-        if let d = decorHit(p) {
-            grab = .decor(d)
-            decor[d].held = true
-            decor[d].poke = time
-            GardenSound.shared.play(.plunk, volume: 0.4)
-            return
-        }
+        overReturnBadge = false
+
+        // 1. Weeds have top foreground priority.
         if let w = weeds.indices.min(by: { abs(weeds[$0].x - p.x) < abs(weeds[$1].x - p.x) }) {
             let base = surface(weeds[w].x)
             let tall = 30 + 50 * weeds[w].growth
-            if abs(weeds[w].x - p.x) < 34 && p.y > base - tall - 16 && p.y < base + 26 {
+            if abs(weeds[w].x - p.x) < 38 && p.y > base - tall - 18 && p.y < base + 26 {
                 grab = .weed(w)
                 weeds[w].held = true
                 GardenSound.shared.play(.pluck, volume: 0.25, gap: 0.2)
                 return
             }
         }
+        // 2. Ripe carrots grab for elastic pull-up harvest.
         for i in plots.indices {
             guard let pl = plots[i].plant, pl.kind == .carrot, pl.growth >= 1 else { continue }
             let x = GGeo.plotX[i]
             let base = surface(x)
-            if abs(x - p.x) < 44 && p.y > base - 110 && p.y < base + 40 {
+            if abs(x - p.x) < 48 && p.y > base - 105 && p.y < base + 42 {
                 grab = .carrot(i)
                 plots[i].held = true
                 return
             }
         }
+        // 3. Foreground plants, visitors, basket, and bouquet vase never get stolen by background decor.
+        if plantHit(p) != nil
+            || visitorHit(p) != nil
+            || hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 72
+            || hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 48)) < 64 {
+            return
+        }
+        // 4. Background lawn decorations.
+        if let d = decorHit(p) {
+            grab = .decor(d)
+            decor[d].held = true
+            decor[d].poke = time
+            overReturnBadge = isOverReturnBadge(p)
+            GardenSound.shared.play(.plunk, volume: 0.4)
+        }
     }
 
     func handMoved(_ p: CGPoint, dt: CGFloat = 1.0 / 60) {
-        if caughtFruit { return }
-        if spring.previous != nil {
-            if spring.stroke(p) { GardenSound.shared.play(.pat, volume: 0.26, gap: 0.12) }
-            return
-        }
         let vx = (p.x - handP.x) / max(dt, 0.001)
         let vy = (p.y - handP.y) / max(dt, 0.001)
         handV = CGVector(dx: vx, dy: vy)
@@ -1315,18 +1525,18 @@ final class GardenSim {
         case .weed(let w)?:
             guard w < weeds.count else { grab = nil; return }
             let up = max(0, grabStart.y - p.y)
-            weeds[w].pull = up / 120
-            weeds[w].bend = max(-0.6, min(0.6, (p.x - grabStart.x) / 160))
+            weeds[w].pull = up / 95
+            weeds[w].bend = max(-0.6, min(0.6, (p.x - grabStart.x) / 150))
             if weeds[w].pull >= 1 {
                 grab = nil
-                popWeed(w, v: CGVector(dx: (p.x - grabStart.x) * 2 + CGFloat.random(in: -80...80), dy: -760))
+                popWeed(w, v: CGVector(dx: (p.x - grabStart.x) * 2 + CGFloat.random(in: -80...80), dy: -740))
             } else if Int(up) % 24 == 0 && up > 4 {
                 GardenSound.shared.play(.pluck, volume: 0.15, gap: 0.15)
             }
         case .carrot(let i)?:
             let up = max(0, grabStart.y - p.y)
-            plots[i].pull = up / 110
-            plots[i].bend = max(-0.5, min(0.5, (p.x - grabStart.x) / 180))
+            plots[i].pull = up / 80
+            plots[i].bend = max(-0.5, min(0.5, (p.x - grabStart.x) / 160))
             if plots[i].pull >= 1 {
                 plots[i].held = false
                 grab = nil
@@ -1339,57 +1549,71 @@ final class GardenSim {
             decor[d].y = p.y + k.size.height * 0.45
             decor[d].vy = 0
             decor[d].tiltV += (p.x - handLast.x) * 0.05
+            overReturnBadge = isOverReturnBadge(p)
         case nil:
             brush(from: handLast, to: p)
         }
     }
 
     func handEnded(_ p: CGPoint, tap: Bool) {
-        if caughtFruit { caughtFruit = false; return }
-        if spring.previous != nil { spring.previous = nil; return }
         handDown = false
         switch grab {
         case .weed(let w)?:
-            if w < weeds.count { weeds[w].held = false }
+            if w < weeds.count {
+                let pulled = weeds[w].pull >= 0.75
+                weeds[w].held = false
+                if pulled {
+                    popWeed(w, v: CGVector(dx: (p.x - grabStart.x) * 2, dy: -700))
+                }
+            }
         case .carrot(let i)?:
+            let pulled = plots[i].pull >= 0.72
             plots[i].held = false
+            if pulled {
+                harvest(i)
+            } else if tap {
+                plots[i].pullV += 6
+                plots[i].popV += 5
+                GardenSound.shared.play(.rustle, volume: 0.65)
+                Sound.shared.play(.boing, volume: 0.3)
+            }
         case .decor(let d)?:
             if d < decor.count {
                 decor[d].held = false
                 if tap {
                     decor[d].y = decor[d].baseY
                     pokeDecor(d)
-                } else if p.y > 724 {
+                } else if isOverReturnBadge(p) {
                     removeDecor(d)
                 } else {
-                    decor[d].baseY = max(500, min(532, p.y + decor[d].kind.size.height * 0.45))
+                    decor[d].baseY = max(484, min(504, p.y + decor[d].kind.size.height * 0.45))
                     decor[d].y = min(decor[d].y, decor[d].baseY)
                 }
             }
+            overReturnBadge = false
         case nil:
             if tap { tapAt(p) }
         }
         grab = nil
     }
 
-    /// A finger brushing through the garden pushes plants, startles bugs.
     private func brush(from a: CGPoint, to b: CGPoint) {
         let dx = b.x - a.x
-        let sweep = abs(b.x - grabStart.x) > 24
+        let sweep = abs(b.x - grabStart.x) > 22
         for i in plots.indices {
             guard let pl = plots[i].plant else { continue }
             let x = GGeo.plotX[i]
             let base = surface(x)
-            let top = base - GardenPlants.stemHeight(pl) - 30
+            let top = base - GardenPlants.stemHeight(pl) - 32
             if sweep && pl.kind != .carrot && pl.growth >= 1 && pl.left > 0 && !pickedThisStroke.contains(i) {
                 let t = abs(dx) > 1 ? min(1, max(0, (x - a.x) / dx)) : 1
                 let y = a.y + (b.y - a.y) * t
-                if abs(a.x + dx * t - x) < pl.kind.reach && y >= top && y <= base {
+                if abs(a.x + dx * t - x) < pl.kind.reach + 6 && y >= top && y <= base + 10 {
                     pickedThisStroke.insert(i)
                     harvest(i)
                 }
             }
-            if abs(b.x - x) < pl.kind.reach + 10 && b.y > top && b.y < base + 4 {
+            if abs(b.x - x) < pl.kind.reach + 10 && b.y > top && b.y < base + 6 {
                 let leverage = (base - b.y) / max(40, base - top)
                 plots[i].bendV += dx * 0.05 * (0.4 + leverage)
                 if bloomed(i) && abs(dx) > 14 && Int.random(in: 0..<4) == 0, let hd = head(plot: i) {
@@ -1436,15 +1660,26 @@ final class GardenSim {
     }
 
     private func tapAt(_ p: CGPoint) {
-        // The basket
-        if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 70 {
+        // Woven harvest basket
+        if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 72 {
             basketBounceV += 12
-            GardenSound.shared.play(.basket, volume: 0.7)
+            GardenSound.shared.play(.basket, volume: 0.75)
+            Sound.shared.tap()
             sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
             return
         }
+        // Bouquet vase on cedar bench
+        if hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 48)) < 64 {
+            vaseBounceV += 12
+            Sound.shared.play(.ding, volume: 0.5)
+            Sound.shared.tap()
+            sparkle(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 72), count: 8)
+            if let last = bouquet.last {
+                petals(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 78), color: last.kind.bloom(last.variant), n: 5)
+            }
+            return
+        }
         if tapVisitor(p) { return }
-        // Bugs
         for i in butterflies.indices where hypot(butterflies[i].p.x - p.x, butterflies[i].p.y - p.y) < 56 {
             flee(i, from: CGPoint(x: p.x, y: p.y + 20))
             sparkle(at: butterflies[i].p, count: 5)
@@ -1454,7 +1689,7 @@ final class GardenSim {
             scareBugs(near: p, radius: 60)
             return
         }
-        if hypot(ladybug.p.x - p.x, ladybug.p.y - p.y) < 40 {
+        if hypot(ladybug.p.x - p.x, ladybug.p.y - p.y) < 42 {
             ladybugTakeOff()
             return
         }
@@ -1464,27 +1699,20 @@ final class GardenSim {
             GardenSound.shared.play(.squeak, volume: 0.8)
             return
         }
-        // Ripe things get picked.
-        for i in plots.indices {
-            guard let pl = plots[i].plant else { continue }
+        if let i = plantHit(p), let pl = plots[i].plant {
             let x = GGeo.plotX[i]
-            let base = surface(x)
-            let top = base - GardenPlants.stemHeight(pl) - 40
-            guard abs(p.x - x) < pl.kind.reach + 14 && p.y > top && p.y < base + 50 else { continue }
-            if pl.growth >= 1 && pl.left > 0 {
+            if pl.growth >= 1 && pl.left > 0 && !pl.kind.pulled {
                 harvest(i)
             } else {
-                plots[i].popV += 5
+                plots[i].popV += 6
                 plots[i].bendV += (p.x < x ? 1.2 : -1.2)
                 GardenSound.shared.play(.rustle, volume: 0.6)
                 if plots[i].dry > 1.5 {
-                    // Thirsty: the drop above it bounces.
                     Sound.shared.play(.boing, volume: 0.3)
                 }
             }
             return
         }
-        // A pat on the soil.
         if GGeo.inBed(p.x) && abs(p.y - surface(p.x)) < 50 {
             let s = surface(p.x)
             for _ in 0..<5 {
@@ -1496,21 +1724,35 @@ final class GardenSim {
         }
     }
 
-    // MARK: Decorations
+    // MARK: Safe Decorations
+
+    @discardableResult
+    func placeDecorOnFreeSpot(_ k: DecorKind) -> Int {
+        let candidates: [CGFloat] = [124, 240, 356, 472, 588, 704, 820, 916, 182, 298, 414, 530, 646, 762]
+        let bestX = candidates.max { a, b in
+            let distA = decor.map { abs($0.x - a) }.min() ?? 999
+            let distB = decor.map { abs($0.x - b) }.min() ?? 999
+            return distA < distB
+        } ?? 512
+        let idx = addDecor(k, x: bestX, falling: true)
+        Sound.shared.play(.pop, volume: 0.6)
+        Sound.shared.tap()
+        return idx
+    }
 
     @discardableResult
     func addDecor(_ k: DecorKind, x: CGFloat, falling: Bool) -> Int {
         if decor.count >= 14 { removeDecor(0) }
         var d = GDecor(id: nextDecorID, kind: k, x: max(GGeo.yardMinX, min(GGeo.yardMaxX, x)), y: GGeo.yardY)
         nextDecorID += 1
-        d.baseY = GGeo.yardY + CGFloat(nextDecorID % 3) * 6
-        d.y = falling ? d.baseY - 120 : d.baseY
+        d.baseY = GGeo.yardY + CGFloat(nextDecorID % 3) * 4 - 4
+        d.y = falling ? d.baseY - 110 : d.baseY
         decor.append(d)
         return decor.count - 1
     }
 
     func removeDecor(_ i: Int) {
-        guard i < decor.count else { return }
+        guard decor.indices.contains(i) else { return }
         let d = decor.remove(at: i)
         for _ in 0..<10 {
             particles.append(GParticle(kind: .dust, p: CGPoint(x: d.x + CGFloat.random(in: -30...30), y: d.y - CGFloat.random(in: 0...60)),
@@ -1542,7 +1784,7 @@ final class GardenSim {
         case .birdhouse:
             GardenSound.shared.play(.chirp, volume: 0.9)
         case .bunny:
-            decor[i].vy = -420
+            decor[i].vy = -400
             Sound.shared.play(.boing, volume: 0.5)
         case .mushroom:
             decor[i].squashV -= 6
@@ -1603,16 +1845,16 @@ final class GardenSim {
 
     private func spawnButterfly(_ k: Int, fromEdge: Bool) {
         let left = Bool.random()
-        let p = fromEdge ? CGPoint(x: left ? -50 : 1074, y: CGFloat.random(in: 150...360))
-                         : CGPoint(x: CGFloat.random(in: 200...820), y: CGFloat.random(in: 160...360))
+        let p = fromEdge ? CGPoint(x: left ? -50 : 1074, y: CGFloat.random(in: 140...340))
+                         : CGPoint(x: CGFloat.random(in: 180...800), y: CGFloat.random(in: 150...340))
         butterflies.append(GButterfly(p: p, v: CGVector(dx: left ? 80 : -80, dy: 0),
-                                      target: CGPoint(x: CGFloat.random(in: 200...820), y: CGFloat.random(in: 160...360)),
+                                      target: CGPoint(x: CGFloat.random(in: 180...800), y: CGFloat.random(in: 150...340)),
                                       phase: CGFloat.random(in: 0...6), look: Int.random(in: 0..<5)))
     }
 
-    private func ladybugTakeOff() {
+    func ladybugTakeOff() {
         ladybug.flying = true
-        ladybug.v = CGVector(dx: CGFloat.random(in: -1...1) * 180, dy: -330)
+        ladybug.v = CGVector(dx: CGFloat.random(in: -1...1) * 180, dy: -320)
         GardenSound.shared.play(.flutter, volume: 0.5)
     }
 
@@ -1621,7 +1863,6 @@ final class GardenSim {
         let outside = rain < 0.35 && night < 0.5
         let blooms = plots.indices.filter { bloomed($0) }
 
-        // Butterflies
         let want = outside ? 2 + min(2, blooms.count) : 0
         if butterflies.filter({ !$0.leaving }).count < want && Int.random(in: 0..<200) == 0 {
             spawnButterfly(butterflies.count, fromEdge: true)
@@ -1652,13 +1893,12 @@ final class GardenSim {
                     if let pi = free.randomElement(), Int.random(in: 0..<10) < 6, let hd = head(plot: pi) {
                         b.target = hd
                         b.perch = nil
-                        b.perchUntil = -Double(pi) - 1  // remembers which flower it is heading for
+                        b.perchUntil = -Double(pi) - 1
                     } else {
-                        b.target = CGPoint(x: CGFloat.random(in: 90...934), y: CGFloat.random(in: 130...430))
+                        b.target = CGPoint(x: CGFloat.random(in: 90...910), y: CGFloat.random(in: 120...400))
                         b.perchUntil = 0
                     }
                 }
-                // Heading for a flower: follow it as it sways.
                 if b.perchUntil < 0 {
                     let pi = Int(-b.perchUntil - 1)
                     if pi < plots.count, bloomed(pi), let hd = head(plot: pi) {
@@ -1686,15 +1926,14 @@ final class GardenSim {
         }
         butterflies.removeAll { $0.leaving && ($0.p.x < -100 || $0.p.x > 1124) }
 
-        // A bee visits the flowers on fair days.
         if outside && !blooms.isEmpty && weather != .rain {
             if bee == nil && Int.random(in: 0..<240) == 0 {
-                bee = GBee(p: CGPoint(x: 1080, y: 220), v: CGVector(dx: -120, dy: 0), target: CGPoint(x: 700, y: 260))
+                bee = GBee(p: CGPoint(x: 1080, y: 210), v: CGVector(dx: -120, dy: 0), target: CGPoint(x: 680, y: 250))
             }
         } else if var b = bee, !b.leaving {
             b.leaving = true
             b.perch = nil
-            b.target = CGPoint(x: 1200, y: 120)
+            b.target = CGPoint(x: 1180, y: 120)
             bee = b
         }
         if var b = bee {
@@ -1713,7 +1952,7 @@ final class GardenSim {
                         b.target = hd
                         b.perchUntil = -Double(pi) - 1
                     } else {
-                        b.target = CGPoint(x: CGFloat.random(in: 120...900), y: CGFloat.random(in: 200...440))
+                        b.target = CGPoint(x: CGFloat.random(in: 120...860), y: CGFloat.random(in: 180...410))
                         b.perchUntil = 0
                     }
                 }
@@ -1736,18 +1975,17 @@ final class GardenSim {
                 b.p.x += b.v.dx * dt
                 b.p.y += b.v.dy * dt
             }
-            bee = (b.leaving && (b.p.x > 1150 || b.p.x < -120)) ? nil : b
+            bee = (b.leaving && (b.p.x > 1140 || b.p.x < -120)) ? nil : b
         }
 
-        // The ladybug walks along the soil, and flies when startled.
         if ladybug.flying {
             ladybug.open = min(1, ladybug.open + dt * 8)
             ladybug.v.dy += 420 * dt
-            let toward = (512 - ladybug.p.x) * 0.25
+            let toward = (436 - ladybug.p.x) * 0.28
             ladybug.v.dx += (toward - ladybug.v.dx * 0.2) * dt
             ladybug.p.x += ladybug.v.dx * dt
             ladybug.p.y += ladybug.v.dy * dt
-            ladybug.p.y = min(ladybug.p.y, 900)
+            ladybug.p.y = min(ladybug.p.y, 700)
             if ladybug.v.dy > 0 && GGeo.inBed(ladybug.p.x) && ladybug.p.y >= surface(ladybug.p.x) - 4 {
                 ladybug.flying = false
                 ladybug.x = ladybug.p.x
@@ -1768,16 +2006,15 @@ final class GardenSim {
             ladybug.p = CGPoint(x: ladybug.x, y: surface(ladybug.x) - 4)
         }
 
-        // The worm tunnels under the glass, and peeks out when the soil is wet.
         worm.phase += dt * 3
         if worm.peek > 0.01 || time < worm.peekUntil {
             let up: CGFloat = time < worm.peekUntil ? 1 : 0
-            worm.peek += (up - worm.peek) * min(1, dt * 3)
+            worm.peek += (up - worm.peek) * min(1, dt * 3.5)
         } else {
             worm.x += worm.dir * 9 * dt
-            worm.depth = 70 + 30 * sin(t * 0.13 + 1)
-            if worm.x < GGeo.bedLeft + 40 { worm.dir = 1 }
-            if worm.x > GGeo.bedRight - 40 { worm.dir = -1 }
+            worm.depth = 44 + 16 * sin(t * 0.13 + 1)
+            if worm.x < GGeo.bedLeft + 38 { worm.dir = 1 }
+            if worm.x > GGeo.bedRight - 38 { worm.dir = -1 }
             if time > worm.nextPeek {
                 worm.nextPeek = time + Double.random(in: 8...16)
                 if wetAt(worm.x, span: 6) > 0.45 || rain > 0.5 {
@@ -1787,10 +2024,9 @@ final class GardenSim {
             }
         }
 
-        // Fireflies at night.
         let wantFlies = night > 0.4 ? 12 : 0
         if fireflies.count < wantFlies && Int.random(in: 0..<20) == 0 {
-            fireflies.append(GFirefly(p: CGPoint(x: CGFloat.random(in: 60...960), y: CGFloat.random(in: 380...560)),
+            fireflies.append(GFirefly(p: CGPoint(x: CGFloat.random(in: 60...960), y: CGFloat.random(in: 240...540)),
                                       v: .zero, phase: CGFloat.random(in: 0...6)))
         }
         if fireflies.count > wantFlies && Int.random(in: 0..<30) == 0 { fireflies.removeFirst() }
@@ -1803,7 +2039,7 @@ final class GardenSim {
             f.v.dy += (ay - f.v.dy * 0.6) * dt
             f.p.x += f.v.dx * dt
             f.p.y += f.v.dy * dt
-            f.p.y = max(160, min(600, f.p.y))
+            f.p.y = max(130, min(580, f.p.y))
             f.p.x = max(20, min(1004, f.p.x))
             fireflies[i] = f
         }
@@ -1823,7 +2059,6 @@ final class GardenSim {
     }
 }
 
-/// garden.json in Application Support/Games/garden/.
 enum GardenStorage {
     static func load() -> GardenSave? { GameStorage.load(GardenSave.self, game: GardenSim.gameID, file: "garden.json") }
     static func save(_ s: GardenSave) { GameStorage.save(s, game: GardenSim.gameID, file: "garden.json") }

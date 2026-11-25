@@ -292,7 +292,7 @@ private struct ColoringToolButton: View {
                 if tool == .glitter { ColoringTwinkles(count: 4).allowsHitTesting(false) }
             }
             .frame(width: 64, height: 64)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected ? Theme.ink : .white, lineWidth: selected ? 5 : 3))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected ? Theme.pink : .white, lineWidth: selected ? 5 : 3))
             .scaleEffect(selected ? 1.06 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selected)
         }
@@ -308,7 +308,7 @@ private struct ColoringColorDot: View {
             .fill(Color(.sRGB, red: color.r, green: color.g, blue: color.b))
             .frame(width: 50, height: 50)
             .overlay(Circle().stroke(.white, lineWidth: 4))
-            .overlay(Circle().stroke(Theme.ink.opacity(selected ? 1 : 0.15), lineWidth: selected ? 4 : 1).padding(selected ? -5 : 0))
+            .overlay(Circle().stroke(selected ? Theme.pink : Theme.ink.opacity(0.15), lineWidth: selected ? 4 : 1).padding(selected ? -5 : 0))
             .scaleEffect(selected ? 1.08 : 1)
             .shadow(color: Theme.ink.opacity(0.18), radius: 3, y: 2)
     }
@@ -327,7 +327,7 @@ private struct ColoringFillSwatch: View {
             .overlay { if style == .glitter { ColoringTwinkles(count: 5) } }
             .clipShape(Circle())
             .overlay(Circle().stroke(.white, lineWidth: 4))
-            .overlay(Circle().stroke(selected ? Theme.ink : .clear, lineWidth: 4).padding(-5))
+            .overlay(Circle().stroke(selected ? Theme.pink : .clear, lineWidth: 4).padding(-5))
             .scaleEffect(selected ? 1.08 : 1)
             .shadow(color: Theme.ink.opacity(0.18), radius: 3, y: 2)
     }

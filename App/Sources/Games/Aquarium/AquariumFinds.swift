@@ -1,17 +1,5 @@
 import SwiftUI
 
-// MARK: - Aquarium surprises for the sticker book
-//
-// - Rare fish. About one bag in five holds a rare colorway (`variant >= AquaRare.variant`): a galaxy goldfish,
-//   a blue clownfish, a golden angelfish, pink tetras, a mint puffer, an opal betta, golden guppies, a teal seahorse.
-//   They twinkle as they swim, and count as soon as they splash in.
-// - Visitors that come when the tank has something for them, then go: a crab scuttling over the sand when the lights
-//   are off, an octopus peeking out beside the castle, ship or rock, a glowing jellyfish drifting at night, a sea
-//   turtle swimming through a sparkling clean tank, and a little school of baby fish after a good feed.
-// - A pearl: now and then the treasure chest opens on a shining pearl.
-//
-// All of them go into the shared sticker book (`StickerBook`).
-
 enum AquaRare {
     static let variant = 100
     static let chance = 0.2
@@ -54,7 +42,6 @@ enum AquaFind: String, CaseIterable {
         allCases.map { f in Sticker(id: f.rawValue) { g, _ in f.drawSticker(g) } }
     }
 
-    /// Drawn centered in a 100-point square.
     func drawSticker(_ g: GraphicsContext) {
         if let k = fish {
             var s = g
@@ -79,10 +66,9 @@ enum AquaFind: String, CaseIterable {
 enum AVisitorKind: String, CaseIterable {
     case crab, octopus, jellyfish, turtle, babyFish
 
-    /// Swims straight through instead of stopping.
     var passesBy: Bool { self == .turtle || self == .babyFish }
-    /// Appears and fades away where it is, instead of coming in from the side.
     var fades: Bool { self == .octopus || self == .jellyfish }
+
     var speed: CGFloat {
         switch self {
         case .crab: return 70
@@ -92,13 +78,15 @@ enum AVisitorKind: String, CaseIterable {
         case .babyFish: return 96
         }
     }
+
     var reach: CGFloat {
         switch self {
-        case .turtle: return 80
-        case .babyFish: return 60
-        default: return 52
+        case .turtle: return 84
+        case .babyFish: return 64
+        default: return 54
         }
     }
+
     var stickerScale: CGFloat {
         switch self {
         case .crab: return 1.5
@@ -108,6 +96,7 @@ enum AVisitorKind: String, CaseIterable {
         case .babyFish: return 1.15
         }
     }
+
     var stickerOffset: CGFloat {
         switch self {
         case .crab: return 22
@@ -121,14 +110,12 @@ enum AVisitorKind: String, CaseIterable {
 struct AVisitor {
     enum State { case arriving, staying, leaving }
     var kind: AVisitorKind
-    /// Feet on the sand (crab, octopus), or its middle.
     var p: CGPoint
     var target = CGPoint.zero
     var state = State.arriving
     var stayUntil: Double = 0
     var facing: CGFloat
     var walk: CGFloat = 0
-    /// 0 ... 1 while it fades in or out.
     var appear: CGFloat = 0
     var poked: Double = -10
     var seed = Int.random(in: 0..<1000)
@@ -136,10 +123,9 @@ struct AVisitor {
     var found = false
 }
 
-// MARK: - In the simulation
+// MARK: - Simulation hooks
 
 extension AquariumSim {
-    /// A new bag of fish might be a rare colorway.
     static func rollVariant(_ v: Int) -> Int {
         Double.random(in: 0..<1) < AquaRare.chance ? AquaRare.variant + v : v
     }
@@ -148,14 +134,21 @@ extension AquariumSim {
         guard !demo else { return }
         if StickerBook.shared.find(game: AquariumSim.gameID, id: f.rawValue) {
             for _ in 0..<8 {
-                particles.append(AquaParticle(kind: .sparkle, p: CGPoint(x: p.x + CGFloat.random(in: -40...40), y: p.y + CGFloat.random(in: -30...30)),
-                                              v: .zero, life: 0.9, size: 18, color: ARGB(0xFFFFFF)))
+                particles.append(
+                    AquaParticle(
+                        kind: .sparkle,
+                        p: CGPoint(x: p.x + CGFloat.random(in: -40...40), y: p.y + CGFloat.random(in: -30...30)),
+                        v: .zero,
+                        life: 0.9,
+                        size: 18,
+                        color: ARGB(0xFFFFFF)
+                    )
+                )
             }
         }
     }
 
     func stepFinds(_ dt: CGFloat) {
-        // rare fish count once they're in the water
         if Int(time * 2) != Int((time - Double(dt)) * 2) {
             for f in fish where f.variant >= AquaRare.variant && !f.caught && AGeo.inWater(f.p) {
                 if !StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.rare(f.kind).rawValue) {
@@ -167,16 +160,53 @@ extension AquariumSim {
         if let pl = pearl, time > pl.until { pearl = nil }
     }
 
-    /// The chest opened: sometimes there's a pearl inside.
-    func maybePearl(_ i: Int) {
-        let first = !StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pearl.rawValue)
-        guard Double.random(in: 0..<1) < (first ? 0.4 : 0.25) else { return }
-        pearl = (decor[i].id, time + 1.8)
-        discover(.pearl, at: CGPoint(x: decor[i].x, y: decor[i].y - 40))
-        Sound.shared.play(.sparkle, volume: 0.5)
+    func revealChestPearl(_ i: Int) {
+        guard decor.indices.contains(i) else { return }
+        let d = decor[i]
+        let origin = CGPoint(x: d.x, y: d.y - 44)
+        pearl = (d.id, time + 2.4)
+        discover(.pearl, at: origin)
+        Sound.shared.play(.sparkle, volume: 0.55)
+        for k in 0..<8 {
+            let a = CGFloat(k) / 8 * 2 * .pi
+            particles.append(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: origin.x + cos(a) * 28, y: origin.y + sin(a) * 22),
+                    v: .zero,
+                    life: 0.75,
+                    size: 14,
+                    color: ARGB(0xFFE69A)
+                )
+            )
+        }
+        if time - lastChestCoinAt >= 6 {
+            lastChestCoinAt = time
+            Coins.shared.earn(3, game: AquariumSim.gameID, from: origin)
+        }
     }
 
-    private var algaeLevel: CGFloat { algae.reduce(0, +) / CGFloat(max(1, algae.count)) }
+    func inviteTurtle() {
+        guard !visitors.contains(where: { $0.kind == .turtle }) else { return }
+        let y = CGFloat.random(in: 260...420)
+        arrive(.turtle, at: (CGPoint(x: 0, y: y), nil))
+    }
+
+    func spawnBabyFish(near p: CGPoint) {
+        guard !visitors.contains(where: { $0.kind == .babyFish }) else { return }
+        let y = max(AGeo.waterY + 70, min(500, p.y))
+        arrive(.babyFish, at: (CGPoint(x: 0, y: y), nil))
+    }
+
+    func peekOctopus(near decorIndex: Int) {
+        guard decor.indices.contains(decorIndex) else { return }
+        guard !visitors.contains(where: { $0.kind == .octopus }) else { return }
+        let d = decor[decorIndex]
+        let side: CGFloat = d.x < 512 ? 1 : -1
+        let x = max(AGeo.left + 44, min(AGeo.right - 44, d.x + side * (d.kind.size.width * 0.5 + 8)))
+        arrive(.octopus, at: (CGPoint(x: x, y: AGeo.sand(x) + 2), d.id))
+        AquaSound.shared.play(.bloop, volume: 0.55)
+    }
 
     private func spot(for k: AVisitorKind) -> (CGPoint, Int?)? {
         let dark = night > 0.5
@@ -195,7 +225,7 @@ extension AquariumSim {
             guard dark else { return nil }
             return (CGPoint(x: CGFloat.random(in: 240...780), y: CGFloat.random(in: 260...420)), nil)
         case .turtle:
-            guard !dark, algaeLevel < 0.06 else { return nil }
+            guard !dark, dirtiness < 0.06 else { return nil }
             return (CGPoint(x: 0, y: CGFloat.random(in: 260...440)), nil)
         case .babyFish:
             guard time - lastFed < 14, lastFed > 0, fish.count >= 3 else { return nil }
@@ -238,13 +268,14 @@ extension AquariumSim {
                     }
                 }
                 if v.kind == .jellyfish {
-                    // drifts slowly about, bobbing as it pulses
                     let dx = v.target.x - v.p.x
                     let dy = v.target.y - v.p.y
                     let d = hypot(dx, dy)
                     if d < 6 {
-                        v.target = CGPoint(x: max(160, min(860, v.p.x + CGFloat.random(in: -160...160))),
-                                           y: max(AGeo.waterY + 80, min(470, v.p.y + CGFloat.random(in: -90...90))))
+                        v.target = CGPoint(
+                            x: max(160, min(860, v.p.x + CGFloat.random(in: -160...160))),
+                            y: max(AGeo.waterY + 80, min(470, v.p.y + CGFloat.random(in: -90...90)))
+                        )
                     } else {
                         let pulse = 0.5 + 0.5 * max(0, sin(t * 2.6 + CGFloat(v.seed)))
                         v.p.x += dx / d * v.kind.speed * pulse * dt * 2
@@ -320,20 +351,35 @@ extension AquariumSim {
         visitors.append(v)
     }
 
-    /// A tap on a visitor. True if she tapped one.
     func tapVisitor(_ p: CGPoint) -> Bool {
         for i in visitors.indices {
             let v = visitors[i]
             let mid = v.kind == .crab || v.kind == .octopus ? CGPoint(x: v.p.x, y: v.p.y - 24) : v.p
             guard hypot(mid.x - p.x, mid.y - p.y) < v.kind.reach else { continue }
-            guard time - v.poked > 0.6 else { return true }
+            if !visitors[i].found {
+                visitors[i].found = true
+                if let f = AquaFind(rawValue: v.kind.rawValue) { discover(f, at: mid) }
+            }
+            guard time - v.poked > 0.5 else { return true }
             visitors[i].poked = time
             switch v.kind {
             case .crab: AquaSound.shared.play(.tink, volume: 0.6)
             case .octopus, .jellyfish: AquaSound.shared.play(.bloop, volume: 0.6)
             case .turtle, .babyFish: AquaSound.shared.play(.blub, volume: 0.6)
             }
-            for k in 0..<4 { addBubble(CGPoint(x: mid.x + CGFloat(k * 5 - 8), y: mid.y - 20 - CGFloat(k) * 6), r: 2 + CGFloat(k)) }
+            for k in 0..<5 {
+                addBubble(CGPoint(x: mid.x + CGFloat(k * 6 - 12), y: mid.y - 18 - CGFloat(k) * 6), r: 2.5 + CGFloat(k % 3))
+            }
+            particles.append(
+                AquaParticle(
+                    kind: .heart,
+                    p: CGPoint(x: mid.x, y: mid.y - 28),
+                    v: CGVector(dx: 0, dy: -44),
+                    life: 1.2,
+                    size: 16,
+                    color: ARGB(0xFF7FAE)
+                )
+            )
             return true
         }
         return false
@@ -361,19 +407,38 @@ enum AquaVisitorPainter {
 
     static func pearl(_ g: GraphicsContext, at p: CGPoint, r: CGFloat, glow: CGFloat) {
         let halo = r * 2.2
-        g.fill(Path(ellipseIn: CGRect(x: p.x - halo, y: p.y - halo, width: halo * 2, height: halo * 2)),
-               with: .radialGradient(Gradient(colors: [Color.white.opacity(0.7 * Double(glow)), Color.white.opacity(0)]),
-                                     center: p, startRadius: r * 0.6, endRadius: halo))
-        g.fill(Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)),
-               with: .radialGradient(Gradient(colors: [ARGB(0xFFFFFF).color, ARGB(0xF6E8F4).color, ARGB(0xD9C6E6).color]),
-                                     center: CGPoint(x: p.x - r * 0.35, y: p.y - r * 0.35), startRadius: 0, endRadius: r * 1.4))
+        g.fill(
+            Path(ellipseIn: CGRect(x: p.x - halo, y: p.y - halo, width: halo * 2, height: halo * 2)),
+            with: .radialGradient(
+                Gradient(colors: [Color.white.opacity(0.75 * Double(glow)), Color.white.opacity(0)]),
+                center: p,
+                startRadius: r * 0.6,
+                endRadius: halo
+            )
+        )
+        g.fill(
+            Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)),
+            with: .radialGradient(
+                Gradient(colors: [ARGB(0xFFFFFF).color, ARGB(0xF6E8F4).color, ARGB(0xD9C6E6).color]),
+                center: CGPoint(x: p.x - r * 0.35, y: p.y - r * 0.35),
+                startRadius: 0,
+                endRadius: r * 1.4
+            )
+        )
         g.fill(Path(ellipseIn: CGRect(x: p.x - r * 0.5, y: p.y - r * 0.6, width: r * 0.45, height: r * 0.32)), with: .color(.white.opacity(0.9)))
     }
 
     private static func oval(_ c: GraphicsContext, _ r: CGRect, _ col: ARGB) {
         let grad = Gradient(colors: [col.shade(0.2).color, col.color, col.shade(-0.25).color])
-        c.fill(Path(ellipseIn: r), with: .radialGradient(grad, center: CGPoint(x: r.midX - r.width * 0.15, y: r.minY + r.height * 0.3),
-                                                         startRadius: 0, endRadius: max(r.width, r.height) * 0.75))
+        c.fill(
+            Path(ellipseIn: r),
+            with: .radialGradient(
+                grad,
+                center: CGPoint(x: r.midX - r.width * 0.15, y: r.minY + r.height * 0.3),
+                startRadius: 0,
+                endRadius: max(r.width, r.height) * 0.75
+            )
+        )
     }
 
     private static func eye(_ c: GraphicsContext, _ p: CGPoint, _ r: CGFloat) {
@@ -386,7 +451,6 @@ enum AquaVisitorPainter {
         c.translateBy(x: 0, y: -react * 10)
         let red = ARGB(0xF2603F)
         let moving = v.state != .staying
-        // legs, three a side, stepping
         for side in [-1.0, 1.0] as [CGFloat] {
             for k in 0..<3 {
                 let step = moving ? sin(v.walk / 5 + CGFloat(k) * 2 + (side > 0 ? 1 : 0)) * 3 : 0
@@ -398,7 +462,6 @@ enum AquaVisitorPainter {
                 c.stroke(leg, with: .color(red.shade(-0.2).color), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
         }
-        // claws wave up when tapped
         for side in [-1.0, 1.0] as [CGFloat] {
             let lift = react * 12 + (moving ? 0 : sin(t * 2 + side) * 2)
             var arm = Path()
@@ -428,20 +491,21 @@ enum AquaVisitorPainter {
 
     private static func octopus(_ g: GraphicsContext, _ v: AVisitor, _ t: CGFloat, _ react: CGFloat, rise: CGFloat) {
         var c = g
-        // it slowly changes color, and flushes pink when tapped
         let hues: [ARGB] = [ARGB(0xB07BEA), ARGB(0xFF8A8A), ARGB(0xFFB45C), ARGB(0x7FC8F0)]
         let u = (t * 0.12 + CGFloat(v.seed % 4)).truncatingRemainder(dividingBy: CGFloat(hues.count))
         let a = hues[Int(u) % hues.count], b = hues[(Int(u) + 1) % hues.count]
         let col = a.mix(b, u - floor(u)).mix(ARGB(0xFF6FA8), react)
         c.translateBy(x: 0, y: (1 - rise) * 30)
-        // tentacles curling on the sand
         for k in 0..<6 {
             let base = CGFloat(k) - 2.5
             var arm = Path()
             arm.move(to: CGPoint(x: base * 6, y: -16))
             let wave = sin(t * 2 + CGFloat(k)) * 6
-            arm.addCurve(to: CGPoint(x: base * 14 + wave, y: -2),
-                         control1: CGPoint(x: base * 9, y: -6), control2: CGPoint(x: base * 14 - wave, y: -12))
+            arm.addCurve(
+                to: CGPoint(x: base * 14 + wave, y: -2),
+                control1: CGPoint(x: base * 9, y: -6),
+                control2: CGPoint(x: base * 14 - wave, y: -12)
+            )
             c.stroke(arm, with: .color(col.shade(-0.1).color), style: StrokeStyle(lineWidth: 7 - abs(base), lineCap: .round))
         }
         let squish = 1 + react * 0.15
@@ -462,12 +526,16 @@ enum AquaVisitorPainter {
         let w = 46 * (1 - 0.12 * pulse + 0.15 * react)
         let h = 30 * (1 + 0.1 * pulse)
         let col = ARGB(0xC9A8FF)
-        // a soft glow (it lights the dark water)
         let gr: CGFloat = 70
-        c.fill(Path(ellipseIn: CGRect(x: -gr, y: -gr - 4, width: gr * 2, height: gr * 2)),
-               with: .radialGradient(Gradient(colors: [ARGB(0xE8D8FF).color(0.55 * Double(0.4 + 0.6 * night)), ARGB(0xE8D8FF).color(0)]),
-                                     center: CGPoint(x: 0, y: -4), startRadius: 6, endRadius: gr))
-        // trailing tentacles
+        c.fill(
+            Path(ellipseIn: CGRect(x: -gr, y: -gr - 4, width: gr * 2, height: gr * 2)),
+            with: .radialGradient(
+                Gradient(colors: [ARGB(0xE8D8FF).color(0.55 * Double(0.4 + 0.6 * night)), ARGB(0xE8D8FF).color(0)]),
+                center: CGPoint(x: 0, y: -4),
+                startRadius: 6,
+                endRadius: gr
+            )
+        )
         for k in 0..<5 {
             let x0 = (CGFloat(k) - 2) * w * 0.17
             var tp = Path()
@@ -498,7 +566,6 @@ enum AquaVisitorPainter {
         c.rotate(by: .radians(Double(sin(v.walk / 60) * 0.06)))
         let skin = ARGB(0x8FCB6A)
         let stroke = sin(v.walk / 22)
-        // flippers
         for (x, front) in [(30.0, true), (-30.0, false)] as [(CGFloat, Bool)] {
             for side in [-1.0, 1.0] as [CGFloat] {
                 var f = c
@@ -508,14 +575,12 @@ enum AquaVisitorPainter {
                 oval(f, CGRect(x: -len * 0.2, y: side < 0 ? -10 : 0, width: len, height: 10), skin.shade(-0.08))
             }
         }
-        // head pokes out, and ducks in a little when tapped
         oval(c, CGRect(x: 44 - react * 8, y: -12, width: 26, height: 20), skin)
         eye(c, CGPoint(x: 60 - react * 8, y: -5), 2.8)
         var smile = Path()
         smile.move(to: CGPoint(x: 58 - react * 8, y: 2))
         smile.addQuadCurve(to: CGPoint(x: 66 - react * 8, y: 1), control: CGPoint(x: 63, y: 4))
         c.stroke(smile, with: .color(skin.shade(-0.5).color), lineWidth: 1.2)
-        // shell with plates
         let shell = ARGB(0x5E9F5A)
         oval(c, CGRect(x: -46, y: -28, width: 92, height: 52), shell)
         c.stroke(Path(ellipseIn: CGRect(x: -46, y: -28, width: 92, height: 52)), with: .color(ARGB(0xE8D79A).color), lineWidth: 3)
@@ -533,14 +598,18 @@ enum AquaVisitorPainter {
     }
 
     private static func babies(_ g: GraphicsContext, _ v: AVisitor, _ t: CGFloat, _ react: CGFloat) {
-        let offsets: [CGPoint] = [CGPoint(x: 0, y: 0), CGPoint(x: -24, y: -14), CGPoint(x: -22, y: 14),
-                                  CGPoint(x: -46, y: 0), CGPoint(x: -44, y: -24), CGPoint(x: -48, y: 22)]
+        let offsets: [CGPoint] = [
+            CGPoint(x: 0, y: 0), CGPoint(x: -24, y: -14), CGPoint(x: -22, y: 14),
+            CGPoint(x: -46, y: 0), CGPoint(x: -44, y: -24), CGPoint(x: -48, y: 22),
+        ]
         let colors: [ARGB] = [ARGB(0xFF9A45), ARGB(0xFFC531), ARGB(0xFF8A2B), ARGB(0xFFD08A), ARGB(0xFF9A45), ARGB(0xFFC531)]
         for (k, o) in offsets.enumerated() {
             var f = g
             let scatter = react * 12
-            f.translateBy(x: o.x + 24 + sin(t * 3 + CGFloat(k)) * 2 + (o.x < 0 ? -scatter : scatter),
-                          y: o.y + cos(t * 2.4 + CGFloat(k)) * 3 + o.y * react * 0.6)
+            f.translateBy(
+                x: o.x + 24 + sin(t * 3 + CGFloat(k)) * 2 + (o.x < 0 ? -scatter : scatter),
+                y: o.y + cos(t * 2.4 + CGFloat(k)) * 3 + o.y * react * 0.6
+            )
             let wag = sin(t * 14 + CGFloat(k))
             var tail = Path()
             tail.move(to: CGPoint(x: -8, y: 0))
