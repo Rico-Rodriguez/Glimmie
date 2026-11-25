@@ -53,11 +53,9 @@ struct DrawerView: View {
                     .zIndex(2)
             }
             if shop {
-                DesignCanvas {
-                    TreasureShopView { withAnimation(.easeOut(duration: 0.2)) { shop = false } }
-                }
-                .transition(.opacity)
-                .zIndex(3)
+                TreasureShopView { withAnimation(.easeOut(duration: 0.2)) { shop = false } }
+                    .transition(.opacity)
+                    .zIndex(3)
             }
         }
     }

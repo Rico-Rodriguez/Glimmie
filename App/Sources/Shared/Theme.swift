@@ -45,6 +45,7 @@ struct DesignCanvas<Content: View>: View {
 
 /// The round "back to the drawer" button every game shows in its top-left corner.
 struct HomeButton: View {
+    var size: CGFloat = 72
     let action: () -> Void
     var body: some View {
         Button {
@@ -52,14 +53,15 @@ struct HomeButton: View {
             action()
         } label: {
             Image(systemName: "house.fill")
-                .font(.system(size: 30, weight: .bold))
+                .font(.system(size: size * 0.42, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 72, height: 72)
+                .frame(width: size, height: size)
                 .background(Circle().fill(Theme.pink))
                 .overlay(Circle().stroke(.white, lineWidth: 5))
                 .shadow(color: Theme.ink.opacity(0.25), radius: 6, y: 4)
         }
         .buttonStyle(Squish())
+        .accessibilityLabel("Home")
     }
 }
 

@@ -3,9 +3,9 @@ import SwiftUI
 enum GameChromeLayout {
     static let width: CGFloat = 1024
     static let height: CGFloat = 834
-    static let topBarY: CGFloat = 54
-    static let homeCenter = CGPoint(x: 56, y: 54)
-    static let stickerTarget = CGPoint(x: 142, y: 54)
+    static let topBarY: CGFloat = 50
+    static let homeCenter = CGPoint(x: 54, y: 50)
+    static let stickerTarget = CGPoint(x: 132, y: 50)
     static let buttonSize: CGFloat = 64
     static let dockY: CGFloat = 768
 }
@@ -250,7 +250,7 @@ struct GameTopBar<Center: View, Trailing: View>: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            HomeButton(action: onExit)
+            HomeButton(size: GameChromeLayout.buttonSize, action: onExit)
             if showStickerBook, let onStickerBook {
                 StickerBookButton(game: gameID, size: GameChromeLayout.buttonSize, action: onStickerBook)
             }

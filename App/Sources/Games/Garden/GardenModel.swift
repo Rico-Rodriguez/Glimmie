@@ -294,7 +294,7 @@ enum GGeo {
     static let lawnY: CGFloat = 614
     static let basket = CGPoint(x: 146, y: 766)
     static let returnBadge = CGPoint(x: 932, y: 766)
-    static let dockY: CGFloat = 772
+    static let dockY: CGFloat = GameChromeLayout.dockY
     static let trayY: CGFloat = 668
 
     static func colX(_ i: Int) -> CGFloat { bedLeft + col * CGFloat(i) + col / 2 }

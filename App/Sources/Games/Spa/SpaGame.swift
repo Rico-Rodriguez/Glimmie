@@ -286,6 +286,7 @@ private final class SpaHandState {
 struct SpaView: View {
     let exit: () -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var sim = SpaSim()
     @State private var category: SpaCategory = .fizz
     @State private var carryingID: String?
@@ -297,7 +298,7 @@ struct SpaView: View {
         ZStack {
             GameStage(background: { SpaBackdropView() }) {
                 ZStack {
-                    TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: showBook)) { tl in
                         Canvas { ctx, _ in
                             sim.step(tl.date)
                             SpaPainter.draw(ctx, sim: sim)
@@ -321,6 +322,7 @@ struct SpaView: View {
                             exit()
                         },
                         onStickerBook: {
+                            SpaSound.shared.stopLoops()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 showBook = true
                             }
@@ -354,6 +356,11 @@ struct SpaView: View {
         }
         .ignoresSafeArea()
         .onAppear(perform: start)
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                SpaSound.shared.stopLoops()
+            }
+        }
         .onDisappear {
             SpaSound.shared.stopLoops()
         }
@@ -373,7 +380,7 @@ struct SpaView: View {
     // MARK: - Optional Pictorial Spa Wish Bubble
 
     private var wishBubbleOverlay: some View {
-        TimelineView(.periodic(from: .now, by: 0.2)) { _ in
+        TimelineView(.animation(minimumInterval: 0.2, paused: showBook)) { _ in
             let celebrating = sim.time < sim.wishCelebrateUntil
             let wish = sim.activeWish
             Button {
@@ -587,8 +594,11 @@ struct SpaView: View {
 
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-spaDemo"), i + 1 < args.count else { return }
-        sim.showcase(args[i + 1])
+        guard let i = args.firstIndex(of: "-spaDemo") else { return }
+        Coins.shared.demo = true
+        StickerBook.shared.demo = true
+        let mode = i + 1 < args.count ? args[i + 1] : "bath"
+        sim.showcase(mode)
     }
 }
 

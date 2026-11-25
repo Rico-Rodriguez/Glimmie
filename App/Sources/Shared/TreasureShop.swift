@@ -12,63 +12,67 @@ struct TreasureShopView: View {
     @State private var shown = false
     @State private var poke: [String: Date] = [:]
     @State private var bought: [String: Date] = [:]
-    /// Redraws after a purchase (Coins isn't observable).
-    @State private var tick = 0
+    @State private var ownedIDs: Set<String> = Coins.shared.owned
+    @State private var balance: Int = Coins.shared.balance
 
     private let columns = 3
-    private var cellHeight: CGFloat {
-        let rows = max(1, (Treasures.all.count + columns - 1) / columns)
-        return min(248, (526 - CGFloat(rows - 1) * 20) / CGFloat(rows))
-    }
+    private let cellHeight: CGFloat = 216
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.35)
                 .ignoresSafeArea()
                 .onTapGesture(perform: shut)
-            VStack(spacing: 18) {
-                HStack(spacing: 16) {
-                    Image(systemName: "gift.fill")
-                        .font(.system(size: 44, weight: .bold))
-                        .foregroundStyle(Theme.pink)
-                    Spacer()
-                    CoinCounter(game: "shop", height: 72)
-                }
-                .padding(.horizontal, 34)
-                .padding(.top, 26)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: columns), spacing: 20) {
-                    ForEach(Treasures.all) { item in
-                        cell(item)
+            DesignCanvas {
+                VStack(spacing: 14) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "gift.fill")
+                            .font(.system(size: 42, weight: .bold))
+                            .foregroundStyle(Theme.pink)
+                        Spacer()
+                        CoinCounter(game: "shop", height: 64)
+                    }
+                    .padding(.horizontal, 34)
+                    .padding(.top, 24)
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: columns), spacing: 20) {
+                            ForEach(Treasures.all) { item in
+                                cell(item)
+                            }
+                        }
+                        .padding(.horizontal, 34)
+                        .padding(.top, 6)
+                        .padding(.bottom, 26)
                     }
                 }
-                .padding(.horizontal, 34)
-                Spacer(minLength: 0)
-            }
-            .id(tick)
-            .frame(width: 900, height: 660)
-            .background(
-                LinearGradient(colors: [Color(hex: 0xFFF6E0), Theme.cream], startPoint: .top, endPoint: .bottom)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 44, style: .continuous))
-            .shadow(color: Theme.ink.opacity(0.35), radius: 20, y: 10)
-            .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(.white, lineWidth: 8))
-            .overlay(alignment: .topTrailing) {
-                Button(action: shut) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 28, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 66, height: 66)
-                        .background(Circle().fill(Theme.pink))
-                        .overlay(Circle().stroke(.white, lineWidth: 5))
-                        .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+                .frame(width: 900, height: 660)
+                .background(
+                    LinearGradient(colors: [Color(hex: 0xFFF6E0), Theme.cream], startPoint: .top, endPoint: .bottom)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 44, style: .continuous))
+                .shadow(color: Theme.ink.opacity(0.35), radius: 20, y: 10)
+                .overlay(RoundedRectangle(cornerRadius: 44, style: .continuous).stroke(.white, lineWidth: 8))
+                .overlay(alignment: .topTrailing) {
+                    Button(action: shut) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 28, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 66, height: 66)
+                            .background(Circle().fill(Theme.pink))
+                            .overlay(Circle().stroke(.white, lineWidth: 5))
+                            .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+                    }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("Close")
+                    .offset(x: 18, y: -18)
                 }
-                .buttonStyle(Squish())
-                .offset(x: 18, y: -18)
+                .scaleEffect(shown ? 1 : 0.85)
+                .opacity(shown ? 1 : 0)
             }
-            .scaleEffect(shown ? 1 : 0.85)
-            .opacity(shown ? 1 : 0)
         }
         .onAppear {
+            ownedIDs = Coins.shared.owned
+            balance = Coins.shared.balance
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { shown = true }
         }
     }
@@ -81,13 +85,16 @@ struct TreasureShopView: View {
     private func tap(_ item: Treasure) {
         let coins = Coins.shared
         Sound.shared.tap()
-        if coins.owns(item.id) {
+        if ownedIDs.contains(item.id) || coins.owns(item.id) {
             Sound.shared.play(.pop, volume: 0.6)
             poke[item.id] = Date()
         } else if coins.buy(item.id, price: item.price) {
             Sound.shared.play(.fanfare, volume: 0.55)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.68)) {
+                ownedIDs.insert(item.id)
+                balance = coins.balance
+            }
             bought[item.id] = Date()
-            tick += 1
         } else {
             // not enough coins yet: the price tag wiggles
             Sound.shared.play(.tap, volume: 0.5)
@@ -96,10 +103,12 @@ struct TreasureShopView: View {
     }
 
     private func cell(_ item: Treasure) -> some View {
-        let owned = item.owned
-        let afford = Coins.shared.canAfford(item.price)
+        let owned = ownedIDs.contains(item.id)
+        let afford = balance >= item.price
+        let animating = (poke[item.id].map { Date().timeIntervalSince($0) < 0.8 } ?? false)
+            || (bought[item.id].map { Date().timeIntervalSince($0) < 1.2 } ?? false)
         return Button { tap(item) } label: {
-            TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !animating)) { tl in
                 let a = poke[item.id].map { tl.date.timeIntervalSince($0) } ?? 10
                 let jig = a < 0.6 ? sin(a * 30) * 0.15 * (1 - a / 0.6) : 0
                 let b = bought[item.id].map { tl.date.timeIntervalSince($0) } ?? 10
@@ -116,7 +125,6 @@ struct TreasureShopView: View {
                         .padding(.bottom, 52)
                         .rotationEffect(.radians(owned ? jig : 0))
                     if b < 1 { SparkleBurst(colors: [Theme.lemon, Theme.pink, .white], count: 14, radius: 120) }
-                    // which game it goes to
                     if let g = GameRegistry.all.first(where: { $0.id == item.game }) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 16, style: .continuous).fill(g.tint.gradient)
@@ -129,13 +137,13 @@ struct TreasureShopView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding(10)
                     }
-                    // the price tag, or a tick once it's hers
                     Group {
                         if owned {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 46, weight: .bold))
                                 .foregroundStyle(.white, Color(hex: 0x3CC48A))
                                 .shadow(color: Theme.ink.opacity(0.2), radius: 2, y: 1)
+                                .transition(.scale.combined(with: .opacity))
                         } else {
                             HStack(spacing: 6) {
                                 CoinIcon().frame(width: 34, height: 34)
@@ -147,6 +155,7 @@ struct TreasureShopView: View {
                             .background(Capsule().fill(afford ? Color(hex: 0xFFF3C4) : Color(hex: 0xF4EEF6)))
                             .overlay(Capsule().stroke(afford ? Color(hex: 0xFFD45A) : Theme.ink.opacity(0.12), lineWidth: 3))
                             .rotationEffect(.radians(owned ? 0 : jig))
+                            .transition(.scale.combined(with: .opacity))
                         }
                     }
                     .frame(maxHeight: .infinity, alignment: .bottom)
