@@ -2,14 +2,8 @@ import Combine
 import SwiftUI
 
 // MARK: - Exam room
-//
-// The patient sits in the middle; tools sit on two shelves. She drags a tool off a shelf and over
-// the patient. The tool's tip works on the nearest spot that needs it (see `VetVisit.use`), and the
-// patient reacts: winces at the tweezers, giggles at the sponge, says "yum" to medicine, sneezes
-// while it has a cold, and jumps for joy once everything is better. Tools that aren't needed still
-// do something fun, so there is no wrong move.
 
-/// Where the patient sits in the room.
+/// Where the patient sits inside the 1024 x 834 stage.
 private struct VetLayout {
     let size: CGSize
     static let k: CGFloat = 0.86
@@ -17,6 +11,11 @@ private struct VetLayout {
     var origin: CGPoint { CGPoint(x: size.width / 2 - patient.width / 2, y: size.height - patient.height - 18) }
     func toRoom(_ p: CGPoint) -> CGPoint { CGPoint(x: origin.x + p.x * VetLayout.k, y: origin.y + p.y * VetLayout.k) }
     func toPatient(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - origin.x) / VetLayout.k, y: (p.y - origin.y) / VetLayout.k) }
+}
+
+private enum VetRightTab: String, CaseIterable {
+    case washBandage
+    case pamper
 }
 
 private struct VetParticle: Identifiable {
@@ -38,13 +37,29 @@ struct VetExamView: View {
     let onExit: () -> Void
     let onBack: () -> Void
 
+    static let examTools: [VetTool] = [
+        .thermometer, .stethoscope, .syrup, .tissue,
+        .icepack, .toothbrush, .cream, .tweezers,
+    ]
+    static let washBandageTools: [VetTool] = [
+        .sponge, .shower, .towel, .comb,
+        .brush, .swab, .bandage, .wrap,
+    ]
+    static let pamperTools: [VetTool] = [
+        .treat, .bow, .spray, .feather,
+    ]
+
+    /// Boost applied during `AutoTool.work` (1.3s) so even `.hold(1.6)` and `.rub(240)` complete on a single tap.
+    static let autoHoldBoost: Double = 1.65
+    static let autoRubBoost: CGFloat = 1.25
+
     @State private var visit: VetVisit
     @State private var stickers: [VetSticker]
     @State private var tool: VetTool?
     @State private var finger: CGPoint = .zero
     @State private var lastTip: CGPoint?
     @State private var consumed = false
-    /// A tool she tapped on the shelf: a tap on the patient makes it do that spot by itself (see `ToolTap`).
+    /// A tool tapped on a tray: tapping the patient runs it on that spot, tapping elsewhere puts it down.
     @State private var picked: VetTool?
     @State private var auto = AutoTool()
     @State private var dragFrom: CGPoint?
@@ -60,179 +75,469 @@ struct VetExamView: View {
     @State private var workingUntil = Date.distantPast
     @State private var bowColor = Int.random(in: 0..<6)
     @State private var lastFx: [String: Date] = [:]
-    @State private var size = CGSize(width: 1024, height: 834)
-    /// Foam, water, fur and the rest of the physical effects (a class: it changes every frame).
+    @State private var rightTab: VetRightTab
+    @State private var hintTool: VetTool?
+    @State private var hintToolUntil = Date.distantPast
+    @State private var peelingIndex: Int?
+    @State private var peelingOffset: CGSize = .zero
+    @State private var bareTouchActive = false
+    @State private var showBook = false
+    @State private var bellPulse = false
     @State private var effects: VetFX
 
     private let timer = Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()
+    private let stageSize = CGSize(width: GameChromeLayout.width, height: GameChromeLayout.height)
 
     init(clinic: VetClinic, animal: String, onExit: @escaping () -> Void, onBack: @escaping () -> Void) {
         self.clinic = clinic
         self.animal = animal
         self.onExit = onExit
         self.onBack = onBack
-        _visit = State(initialValue: clinic.visit(animal))
+        let initialVisit = clinic.visit(animal)
+        _visit = State(initialValue: initialVisit)
         _stickers = State(initialValue: clinic.stickers(animal))
+        _rightTab = State(initialValue: initialVisit.healed ? .pamper : .washBandage)
         let f = VetFX()
         if let a = VetArt.shared.animals[animal] { f.setUp(a) }
         _effects = State(initialValue: f)
     }
 
-    private var layout: VetLayout { VetLayout(size: size) }
+    private var layout: VetLayout { VetLayout(size: stageSize) }
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
+        ZStack {
+            GameStage(background: {
                 Canvas { ctx, s in VetDraw.room("exam", size: s, in: ctx) }
-                TimelineView(.animation) { tl in
-                    Canvas { ctx, _ in draw(ctx, now: tl.date) }
+            }) {
+                ZStack {
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: showBook)) { tl in
+                        Canvas { ctx, _ in draw(ctx, now: tl.date) }
+                    }
+                    .allowsHitTesting(false)
+
+                    bareHandLayer
+
+                    if let pk = picked {
+                        ToolTapLayer(
+                            space: "exam",
+                            onDrag: { p in
+                                if auto.running { auto.cancel() }
+                                drag(pk, p)
+                            },
+                            onEnd: { p in drop(pk, p) },
+                            onTap: { p in autoDo(pk, at: p) }
+                        )
+                    }
+
+                    HStack(alignment: .center) {
+                        leftExamTray
+                        Spacer()
+                        rightToolsTray
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 96)
+                    .padding(.bottom, 18)
+
+                    GameTopBar(
+                        gameID: PetVetGame.id,
+                        showStickerBook: true,
+                        showCoins: true,
+                        onExit: {
+                            save()
+                            onExit()
+                        },
+                        onStickerBook: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showBook = true
+                            }
+                        },
+                        center: {
+                            ailmentHearts
+                        },
+                        trailing: {
+                            HStack(spacing: 12) {
+                                newCheckupButton
+                                lobbyButton
+                            }
+                        }
+                    )
+
+                    StickerToast(game: PetVetGame.id, target: GameChromeLayout.stickerTarget)
+
+                    if let t = tool, let art = VetArt.shared.tools[t] {
+                        heldToolView(tool: t, art: art)
+                    }
                 }
-                .allowsHitTesting(false)
+                .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
+                .coordinateSpace(name: "exam")
+                .coinPurse(game: PetVetGame.id)
+            }
 
-                // tap the patient to tickle them
-                Color.clear
-                    .contentShape(Rectangle())
-                    .frame(width: layout.patient.width * 0.62, height: layout.patient.height * 0.86)
-                    .position(x: geo.size.width / 2, y: layout.origin.y + layout.patient.height * 0.55)
-                    .onTapGesture { tickle() }
-
-                if let pk = picked {
-                    ToolTapLayer(space: "exam",
-                                 onDrag: { p in
-                                     if auto.running { auto.cancel() }
-                                     drag(pk, p)
-                                 },
-                                 onEnd: { p in drop(pk, p) },
-                                 onTap: { p in autoDo(pk, at: p) })
+            if showBook {
+                StickerBookView(game: PetVetGame.id) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = false
+                    }
                 }
+                .transition(.opacity)
+                .zIndex(5)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("-vetFX") {
+                effects.demo(toRoom: layout.toRoom)
+            }
+            holdDemoTool(layout)
+            withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                bellPulse = true
+            }
+        }
+        .onReceive(timer) { _ in
+            guard !showBook else { return }
+            tick()
+        }
+        .onDisappear {
+            if auto.running { auto.cancel() }
+            save()
+        }
+    }
 
-                HStack {
-                    shelf(Array(VetTool.allCases.prefix(10)))
-                    Spacer()
-                    shelf(Array(VetTool.allCases.suffix(10)))
+    // MARK: Bare-hand tickle & peelable bows/bandages
+
+    private var bareHandLayer: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("exam"))
+                    .onChanged { v in
+                        if !bareTouchActive {
+                            bareTouchActive = true
+                            let pt = layout.toPatient(v.location)
+                            peelingIndex = hitStickerIndex(at: pt)
+                            peelingOffset = .zero
+                        }
+                        if peelingIndex != nil {
+                            peelingOffset = v.translation
+                        }
+                    }
+                    .onEnded { v in
+                        let idx = peelingIndex
+                        peelingIndex = nil
+                        peelingOffset = .zero
+                        bareTouchActive = false
+
+                        if let idx, stickers.indices.contains(idx) {
+                            peelSticker(at: idx, dragTranslation: v.translation)
+                            return
+                        }
+                        let pt = layout.toPatient(v.location)
+                        if ToolTap.isTap(v.translation), VetExamView.onPatient(pt) {
+                            tickle()
+                        }
+                    }
+            )
+    }
+
+    private func hitStickerIndex(at pt: CGPoint) -> Int? {
+        for idx in stickers.indices.reversed() {
+            let s = stickers[idx]
+            if hypot(s.point.x - pt.x, s.point.y - pt.y) <= 56 {
+                return idx
+            }
+        }
+        return nil
+    }
+
+    private func peelSticker(at idx: Int, dragTranslation: CGSize) {
+        let removed = stickers.remove(at: idx)
+        clinic.setStickers(stickers, for: animal)
+        VetSound.shared.play(.pluck, volume: 0.6)
+        Sound.shared.play(.pop, volume: 0.5)
+        Sound.shared.tap()
+        bounce(0.04)
+        let origin = layout.toRoom(removed.point)
+        let roomPos = CGPoint(x: origin.x + dragTranslation.width, y: origin.y + dragTranslation.height)
+        let throwX: CGFloat = abs(dragTranslation.width) > 12 ? dragTranslation.width * 2.2 : (removed.point.x < 300 ? -130 : 130)
+        spawn(.prop(removed.prop), at: roomPos, vel: CGVector(dx: throwX, dy: -260), life: 1.1, gravity: 640, spin: 260, scale: CGFloat(removed.scale))
+        burst(at: roomPos, count: 6, colors: [.white, Theme.lemon, Theme.pink])
+    }
+
+    // MARK: Top bar controls
+
+    private var newCheckupButton: some View {
+        let healed = visit.healed
+        return RoundButton(
+            symbol: "bell.fill",
+            tint: healed ? Color(hex: 0xF5A623) : Theme.mint,
+            size: GameChromeLayout.buttonSize
+        ) {
+            startNewCheckup()
+        }
+        .scaleEffect(healed && bellPulse ? 1.09 : 1)
+        .accessibilityLabel("New Checkup")
+    }
+
+    private var lobbyButton: some View {
+        Button {
+            Sound.shared.play(.whoosh, volume: 0.6)
+            Sound.shared.tap()
+            save()
+            onBack()
+        } label: {
+            Image(systemName: "pawprint.fill")
+                .font(.system(size: GameChromeLayout.buttonSize * 0.42, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: GameChromeLayout.buttonSize, height: GameChromeLayout.buttonSize)
+                .background(Circle().fill(Color(hex: 0x6CCB8B)))
+                .overlay(Circle().stroke(.white, lineWidth: 4.5))
+                .shadow(color: Theme.ink.opacity(0.24), radius: 6, y: 4)
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel("Waiting Room")
+    }
+
+    private func startNewCheckup() {
+        if auto.running { auto.cancel() }
+        tool = nil
+        picked = nil
+        lastTip = nil
+        consumed = false
+        healedAt = nil
+        hintTool = nil
+        effects.endDrag()
+        visit = clinic.startNewVisit(for: animal)
+        stickers = clinic.stickers(animal)
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+            rightTab = .washBandage
+        }
+        Sound.shared.play(.ding, volume: 0.65)
+        VetSound.shared.play(.hop, volume: 0.65)
+        Sound.shared.tap()
+        bounce(0.08)
+        react(.oh, 0.7)
+        burst(at: layout.toRoom(CGPoint(x: 300, y: 260)), count: 10, colors: [.white, Theme.mint, Theme.lemon])
+    }
+
+    private var ailmentHearts: some View {
+        GameTrayCard(cornerRadius: 26, paddingH: 14, paddingV: 8) {
+            HStack(spacing: 12) {
+                ForEach(visit.ailments, id: \.self) { ailment in
+                    ailmentChip(ailment)
+                }
+            }
+        }
+    }
+
+    private func ailmentChip(_ ailment: VetAilment) -> some View {
+        let spots = visit.spots.filter { $0.ailment == ailment }
+        let isHealed = spots.allSatisfy(\.healed)
+        let singleSpot = spots.count == 1
+        let pipCount = singleSpot ? ailment.steps.count : spots.count
+
+        return HStack(spacing: 6) {
+            ZStack {
+                if isHealed {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(Theme.pink)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    VetPropPicture(prop: ailment.icon)
+                        .frame(width: 28, height: 28)
+                }
+            }
+            .frame(width: 28, height: 28)
+            .scaleEffect(isHealed ? 1.08 : 1)
+            .animation(.spring(response: 0.32, dampingFraction: 0.5), value: isHealed)
+
+            HStack(spacing: 4) {
+                ForEach(0..<pipCount, id: \.self) { i in
+                    Circle()
+                        .fill(pipColor(index: i, spots: spots, singleSpot: singleSpot, isHealed: isHealed))
+                        .frame(width: 8, height: 8)
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(isHealed ? Theme.blush.opacity(0.45) : Color.white.opacity(0.85))
+        )
+    }
+
+    private func pipColor(index i: Int, spots: [VetSpot], singleSpot: Bool, isHealed: Bool) -> Color {
+        if isHealed { return Theme.pink }
+        if singleSpot, let s = spots.first {
+            if i < s.stage { return Theme.pink }
+            if i == s.stage && s.progress > 0.05 { return Theme.mint }
+            return Theme.ink.opacity(0.18)
+        }
+        guard spots.indices.contains(i) else { return Theme.ink.opacity(0.18) }
+        let s = spots[i]
+        if s.healed { return Theme.pink }
+        if s.stage > 0 || s.progress > 0.05 { return Theme.mint }
+        return Theme.ink.opacity(0.18)
+    }
+
+    // MARK: Compact grouped trays
+
+    private var activeHintTool: VetTool? {
+        Date() < hintToolUntil ? hintTool : nil
+    }
+
+    private func orderedTools(_ base: [VetTool], needed: Set<VetTool>, hinted: VetTool?) -> [VetTool] {
+        base.enumerated()
+            .sorted { a, b in
+                let rankA = (a.element == hinted ? 0 : (needed.contains(a.element) ? 1 : 2))
+                let rankB = (b.element == hinted ? 0 : (needed.contains(b.element) ? 1 : 2))
+                if rankA != rankB { return rankA < rankB }
+                return a.offset < b.offset
+            }
+            .map(\.element)
+    }
+
+    private var leftExamTray: some View {
+        let needed = visit.neededTools
+        let hinted = activeHintTool
+        let sorted = orderedTools(Self.examTools, needed: needed, hinted: hinted)
+        let hasNeeded = sorted.contains { needed.contains($0) || $0 == hinted }
+
+        return GameTrayCard(cornerRadius: 30, paddingH: 10, paddingV: 10) {
+            VStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "stethoscope")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(hasNeeded ? Theme.pink : Theme.ink.opacity(0.6))
+                    if hasNeeded {
+                        Circle()
+                            .fill(Theme.pink)
+                            .frame(width: 8, height: 8)
+                    }
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 96)
-                .padding(.bottom, 20)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(hasNeeded ? Theme.blush.opacity(0.55) : Color.white.opacity(0.85)))
 
-                topBar
-
-                if let t = tool, let art = VetArt.shared.tools[t] {
-                    let tip = tipRoom
-                    // over the patient the tool turns see-through, so the fur and the spot show through it
-                    let over = toolOverPatient
-                    let side: CGFloat = over ? 168 : 176
-                    let s: CGFloat = side / 140
-                    // the tool's tip is at her fingertip and the tool stands up from it (the shower
-                    // stays upright: it rains down)
-                    let turn = t == .shower ? 0 : FingerLift.turn(tip: art.tip, center: CGPoint(x: 70, y: 70), finger: finger, lifted: tip)
-                    let dx = (70 - art.tip.x) * s, dy = (70 - art.tip.y) * s
-                    let c = CGFloat(cos(turn)), sn = CGFloat(sin(turn))
-                    VetToolPicture(tool: t)
-                        .frame(width: side, height: side)
-                        .rotationEffect(.radians(turn))
-                        .opacity(over ? FingerLift.seeThrough : 1)
-                        .shadow(color: Theme.ink.opacity(over ? 0.12 : 0.25), radius: 8, y: 8)
-                        .animation(.easeOut(duration: 0.15), value: over)
-                        .position(x: tip.x + dx * c - dy * sn, y: tip.y + dx * sn + dy * c)
-                        .allowsHitTesting(false)
-                }
+                toolGrid(sorted, columns: 2, tileSize: 74, needed: needed, hinted: hinted)
             }
-            .coordinateSpace(name: "exam")
-            .onAppear {
-                size = geo.size
-                if ProcessInfo.processInfo.arguments.contains("-vetFX") { effects.demo(toRoom: VetLayout(size: geo.size).toRoom) }
-                holdDemoTool(VetLayout(size: geo.size))
-            }
-            .onChange(of: geo.size) { size = $0 }
-        }
-        .onReceive(timer) { _ in tick() }
-        .onDisappear { save() }
-    }
-
-    // MARK: Top bar
-
-    private var topBar: some View {
-        VStack {
-            HStack(spacing: 16) {
-                HomeButton { save(); onExit() }
-                Button {
-                    Sound.shared.play(.whoosh, volume: 0.6)
-                    save()
-                    onBack()
-                } label: {
-                    Image(systemName: "pawprint.fill")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 72, height: 72)
-                        .background(Circle().fill(Color(hex: 0x6CCB8B)))
-                        .overlay(Circle().stroke(.white, lineWidth: 5))
-                        .shadow(color: Theme.ink.opacity(0.25), radius: 6, y: 4)
-                }
-                .buttonStyle(Squish())
-                .scaleEffect(visit.healed ? 1.18 : 1)
-                .animation(visit.healed ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true) : .default, value: visit.healed)
-                Spacer()
-                hearts
-                Spacer()
-                Color.clear.frame(width: 160, height: 72)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            Spacer()
         }
     }
 
-    private var hearts: some View {
-        HStack(spacing: 6) {
-            ForEach(visit.spots) { s in
-                Image(systemName: s.healed ? "heart.fill" : "heart")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(s.healed ? Theme.pink : Theme.ink.opacity(0.3))
-                    .scaleEffect(s.healed ? 1.1 : 0.9)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.45), value: s.healed)
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 10)
-        .background(Capsule().fill(.white.opacity(0.85)))
-        .shadow(color: Theme.ink.opacity(0.12), radius: 5, y: 3)
-    }
-
-    // MARK: Shelves
-
-    private func shelf(_ tools: [VetTool]) -> some View {
+    private var rightToolsTray: some View {
         let needed = visit.neededTools
-        return VStack(spacing: 10) {
-            ForEach(0..<(tools.count + 1) / 2, id: \.self) { row in
-                HStack(spacing: 10) {
-                    ForEach(tools[(row * 2)..<min(tools.count, row * 2 + 2)], id: \.self) { t in
-                        VetToolButton(tool: t, needed: needed.contains(t), lifted: tool == t, picked: picked == t,
-                                      onDrag: { p in
-                                          if auto.running { auto.cancel() }
-                                          if tool == nil { dragFrom = p }
-                                          drag(t, p)
-                                      },
-                                      onEnd: { shelfEnd(t, $0) })
+        let hinted = activeHintTool
+        let washNeeded = Self.washBandageTools.contains { needed.contains($0) || $0 == hinted }
+        let items = rightTab == .washBandage
+            ? orderedTools(Self.washBandageTools, needed: needed, hinted: hinted)
+            : Self.pamperTools
+        let tileSize: CGFloat = rightTab == .pamper ? 80 : 74
+
+        return GameTrayCard(cornerRadius: 30, paddingH: 10, paddingV: 10) {
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    rightTabButton(.washBandage, symbol: "bandage.fill", badge: washNeeded && rightTab != .washBandage)
+                    rightTabButton(.pamper, symbol: "sparkles", badge: false)
+                }
+                .padding(4)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.blush.opacity(0.35)))
+
+                toolGrid(items, columns: 2, tileSize: tileSize, needed: needed, hinted: hinted)
+                    .id(rightTab)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private func rightTabButton(_ tab: VetRightTab, symbol: String, badge: Bool) -> some View {
+        let selected = rightTab == tab
+        return Button {
+            guard rightTab != tab else { return }
+            Sound.shared.play(.pop, volume: 0.55)
+            Sound.shared.tap()
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                rightTab = tab
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: symbol)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(selected ? .white : Theme.ink.opacity(0.65))
+                    .frame(width: 68, height: 38)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(selected ? Theme.pink : Color.white)
+                    )
+                if badge {
+                    Circle()
+                        .fill(Theme.pink)
+                        .overlay(Circle().stroke(.white, lineWidth: 2))
+                        .frame(width: 12, height: 12)
+                        .offset(x: 3, y: -3)
+                }
+            }
+        }
+        .buttonStyle(Squish())
+    }
+
+    private func toolGrid(_ tools: [VetTool], columns: Int, tileSize: CGFloat, needed: Set<VetTool>, hinted: VetTool?) -> some View {
+        let rowCount = (tools.count + columns - 1) / columns
+        return VStack(spacing: 8) {
+            ForEach(0..<rowCount, id: \.self) { row in
+                HStack(spacing: 8) {
+                    let start = row * columns
+                    let end = min(tools.count, start + columns)
+                    ForEach(Array(tools[start..<end]), id: \.self) { t in
+                        VetToolTile(
+                            tool: t,
+                            size: tileSize,
+                            needed: needed.contains(t),
+                            hinted: hinted == t,
+                            lifted: tool == t,
+                            picked: picked == t,
+                            onDrag: { p in
+                                if auto.running { auto.cancel() }
+                                if tool == nil { dragFrom = p }
+                                drag(t, p)
+                            },
+                            onEnd: { shelfEnd(t, $0) }
+                        )
                     }
                 }
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.55)))
-        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white, lineWidth: 4))
+        .animation(.spring(response: 0.34, dampingFraction: 0.78), value: tools)
     }
 
-    // MARK: Dragging
+    private func heldToolView(tool t: VetTool, art: VetToolArt) -> some View {
+        let tip = tipRoom
+        let over = toolOverPatient
+        let side: CGFloat = over ? 168 : 176
+        let s: CGFloat = side / 140
+        let turn = t == .shower ? 0 : FingerLift.turn(tip: art.tip, center: CGPoint(x: 70, y: 70), finger: finger, lifted: tip)
+        let dx = (70 - art.tip.x) * s
+        let dy = (70 - art.tip.y) * s
+        let c = CGFloat(cos(turn))
+        let sn = CGFloat(sin(turn))
+        return VetToolPicture(tool: t)
+            .frame(width: side, height: side)
+            .rotationEffect(.radians(turn))
+            .opacity(over ? FingerLift.seeThrough : 1)
+            .shadow(color: Theme.ink.opacity(over ? 0.12 : 0.25), radius: 8, y: 8)
+            .animation(.easeOut(duration: 0.15), value: over)
+            .position(x: tip.x + dx * c - dy * sn, y: tip.y + dx * sn + dy * c)
+            .allowsHitTesting(false)
+    }
 
-    /// How far above her finger a tool works: at her fingertip (`FingerLift.tool`), except the shower,
-    /// which rains down from above it (`FingerLift.pour`).
+    // MARK: Dragging & Tap-to-Use
+
     static func tipLift(_ t: VetTool?) -> CGFloat { t == .shower ? FingerLift.pour : FingerLift.tool }
 
     private var tipRoom: CGPoint {
-        FingerLift.point(finger, lift: VetExamView.tipLift(tool), bottom: size.height, width: size.width)
+        FingerLift.point(finger, lift: VetExamView.tipLift(tool), bottom: stageSize.height, width: stageSize.width)
     }
 
-    /// True when the lifted tool's tip is over the patient (head or body).
     private var toolOverPatient: Bool { VetExamView.onPatient(layout.toPatient(tipRoom)) }
 
     static func onPatient(_ tip: CGPoint) -> Bool {
@@ -251,8 +556,6 @@ struct VetExamView: View {
         finger = p
     }
 
-    /// Her finger leaves a tool she took off the shelf: a tap there picks it (or puts it down), a drag
-    /// uses it as usual.
     private func shelfEnd(_ t: VetTool, _ p: CGPoint) {
         let tap = dragFrom.map { ToolTap.isTap(CGSize(width: p.x - $0.x, height: p.y - $0.y)) } ?? false
         dragFrom = nil
@@ -265,12 +568,70 @@ struct VetExamView: View {
         Sound.shared.play(.pop, volume: 0.6)
     }
 
-    /// The picked tool glides to the spot she tapped and does it by itself.
+    /// Runs a picked tool on the tapped spot, or gently unpicks it if tapping backdrop / non-matching patient area.
     private func autoDo(_ t: VetTool, at p: CGPoint) {
-        let f = FingerLift.finger(for: p, lift: VetExamView.tipLift(t), bottom: size.height, width: size.width)
-        auto.run(from: CGPoint(x: f.x + 70, y: f.y + 90), to: f,
-                 step: { q in drag(t, q) },
-                 end: { q in drop(t, q) })
+        let pt = layout.toPatient(p)
+        let onPat = VetExamView.onPatient(pt)
+
+        // Check if there is a matching active spot for this tool
+        let matchingSpots = visit.spots.filter { $0.step?.tool == t }
+        let nearestMatch = matchingSpots.min {
+            hypot($0.target.x - pt.x, $0.target.y - pt.y) < hypot($1.target.x - pt.x, $1.target.y - pt.y)
+        }
+
+        if let s = nearestMatch {
+            let dist = hypot(s.target.x - pt.x, s.target.y - pt.y)
+            if onPat || dist <= 165 {
+                let targetRoom = layout.toRoom(s.target)
+                runAuto(t, targetRoom: targetRoom)
+                return
+            }
+        }
+
+        // Tapping empty exam backdrop always puts the picked tool down cleanly.
+        guard onPat else {
+            picked = nil
+            Sound.shared.play(.flip, volume: 0.4)
+            return
+        }
+
+        // Syrup waiting for thermometer/stethoscope gently nudges without being consumed.
+        if t == .syrup, let prereq = visit.syrupPrerequisite {
+            nudgeSyrupPrerequisite(prereq, now: Date())
+            return
+        }
+
+        // Pamper tools (plus extra bandages when healed) work wherever tapped on the patient.
+        if t == .treat {
+            let mouth = VetArt.shared.animals[animal]?.mouth ?? CGPoint(x: 300, y: 334)
+            runAuto(t, targetRoom: layout.toRoom(mouth))
+            return
+        }
+        if t == .bow {
+            let onHead = hypot(pt.x - 300, pt.y - 250) < 185
+            if onHead {
+                runAuto(t, targetRoom: p)
+                return
+            }
+        }
+        if t == .spray || t == .feather || (t == .bandage && visit.healed) {
+            runAuto(t, targetRoom: p)
+            return
+        }
+
+        // No active spot matches this tool: gently unpick so bare-hand tickle is always accessible!
+        picked = nil
+        tickle()
+    }
+
+    private func runAuto(_ t: VetTool, targetRoom: CGPoint) {
+        let f = FingerLift.finger(for: targetRoom, lift: VetExamView.tipLift(t), bottom: stageSize.height, width: stageSize.width)
+        auto.run(
+            from: CGPoint(x: f.x + 70, y: f.y + 90),
+            to: f,
+            step: { q in drag(t, q) },
+            end: { q in drop(t, q) }
+        )
     }
 
     private func drop(_ t: VetTool, _ p: CGPoint) {
@@ -289,6 +650,7 @@ struct VetExamView: View {
             addSticker(VetSticker(prop: "bow\(bowColor)", x: tip.x, y: tip.y, scale: 0.85, rotation: Double.random(in: -18...18)))
             bowColor = (bowColor + 1) % 6
             react(.wow, 1.0)
+            clinic.unlock(.bowStylist)
         } else if t == .bandage && onBody && !usedThisDrag {
             addSticker(VetSticker(prop: "bandage", x: tip.x, y: tip.y, scale: 0.7, rotation: Double.random(in: -30...30)))
             react(.giggle, 0.8)
@@ -297,7 +659,6 @@ struct VetExamView: View {
         }
     }
 
-    /// `-vetHold <tool>`: hold that tool over the first spot that needs it (for simulator screenshots).
     private func holdDemoTool(_ L: VetLayout) {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-vetHold"), i + 1 < args.count, let t = VetTool(rawValue: args[i + 1]) else { return }
@@ -318,6 +679,19 @@ struct VetExamView: View {
         burst(at: layout.toRoom(s.point), count: 6, colors: [.white, Theme.lemon, Theme.pink])
     }
 
+    private func nudgeSyrupPrerequisite(_ prereq: VetTool, now: Date) {
+        hintTool = prereq
+        hintToolUntil = now.addingTimeInterval(2.6)
+        if fx("prereq", 0.9) {
+            Sound.shared.play(.boing, volume: 0.42)
+            Sound.shared.tap()
+            bounce(0.045)
+            react(.oh, 0.55)
+            let mouth = VetArt.shared.animals[animal]?.mouth ?? CGPoint(x: 300, y: 334)
+            burst(at: layout.toRoom(mouth), count: 5, colors: [Theme.sky, Theme.lemon, .white])
+        }
+    }
+
     // MARK: The game loop
 
     private func tick() {
@@ -334,15 +708,25 @@ struct VetExamView: View {
 
         guard let t = tool, !consumed else { return }
         let tip = layout.toPatient(tipRoom)
-        let moved = min(40, lastTip.map { hypot(tip.x - $0.x, tip.y - $0.y) } ?? 0)
+        let rawMoved = min(40, lastTip.map { hypot(tip.x - $0.x, tip.y - $0.y) } ?? 0)
         let step = lastTip.map { CGVector(dx: tip.x - $0.x, dy: tip.y - $0.y) } ?? .zero
         lastTip = tip
         effects.mudSpots = visit.spots.filter { $0.ailment == .mud && !$0.healed }.map(\.point)
-        effects.emit(t, tip: tip, room: tipRoom, step: step, toRoom: layout.toRoom,
-                mouth: VetArt.shared.animals[animal]?.mouth ?? CGPoint(x: 300, y: 334), mud: effects.mudSpots)
-        let events = visit.use(t, at: tip, moved: moved, dt: 1.0 / 30)
+        effects.emit(
+            t,
+            tip: tip,
+            room: tipRoom,
+            step: step,
+            toRoom: layout.toRoom,
+            mouth: VetArt.shared.animals[animal]?.mouth ?? CGPoint(x: 300, y: 334),
+            mud: effects.mudSpots
+        )
+
+        let effectiveDT = auto.running ? (1.0 / 30) * Self.autoHoldBoost : (1.0 / 30)
+        let effectiveMoved = auto.running ? rawMoved * Self.autoRubBoost : rawMoved
+        let events = visit.use(t, at: tip, moved: effectiveMoved, dt: effectiveDT)
         if events.isEmpty {
-            play(t, tip: tip, moved: moved, now: now)
+            play(t, tip: tip, moved: rawMoved, now: now)
         } else {
             usedThisDrag = true
             for e in events { handle(e, tool: t, tip: tip, now: now) }
@@ -378,6 +762,11 @@ struct VetExamView: View {
             case .stethoscope:
                 VetSound.shared.play(.heartbeat, gap: 0.9)
                 if fx("hb", 0.9) { spawn(.heart(Theme.pink), at: room, vel: CGVector(dx: 0, dy: -90), life: 0.9, scale: 1.1) }
+            case .icepack:
+                VetSound.shared.play(.brr, volume: 0.65, gap: 0.65)
+                if fx("chill", 0.45) {
+                    spawn(.sparkle(Theme.sky), at: room, vel: CGVector(dx: .random(in: -55...55), dy: -75), life: 0.7, scale: 0.9)
+                }
             default:
                 break
             }
@@ -394,15 +783,21 @@ struct VetExamView: View {
             case .bandage:
                 VetSound.shared.play(.sticker)
                 effects.pressSticker(at: s.point)
-            case .thermometer: VetSound.shared.play(.beep)
+            case .thermometer:
+                VetSound.shared.play(.beep)
+            case .icepack:
+                VetSound.shared.play(.brr, volume: 0.7)
+                Sound.shared.play(.sparkle, volume: 0.6)
             case .syrup:
                 VetSound.shared.play(.nom)
                 react(.yum, 1.0)
-            case .shower: VetSound.shared.play(.splash)
+            case .shower:
+                VetSound.shared.play(.splash)
             case .wrap:
                 VetSound.shared.play(.zip)
                 effects.wrap(id)
-            case .stethoscope: VetSound.shared.play(.heartbeat)
+            case .stethoscope:
+                VetSound.shared.play(.heartbeat)
             case .comb:
                 VetSound.shared.play(.bugjump)
                 spawn(.prop(["bug", "bugGreen", "bugPink"][id % 3]), at: at,
@@ -411,10 +806,15 @@ struct VetExamView: View {
                 VetSound.shared.play(.swish)
                 spawn(.prop(["leaf", "leafGold", "leafRed"][id % 3]), at: at,
                       vel: CGVector(dx: s.point.x < 300 ? -200 : 200, dy: -200), life: 1.8, gravity: 260, spin: 160, scale: 0.8)
-            case .sponge: Sound.shared.play(.bubble, volume: 0.7)
-            default: Sound.shared.play(.ding, volume: 0.5)
+            case .sponge:
+                Sound.shared.play(.bubble, volume: 0.7)
+            default:
+                Sound.shared.play(.ding, volume: 0.5)
             }
-        case .spotHealed(let id, _):
+            if picked == t && !t.isPamper && !visit.neededTools.contains(t) {
+                picked = nil
+            }
+        case .spotHealed(let id, let ailment):
             if let s = visit.spots.first(where: { $0.id == id }) {
                 let at = layout.toRoom(s.point)
                 for i in 0..<3 {
@@ -424,9 +824,20 @@ struct VetExamView: View {
             }
             Sound.shared.play(.sparkle, volume: 0.6)
             if reaction != .yum { react(.giggle, 0.9) }
+            switch ailment {
+            case .mud: clinic.unlock(.sparkleBath)
+            case .toothache: clinic.unlock(.sweetTooth)
+            case .tummy: clinic.unlock(.tummyHero)
+            case .cold, .scrape, .sprain, .thorns: clinic.unlock(.gentleDoctor)
+            default: break
+            }
         case .allHealed:
             healedAt = now
-            clinic.recordHealed(animal)
+            picked = nil
+            clinic.completeVisit(for: animal, visit: visit, coinOrigin: CGPoint(x: 512, y: 360))
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                rightTab = .pamper
+            }
             react(.wow, 2.6)
             bounce(0.1)
             VetSound.shared.play(.healed)
@@ -444,19 +855,43 @@ struct VetExamView: View {
         let room = layout.toRoom(tip)
         let rubbing = moved > 2
         switch t {
-        case .treat, .syrup:
-            if nearMouth {
+        case .syrup:
+            if let prereq = visit.syrupPrerequisite {
+                // Never prematurely consume syrup when thermometer/stethoscope is still needed first.
+                if nearMouth {
+                    nudgeSyrupPrerequisite(prereq, now: now)
+                } else {
+                    react(.oh, 0.3)
+                }
+            } else if nearMouth {
                 consumed = true
                 tool = nil
                 VetSound.shared.play(.nom)
-                if t == .treat { effects.crumbs(at: layout.toRoom(mouth)) }
                 react(.yum, 1.3)
                 bounce(0.07)
                 for i in 0..<4 {
                     spawn(.heart([Theme.pink, Color(hex: 0xFF6F96)][i % 2]), at: layout.toRoom(mouth),
                           vel: CGVector(dx: Double(i) * 40 - 60, dy: -160), life: 1.2, scale: 0.8)
                 }
-            } else { react(.oh, 0.3) }
+            } else {
+                react(.oh, 0.3)
+            }
+        case .treat:
+            if nearMouth {
+                consumed = true
+                tool = nil
+                VetSound.shared.play(.nom)
+                effects.crumbs(at: layout.toRoom(mouth))
+                react(.yum, 1.3)
+                bounce(0.07)
+                clinic.unlock(.sweetTooth)
+                for i in 0..<4 {
+                    spawn(.heart([Theme.pink, Color(hex: 0xFF6F96)][i % 2]), at: layout.toRoom(mouth),
+                          vel: CGVector(dx: Double(i) * 40 - 60, dy: -160), life: 1.2, scale: 0.8)
+                }
+            } else {
+                react(.oh, 0.3)
+            }
         case .feather:
             if rubbing {
                 react(.giggle, 0.6)
@@ -496,6 +931,10 @@ struct VetExamView: View {
             }
         case .icepack:
             react(.blinkSmile, 0.4)
+            VetSound.shared.play(.brr, volume: 0.55, gap: 0.85)
+            if fx("chillPlay", 0.55) {
+                spawn(.sparkle(Theme.sky), at: room, vel: CGVector(dx: .random(in: -45...45), dy: -65), life: 0.65, scale: 0.75)
+            }
         case .tissue, .cream, .swab, .wrap, .tweezers, .bandage, .bow:
             react(.oh, 0.3)
         }
@@ -522,7 +961,6 @@ struct VetExamView: View {
         bounceAmp = amp
     }
 
-    /// True at most once per `gap` seconds for `key`.
     private func fx(_ key: String, _ gap: Double) -> Bool {
         let now = Date()
         if let t = lastFx[key], now.timeIntervalSince(t) < gap { return false }
@@ -547,8 +985,8 @@ struct VetExamView: View {
     private func confetti() {
         let colors = [Theme.pink, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac, Theme.peach]
         for i in 0..<46 {
-            let x = size.width * CGFloat.random(in: 0.2...0.8)
-            spawn(.confetti(colors[i % colors.count]), at: CGPoint(x: x, y: size.height * 0.45),
+            let x = stageSize.width * CGFloat.random(in: 0.2...0.8)
+            spawn(.confetti(colors[i % colors.count]), at: CGPoint(x: x, y: stageSize.height * 0.45),
                   vel: CGVector(dx: .random(in: -260...260), dy: .random(in: -760...(-380))), life: 2.4, gravity: 620,
                   spin: .random(in: -600...600), scale: .random(in: 0.8...1.3))
         }
@@ -588,7 +1026,6 @@ struct VetExamView: View {
         let t = now.timeIntervalSinceReferenceDate
         effects.step(to: t, toPatient: L.toPatient, toRoom: L.toRoom, floorY: L.toRoom(CGPoint(x: 300, y: 648)).y)
 
-        // body motion: breathing, squash-bounce, shivers, and a happy hop when healed
         var sy: CGFloat = 1 + 0.012 * CGFloat(sin(t * 2.4))
         var sx: CGFloat = 1
         let db = now.timeIntervalSince(bounceAt)
@@ -627,8 +1064,14 @@ struct VetExamView: View {
         }
 
         VetPatientPainter.draw(a, face: face(now), look: look, in: p, overlay: { c in
-            for s in stickers {
-                VetDraw.prop(s.prop, at: s.point, scale: CGFloat(s.scale) * effects.pressScale(at: s.point, t: t), rotation: s.rotation, in: c)
+            for (idx, s) in stickers.enumerated() {
+                let isPeeling = peelingIndex == idx
+                let offsetX = isPeeling ? peelingOffset.width / VetLayout.k : 0
+                let offsetY = isPeeling ? peelingOffset.height / VetLayout.k : 0
+                let pt = CGPoint(x: s.point.x + offsetX, y: s.point.y + offsetY)
+                let scale = CGFloat(s.scale) * effects.pressScale(at: s.point, t: t) * (isPeeling ? 1.14 : 1)
+                let rot = s.rotation + (isPeeling ? Double(offsetX) * 0.14 : 0)
+                VetDraw.prop(s.prop, at: pt, scale: scale, rotation: rot, in: c)
             }
             drawSpots(c, t: t, now: now)
             effects.drawOnFur(c, t: t)
@@ -636,17 +1079,7 @@ struct VetExamView: View {
             drawFaceTop(c, a: a, t: t)
         })
 
-        // where the lifted tool is needed
-        if let tl = tool {
-            let pulse = 1 + 0.12 * sin(t * 7)
-            for s in visit.spots where s.step?.tool == tl {
-                let c = s.target
-                let r = 46 * pulse
-                let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
-                p.stroke(ring, with: .color(.white.opacity(0.95)), style: StrokeStyle(lineWidth: 7, lineCap: .round, dash: [14, 12], dashPhase: CGFloat(t * 30)))
-                p.stroke(ring, with: .color(Theme.pink.opacity(0.7)), style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [14, 12], dashPhase: CGFloat(t * 30)))
-            }
-        }
+        drawTargetsAndProgress(p, t: t)
 
         if let h = healedAt, now.timeIntervalSince(h) < 3.5 {
             let dh = now.timeIntervalSince(h)
@@ -657,6 +1090,71 @@ struct VetExamView: View {
 
         drawParticles(ctx, now: now)
         effects.drawInRoom(ctx, t: t)
+    }
+
+    /// Draws pulsing target rings (for picked OR dragged tools), mouth guide cues, and live radial progress arcs.
+    private func drawTargetsAndProgress(_ p: GraphicsContext, t: Double) {
+        let activeTool = tool ?? picked
+        let pulse = CGFloat(1 + 0.11 * sin(t * 7))
+
+        // Subtle mouth cue when stage-1 cold/tummy/toothache is waiting at the mouth.
+        let mouthStage1 = visit.spots.first {
+            !$0.healed && $0.stage == 1 && $0.step?.anchor == "mouth"
+        }
+        if let ms = mouthStage1, activeTool == nil {
+            let m = ms.target
+            let r = 34 * (1 + 0.08 * CGFloat(sin(t * 4.5)))
+            let halo = Path(ellipseIn: CGRect(x: m.x - r, y: m.y - r, width: r * 2, height: r * 2))
+            p.stroke(halo, with: .color(Theme.pink.opacity(0.45)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [8, 8], dashPhase: CGFloat(t * 18)))
+            StorybookArt.sparkle(p, at: CGPoint(x: m.x + r * 0.78, y: m.y - r * 0.65), radius: 7, color: Theme.lemon, opacity: 0.85)
+        }
+
+        // Target rings whenever a tool is dragged OR picked on a tray.
+        if let tl = activeTool {
+            for s in visit.spots where s.step?.tool == tl {
+                let c = s.target
+                let isMouthStep = s.step?.anchor == "mouth"
+                let baseR: CGFloat = isMouthStep ? 52 : 46
+                let r = baseR * pulse
+                let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+                if isMouthStep {
+                    p.fill(ring, with: .color(Theme.blush.opacity(0.22)))
+                }
+                p.stroke(ring, with: .color(.white.opacity(0.95)), style: StrokeStyle(lineWidth: 7, lineCap: .round, dash: [14, 12], dashPhase: CGFloat(t * 30)))
+                p.stroke(ring, with: .color(Theme.pink.opacity(0.85)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [14, 12], dashPhase: CGFloat(t * 30)))
+
+                // If the step happens at the mouth instead of the original spot (tummy/toothache/cold), draw a gentle dotted guide arc to the mouth.
+                if isMouthStep && hypot(s.point.x - c.x, s.point.y - c.y) > 20 {
+                    var guide = Path()
+                    guide.move(to: s.point)
+                    let mid = CGPoint(x: (s.point.x + c.x) * 0.5 + (s.point.x <= 300 ? -34 : 34), y: (s.point.y + c.y) * 0.5)
+                    guide.addQuadCurve(to: c, control: mid)
+                    p.stroke(guide, with: .color(.white.opacity(0.9)), style: StrokeStyle(lineWidth: 6, lineCap: .round, dash: [8, 12], dashPhase: CGFloat(-t * 28)))
+                    p.stroke(guide, with: .color(Theme.pink.opacity(0.75)), style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [8, 12], dashPhase: CGFloat(-t * 28)))
+                }
+            }
+        }
+
+        // Crisp circular radial progress arcs on any spot being actively healed.
+        for s in visit.spots where !s.healed && s.progress > 0.01 {
+            let c = s.target
+            let pr = min(1.0, max(0.0, s.progress))
+            let rad: CGFloat = 54
+            let track = Path(ellipseIn: CGRect(x: c.x - rad, y: c.y - rad, width: rad * 2, height: rad * 2))
+            p.stroke(track, with: .color(.white.opacity(0.82)), style: StrokeStyle(lineWidth: 10))
+
+            var arc = Path()
+            let startAngle = -Double.pi / 2
+            let endAngle = startAngle + 2 * Double.pi * pr
+            arc.addArc(center: c, radius: rad, startAngle: .radians(startAngle), endAngle: .radians(endAngle), clockwise: false)
+            let arcColor = pr > 0.72 ? Theme.pink : Theme.mint
+            p.stroke(arc, with: .color(arcColor), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+
+            let tipX = c.x + CGFloat(cos(endAngle)) * rad
+            let tipY = c.y + CGFloat(sin(endAngle)) * rad
+            let dot = Path(ellipseIn: CGRect(x: tipX - 5.5, y: tipY - 5.5, width: 11, height: 11))
+            StorybookArt.fillAndStroke(p, dot, fill: .white, stroke: Theme.pink, width: 2.5)
+        }
     }
 
     private func drawSpots(_ c: GraphicsContext, t: Double, now: Date) {
@@ -722,7 +1220,6 @@ struct VetExamView: View {
         }
     }
 
-    /// Things drawn over the face: cold drips and shivers, foam while brushing.
     private func drawFaceTop(_ c: GraphicsContext, a: VetAnimal, t: Double) {
         if visit.has(.cold) {
             let n = VetAnchors.point("nose")
@@ -751,7 +1248,6 @@ struct VetExamView: View {
             case .prop(let name):
                 VetDraw.prop(name, at: .zero, scale: q.scale, in: g)
             case .sparkle(let col):
-                // a real twinkle: it flares and dims and turns as it flies
                 let seed = Double(abs(q.id.hashValue % 997)) / 97
                 let flicker = CGFloat(0.55 + 0.45 * abs(sin(age * 15 + seed)))
                 let r = 13 * q.scale * (1 - tt * 0.4) * flicker
@@ -788,37 +1284,53 @@ struct VetExamView: View {
     }
 }
 
-// MARK: - A tool on the shelf
+// MARK: - Unified tool tile (single crisp Theme.pink ring, zero double-border collision)
 
-private struct VetToolButton: View {
+private struct VetToolTile: View {
     let tool: VetTool
+    let size: CGFloat
     let needed: Bool
+    let hinted: Bool
     let lifted: Bool
-    var picked = false
+    let picked: Bool
     let onDrag: (CGPoint) -> Void
     let onEnd: (CGPoint) -> Void
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !needed)) { tl in
-            let t = tl.date.timeIntervalSinceReferenceDate
-            let phase = t.truncatingRemainder(dividingBy: 2.2)
-            let wiggle = needed && phase < 0.7 ? sin(phase * 27) * 7 * (1 - phase / 0.7) : 0
-            ZStack {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(VetArt.shared.tools[tool]?.tint ?? .white)
-                VetToolPicture(tool: tool).padding(9)
+        let highlighted = (picked || needed || hinted) && !lifted
+        let pulsing = (needed || hinted) && !picked && !lifted
+        let fillTint: Color = picked && !lifted
+            ? Theme.blush.opacity(0.65)
+            : (VetArt.shared.tools[tool]?.tint ?? .white)
+
+        GameDockTile(
+            size: size,
+            selected: highlighted,
+            pulsing: pulsing,
+            tint: fillTint,
+            cornerRadius: 22
+        ) {
+            ZStack(alignment: .topTrailing) {
+                VetToolPicture(tool: tool)
+                    .padding(8)
+                if picked && !lifted {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Theme.pink))
+                        .padding(5)
+                } else if (needed || hinted) && !lifted {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundStyle(hinted ? Theme.pink : Theme.lemon)
+                        .shadow(color: Theme.ink.opacity(0.28), radius: 1)
+                        .padding(6)
+                }
             }
-            .frame(width: 92, height: 92)
-            .overlay(
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .stroke(needed ? Theme.pink : .white, lineWidth: needed ? 6 : 4)
-            )
-            .shadow(color: needed ? Theme.pink.opacity(0.55) : Theme.ink.opacity(0.15), radius: needed ? 9 : 4, y: needed ? 0 : 3)
-            .rotationEffect(.degrees(wiggle))
-            .opacity(lifted ? 0.35 : 1)
-            .scaleEffect(lifted ? 0.92 : 1)
-            .picked(picked && !lifted)
         }
+        .opacity(lifted ? 0.35 : 1)
+        .scaleEffect(lifted ? 0.92 : 1)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("exam"))

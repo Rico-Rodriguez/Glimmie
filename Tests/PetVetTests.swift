@@ -4,6 +4,12 @@ import XCTest
 final class PetVetTests: XCTestCase {
     let art = VetArt.shared
 
+    override func setUp() {
+        super.setUp()
+        Coins.shared.resetForTests()
+        StickerBook.shared.demo = true
+    }
+
     func testArtLoads() {
         XCTAssertEqual(art.order.count, 16)
         for id in art.order {
@@ -87,6 +93,84 @@ final class PetVetTests: XCTestCase {
         // so every place a tool is needed must count as "on the patient"
         for (k, p) in VetAnchors.all { XCTAssertTrue(VetExamView.onPatient(p), k) }
         XCTAssertFalse(VetExamView.onPatient(CGPoint(x: -100, y: 300)))
+    }
+
+    func testAllEightPetVetStickersRegistered() {
+        XCTAssertEqual(PetVetFind.allCases.count, 8)
+        XCTAssertEqual(PetVetFind.stickers.count, 8)
+        XCTAssertEqual(PetVetGame.entry.stickers.count, 8)
+        XCTAssertEqual(Set(PetVetGame.entry.stickers.map(\.id)), Set(PetVetFind.allCases.map(\.rawValue)))
+    }
+
+    func testAllHealedAwardsFiveCoinsAndUnlocksStickers() {
+        let clinic = VetClinic(save: VetClinicSave(), persist: false)
+        var v = VetVisit(animal: "puppy", spots: [
+            VetSpot(id: 0, ailment: .mud, anchor: "headL"),
+            VetSpot(id: 1, ailment: .tummy, anchor: "tummy"),
+            VetSpot(id: 2, ailment: .toothache, anchor: "cheekR"),
+        ])
+        for i in v.spots.indices {
+            v.spots[i].stage = v.spots[i].ailment.steps.count
+        }
+        XCTAssertTrue(v.healed)
+
+        let before = Coins.shared.balance
+        let paid = clinic.completeVisit(for: "puppy", visit: v)
+        XCTAssertEqual(paid, 5)
+        XCTAssertEqual(Coins.shared.balance, before + 5)
+        XCTAssertEqual(clinic.healedCount("puppy"), 1)
+        XCTAssertTrue(StickerBook.shared.has(game: PetVetGame.id, id: PetVetFind.firstHeal.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: PetVetGame.id, id: PetVetFind.sparkleBath.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: PetVetGame.id, id: PetVetFind.tummyHero.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: PetVetGame.id, id: PetVetFind.sweetTooth.rawValue))
+    }
+
+    func testAutoToolHoldBoostCompletesEveryHoldStepInSingleTap() {
+        let holdAilments: [VetAilment] = [.cold, .tummy, .toothache, .sprain]
+        let ticks = Int(AutoTool.work * 30)
+        for a in holdAilments {
+            var v = VetVisit(animal: "kitty", spots: [VetSpot(id: 0, ailment: a, anchor: a.places[0])])
+            guard let step = v.spots[0].step else { return XCTFail(a.rawValue) }
+            for _ in 0..<ticks {
+                _ = v.use(step.tool, at: v.spots[0].target, moved: 0, dt: (1.0 / 30) * VetExamView.autoHoldBoost)
+            }
+            XCTAssertGreaterThanOrEqual(v.spots[0].stage, 1, "AutoTool hold should finish stage 0 of \(a.rawValue)")
+        }
+    }
+
+    func testSyrupPrerequisiteAndGentleLobbyCheckIn() {
+        var coldVisit = VetVisit(animal: "puppy", spots: [VetSpot(id: 0, ailment: .cold, anchor: "nose")])
+        XCTAssertEqual(coldVisit.syrupPrerequisite, .thermometer)
+        coldVisit.spots[0].stage = 1
+        XCTAssertNil(coldVisit.syrupPrerequisite)
+
+        let tummyVisit = VetVisit(animal: "puppy", spots: [VetSpot(id: 0, ailment: .tummy, anchor: "tummy")])
+        XCTAssertEqual(tummyVisit.syrupPrerequisite, .stethoscope)
+
+        var save = VetClinicSave()
+        var healedVisit = VetVisit(animal: "fox", spots: [VetSpot(id: 0, ailment: .thorns, anchor: "pawL")])
+        healedVisit.spots[0].stage = 1
+        save.visits["fox"] = healedVisit
+        save.stickers["fox"] = [
+            VetSticker(prop: "bow1", x: 300, y: 150),
+            VetSticker(prop: "bandage", x: 220, y: 450),
+        ]
+        let clinic = VetClinic(save: save, persist: false)
+
+        // Tapping a healed patient keeps them healed for happy pamper play.
+        clinic.checkIn("fox")
+        XCTAssertTrue(clinic.visit("fox").healed)
+
+        // Explicitly starting a fresh checkup re-rolls ailments, keeps bows, and removes old bandages.
+        let fresh = clinic.startNewVisit(for: "fox")
+        XCTAssertFalse(fresh.healed)
+        XCTAssertEqual(clinic.stickers("fox").map(\.prop), ["bow1"])
+    }
+
+    func testAllTwentyToolsAreGroupedWithoutDuplicates() {
+        let grouped = VetExamView.examTools + VetExamView.washBandageTools + VetExamView.pamperTools
+        XCTAssertEqual(grouped.count, VetTool.allCases.count)
+        XCTAssertEqual(Set(grouped), Set(VetTool.allCases))
     }
 }
 
