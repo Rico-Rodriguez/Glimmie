@@ -177,6 +177,15 @@ private enum DockSlot: String, CaseIterable {
         case .decor: return CGPoint(x: 653, y: GGeo.dockY)
         }
     }
+
+    var hint: GardenDockHint {
+        switch self {
+        case .shovel: return .shovel
+        case .can: return .can
+        case .seeds: return .seeds
+        case .decor: return .decor
+        }
+    }
 }
 
 private struct GardenDockIcon: View {
@@ -229,33 +238,39 @@ final class GardenHandState {
     var lastAt = Date()
     var startAt = Date()
     var active = false
+    var autoCancelled = false
 }
 
 struct GardenView: View {
     let exit: () -> Void
 
     @Environment(\.scenePhase) private var scenePhase
-    @State private var sim = GardenSim()
+    @State private var sim: GardenSim
+    @State private var ui: GardenUIState
     @State private var dockMode: GardenDockMode = .hand
-    @State private var weather: Weather = .sun
-    @State private var season: GardenSeason = .spring
     @State private var carrying: String?
     @State private var hidden: String?
+    @State private var draggedStockID: UUID?
     @State private var hand = GardenHandState()
     @State private var started = false
     @State private var auto = AutoTool()
-    @State private var book = false
-    @State private var almanac = false
-    @State private var showReturnBadge = false
-    @State private var overReturnBadge = false
+    @State private var showBook = false
+    @State private var showAlmanac = false
 
-    private var modalOpen: Bool { book || almanac }
+    init(exit: @escaping () -> Void) {
+        self.exit = exit
+        let initialSim = GardenSim()
+        _sim = State(initialValue: initialSim)
+        _ui = State(initialValue: initialSim.currentUIState())
+    }
+
+    private var canvasPaused: Bool { showBook || showAlmanac || scenePhase != .active }
 
     var body: some View {
         GameStage {
             GeometryReader { geo in
                 let map = GameStageMap(size: geo.size)
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: modalOpen)) { _ in
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: canvasPaused)) { _ in
                     Canvas(opaque: true) { ctx, _ in
                         GardenPainter.drawBackdrop(ctx, map: map, sim: sim)
                     }
@@ -264,10 +279,10 @@ struct GardenView: View {
             .allowsHitTesting(false)
         } content: {
             ZStack {
-                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: modalOpen)) { tl in
+                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: canvasPaused)) { tl in
                     Canvas { ctx, _ in
                         sim.step(tl.date)
-                        GardenPainter.drawWorld(ctx, sim: sim)
+                        GardenPainter.drawScene(ctx, sim: sim)
                     }
                 }
                 .contentShape(Rectangle())
@@ -278,42 +293,45 @@ struct GardenView: View {
                     showStickerBook: true,
                     showCoins: true,
                     onExit: {
-                        auto.cancel()
+                        cancelAutoTool()
+                        cancelActiveStockDrag()
+                        sim.onUIStateChange = nil
                         sim.save()
                         GardenSound.shared.stopLoops()
                         exit()
                     },
                     onStickerBook: {
-                        auto.cancel()
+                        cancelAutoTool()
+                        cancelActiveStockDrag()
                         GardenSound.shared.stopLoops()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
-                            book = true
+                            showBook = true
                         }
                     },
-                    center: {
-                        TimelineView(.animation(minimumInterval: 0.4, paused: modalOpen)) { _ in
-                            hybridDiscoveryStrip
-                        }
-                    },
+                    center: { topCenterCluster },
                     trailing: { weatherBar }
                 )
 
-                if case .tray(let activeTray) = dockMode {
-                    trayBar(activeTray)
-                        .position(x: 512, y: GGeo.trayY)
+                if ui.station == .bed {
+                    if case .tray(let activeTray) = dockMode {
+                        trayBar(activeTray)
+                            .position(x: 512, y: GGeo.trayY)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
+                    dockBar(hint: dockMode == .hand ? ui.suggestedHint : nil)
+                        .position(x: 512, y: GGeo.dockY)
+
+                    if ui.showReturnBadge {
+                        ReturnDropBadge(hovered: ui.overReturnBadge)
+                            .position(GGeo.returnBadge)
+                            .allowsHitTesting(false)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                } else {
+                    farmstandStockShelf
+                        .position(x: 512, y: GGeo.dockY)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                TimelineView(.animation(minimumInterval: 0.3, paused: modalOpen)) { _ in
-                    dockBar(hint: dockMode == .hand && sim.tool == nil ? suggested : nil)
-                }
-                .position(x: 512, y: GGeo.dockY)
-
-                if showReturnBadge {
-                    ReturnDropBadge(hovered: overReturnBadge)
-                        .position(GGeo.returnBadge)
-                        .allowsHitTesting(false)
-                        .transition(.scale.combined(with: .opacity))
                 }
 
                 StickerToast(game: GardenSim.gameID, target: GameChromeLayout.stickerTarget)
@@ -324,14 +342,14 @@ struct GardenView: View {
         .ignoresSafeArea()
         .defersSystemGestures(on: .bottom)
         .overlay {
-            if book {
+            if showBook {
                 StickerBookView(game: GardenSim.gameID) {
-                    withAnimation(.easeOut(duration: 0.2)) { book = false }
+                    withAnimation(.easeOut(duration: 0.2)) { showBook = false }
                 }
                 .transition(.opacity)
-            } else if almanac {
-                HybridAlmanacView(discovered: sim.discoveredHybrids) {
-                    withAnimation(.easeOut(duration: 0.2)) { almanac = false }
+            } else if showAlmanac {
+                HybridAlmanacView(discovered: ui.discoveredHybrids) {
+                    withAnimation(.easeOut(duration: 0.2)) { showAlmanac = false }
                 }
                 .transition(.opacity)
             }
@@ -339,13 +357,16 @@ struct GardenView: View {
         .onAppear(perform: start)
         .onChange(of: scenePhase) { phase in
             if phase != .active {
-                auto.cancel()
+                cancelAutoTool()
+                cancelActiveStockDrag()
                 sim.save()
                 GardenSound.shared.stopLoops()
             }
         }
         .onDisappear {
-            auto.cancel()
+            cancelAutoTool()
+            cancelActiveStockDrag()
+            sim.onUIStateChange = nil
             sim.save()
             GardenSound.shared.stopLoops()
         }
@@ -355,9 +376,23 @@ struct GardenView: View {
         guard !started else { return }
         started = true
         _ = GardenSound.shared
-        weather = sim.weather
-        season = sim.season
+        sim.onUIStateChange = { next in
+            ui = next
+        }
         applyLaunchArguments()
+        ui = sim.currentUIState()
+    }
+
+    private func cancelAutoTool() {
+        guard auto.running else { return }
+        hand.autoCancelled = true
+        auto.cancel()
+        hand.autoCancelled = false
+    }
+
+    private func cancelActiveStockDrag() {
+        sim.cancelStockItemDrag()
+        draggedStockID = nil
     }
 
     // MARK: Direct World Hand Gesture
@@ -368,7 +403,7 @@ struct GardenView: View {
                 let p = v.location
                 let now = Date()
                 if !hand.active {
-                    if auto.running { auto.cancel() }
+                    if auto.running { cancelAutoTool() }
                     if dockMode != .hand {
                         withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
                             dockMode = .hand
@@ -377,148 +412,234 @@ struct GardenView: View {
                     hand.active = true
                     hand.startAt = now
                     hand.lastAt = now
-                    sim.handBegan(p)
+                    sim.handleSceneDragChanged(p, startLocation: v.startLocation, dt: 1.0 / 60)
                 } else {
                     let dt = CGFloat(max(1.0 / 120, now.timeIntervalSince(hand.lastAt)))
                     hand.lastAt = now
-                    sim.handMoved(p, dt: dt)
+                    sim.handleSceneDragChanged(p, startLocation: v.startLocation, dt: dt)
                 }
-                syncReturnBadge()
             }
             .onEnded { v in
-                let p = v.location
-                let moved = hypot(v.location.x - v.startLocation.x, v.location.y - v.startLocation.y)
-                let tap = moved < 14 && Date().timeIntervalSince(hand.startAt) < 0.45
-                sim.handEnded(p, tap: tap)
+                let dur = Date().timeIntervalSince(hand.startAt)
+                sim.handleSceneDragEnded(v.location, startLocation: v.startLocation, duration: dur)
                 hand.active = false
-                syncReturnBadge()
             }
     }
 
-    private func syncReturnBadge() {
-        let show = sim.isDraggingDecor
-        let over = sim.overReturnBadge
-        if show != showReturnBadge {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
-                showReturnBadge = show
+    // MARK: Top Bar Cluster (Station Toggle, Pictorial Order Pill, Hybrid Almanac)
+
+    private var topCenterCluster: some View {
+        HStack(spacing: 8) {
+            stationTogglePill
+            if let order = ui.activeOrder {
+                orderPreviewPill(order)
             }
-        }
-        if over != overReturnBadge {
-            overReturnBadge = over
+            hybridAlmanacButton
         }
     }
 
-    // MARK: Pictorial Hybrid Discovery Strip & Season/Weather Top-Bar Controls
+    private var stationTogglePill: some View {
+        HStack(spacing: 4) {
+            stationTabButton(.bed)
+            stationTabButton(.farmstand)
+        }
+        .padding(5)
+        .background(Capsule().fill(Theme.cream.opacity(0.96)))
+        .overlay(Capsule().stroke(Theme.blush, lineWidth: 3))
+        .shadow(color: Theme.ink.opacity(0.16), radius: 5, y: 3)
+    }
 
-    private var hybridDiscoveryStrip: some View {
-        let discovered = Set(sim.discoveredHybrids)
-        let recent = sim.hasRecentHybridDiscovery
+    private func stationTabButton(_ target: GardenStation) -> some View {
+        let active = ui.station == target
+        let readyBadge = target == .farmstand && ui.station == .bed && ui.orderReadyInInventory
         return Button {
-            Sound.shared.play(.flip, volume: 0.65)
-            Sound.shared.tap()
-            auto.cancel()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
-                almanac = true
+            cancelAutoTool()
+            cancelActiveStockDrag()
+            dockMode = .hand
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                sim.setStation(target)
             }
         } label: {
-            HStack(spacing: 5) {
-                ForEach(HybridKind.allCases, id: \.self) { h in
-                    let found = discovered.contains(h)
+            ZStack {
+                Circle()
+                    .fill(active ? (target == .bed ? Color(hex: 0x7ED87E) : Theme.pink) : .white)
+                StationIconView(station: target, active: active)
+                    .frame(width: 28, height: 28)
+            }
+            .frame(width: 44, height: 44)
+            .overlay(Circle().stroke(active ? .white : Theme.blush, lineWidth: active ? 2.5 : 1.5))
+            .overlay(alignment: .topTrailing) {
+                if readyBadge {
+                    ZStack {
+                        Circle().fill(Theme.lemon)
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 10, weight: .black))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 18, height: 18)
+                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                    .offset(x: 4, y: -4)
+                }
+            }
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(target == .bed ? "Garden Bed" : "Farmstand")
+    }
+
+    private func orderPreviewPill(_ order: FarmstandOrder) -> some View {
+        var rawPool = ui.inventory + (sim.activeDraft?.items ?? [])
+        if let dragged = ui.draggedStockItem, !rawPool.contains(where: { $0.id == dragged.id }) {
+            rawPool.append(dragged)
+        }
+        let pool = rawPool.filter { order.kind.accepts($0) }
+        let previewMatch = FarmstandMatcher.match(requirements: order.requirements, items: pool)
+        let activeMatches = ui.station == .farmstand ? ui.draftMatchedSlots : previewMatch.slotMatched
+        return Button {
+            cancelAutoTool()
+            cancelActiveStockDrag()
+            dockMode = .hand
+            if ui.station != .farmstand {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                    sim.setStation(.farmstand)
+                }
+            } else {
+                Sound.shared.tap()
+                sim.playVisitorSound(order.customer)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle().fill(Theme.cream)
+                    Canvas { ctx, size in
+                        var g = ctx
+                        g.translateBy(x: size.width / 2, y: size.height * 0.78)
+                        let s: CGFloat = order.customer == .hummingbird ? 0.42 : 0.36
+                        g.scaleBy(x: s, y: s)
+                        GardenVisitorPainter.draw(g, GVisitor(kind: order.customer, p: .zero, facing: 1, seed: 1), time: 0, night: 0)
+                    }
+                    .allowsHitTesting(false)
+                }
+                .frame(width: 34, height: 34)
+                .overlay(Circle().stroke(Theme.blush, lineWidth: 2))
+
+                ForEach(Array(order.requirements.enumerated()), id: \.offset) { idx, req in
+                    let done = idx < activeMatches.count && activeMatches[idx]
                     ZStack {
                         Circle()
-                            .fill(found ? Color.white : Theme.blush.opacity(0.45))
+                            .fill(done ? Color(hex: 0xE6FFF1) : .white)
                         Canvas { ctx, size in
-                            var g = ctx
-                            g.translateBy(x: size.width / 2, y: size.height / 2)
-                            if found {
-                                GardenPlants.drawHybridIcon(g, hybrid: h, at: .zero, size: 0.44, rot: 0, time: 0)
-                            } else {
-                                g.opacity = 0.28
-                                GardenPlants.drawHybridIcon(g, hybrid: h, at: .zero, size: 0.40, rot: 0, time: 0)
-                            }
+                            GardenPlants.drawRequirement(
+                                ctx,
+                                requirement: req,
+                                at: CGPoint(x: size.width / 2, y: size.height / 2),
+                                size: 0.56,
+                                time: 0
+                            )
                         }
                         .allowsHitTesting(false)
                     }
-                    .frame(width: 28, height: 28)
-                    .overlay(Circle().stroke(found ? Theme.lemon : .white.opacity(0.75), lineWidth: found ? 2.2 : 1.5))
+                    .frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(done ? Color(hex: 0x3CC48A) : Theme.blush, lineWidth: done ? 2.5 : 1.5))
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Theme.cream.opacity(0.95)))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Theme.cream.opacity(0.96)))
             .overlay(
                 Capsule()
+                    .stroke(ui.orderReadyInInventory ? Theme.lemon : Theme.blush, lineWidth: ui.orderReadyInInventory ? 3.5 : 2.8)
+            )
+            .shadow(color: Theme.ink.opacity(0.16), radius: 5, y: 3)
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel("Farmstand Order")
+    }
+
+    private var hybridAlmanacButton: some View {
+        let discovered = Set(ui.discoveredHybrids)
+        let recent = ui.hasRecentHybridDiscovery
+        return Button {
+            Sound.shared.play(.flip, volume: 0.65)
+            Sound.shared.tap()
+            cancelAutoTool()
+            cancelActiveStockDrag()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                showAlmanac = true
+            }
+        } label: {
+            ZStack {
+                Circle().fill(Theme.cream)
+                Canvas { ctx, size in
+                    let c = CGPoint(x: size.width / 2, y: size.height / 2)
+                    let ringR: CGFloat = 15
+                    for (idx, h) in HybridKind.allCases.enumerated() {
+                        let a = CGFloat(idx) / 6 * 2 * .pi - .pi / 2
+                        let pt = CGPoint(x: c.x + cos(a) * ringR, y: c.y + sin(a) * ringR)
+                        let found = discovered.contains(h)
+                        let dot = Path(ellipseIn: CGRect(x: pt.x - 5.2, y: pt.y - 5.2, width: 10.4, height: 10.4))
+                        ctx.fill(dot, with: .color(found ? h.primaryColor.color : Theme.blush.opacity(0.65)))
+                        ctx.stroke(dot, with: .color(.white), lineWidth: 1.2)
+                    }
+                    StorybookArt.sparkle(ctx, at: c, radius: 7.5, color: Theme.lemon, opacity: 0.95)
+                }
+                .allowsHitTesting(false)
+            }
+            .frame(width: 52, height: 52)
+            .overlay(
+                Circle()
                     .stroke(recent ? Theme.lemon : Theme.blush, lineWidth: recent ? 4 : 3)
                     .shadow(color: recent ? Theme.lemon.opacity(0.75) : .clear, radius: 6)
             )
-            .shadow(color: Theme.ink.opacity(0.18), radius: 6, y: 3)
-            .scaleEffect(recent ? 1.05 : 1.0)
+            .shadow(color: Theme.ink.opacity(0.16), radius: 5, y: 3)
+            .scaleEffect(recent ? 1.06 : 1.0)
         }
         .buttonStyle(Squish())
         .accessibilityLabel("Hybrids")
     }
 
     private var weatherBar: some View {
-        let btnSize: CGFloat = 58
-        return HStack(spacing: 8) {
-            // 4-Season Magic Cycle Button right beside the Weather toggle!
+        let btnSize: CGFloat = 50
+        return HStack(spacing: 6) {
             Button {
                 Sound.shared.tap()
                 Sound.shared.play(.pop, volume: 0.6)
                 sim.cycleSeason()
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.68)) {
-                    season = sim.season
-                }
             } label: {
                 ZStack {
                     Circle().fill(.white)
-                    SeasonButtonIcon(season: season)
+                    SeasonButtonIcon(season: ui.season)
                         .frame(width: btnSize * 0.66, height: btnSize * 0.66)
                 }
                 .frame(width: btnSize, height: btnSize)
-                .overlay(Circle().stroke(season.tint, lineWidth: 4.2))
-                .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+                .overlay(Circle().stroke(ui.season.tint, lineWidth: 3.8))
+                .shadow(color: Theme.ink.opacity(0.18), radius: 5, y: 3)
             }
             .buttonStyle(Squish())
-            .accessibilityLabel(season.rawValue.capitalized)
+            .accessibilityLabel(ui.season.rawValue.capitalized)
 
             ForEach(Weather.allCases, id: \.self) { w in
-                let active = weather == w
+                let active = ui.weather == w
                 RoundButton(symbol: w.symbol, tint: w.tint, size: btnSize) {
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
-                    weather = w
                     sim.setWeather(w)
                 }
                 .overlay(
                     Circle()
-                        .stroke(Theme.pink, lineWidth: 4.2)
-                        .shadow(color: Theme.pink.opacity(0.6), radius: 7)
+                        .stroke(Theme.pink, lineWidth: 3.8)
+                        .shadow(color: Theme.pink.opacity(0.55), radius: 6)
                         .opacity(active ? 1 : 0)
                 )
-                .scaleEffect(active ? 1.06 : 0.96)
-                .animation(.spring(response: 0.3, dampingFraction: 0.65), value: weather)
+                .scaleEffect(active ? 1.05 : 0.96)
+                .animation(.spring(response: 0.3, dampingFraction: 0.65), value: ui.weather)
                 .accessibilityLabel(w.rawValue.capitalized)
             }
         }
     }
 
-    // MARK: Bottom Dock
+    // MARK: Bed Bottom Dock
 
-    private var suggested: DockSlot? {
-        if sim.plots.contains(where: { $0.plant != nil && $0.dry > 1.5 && ($0.plant?.growth ?? 1) < 1 }) {
-            return .can
-        }
-        if sim.plots.allSatisfy({ $0.plant == nil }) {
-            return .seeds
-        }
-        if !sim.weeds.isEmpty {
-            return .shovel
-        }
-        return nil
-    }
-
-    private func dockBar(hint: DockSlot?) -> some View {
+    private func dockBar(hint: GardenDockHint?) -> some View {
         GameTrayCard(cornerRadius: 32, paddingH: 14, paddingV: 10) {
             HStack(spacing: 12) {
                 ForEach(DockSlot.allCases, id: \.rawValue) { slot in
@@ -527,7 +648,7 @@ struct GardenView: View {
                     GameDockTile(
                         size: 82,
                         selected: selected,
-                        pulsing: hint == slot && hidden != slot.rawValue
+                        pulsing: hint == slot.hint && hidden != slot.rawValue
                     ) {
                         GardenDockIcon(slot: slot, hidden: hidden == slot.rawValue)
                     }
@@ -547,7 +668,7 @@ struct GardenView: View {
                 case .seeds, .decor:
                     return
                 case .shovel, .can:
-                    if auto.running { auto.cancel() }
+                    if auto.running { cancelAutoTool() }
                     guard carrying != nil || !ToolTap.isTap(v.translation) else { return }
                     if dockMode != .hand { dockMode = .hand }
                     useTool(slot, v.location)
@@ -558,7 +679,7 @@ struct GardenView: View {
                 case .seeds, .decor:
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
-                    auto.cancel()
+                    cancelAutoTool()
                     let want: GardenTray = slot == .seeds ? .seeds : .decor
                     withAnimation(.spring(response: 0.36, dampingFraction: 0.76)) {
                         dockMode = dockMode == .tray(want) ? .hand : .tray(want)
@@ -587,23 +708,22 @@ struct GardenView: View {
             carrying = slot.rawValue
             hidden = slot.rawValue
             Sound.shared.tap()
-            sim.pickUp(slot == .shovel ? .shovel : .can, at: p)
         }
-        if let tl = sim.tool {
-            sim.carry(to: GardenView.lifted(p, tl), hand: p)
-        }
+        sim.handleDockToolDragChanged(slot == .shovel ? .shovel : .can, finger: p)
     }
 
     private func endTool(_ slot: DockSlot) {
-        sim.release(home: slot.homePoint)
+        sim.handleDockToolDragEnded(home: slot.homePoint)
         finishCarry(slot.rawValue)
     }
 
     private func runAutoTool(_ slot: DockSlot) {
         guard slot == .shovel || slot == .can else { return }
+        cancelAutoTool()
+        hand.autoCancelled = false
         if slot == .shovel {
             let target = sim.bestShovelTarget()
-            let fingerSpot = FingerLift.finger(for: target, lift: GardenView.lift(.shovel), bottom: GameChromeLayout.height, width: GameChromeLayout.width)
+            let fingerSpot = GardenSim.fingerPoint(for: target, lift: GardenSim.lift(for: .shovel))
             auto.run(from: slot.homePoint, to: fingerSpot, step: { p in
                 if carrying == nil {
                     carrying = slot.rawValue
@@ -611,36 +731,25 @@ struct GardenView: View {
                     sim.pickUp(.shovel, at: p)
                     sim.autoShovelActive = true
                 }
-                if let tl = sim.tool {
-                    sim.carry(to: GardenView.lifted(p, tl), hand: p)
-                }
+                sim.handleDockToolDragChanged(.shovel, finger: p)
             }, end: { _ in
-                sim.autoShovel(at: target)
+                if !hand.autoCancelled {
+                    sim.autoShovel(at: target)
+                }
                 endTool(.shovel)
             })
         } else {
             let target = sim.bestWaterTarget()
             let pourPos = CGPoint(x: min(940, target.x + 84), y: max(220, target.y - 68))
-            let fingerSpot = FingerLift.finger(for: pourPos, lift: GardenView.lift(.can), bottom: GameChromeLayout.height, width: GameChromeLayout.width)
+            let fingerSpot = GardenSim.fingerPoint(for: pourPos, lift: GardenSim.lift(for: .can))
             auto.run(from: slot.homePoint, to: fingerSpot, step: { p in
                 useTool(.can, p)
             }, end: { _ in
-                sim.waterPlant(at: target)
+                if !hand.autoCancelled {
+                    sim.waterPlant(at: target)
+                }
                 endTool(.can)
             })
-        }
-    }
-
-    static func lifted(_ p: CGPoint, _ tool: GardenTool) -> CGPoint {
-        FingerLift.point(p, lift: lift(tool), bottom: GameChromeLayout.height, width: GameChromeLayout.width)
-    }
-
-    static func lift(_ tool: GardenTool) -> CGFloat {
-        switch tool {
-        case .shovel: return FingerLift.tool
-        case .can: return FingerLift.carry(below: 106)
-        case .seeds: return FingerLift.carry(below: 45)
-        case .decor(let k): return FingerLift.carry(below: k.size.height * 0.5)
         }
     }
 
@@ -651,7 +760,7 @@ struct GardenView: View {
         }
     }
 
-    // MARK: Expandable Single-Row Horizontal Tray
+    // MARK: Bed Expandable Tray
 
     private func trayBar(_ t: GardenTray) -> some View {
         let count = t == .seeds ? PlantKind.allCases.count : DecorKind.available.count
@@ -731,31 +840,161 @@ struct GardenView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 10, coordinateSpace: .named("garden"))
                 .onChanged { v in
-                    // Consistent gesture rule across all item counts: upward lift pulls an item out, sideways swipes scroll.
                     let pullOut = v.translation.height < -12 && abs(v.translation.height) >= abs(v.translation.width) * 0.55
                     guard carrying != nil || pullOut else { return }
                     let p = v.location
+                    let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.available[i])
                     if carrying == nil {
                         carrying = key
                         hidden = key
                         Sound.shared.tap()
-                        let tool: GardenTool = t == .seeds ? .seeds(PlantKind.allCases[i]) : .decor(DecorKind.available[i])
-                        sim.pickUp(tool, at: p)
                     }
-                    if let tl = sim.tool {
-                        sim.carry(to: GardenView.lifted(p, tl), hand: p)
-                    }
-                    syncReturnBadge()
+                    sim.handleDockToolDragChanged(tool, finger: p)
                 }
                 .onEnded { _ in
                     guard carrying == key else { return }
-                    sim.release(home: t == .seeds ? DockSlot.seeds.homePoint : DockSlot.decor.homePoint)
+                    sim.handleDockToolDragEnded(home: t == .seeds ? DockSlot.seeds.homePoint : DockSlot.decor.homePoint)
                     carrying = nil
                     hidden = nil
-                    syncReturnBadge()
                     withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) {
                         dockMode = .hand
                     }
+                }
+        )
+    }
+
+    // MARK: Farmstand Stock Shelf
+
+    private var farmstandStockShelf: some View {
+        let order = ui.activeOrder
+        var shelfPool = ui.inventory
+        if let dragged = ui.draggedStockItem, !shelfPool.contains(where: { $0.id == dragged.id }) {
+            shelfPool.append(dragged)
+        }
+        let sortedItems = shelfPool.sorted { a, b in
+            let aOk = order?.kind.accepts(a) ?? true
+            let bOk = order?.kind.accepts(b) ?? true
+            if aOk != bOk { return aOk }
+            if a.isGiant != b.isGiant { return a.isGiant }
+            return a.id.uuidString < b.id.uuidString
+        }
+        let hasAccepted = sortedItems.contains { order?.kind.accepts($0) ?? true }
+
+        return GameTrayCard(cornerRadius: 30, paddingH: 14, paddingV: 10) {
+            HStack(spacing: 12) {
+                if !hasAccepted {
+                    goGrowShortcutTile
+                }
+
+                if !sortedItems.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(sortedItems) { item in
+                                let accepted = order?.kind.accepts(item) ?? true
+                                farmstandStockTile(item, accepted: accepted)
+                            }
+                        }
+                        .padding(.horizontal, 2)
+                    }
+                    .frame(maxWidth: 680)
+                    .frame(height: 82)
+                    .scrollDisabled(draggedStockID != nil)
+                }
+
+                if ui.draftItemCount > 0 && !ui.isCelebrating {
+                    Button {
+                        Sound.shared.play(.whoosh, volume: 0.5)
+                        Sound.shared.tap()
+                        cancelActiveStockDrag()
+                        sim.clearDraft()
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(Circle().fill(Theme.peach))
+                            .overlay(Circle().stroke(.white, lineWidth: 3))
+                            .shadow(color: Theme.ink.opacity(0.18), radius: 4, y: 2)
+                    }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("Return Items")
+                }
+
+                if hasAccepted {
+                    goGrowShortcutTile
+                }
+            }
+        }
+    }
+
+    private var goGrowShortcutTile: some View {
+        Button {
+            cancelActiveStockDrag()
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                sim.setStation(.bed)
+            }
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(hex: 0xE8F9DF))
+                Canvas { ctx, size in
+                    var g = ctx
+                    g.translateBy(x: size.width / 2, y: size.height / 2)
+                    g.scaleBy(x: 0.62, y: 0.62)
+                    GardenPainter.packet(g, kind: .tulip)
+                }
+                .allowsHitTesting(false)
+            }
+            .frame(width: 76, height: 78)
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color(hex: 0x7ED87E), lineWidth: 3))
+            .shadow(color: Theme.ink.opacity(0.12), radius: 4, y: 2)
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel("Back to Garden")
+    }
+
+    private func farmstandStockTile(_ item: HarvestItem, accepted: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let isDragging = draggedStockID == item.id || ui.draggedStockItem?.id == item.id
+        return ZStack {
+            shape.fill(accepted ? .white : Theme.cream.opacity(0.75))
+            Canvas { ctx, size in
+                let center = CGPoint(x: size.width / 2, y: size.height / 2 + 2)
+                GardenPlants.drawHarvestItem(ctx, item: item, at: center, size: item.isGiant ? 0.85 : 0.92, rot: 0, time: 0)
+            }
+            .allowsHitTesting(false)
+        }
+        .frame(width: 76, height: 78)
+        .clipShape(shape)
+        .overlay(
+            shape.stroke(
+                item.isGiant ? Theme.lemon : (accepted ? Theme.pink.opacity(0.65) : Theme.blush),
+                lineWidth: item.isGiant ? 3.5 : 2.5
+            )
+        )
+        .opacity(isDragging ? 0.28 : (accepted ? 1.0 : 0.42))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard draggedStockID == nil else { return }
+            _ = sim.addStockItemToDraft(item.id)
+        }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 10, coordinateSpace: .named("garden"))
+                .onChanged { v in
+                    let pullOut = v.translation.height < -10 && abs(v.translation.height) >= abs(v.translation.width) * 0.5
+                    guard draggedStockID != nil || pullOut else { return }
+                    if draggedStockID == nil {
+                        if sim.beginStockItemDrag(item.id, finger: v.location) {
+                            draggedStockID = item.id
+                        }
+                    } else if draggedStockID == item.id {
+                        sim.moveStockItemDrag(finger: v.location)
+                    }
+                }
+                .onEnded { v in
+                    guard draggedStockID == item.id else { return }
+                    sim.endStockItemDrag(finger: v.location)
+                    draggedStockID = nil
                 }
         )
     }
@@ -764,14 +1003,17 @@ struct GardenView: View {
 
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-gardenDemo") || args.contains("-gardenWeather") || args.contains("-gardenTool") {
+        if args.contains("-gardenDemo") || args.contains("-gardenWeather") || args.contains("-gardenTool") || args.contains("-gardenFarmstand") {
             sim.demo = true
             Coins.shared.demo = true
             StickerBook.shared.demo = true
         }
         if args.contains("-gardenDemo") { sim.showcase() }
+        if args.contains("-gardenFarmstand") {
+            sim.showcase()
+            sim.setStation(.farmstand)
+        }
         if let i = args.firstIndex(of: "-gardenWeather"), i + 1 < args.count, let w = Weather(rawValue: args[i + 1]) {
-            weather = w
             sim.setWeather(w)
             sim.settleWeather()
         }
@@ -795,16 +1037,16 @@ extension GardenSim {
     func showcase() {
         demo = true
         for i in h.indices { h[i] = GGeo.soilY + sin(CGFloat(i) * 0.21) * 1.1 }
-        let kinds: [(PlantKind, Double, Int, Bool)] = [
-            (.sunflower, 1, 1, false),
-            (.tulip, 1, 1, false),
-            (.tomato, 1, 4, false),
-            (.carrot, 1, 1, false),
-            (.strawberry, 1, 3, false),
-            (.pumpkin, 1, 1, true),
+        let kinds: [(PlantKind, Int, Bool)] = [
+            (.sunflower, 1, false),
+            (.tulip, 1, false),
+            (.tomato, 3, false),
+            (.carrot, 1, false),
+            (.strawberry, 3, false),
+            (.pumpkin, 1, true),
         ]
         for (i, k) in kinds.enumerated() {
-            plots[i].plant = Plant(kind: k.0, growth: k.1, left: k.2, variant: i, giant: k.3)
+            plots[i].stage = .ripe(RipePlant(kind: k.0, variant: i, yieldLeft: k.1, isGiant: k.2))
         }
         for i in 0..<GGeo.columns {
             let x = GGeo.colX(i)
@@ -818,13 +1060,17 @@ extension GardenSim {
         addDecor(.lantern, x: 860, falling: false)
         addDecor(.mushroom, x: 90, falling: false)
         decor[1].poke = time
-        bouquet = [
-            BouquetFlower(kind: .sunflower, variant: 0),
-            BouquetFlower(kind: .tulip, variant: 0),
-            BouquetFlower(kind: .lavender, variant: 0),
-            BouquetFlower(kind: .daisy, variant: 1),
+        inventory = [
+            HarvestItem(source: .plant(kind: .tomato, variant: 0, isGiant: false)),
+            HarvestItem(source: .plant(kind: .strawberry, variant: 0, isGiant: false)),
+            HarvestItem(source: .plant(kind: .carrot, variant: 0, isGiant: false)),
+            HarvestItem(source: .plant(kind: .pumpkin, variant: 0, isGiant: true)),
+            HarvestItem(source: .plant(kind: .sunflower, variant: 0, isGiant: false)),
+            HarvestItem(source: .plant(kind: .tulip, variant: 0, isGiant: false)),
+            HarvestItem(source: .plant(kind: .lavender, variant: 0, isGiant: false)),
+            HarvestItem(source: .plant(kind: .daisy, variant: 1, isGiant: false)),
         ]
-        basket = ["tomato:0", "strawberry:0", "carrot:0", "daisy:1", "tomato:0", "pumpkin:0", "tulip:2"]
+        markUIStateDirty()
     }
 
     func settleWeather() {
@@ -835,7 +1081,29 @@ extension GardenSim {
     }
 }
 
-// MARK: - Seasonal Cycle Icon & Wordless Hybrid Picture Almanac
+// MARK: - Pictorial Station Icon, Season Icon & Wordless Hybrid Almanac
+
+private struct StationIconView: View {
+    let station: GardenStation
+    let active: Bool
+
+    var body: some View {
+        Canvas { ctx, size in
+            var g = ctx
+            g.translateBy(x: size.width / 2, y: size.height / 2)
+            switch station {
+            case .bed:
+                GardenPlants.drawCrop(g, kind: .tulip, variant: 0, at: CGPoint(x: 0, y: 1), size: 0.48, rot: 0)
+            case .farmstand:
+                let top = Path(roundedRect: CGRect(x: -11, y: -10, width: 22, height: 8), cornerRadius: 3)
+                StorybookArt.fillAndStroke(g, top, fill: active ? .white : Theme.pink, stroke: StorybookArt.outline(for: 0xFF8FB8), width: 1.5)
+                let box = Path(roundedRect: CGRect(x: -9, y: -1, width: 18, height: 11), cornerRadius: 2.5)
+                StorybookArt.fillAndStroke(g, box, fill: active ? Theme.lemon : Color(hex: 0xE6B07A), stroke: StorybookArt.outline(for: 0xC6884E), width: 1.5)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
 
 private struct SeasonButtonIcon: View {
     let season: GardenSeason
@@ -847,7 +1115,6 @@ private struct SeasonButtonIcon: View {
             g.translateBy(x: size.width / 2, y: size.height / 2)
             switch season {
             case .spring:
-                // 5-petal pink cherry blossom
                 for i in 0..<5 {
                     var pg = g
                     pg.rotate(by: .radians(Double(i) * 2 * .pi / 5))
@@ -856,7 +1123,6 @@ private struct SeasonButtonIcon: View {
                 }
                 g.fill(Path(ellipseIn: CGRect(x: -r * 0.22, y: -r * 0.22, width: r * 0.44, height: r * 0.44)), with: .color(Theme.lemon))
             case .summer:
-                // Bright sunlit green clover with warm golden heart
                 for i in 0..<4 {
                     var pg = g
                     pg.rotate(by: .radians(Double(i) * .pi / 2 + .pi / 4))
@@ -865,7 +1131,6 @@ private struct SeasonButtonIcon: View {
                 }
                 g.fill(Path(ellipseIn: CGRect(x: -r * 0.24, y: -r * 0.24, width: r * 0.48, height: r * 0.48)), with: .color(Color(hex: 0xFFD94A)))
             case .autumn:
-                // Warm maple leaf
                 var leaf = Path()
                 leaf.move(to: CGPoint(x: 0, y: -r * 0.88))
                 leaf.addLine(to: CGPoint(x: r * 0.24, y: -r * 0.36))
@@ -882,7 +1147,6 @@ private struct SeasonButtonIcon: View {
                 leaf.closeSubpath()
                 StorybookArt.shape(g, leaf, hex: 0xF08B36, width: 1.6)
             case .winter:
-                // Crisp pastel 6-spoke snowflake
                 for i in 0..<6 {
                     var sg = g
                     sg.rotate(by: .radians(Double(i) * .pi / 3))
@@ -901,7 +1165,6 @@ private struct SeasonButtonIcon: View {
     }
 }
 
-/// Wordless picture almanac showing every 2-parent hybrid recipe -> hybrid bloom.
 private struct HybridAlmanacView: View {
     let discovered: [HybridKind]
     let close: () -> Void
@@ -917,7 +1180,6 @@ private struct HybridAlmanacView: View {
                 .onTapGesture(perform: shut)
             DesignCanvas {
                 VStack(spacing: 18) {
-                    // Wordless star progress bar at top
                     HStack(spacing: 10) {
                         ForEach(HybridKind.allCases, id: \.self) { h in
                             let has = foundSet.contains(h)

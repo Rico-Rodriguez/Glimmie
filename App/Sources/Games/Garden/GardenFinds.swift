@@ -61,7 +61,7 @@ enum VisitorWish: Equatable {
     case moon
 }
 
-enum GVisitorKind: String, CaseIterable {
+enum GVisitorKind: String, CaseIterable, Codable, Equatable, Hashable {
     case bunny, frog, snail, hedgehog, bluebird, owl, hummingbird
 
     var flies: Bool { self == .bluebird || self == .owl || self == .hummingbird }
@@ -150,27 +150,29 @@ extension GardenSim {
     }
 
     func discover(_ f: GardenFind, at p: CGPoint) {
-        // Screenshot hooks set demo=true while leaving StickerBook.demo=false so user saves stay untouched.
         guard !demo || StickerBook.shared.demo else { return }
-        if StickerBook.shared.find(game: GardenSim.gameID, id: f.rawValue) {
-            sparkle(at: p, count: 18)
-        }
+        guard !queuedStickers.contains(f), !StickerBook.shared.has(game: GardenSim.gameID, id: f.rawValue) else { return }
+        queuedStickers.insert(f)
+        sparkle(at: p, count: 18)
+        enqueueEffect(.discoverSticker(f, at: p))
     }
 
     func earnCoins(_ amount: Int, from p: CGPoint) {
         guard amount > 0 else { return }
         guard !demo || Coins.shared.demo else { return }
-        Coins.shared.earn(amount, game: GardenSim.gameID, from: p)
+        enqueueEffect(.earnCoins(amount: amount, from: p))
     }
 
     func stepFinds(_ dt: CGFloat) {
         if Int(time * 2) != Int((time - Double(dt)) * 2) {
             for i in plots.indices {
-                guard let pl = plots[i].plant, pl.growth >= 0.97 else { continue }
-                if pl.isSpecial {
-                    if !StickerBook.shared.has(game: GardenSim.gameID, id: GardenFind.special(pl.kind).rawValue) {
-                        discover(.special(pl.kind), at: head(plot: i) ?? CGPoint(x: GGeo.plotX[i], y: GGeo.soilY - 60))
-                    }
+                switch plots[i].stage {
+                case .ripe(let ripe) where ripe.isSpecial && ripe.kind != .pumpkin:
+                    discover(.special(ripe.kind), at: head(plot: i) ?? CGPoint(x: GGeo.plotX[i], y: GGeo.soilY - 60))
+                case .growing(let growing) where growing.growth >= 0.97 && growing.isSpecial && growing.kind != .pumpkin:
+                    discover(.special(growing.kind), at: head(plot: i) ?? CGPoint(x: GGeo.plotX[i], y: GGeo.soilY - 60))
+                default:
+                    break
                 }
             }
         }
@@ -178,17 +180,52 @@ extension GardenSim {
     }
 
     private func ripe(_ k: PlantKind) -> Int? {
-        plots.indices.first { plots[$0].plant?.kind == k && (plots[$0].plant?.growth ?? 0) >= 0.9 && !plots[$0].held }
+        plots.indices.first { i in
+            guard !plots[i].held else { return false }
+            switch plots[i].stage {
+            case .ripe(let r): return r.kind == k
+            case .growing(let g): return g.kind == k && g.growth >= 0.9
+            case .empty: return false
+            }
+        }
     }
 
-    private func basketHas(_ k: PlantKind) -> Bool {
-        basket.contains { $0.hasPrefix("\(k.rawValue):") }
+    func inventoryHas(_ k: PlantKind) -> Bool {
+        inventory.contains { item in
+            switch item.source {
+            case .plant(let kind, _, _):
+                return kind == k
+            case .hybrid(let hybrid, _):
+                return k == .pumpkin && hybrid == .crystalPumpkin
+            }
+        }
     }
 
-    private func basketHasAnyFlower() -> Bool {
-        if !bouquet.isEmpty { return true }
-        if PlantKind.allCases.filter(\.isFlower).contains(where: { basketHas($0) }) { return true }
-        return HybridKind.allCases.filter(\.isFlower).contains { h in basket.contains("hybrid:\(h.rawValue)") }
+    func inventoryHasAnyFlower() -> Bool {
+        inventory.contains(where: \.isFlower)
+    }
+
+    @discardableResult
+    func consumeInventoryItem(for wish: VisitorWish) -> HarvestItem? {
+        let index: Int?
+        switch wish {
+        case .plant(let k):
+            index = inventory.firstIndex { item in
+                if case .plant(let kind, _, _) = item.source { return kind == k }
+                return false
+            } ?? inventory.firstIndex { item in
+                if case .hybrid(let hybrid, _) = item.source { return k == .pumpkin && hybrid == .crystalPumpkin }
+                return false
+            }
+        case .anyFlower:
+            index = inventory.firstIndex(where: \.isFlower)
+        case .raindrop, .decor, .moon:
+            return nil
+        }
+        guard let idx = index else { return nil }
+        let removed = inventory.remove(at: idx)
+        markUIStateDirty()
+        return removed
     }
 
     private func spot(for k: GVisitorKind) -> (CGPoint, Int?, Int?)? {
@@ -202,7 +239,7 @@ extension GardenSim {
                 let x = clampLawnX(GGeo.plotX[i] + (GGeo.plotX[i] < 440 ? 48 : -48))
                 return (CGPoint(x: x, y: GGeo.yardY + 8), i, nil)
             }
-            if basketHas(.carrot) {
+            if inventoryHas(.carrot) {
                 return (CGPoint(x: clampLawnX(CGFloat.random(in: 200...680)), y: GGeo.yardY + 8), nil, nil)
             }
             return nil
@@ -311,18 +348,18 @@ extension GardenSim {
         }
     }
 
-    private func basketSatisfies(_ wish: VisitorWish) -> Bool {
+    private func inventorySatisfies(_ wish: VisitorWish) -> Bool {
         switch wish {
-        case .plant(let kind): return basketHas(kind)
-        case .anyFlower: return basketHasAnyFlower()
+        case .plant(let kind): return inventoryHas(kind)
+        case .anyFlower: return inventoryHasAnyFlower()
         case .raindrop, .decor, .moon: return false
         }
     }
 
     func wishSatisfied(_ wish: VisitorWish) -> Bool {
         switch wish {
-        case .plant(let kind): return basketHas(kind)
-        case .anyFlower: return basketHasAnyFlower()
+        case .plant(let kind): return inventoryHas(kind)
+        case .anyFlower: return inventoryHasAnyFlower()
         case .raindrop: return weather == .rain || rain > 0.4 || wetAt(436, span: 85) > 0.5
         case .decor(let kind):
             return decor.contains { $0.kind == kind || (kind == .birdhouse && $0.kind == .birdbath) }
@@ -334,8 +371,10 @@ extension GardenSim {
     func feedVisitorFromBasket(at p: CGPoint) -> Bool {
         guard let i = visitorHit(p) else { return false }
         let v = visitors[i]
-        guard !v.fulfilled, basketSatisfies(v.kind.wish) else { return false }
+        guard !v.fulfilled, inventorySatisfies(v.kind.wish) else { return false }
+        guard consumeInventoryItem(for: v.kind.wish) != nil else { return false }
         fulfillVisitor(at: i)
+        enqueueEffect(.save)
         return true
     }
 
@@ -384,27 +423,13 @@ extension GardenSim {
         let origin = CGPoint(x: v.pos.x, y: v.pos.y - v.kind.stickerHeight * 0.45)
         playVisitorSound(v.kind)
         Sound.shared.play(.sparkle, volume: 0.45)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         heartBurst(at: origin, count: 6)
         sparkle(at: origin, count: 10)
         if let f = GardenFind(rawValue: v.kind.rawValue) {
             discover(f, at: origin)
         }
         earnCoins(3, from: v.pos)
-    }
-
-    func fulfillMatchingVisitors(harvested kind: PlantKind) {
-        for i in visitors.indices where visitors[i].state == .staying && !visitors[i].fulfilled {
-            let matches: Bool
-            switch visitors[i].kind.wish {
-            case .plant(let w): matches = (w == kind)
-            case .anyFlower: matches = kind.isFlower
-            default: matches = false
-            }
-            if matches {
-                fulfillVisitor(at: i)
-            }
-        }
     }
 
     func fulfillRainVisitors() {
@@ -437,21 +462,29 @@ extension GardenSim {
         let v = visitors[i]
         if !v.fulfilled {
             if wishSatisfied(v.kind.wish) {
-                fulfillVisitor(at: i)
-                return true
+                switch v.kind.wish {
+                case .plant, .anyFlower:
+                    guard consumeInventoryItem(for: v.kind.wish) != nil else { break }
+                    fulfillVisitor(at: i)
+                    enqueueEffect(.save)
+                    return true
+                case .raindrop, .decor, .moon:
+                    fulfillVisitor(at: i)
+                    return true
+                }
             }
             // Playful wiggle without awarding free coins before the wish is satisfied.
             guard time - v.poked > 0.45 else { return true }
             visitors[i].poked = time
             playVisitorSound(v.kind)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             return true
         }
         guard time - v.poked > 0.55 else { return true }
         visitors[i].poked = time
         let mid = v.kind.flies ? v.p : CGPoint(x: v.p.x, y: v.p.y - v.kind.stickerHeight * 0.4)
         playVisitorSound(v.kind)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         heartBurst(at: mid, count: 3)
         sparkle(at: mid, count: 6)
         return true
@@ -502,6 +535,28 @@ enum GardenVisitorPainter {
             g.fill(
                 Path(ellipseIn: CGRect(x: sp.0 - centerR, y: sp.1 - centerR, width: centerR * 2, height: centerR * 2)),
                 with: .color(Color(hex: 0xFFE266))
+            )
+        }
+    }
+
+    static func drawSeatedCustomer(_ g: GraphicsContext, kind: GVisitorKind, at p: CGPoint, time t: CGFloat, cheering: Bool) {
+        var v = GVisitor(kind: kind, p: p, facing: 1, seed: kind.rawValue.count * 13)
+        v.state = .staying
+        v.walk = 0
+        v.poked = cheering ? Double(t) - 0.15 : -10
+        var cg = g
+        let bounce: CGFloat = cheering ? abs(sin(t * 9.5)) * 12 : sin(t * 2.4) * 2
+        cg.translateBy(x: p.x, y: p.y - bounce)
+        let scale: CGFloat = kind == .hummingbird ? 1.55 : (kind == .snail || kind == .frog ? 1.45 : 1.25)
+        cg.scaleBy(x: scale, y: scale)
+        v.p = .zero
+        draw(cg, v, time: t, night: 0, nowTime: nil)
+        if cheering {
+            let cheekY: CGFloat = kind == .bunny ? -48 : (kind == .owl ? -34 : -20)
+            let cheekX: CGFloat = kind == .owl ? 12 : 16
+            cg.fill(
+                Path(ellipseIn: CGRect(x: cheekX - 6, y: cheekY - 4, width: 12, height: 8)),
+                with: .color(Color(hex: 0xFF7CA8, alpha: 0.78))
             )
         }
     }
@@ -592,9 +647,8 @@ enum GardenVisitorPainter {
             StorybookArt.shape(g, roof, hex: 0xFF8DA1, width: 2)
             g.fill(Path(ellipseIn: CGRect(x: center.x - 3.5, y: center.y + 1.5, width: 7, height: 7)), with: .color(Color(hex: 0x3A4A5C)))
         case .moon:
-            var moon = Path(ellipseIn: CGRect(x: center.x - 12, y: center.y - 12, width: 24, height: 24))
-            moon.addEllipse(in: CGRect(x: center.x - 4, y: center.y - 16, width: 24, height: 24))
-            g.fill(moon, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
+            let moon = GardenPlants.crescentMoonPath(center: center, radius: 12)
+            g.fill(moon, with: .color(Theme.lemon))
             StorybookArt.sparkle(g, at: CGPoint(x: center.x + 9, y: center.y - 7), radius: 5, color: Color(hex: 0xFFB830))
         }
     }

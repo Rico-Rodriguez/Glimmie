@@ -73,6 +73,7 @@ struct DressUpView: View {
     /// Her skirt and hair swing (a class: it changes every frame).
     @State private var motion = DollMotion()
     @AppStorage(PinnedFairySpec.defaultsKey) private var pinnedFairyID = ""
+    @AppStorage(PinnedFairyLook.defaultsKey) private var pinnedFairyLookData = Data()
 
     private let art = DressUpArt.shared
     /// The part of the 600x900 art canvas shown on the stage: hat tips at the top, soles at the bottom.
@@ -273,8 +274,8 @@ struct DressUpView: View {
                             .onEnded { _ in motion.endDrag() }
                     )
                     .accessibilityLabel("Dance")
-                if let fairy = PinnedFairySpec.spec(for: pinnedFairyID) {
-                    PinnedFairyCompanionView(spec: fairy, paused: isStageCovered)
+                if let resolved = PinnedFairySpec.resolve(fairyID: pinnedFairyID, lookData: pinnedFairyLookData) {
+                    PinnedFairyCompanionView(spec: resolved.spec, look: resolved.look, paused: isStageCovered)
                         .frame(width: 112, height: 112)
                         .position(
                             x: min(geo.size.width - 66, geo.size.width * 0.5 + dollSize.width * 0.36),

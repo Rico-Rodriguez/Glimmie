@@ -315,8 +315,8 @@ enum AquaPainter {
         w.clip(to: Path(AGeo.tank))
 
         updraftColumns(w, sim, t)
-        clams(w, sim, t)
         for d in sim.decor where !d.held { AquaDecorPainter.draw(w, d, time: t) }
+        clams(w, sim, t)
         hiddenSurprises(w, sim, t)
         eggs(w, sim, t)
         finds(w, sim, t, layer: 0)
@@ -351,8 +351,20 @@ enum AquaPainter {
         }
 
         for i in order {
-            AquaFishPainter.drawCrumbBubble(w, for: sim.fish[i], time: t)
+            let f = sim.fish[i]
+            let ownsWish: Bool
+            if let wish = sim.activeWish, case .fish(let wid) = wish.bearer, wid == f.id {
+                ownsWish = true
+            } else {
+                ownsWish = false
+            }
+            if !ownsWish && !sim.isFishSleeping(f) {
+                AquaFishPainter.drawCrumbBubble(w, for: f, time: t)
+            }
         }
+
+        floatingGifts(w, sim, t)
+        drawPlayWish(w, sim, t)
 
         finds(w, sim, t, layer: 1)
         bubbles(w, sim, back: false)
@@ -380,10 +392,20 @@ enum AquaPainter {
     }
 
     private static func hiddenSurprises(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
-        for spot in sim.hiddenSpots where spot.pop > 0.02 {
+        for spot in sim.hiddenSpots {
             var sg = g
             sg.translateBy(x: spot.p.x, y: spot.p.y)
-            AquaDecorPainter.hiddenSurprise(sg, kind: spot.kind, pop: spot.pop, time: t, night: sim.night)
+            AquaDecorPainter.hiddenSandClue(sg, kind: spot.kind, pop: spot.pop, seed: spot.id, time: t, night: sim.night)
+            if spot.pop > 0.02 {
+                AquaDecorPainter.hiddenSurprise(
+                    sg,
+                    kind: spot.kind,
+                    pop: spot.pop,
+                    time: t,
+                    night: sim.night,
+                    celebrating: sim.time < spot.celebrateUntil
+                )
+            }
         }
     }
 
@@ -392,8 +414,29 @@ enum AquaPainter {
             var eg = g
             eg.translateBy(x: e.x, y: e.y)
             eg.rotate(by: .radians(Double(e.wobble)))
-            AquaDecorPainter.egg(eg, palette: e.palette, taps: e.taps, time: t + e.shimmerPhase)
+            AquaDecorPainter.egg(eg, palette: e.palette, taps: e.taps, time: t + e.shimmerPhase, species: e.species)
         }
+    }
+
+    private static func floatingGifts(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        for gift in sim.floatingGifts {
+            let fade = min(1, gift.age / 0.3, (gift.life - gift.age) / 0.6)
+            var gg = g
+            gg.opacity = Double(aqClamp(fade))
+            if sim.needsDiscoveryTap(for: gift) {
+                AquaDecorPainter.discoveryHalo(gg, around: gift.p, radius: 28, time: t)
+            }
+            gg.translateBy(x: gift.p.x, y: gift.p.y)
+            AquaDecorPainter.floatingGift(gg, kind: gift.kind, time: t + gift.phase)
+        }
+    }
+
+    private static func drawPlayWish(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        guard let wish = sim.activeWish,
+              let anchor = sim.wishBearerPoint(wish.bearer) else { return }
+        let center = CGPoint(x: anchor.x + 22, y: anchor.y - 34)
+        let tail = CGPoint(x: anchor.x, y: anchor.y + 8)
+        AquaDecorPainter.playWishBubble(g, kind: wish.kind, at: center, tailToward: tail, time: t)
     }
 
     private static func submarine(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
@@ -471,20 +514,38 @@ enum AquaPainter {
         switch layer {
         case 0:
             if let pl = sim.pearl, let d = sim.decor.first(where: { $0.id == pl.id }), d.open > 0.15 {
-                AquaVisitorPainter.pearl(g, at: CGPoint(x: d.x, y: d.y - 42 - 8 * d.open), r: 10 * min(1, d.open * 1.5), glow: d.open)
+                let pOrigin = CGPoint(x: d.x, y: d.y - 42 - 8 * d.open)
+                if sim.chestPearlNeedsDiscoveryTap {
+                    AquaDecorPainter.discoveryHalo(g, around: pOrigin, radius: 26, time: t)
+                }
+                AquaVisitorPainter.pearl(g, at: pOrigin, r: 10 * min(1, d.open * 1.5), glow: d.open)
             }
             for v in sim.visitors where v.kind == .crab || v.kind == .octopus {
+                if sim.needsDiscoveryTap(for: v) {
+                    AquaDecorPainter.discoveryHalo(g, around: CGPoint(x: v.p.x, y: v.p.y - 24), radius: 36, time: t)
+                }
                 AquaVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
             }
         case 1:
             for f in sim.fish where f.variant >= AquaRare.variant && !f.caught {
-                Twinkles.draw(g, around: f.p, radius: (f.kind.length + f.kind.tailLength) * 0.45 * f.scale, time: t + CGFloat(f.id), count: 3, alpha: 0.9)
+                let rad = (f.kind.length + f.kind.tailLength) * 0.45 * f.scale
+                if sim.needsDiscoveryTap(for: f) {
+                    AquaDecorPainter.discoveryHalo(g, around: f.p, radius: max(28, rad * 1.05), time: t + CGFloat(f.id))
+                } else {
+                    Twinkles.draw(g, around: f.p, radius: rad, time: t + CGFloat(f.id), count: 3, alpha: 0.9)
+                }
             }
             for v in sim.visitors where v.kind.passesBy {
+                if sim.needsDiscoveryTap(for: v) {
+                    AquaDecorPainter.discoveryHalo(g, around: v.p, radius: v.kind == .turtle ? 54 : 42, time: t)
+                }
                 AquaVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
             }
         default:
             for v in sim.visitors where v.kind == .jellyfish {
+                if sim.needsDiscoveryTap(for: v) {
+                    AquaDecorPainter.discoveryHalo(g, around: v.p, radius: 40, time: t)
+                }
                 AquaVisitorPainter.draw(g, v, time: t, night: sim.night, nowTime: sim.time)
             }
         }
@@ -800,6 +861,20 @@ enum AquaPainter {
                 g.stroke(head, with: .color(.white.opacity(0.85 * k)), lineWidth: 1.2)
                 g.stroke(stem, with: .color(.white.opacity(0.85 * k)), style: StrokeStyle(lineWidth: 3.4, lineCap: .round, lineJoin: .round))
                 g.stroke(stem, with: .color(q.color.color(0.95 * k)), style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+            case .sleepZ:
+                let u = aqClamp(q.age / q.life)
+                let fade = Double(sin(u * .pi))
+                let r = q.size * (0.65 + 0.45 * u)
+                let bubble = AquaShape.circle(q.p, r)
+                g.fill(bubble, with: .color(q.color.color(0.28 * fade)))
+                g.stroke(bubble, with: .color(.white.opacity(0.65 * fade)), lineWidth: 1.3)
+                let zs = r * 0.44
+                var zig = Path()
+                zig.move(to: CGPoint(x: q.p.x - zs, y: q.p.y - zs * 0.85))
+                zig.addLine(to: CGPoint(x: q.p.x + zs, y: q.p.y - zs * 0.85))
+                zig.addLine(to: CGPoint(x: q.p.x - zs, y: q.p.y + zs * 0.85))
+                zig.addLine(to: CGPoint(x: q.p.x + zs, y: q.p.y + zs * 0.85))
+                g.stroke(zig, with: .color(.white.opacity(0.88 * fade)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
             case .sparkle:
                 let k = q.age / q.life
                 let s = q.size * sin(k * .pi)
