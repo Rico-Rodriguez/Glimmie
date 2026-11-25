@@ -436,4 +436,110 @@ final class ColoringTests: XCTestCase {
         well.wipe()
         XCTAssertTrue(well.isEmpty)
     }
+
+    // MARK: Overhaul finds, vector stickers, previous tool & custom swatch
+
+    func testColoringEntryHasSixFindsStickers() {
+        let stickers = ColoringFind.stickers
+        XCTAssertEqual(stickers.count, 6)
+        let ids = Set(stickers.map(\.id))
+        XCTAssertEqual(ids, Set(["firstMasterpiece", "glitterArtist", "rainbowPainter", "colorMixer", "stickerStar", "watercolorDream"]))
+        XCTAssertEqual(ColoringGame.entry.stickers.map(\.id), stickers.map(\.id))
+    }
+
+    func testPickingColorAfterEraserRestoresPreviousColorTool() {
+        let studio = readyStudio()
+        studio.tool = .crayon
+        studio.tool = .eraser
+        studio.pickColor(PaintColor.hex(0x3C8DFF))
+        XCTAssertEqual(studio.tool, .crayon, "picking a color restores the last drawing tool instead of hardcoding marker")
+
+        // Visiting stickers between drawing and erasing keeps the last drawing tool.
+        studio.tool = .paint
+        studio.tool = .stickers
+        studio.tool = .eraser
+        studio.pickColor(PaintColor.hex(0xFF6FB5))
+        XCTAssertEqual(studio.tool, .paint)
+
+        // Applying a mixed paint color also leaves the eraser back to the previous drawing tool.
+        studio.tool = .fill
+        studio.tool = .eraser
+        studio.applyMixedColor(PaintColor.hex(0x4CCB6B))
+        XCTAssertEqual(studio.tool, .fill)
+    }
+
+    func testVectorStickerLookupHandlesModernIDsAndLegacyEmojis() {
+        XCTAssertGreaterThanOrEqual(ColoringStickers.all.count, 24)
+        for id in ColoringStickers.all {
+            XCTAssertNotNil(ColoringVectorStickers.sticker(for: id), "missing vector sticker for \(id)")
+        }
+        let legacy: [(String, ColoringVectorSticker)] = [
+            ("⭐", .star), ("⭐️", .star), ("❤️", .heart), ("💖", .heart),
+            ("🌈", .rainbow), ("🦄", .unicorn), ("👑", .crown), ("🌸", .flower),
+            ("🦋", .butterfly), ("☀️", .sun), ("🌙", .moon), ("☁️", .cloud),
+            ("🐱", .kitty), ("🐰", .bunny), ("🐶", .puppy), ("🎀", .bow),
+            ("🧁", .cupcake), ("🍓", .strawberry), ("🍭", .lollipop), ("🍦", .iceCream),
+            ("💎", .diamond), ("🪄", .magicWand), ("🐾", .paw), ("🎈", .balloon),
+            ("🎵", .musicNote), ("✨", .sparkle),
+        ]
+        for (emoji, expected) in legacy {
+            XCTAssertEqual(ColoringVectorStickers.sticker(for: emoji), expected, "legacy emoji \(emoji) should map to \(expected)")
+        }
+        XCTAssertNil(ColoringVectorStickers.sticker(for: "custom-unknown-sticker"))
+
+        let paper = ColoringPaper(lineArt: nil)
+        let img = paper.makeImage()!
+        let rendered = ColoringRender.picture(
+            color: img,
+            page: ColoringCatalog.blank,
+            stickers: [
+                ColorSticker(emoji: "unicorn", x: 400, y: 400),
+                ColorSticker(emoji: "⭐️", x: 800, y: 500),
+                ColorSticker(emoji: "🦖", x: 1100, y: 700),
+            ],
+            width: 480
+        )
+        XCTAssertEqual(rendered.size.width, 480)
+    }
+
+    func testCustomMixedSwatchPersistsAndTracksEarnedFinds() {
+        let studio = readyStudio()
+        XCTAssertNil(studio.customColor)
+        let mixed = PaintColor.hex(0x66BB77)
+        studio.applyMixedColor(mixed)
+        XCTAssertEqual(studio.customColor, mixed)
+        XCTAssertEqual(studio.color, mixed)
+
+        // Picking a preset color keeps her custom mixed swatch intact.
+        let preset = ColoringPalette.colors[0]
+        studio.pickColor(preset)
+        XCTAssertEqual(studio.color, preset)
+        XCTAssertEqual(studio.customColor, mixed)
+
+        // Usage flags drive earned finds cleanly.
+        studio.tool = .glitter
+        studio.touchBegan(CGPoint(x: 400, y: 400))
+        studio.touchEnded()
+        studio.tool = .rainbow
+        studio.touchBegan(CGPoint(x: 500, y: 400))
+        studio.touchEnded()
+        studio.tool = .paint
+        studio.touchBegan(CGPoint(x: 600, y: 400))
+        studio.touchEnded()
+        studio.addSticker("star")
+
+        let finds = Set(studio.earnedFinds())
+        XCTAssertEqual(finds, Set(ColoringFind.allCases))
+    }
+
+    func testStampShapeModesRenderOnPaper() {
+        for shape in ColoringStampShape.allCases {
+            let paper = ColoringPaper(lineArt: nil)
+            paper.stampShape = shape
+            paper.beginStroke(at: CGPoint(x: 400, y: 400), brush: .stamps, color: PaintColor.hex(0xFF6FB5), size: 32, stayInLines: false)
+            paper.continueStroke(to: CGPoint(x: 600, y: 400))
+            paper.endStroke()
+            XCTAssertGreaterThan(colored(paper, 360...640, 360...440), 0.05, "\(shape) stamp should mark the paper")
+        }
+    }
 }

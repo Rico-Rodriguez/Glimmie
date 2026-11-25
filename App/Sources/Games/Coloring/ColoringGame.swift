@@ -12,11 +12,12 @@ import SwiftUI
 
 enum ColoringGame {
     static let entry = GameEntry(
-        id: "coloring",
+        id: ColoringGallery.gameID,
         title: "Coloring",
         tint: Color(hex: 0xC9B6FF),
         icon: { AnyView(ColoringIcon()) },
-        play: { exit in AnyView(ColoringGameView(onExit: exit)) }
+        play: { exit in AnyView(ColoringGameView(onExit: exit)) },
+        stickers: ColoringFind.stickers
     )
 }
 
@@ -27,35 +28,63 @@ struct ColoringGameView: View {
     @State private var screen: Screen = .book
     @State private var studio: ColoringStudio?
     @State private var category = ColoringCatalog.all.first?.id ?? ""
+    @State private var showBook = false
     @Environment(\.scenePhase) private var phase
 
     var body: some View {
-        DesignCanvas {
-            ZStack {
-                switch screen {
-                case .book:
-                    ColoringBookView(category: $category, onExit: onExit, onPick: openPage, onGallery: { go(.gallery) },
-                                     onGrownUp: { go(.grownUp) })
+        ZStack {
+            DesignCanvas {
+                ZStack {
+                    switch screen {
+                    case .book:
+                        ColoringBookView(
+                            category: $category,
+                            onExit: onExit,
+                            onStickerBook: openBook,
+                            onPick: openPage,
+                            onGallery: { go(.gallery) },
+                            onGrownUp: { go(.grownUp) }
+                        )
                         .transition(.opacity)
-                case .grownUp:
-                    ColoringGrownUpView(onDone: { tab in
-                        if let tab { category = tab }
-                        if !ColoringCatalog.all.contains(where: { $0.id == category }) { category = ColoringCatalog.all.first?.id ?? "" }
-                        go(.book)
-                    })
-                    .transition(.opacity)
-                case .studio:
-                    if let studio {
-                        ColoringStudioView(studio: studio, onBack: closeStudio, onDone: { closeStudio(); go(.gallery) })
+                    case .grownUp:
+                        ColoringGrownUpView(onDone: { tab in
+                            if let tab { category = tab }
+                            if !ColoringCatalog.all.contains(where: { $0.id == category }) { category = ColoringCatalog.all.first?.id ?? "" }
+                            go(.book)
+                        })
+                        .transition(.opacity)
+                    case .studio:
+                        if let studio {
+                            ColoringStudioView(
+                                studio: studio,
+                                onBack: closeStudio,
+                                onDone: { closeStudio(); go(.gallery) },
+                                onHome: exitFromStudio,
+                                onStickerBook: openBook
+                            )
+                            .transition(.opacity)
+                        }
+                    case .gallery:
+                        ColoringGalleryView(onBack: { go(.book) }, onOpen: { art in open(page: art.page, artwork: art) })
                             .transition(.opacity)
                     }
-                case .gallery:
-                    ColoringGalleryView(onBack: { go(.book) }, onOpen: { art in open(page: art.page, artwork: art) })
-                        .transition(.opacity)
+
+                    StickerToast(game: ColoringGallery.gameID, target: GameChromeLayout.stickerTarget)
                 }
+                .coinPurse(game: ColoringGallery.gameID)
+            }
+            .background(ColoringBackground())
+
+            if showBook {
+                StickerBookView(game: ColoringGallery.gameID) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(5)
             }
         }
-        .background(ColoringBackground())
         .onChange(of: phase) { p in if p != .active { studio?.saveIfNeeded() } }
         .onAppear {
             // For simulator screenshots: a blank page with a sample of every brush.
@@ -67,6 +96,12 @@ struct ColoringGameView: View {
     }
 
     private func go(_ s: Screen) { withAnimation(.easeInOut(duration: 0.3)) { screen = s } }
+
+    private func openBook() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            showBook = true
+        }
+    }
 
     private func openPage(_ page: String) { open(page: page, artwork: nil) }
 
@@ -81,6 +116,12 @@ struct ColoringGameView: View {
         go(.book)
         studio = nil
     }
+
+    private func exitFromStudio() {
+        studio?.saveIfNeeded()
+        studio = nil
+        onExit()
+    }
 }
 
 // MARK: - The book (page picker)
@@ -88,6 +129,7 @@ struct ColoringGameView: View {
 struct ColoringBookView: View {
     @Binding var category: String
     let onExit: () -> Void
+    var onStickerBook: (() -> Void)? = nil
     let onPick: (String) -> Void
     let onGallery: () -> Void
     let onGrownUp: () -> Void
@@ -98,41 +140,49 @@ struct ColoringBookView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 18) {
-                HomeButton(action: onExit)
+            HStack(spacing: 14) {
+                HomeButton(size: GameChromeLayout.buttonSize, action: onExit)
+                if let onStickerBook {
+                    StickerBookButton(game: ColoringGallery.gameID, size: GameChromeLayout.buttonSize, action: onStickerBook)
+                }
                 Spacer()
-                ColoringIcon().frame(width: 74, height: 74)
+                ColoringIcon().frame(width: 66, height: 66)
                 Spacer()
-                GrownUpButton(action: onGrownUp)
-                ColoringButton(icon: "doc.fill", tint: Theme.sky) { onPick(ColoringCatalog.blank) }
-                ColoringButton(icon: "photo.on.rectangle.angled", tint: Theme.pink, action: onGallery)
+                HStack(spacing: 12) {
+                    CoinCounter(game: ColoringGallery.gameID, height: GameChromeLayout.buttonSize)
+                    GrownUpButton(action: onGrownUp)
+                    ColoringButton(icon: "doc.fill", tint: Theme.sky, size: GameChromeLayout.buttonSize) { onPick(ColoringCatalog.blank) }
+                    ColoringButton(icon: "photo.on.rectangle.angled", tint: Theme.pink, size: GameChromeLayout.buttonSize, action: onGallery)
+                }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
 
             HStack(alignment: .top, spacing: 16) {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 12) {
-                        ForEach(all) { c in
-                            Button {
-                                Sound.shared.play(.tap, volume: 0.5)
-                                withAnimation(.spring(response: 0.3)) { category = c.id }
-                            } label: {
-                                CategoryTabIcon(category: c)
-                                    .frame(width: 84, height: 84)
-                                    .background(RoundedRectangle(cornerRadius: 24).fill(c.cover == nil ? c.tint : .white))
-                                    .clipShape(RoundedRectangle(cornerRadius: 24))
-                                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(category == c.id ? Theme.pink : .white, lineWidth: category == c.id ? 6 : 4))
-                                    .scaleEffect(category == c.id ? 1.08 : 1)
-                                    .shadow(color: Theme.ink.opacity(0.2), radius: 4, y: 3)
+                GameTrayCard(cornerRadius: 28, paddingH: 6, paddingV: 8) {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 12) {
+                            ForEach(all) { c in
+                                Button {
+                                    Sound.shared.play(.tap, volume: 0.5)
+                                    withAnimation(.spring(response: 0.3)) { category = c.id }
+                                } label: {
+                                    CategoryTabIcon(category: c)
+                                        .frame(width: 80, height: 80)
+                                        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(c.cover == nil ? c.tint : .white))
+                                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(category == c.id ? Theme.pink : .white, lineWidth: category == c.id ? 5.5 : 3.5))
+                                        .scaleEffect(category == c.id ? 1.07 : 1)
+                                        .shadow(color: Theme.ink.opacity(0.18), radius: 4, y: 3)
+                                }
+                                .buttonStyle(Squish())
                             }
-                            .buttonStyle(Squish())
                         }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 6)
                     }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 8)
                 }
-                .frame(width: 110)
+                .frame(width: 108)
 
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 300), spacing: 20)], spacing: 20) {
@@ -149,6 +199,7 @@ struct ColoringBookView: View {
                 }
             }
             .padding(.leading, 16)
+            .padding(.bottom, 12)
         }
     }
 }
@@ -158,10 +209,10 @@ private struct CategoryTabIcon: View {
     let category: ColoringCategory
     var body: some View {
         if let cover = category.cover, let img = ColoringCatalog.thumbnail(cover) {
-            Image(uiImage: img).resizable().scaledToFill().frame(width: 84, height: 84)
+            Image(uiImage: img).resizable().scaledToFill().frame(width: 80, height: 80)
         } else {
             Image(systemName: category.icon)
-                .font(.system(size: 34, weight: .bold))
+                .font(.system(size: 32, weight: .bold))
                 .foregroundStyle(.white)
         }
     }
@@ -192,13 +243,13 @@ private struct ColoringPageTile: View {
     let tint: Color
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24).fill(.white)
+            RoundedRectangle(cornerRadius: 24, style: .continuous).fill(.white)
             if let img = ColoringCatalog.thumbnail(page) {
                 Image(uiImage: img).resizable().scaledToFit().padding(10)
             }
         }
         .aspectRatio(4 / 3, contentMode: .fit)
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(tint, lineWidth: 6))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(tint, lineWidth: 6))
         .shadow(color: Theme.ink.opacity(0.18), radius: 6, y: 4)
     }
 }
