@@ -252,14 +252,15 @@ final class AquariumTests: XCTestCase {
         // Hoop tricks also enforce the standardized 2.5s coin cooldown.
         Coins.shared.resetForTests()
         let hoopSim = freshSim()
-        let f0 = hoopSim.spawn(.goldfish, variant: 0, at: CGPoint(x: 425, y: 360))
-        let f1 = hoopSim.spawn(.goldfish, variant: 1, at: CGPoint(x: 395, y: 360))
+        let f0 = hoopSim.spawn(.goldfish, variant: 0, at: CGPoint(x: 425, y: 348))
+        let f1 = hoopSim.spawn(.goldfish, variant: 1, at: CGPoint(x: 410, y: 372))
         hoopSim.fish[f0].dir = 1
         hoopSim.fish[f0].facing = 1
         hoopSim.fish[f1].dir = 1
         hoopSim.fish[f1].facing = 1
         hoopSim.spawnBubbleHoop(at: CGPoint(x: 460, y: 360))
-        run(hoopSim, seconds: 0.9)
+        hoopSim.hoops[0].phase = 0
+        run(hoopSim, seconds: 1.2)
         XCTAssertEqual(hoopSim.hoops.first?.tricks, 2)
         XCTAssertEqual(Coins.shared.balance, 2, "back-to-back hoop tricks within cooldown must only pay once")
 

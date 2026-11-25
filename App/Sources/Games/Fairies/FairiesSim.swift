@@ -1852,7 +1852,11 @@ final class FairiesSim: ObservableObject {
                     return
                 }
             case .flutterDash(var state):
-                // Collect floating star-hearts for extra sparkle delight
+                // Check the fairy before floating star-hearts so newly spawned hearts above her never swallow rapid taps.
+                if hypot(point.x - state.position.x, point.y - state.position.y) <= 94 {
+                    _ = tapFlutterDash(viaWand: false)
+                    return
+                }
                 for i in state.starHearts.indices.reversed() {
                     if hypot(point.x - state.starHearts[i].pos.x, point.y - state.starHearts[i].pos.y) <= 44 {
                         let hp = state.starHearts.remove(at: i).pos
@@ -1863,10 +1867,6 @@ final class FairiesSim: ObservableObject {
                         emitBurst(.star, at: hp, count: 10, colorHex: 0xFFE38A)
                         return
                     }
-                }
-                if hypot(point.x - state.position.x, point.y - state.position.y) <= 94 {
-                    _ = tapFlutterDash(viaWand: false)
-                    return
                 }
             case .bubblePop(let state):
                 for b in state.bubbles {
