@@ -160,6 +160,7 @@ struct StickerBookButton: View {
             }
         }
         .buttonStyle(Squish())
+        .accessibilityLabel("Sticker Book")
     }
 }
 
@@ -223,6 +224,27 @@ struct StickerToast: View {
 
 // MARK: - The book itself
 
+private struct TabUnseenBadge: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 24)) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            ZStack {
+                Circle()
+                    .fill(Theme.lilac)
+                    .overlay(Circle().stroke(.white, lineWidth: 2.5))
+                Image(systemName: "star.fill")
+                    .font(.system(size: 13, weight: .black))
+                    .foregroundStyle(Theme.lemon)
+                    .rotationEffect(.radians(sin(t * 2.4) * 0.18))
+                    .scaleEffect(CGFloat(0.88 + 0.18 * sin(t * 5)))
+            }
+            .frame(width: 26, height: 26)
+            .shadow(color: Theme.ink.opacity(0.28), radius: 2, y: 1)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// The open book: a tab for each game down the side, that game's stickers on the page.
 struct StickerBookView: View {
     let close: () -> Void
@@ -263,6 +285,7 @@ struct StickerBookView: View {
                             .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
                     }
                     .buttonStyle(Squish())
+                    .accessibilityLabel("Close")
                     .offset(x: 18, y: -18)
                 }
                 .scaleEffect(shown ? 1 : 0.85)
@@ -270,8 +293,8 @@ struct StickerBookView: View {
             }
         }
         .onAppear {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { shown = true }
             StickerBook.shared.markSeen(game: page)
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { shown = true }
         }
     }
 
@@ -281,33 +304,74 @@ struct StickerBookView: View {
     }
 
     private var tabs: some View {
-        VStack(spacing: 16) {
-            ForEach(StickerBook.pages) { g in
-                Button {
-                    guard page != g.id else { return }
-                    Sound.shared.play(.flip, volume: 0.6)
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { page = g.id }
-                    StickerBook.shared.markSeen(game: g.id)
-                } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous).fill(g.tint.gradient)
-                        g.icon().padding(8)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 14) {
+                    ForEach(StickerBook.pages) { g in
+                        let selected = page == g.id
+                        let unseen = StickerBook.shared.hasUnseen(game: g.id)
+                        Button {
+                            guard page != g.id else { return }
+                            Sound.shared.play(.flip, volume: 0.6)
+                            StickerBook.shared.markSeen(game: g.id)
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { page = g.id }
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 24, style: .continuous).fill(g.tint.gradient)
+                                g.icon().padding(8)
+                            }
+                            .frame(width: 92, height: 92)
+                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+                                .stroke(selected ? Theme.pink : .white, lineWidth: selected ? 6 : 4))
+                            .overlay(alignment: .topTrailing) {
+                                if unseen {
+                                    TabUnseenBadge()
+                                        .offset(x: 7, y: -7)
+                                }
+                            }
+                            .scaleEffect(selected ? 1.06 : 0.94)
+                            .shadow(color: Theme.ink.opacity(0.2), radius: 5, y: 3)
+                        }
+                        .buttonStyle(Squish())
+                        .accessibilityLabel(g.title)
+                        .id(g.id)
                     }
-                    .frame(width: 92, height: 92)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(page == g.id ? Theme.pink : .white, lineWidth: page == g.id ? 6 : 4))
-                    .scaleEffect(page == g.id ? 1.06 : 0.94)
-                    .shadow(color: Theme.ink.opacity(0.2), radius: 5, y: 3)
                 }
-                .buttonStyle(Squish())
+                .padding(.vertical, 24)
+                .padding(.horizontal, 24)
             }
-            Spacer(minLength: 0)
+            .frame(width: 140)
+            .frame(maxHeight: .infinity)
+            .background(Theme.blush.opacity(0.6))
+            .onAppear {
+                proxy.scrollTo(page, anchor: .center)
+            }
         }
-        .padding(.vertical, 30)
-        .padding(.horizontal, 22)
-        .frame(maxHeight: .infinity)
-        .background(Theme.blush.opacity(0.6))
+    }
+
+    private func starRows(for stickers: [Sticker], gameID: String) -> some View {
+        let book = StickerBook.shared
+        let rowCount = max(1, (stickers.count + 17) / 18)
+        let maxPerRow = max(1, (stickers.count + rowCount - 1) / rowCount)
+        let rows: [[Sticker]] = stride(from: 0, to: stickers.count, by: maxPerRow).map {
+            Array(stickers[$0..<min($0 + maxPerRow, stickers.count)])
+        }
+        let starSize: CGFloat = stickers.count > 14 ? 18 : 20
+        let starSpacing: CGFloat = stickers.count > 14 ? 5 : 6
+        return VStack(spacing: 4) {
+            ForEach(0..<rows.count, id: \.self) { r in
+                HStack(spacing: starSpacing) {
+                    ForEach(rows[r]) { s in
+                        let has = book.has(game: gameID, id: s.id)
+                        Image(systemName: has ? "star.fill" : "star")
+                            .font(.system(size: starSize, weight: .bold))
+                            .foregroundStyle(has ? Theme.lemon : Theme.ink.opacity(0.2))
+                            .shadow(color: has ? Theme.ink.opacity(0.25) : .clear, radius: 1, y: 1)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder private var pageView: some View {
@@ -315,25 +379,22 @@ struct StickerBookView: View {
             let stickers = g.stickers
             let cols = stickers.count > 12 ? 5 : 4
             let book = StickerBook.shared
-            VStack(spacing: 18) {
-                // how many she has: a star for each sticker, filled in for the found ones
-                HStack(spacing: 6) {
-                    ForEach(stickers) { s in
-                        Image(systemName: book.has(game: g.id, id: s.id) ? "star.fill" : "star")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(book.has(game: g.id, id: s.id) ? Theme.lemon : Theme.ink.opacity(0.2))
-                            .shadow(color: book.has(game: g.id, id: s.id) ? Theme.ink.opacity(0.25) : .clear, radius: 1, y: 1)
+            VStack(spacing: 16) {
+                starRows(for: stickers, gameID: g.id)
+                    .padding(.top, 26)
+                    .padding(.horizontal, 30)
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: cols), spacing: 14) {
+                        ForEach(stickers) { s in
+                            cell(g.id, s, found: book.has(game: g.id, id: s.id))
+                        }
                     }
+                    .padding(.horizontal, 30)
+                    .padding(.top, 4)
+                    .padding(.bottom, 26)
                 }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: cols), spacing: 14) {
-                    ForEach(stickers) { s in
-                        cell(g.id, s, found: book.has(game: g.id, id: s.id))
-                    }
-                }
-                Spacer(minLength: 0)
             }
-            .padding(.top, 30)
-            .padding(.horizontal, 30)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .id(g.id)
             .transition(.opacity)
         } else {

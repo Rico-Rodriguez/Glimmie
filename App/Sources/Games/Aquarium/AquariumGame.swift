@@ -18,28 +18,60 @@ private struct AquariumTileIcon: View {
             Canvas { ctx, size in
                 let t = CGFloat(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
                 var g = ctx
-                let k = size.width / 300
+                let k = min(size.width, size.height) / 300
+                g.translateBy(x: (size.width - 300 * k) / 2, y: (size.height - 300 * k) / 2)
                 g.scaleBy(x: k, y: k)
+
+                // Soft luminous water shimmer behind the fish.
+                g.fill(
+                    Path(ellipseIn: CGRect(x: 34, y: 24, width: 232, height: 196)),
+                    with: .radialGradient(
+                        Gradient(colors: [Color(hex: 0xD8F8FF).opacity(0.45), .clear]),
+                        center: CGPoint(x: 150, y: 112),
+                        startRadius: 12,
+                        endRadius: 116
+                    )
+                )
+
                 var sand = Path()
                 sand.move(to: CGPoint(x: -10, y: 310))
-                sand.addQuadCurve(to: CGPoint(x: 310, y: 310), control: CGPoint(x: 150, y: 222))
+                sand.addQuadCurve(to: CGPoint(x: 310, y: 310), control: CGPoint(x: 150, y: 214))
                 sand.closeSubpath()
-                g.fill(sand, with: .color(ARGB(0xF4E0B6).color))
+                StorybookArt.fillAndStroke(
+                    g, sand,
+                    fill: StorybookArt.color(0xF5E0B4),
+                    stroke: StorybookArt.outline(for: 0xE2C182),
+                    width: 6
+                )
+                StorybookArt.highlight(g, in: CGRect(x: 92, y: 258, width: 116, height: 12), opacity: 0.36)
+
                 var sw = g
-                sw.translateBy(x: 62, y: 300)
-                sw.scaleBy(x: 0.55, y: 0.55)
+                sw.translateBy(x: 64, y: 294)
+                sw.scaleBy(x: 0.56, y: 0.56)
                 AquaDecorPainter.seaweed(sw, t: t, sway: 0, seed: 1)
+
+                var sh = g
+                sh.translateBy(x: 234, y: 288)
+                sh.scaleBy(x: 0.56, y: 0.56)
+                AquaDecorPainter.shell(sh)
+
                 var f = g
-                f.translateBy(x: 160, y: 140 + sin(t * 1.3) * 6)
-                f.scaleBy(x: 1.9, y: 1.9)
+                f.translateBy(x: 156, y: 140 + sin(t * 1.3) * 6)
+                f.scaleBy(x: 1.88, y: 1.88)
                 AquaFishPainter.drawLocal(f, kind: .goldfish, variant: 0, phase: t * 6, amp: 0.25, gulp: 0, puff: 0, time: t)
-                var bubbles = Path()
+
                 for i in 0..<4 {
-                    let y = 120 - (t * 40 + CGFloat(i) * 50).truncatingRemainder(dividingBy: 200)
-                    let r = 6 + CGFloat(i % 2) * 4
-                    bubbles.addEllipse(in: CGRect(x: 250 + sin(t * 3 + CGFloat(i)) * 4 - r, y: y + 80 - r, width: r * 2, height: r * 2))
+                    let y = 200 - (t * 40 + CGFloat(i) * 50).truncatingRemainder(dividingBy: 185)
+                    let x = 244 + sin(t * 3 + CGFloat(i) * 1.4) * 6 - CGFloat(i % 2) * 12
+                    let r: CGFloat = 8 + CGFloat(i % 2) * 4.5
+                    let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
+                    g.fill(Path(ellipseIn: rect), with: .color(StorybookArt.color(0xD8F8FF, alpha: 0.42)))
+                    g.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(0.92)), lineWidth: 3)
+                    StorybookArt.highlight(g, in: CGRect(x: x - r * 0.55, y: y - r * 0.58, width: r * 0.52, height: r * 0.34), opacity: 0.92)
                 }
-                g.stroke(bubbles, with: .color(.white.opacity(0.9)), lineWidth: 3)
+
+                StorybookArt.sparkle(g, at: CGPoint(x: 232, y: 64), radius: 15 * (0.85 + 0.15 * sin(t * 3.8)), color: Theme.lemon)
+                StorybookArt.sparkle(g, at: CGPoint(x: 68, y: 82), radius: 10 * (0.85 + 0.15 * cos(t * 3.2)), color: .white)
             }
         }
     }
@@ -161,6 +193,16 @@ private enum AquaSlot: String, CaseIterable {
         case .drawer: return nil
         }
     }
+
+    var accessibilityName: String {
+        switch self {
+        case .food: return "Fish Food"
+        case .wiper: return "Glass Wiper"
+        case .hoop: return "Bubble Hoop"
+        case .net: return "Fish Net"
+        case .drawer: return "Fish and Decor"
+        }
+    }
 }
 
 private struct AquaSlotIcon: View {
@@ -206,6 +248,7 @@ final class AquaHandState {
 struct AquariumView: View {
     let exit: () -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var sim = AquariumSim()
     @State private var drawerOpen = false
     @State private var catalogTab: AquaCatalogTab = .fish
@@ -223,14 +266,14 @@ struct AquariumView: View {
                 AquariumRoomBackdrop(lightsOn: lightsOn)
             } content: {
                 ZStack {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: book)) { _ in
                         Canvas { ctx, _ in
                             AquaPainter.drawBackdrop(ctx, sim: sim)
                         }
                     }
                     .allowsHitTesting(false)
 
-                    TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: book)) { tl in
                         Canvas { ctx, _ in
                             sim.step(tl.date)
                             AquaPainter.draw(ctx, sim: sim)
@@ -266,6 +309,12 @@ struct AquariumView: View {
         }
         .ignoresSafeArea()
         .onAppear(perform: start)
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                sim.save()
+                AquaSound.shared.stopLoops()
+            }
+        }
         .onDisappear {
             sim.save()
             AquaSound.shared.stopLoops()
@@ -288,8 +337,13 @@ struct AquariumView: View {
             gameID: AquariumSim.gameID,
             showStickerBook: true,
             showCoins: true,
-            onExit: exit,
+            onExit: {
+                sim.save()
+                AquaSound.shared.stopLoops()
+                exit()
+            },
             onStickerBook: {
+                AquaSound.shared.stopLoops()
                 withAnimation(.easeOut(duration: 0.2)) { book = true }
             },
             trailing: {
@@ -308,6 +362,7 @@ struct AquariumView: View {
                             lightsOn.toggle()
                             sim.setLights(lightsOn)
                         }
+                        .accessibilityLabel(lightsOn ? "Tank Lights On" : "Tank Lights Off")
                     }
 
                     RoundButton(
@@ -320,6 +375,7 @@ struct AquariumView: View {
                         sim.setPump(pump)
                     }
                     .opacity(pump ? 1 : 0.72)
+                    .accessibilityLabel(pump ? "Bubbler On" : "Bubbler Off")
                 }
             }
         )
@@ -328,7 +384,7 @@ struct AquariumView: View {
     // MARK: - Bottom Dock
 
     private var dockLayer: some View {
-        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+        TimelineView(.animation(minimumInterval: 0.25, paused: book)) { _ in
             let foodPulse = sim.anyHungry && sim.tool == nil && !drawerOpen
             let wiperPulse = !foodPulse && sim.dirtiness > 0.3 && sim.tool == nil && !drawerOpen
             GameTrayCard(cornerRadius: 30, paddingH: 14, paddingV: 10) {
@@ -350,6 +406,7 @@ struct AquariumView: View {
                         .opacity(isHidden ? 0.32 : 1)
                         .contentShape(Rectangle())
                         .gesture(dockGesture(slot))
+                        .accessibilityLabel(slot.accessibilityName)
                     }
                 }
             }
@@ -467,6 +524,7 @@ struct AquariumView: View {
                         .shadow(color: Theme.ink.opacity(0.18), radius: 5, y: 3)
                 }
                 .buttonStyle(Squish())
+                .accessibilityLabel("Close")
             }
         }
         .position(x: 512, y: AGeo.drawerY)
@@ -507,6 +565,7 @@ struct AquariumView: View {
             }
         }
         .buttonStyle(Squish())
+        .accessibilityLabel(tab == .fish ? "Fish" : "Decorations")
     }
 
     private func catalogFishTile(_ kind: FishKind, key: String) -> some View {
@@ -532,6 +591,7 @@ struct AquariumView: View {
             .frame(width: 82, height: 82)
             .opacity(hidden == dragKey ? 0.25 : 1)
             .contentShape(Rectangle())
+            .accessibilityLabel(kind.rawValue.capitalized)
             .onTapGesture {
                 Sound.shared.tap()
                 let x = CGFloat.random(in: 220...800)
@@ -581,6 +641,7 @@ struct AquariumView: View {
             .frame(width: 82, height: 82)
             .opacity(hidden == dragKey ? 0.25 : 1)
             .contentShape(Rectangle())
+            .accessibilityLabel(kind.rawValue.capitalized)
             .onTapGesture {
                 Sound.shared.tap()
                 let x = CGFloat.random(in: 170...850)
@@ -613,14 +674,16 @@ struct AquariumView: View {
     // MARK: - Explicit Return Zone Overlay
 
     private var returnZoneOverlay: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: book)) { _ in
             ZStack {
                 if sim.isCarryingReturnable {
                     ReturnDropBadge(hovered: sim.isHoveringReturnZone)
                         .position(AGeo.returnBadgeCenter)
+                        .transition(.scale.combined(with: .opacity))
                 }
             }
             .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
+            .animation(.spring(response: 0.28, dampingFraction: 0.72), value: sim.isCarryingReturnable)
         }
         .allowsHitTesting(false)
     }
@@ -676,13 +739,15 @@ struct AquariumView: View {
 
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-aquaDemo") {
+        if args.contains("-aquaDemo") || args.contains("-aquaNight") || args.contains("-aquaTray") || args.contains("-aquaTool") {
+            sim.demo = true
             Coins.shared.demo = true
+            StickerBook.shared.demo = true
+        }
+        if args.contains("-aquaDemo") {
             sim.showcase()
         }
         if args.contains("-aquaNight") {
-            sim.demo = true
-            Coins.shared.demo = true
             lightsOn = false
             sim.lightsOn = false
             sim.night = 1
@@ -692,8 +757,6 @@ struct AquariumView: View {
             catalogTab = args[i + 1] == "decor" ? .decor : .fish
         }
         if let i = args.firstIndex(of: "-aquaTool"), i + 1 < args.count {
-            sim.demo = true
-            Coins.shared.demo = true
             switch args[i + 1] {
             case "wiper":
                 sim.pickUp(.wiper, at: CGPoint(x: 260, y: 440))

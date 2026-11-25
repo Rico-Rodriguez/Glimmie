@@ -213,6 +213,7 @@ final class GardenHandState {
 struct GardenView: View {
     let exit: () -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var sim = GardenSim()
     @State private var dockMode: GardenDockMode = .hand
     @State private var weather: Weather = .sun
@@ -254,10 +255,12 @@ struct GardenView: View {
                     onExit: {
                         auto.cancel()
                         sim.save()
+                        GardenSound.shared.stopLoops()
                         exit()
                     },
                     onStickerBook: {
                         auto.cancel()
+                        GardenSound.shared.stopLoops()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
                             book = true
                         }
@@ -271,7 +274,7 @@ struct GardenView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                TimelineView(.periodic(from: .now, by: 0.3)) { _ in
+                TimelineView(.animation(minimumInterval: 0.3, paused: book)) { _ in
                     dockBar(hint: dockMode == .hand && sim.tool == nil ? suggested : nil)
                 }
                 .position(x: 512, y: GGeo.dockY)
@@ -298,6 +301,13 @@ struct GardenView: View {
             }
         }
         .onAppear(perform: start)
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                auto.cancel()
+                sim.save()
+                GardenSound.shared.stopLoops()
+            }
+        }
         .onDisappear {
             auto.cancel()
             sim.save()
@@ -646,15 +656,18 @@ struct GardenView: View {
 
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
+        if args.contains("-gardenDemo") || args.contains("-gardenWeather") || args.contains("-gardenTool") {
+            sim.demo = true
+            Coins.shared.demo = true
+            StickerBook.shared.demo = true
+        }
         if args.contains("-gardenDemo") { sim.showcase() }
         if let i = args.firstIndex(of: "-gardenWeather"), i + 1 < args.count, let w = Weather(rawValue: args[i + 1]) {
-            sim.demo = true
             weather = w
             sim.setWeather(w)
             sim.settleWeather()
         }
         if let i = args.firstIndex(of: "-gardenTool"), i + 1 < args.count {
-            sim.demo = true
             switch args[i + 1] {
             case "can":
                 sim.pickUp(.can, at: CGPoint(x: 440, y: 380))
