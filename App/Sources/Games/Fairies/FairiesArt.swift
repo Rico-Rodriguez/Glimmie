@@ -23,8 +23,8 @@ enum FairiesArt {
             drawMeadowSpot(g, spot: spot, sim: sim)
         }
 
-        if let rev = sim.revealedFairy {
-            drawRevealedFairy(g, rev: rev, time: t)
+        if let enc = sim.encounter {
+            drawMeadowEncounter(g, enc: enc, sim: sim, time: t)
         }
 
         if let cel = sim.celebration {
@@ -33,6 +33,22 @@ enum FairiesArt {
 
         drawParticles(g, particles: sim.particles, time: t)
         drawWandTrail(g, trail: sim.wandTrail)
+
+        if let draggedTreat = sim.draggingMeadowTreat {
+            var dt = g
+            dt.translateBy(x: sim.draggingTreatPos.x, y: sim.draggingTreatPos.y)
+            dt.fill(
+                Path(ellipseIn: CGRect(x: -44, y: -44, width: 88, height: 88)),
+                with: .radialGradient(
+                    Gradient(colors: [.white.opacity(0.75), StorybookArt.color(draggedTreat.accentHex, alpha: 0)]),
+                    center: .zero,
+                    startRadius: 6,
+                    endRadius: 44
+                )
+            )
+            dt.scaleBy(x: 1.32, y: 1.32)
+            drawTreatIcon(dt, kind: draggedTreat)
+        }
 
         if let tip = sim.wandTip {
             let finger = sim.wandFinger ?? CGPoint(x: tip.x + 56, y: tip.y + 82)
@@ -190,8 +206,17 @@ enum FairiesArt {
             drawTinyFlower(g, at: CGPoint(x: lx, y: ly), radius: 9, petalHex: 0xFFB8D8)
         }
 
+        let chimeEcho: ChimeEchoState? = {
+            if let enc = sim.encounter, case .chimeEcho(let s) = enc.phase {
+                return s
+            }
+            return nil
+        }()
+
         for chime in MeadowChime.allCases {
             let swingLeft = max(0, (sim.chimeSwingUntil[chime] ?? -10) - t)
+            let isDemoLit = chimeEcho?.activeDemoChime == chime
+            let isHinted = chimeEcho?.hintedChime == chime
             let sway = sin(t * 2.1 + Double(chime.rawValue) * 1.4) * 0.05
                 + (swingLeft > 0 ? sin(t * 20) * 0.34 * min(1, swingLeft) : 0)
 
@@ -206,16 +231,31 @@ enum FairiesArt {
             c.stroke(cord, with: .color(StorybookArt.color(0xE8B84B)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
 
             let bellY = cordLen + 24
-            let glowBoost = swingLeft > 0 ? 0.55 : 0.28 + 0.12 * sin(t * 3 + Double(chime.rawValue))
+            let glowBoost: Double = (isDemoLit || isHinted)
+                ? 0.78 + 0.18 * sin(t * 7)
+                : (swingLeft > 0 ? 0.6 : 0.28 + 0.12 * sin(t * 3 + Double(chime.rawValue)))
+            let haloR: CGFloat = (isDemoLit || isHinted) ? 54 : 36
             c.fill(
-                Path(ellipseIn: CGRect(x: -36, y: bellY - 36, width: 72, height: 72)),
+                Path(ellipseIn: CGRect(x: -haloR, y: bellY - haloR, width: haloR * 2, height: haloR * 2)),
                 with: .radialGradient(
-                    Gradient(colors: [StorybookArt.color(chime.colorHex, alpha: glowBoost), StorybookArt.color(chime.colorHex, alpha: 0)]),
+                    Gradient(colors: [
+                        StorybookArt.color(isHinted ? 0xFFF2A6 : chime.colorHex, alpha: glowBoost),
+                        StorybookArt.color(chime.colorHex, alpha: 0),
+                    ]),
                     center: CGPoint(x: 0, y: bellY),
                     startRadius: 6,
-                    endRadius: 36
+                    endRadius: haloR
                 )
             )
+            if isDemoLit || isHinted {
+                let ringR: CGFloat = 34 + CGFloat(sin(t * 6.5)) * 5
+                let ring = Path(ellipseIn: CGRect(x: -ringR, y: bellY - ringR, width: ringR * 2, height: ringR * 2))
+                c.stroke(
+                    ring,
+                    with: .color(isDemoLit ? .white : Theme.lemon),
+                    style: StrokeStyle(lineWidth: 3.5, dash: [7, 6])
+                )
+            }
 
             // Scalloped crystal bell dome
             var bell = Path()
@@ -549,63 +589,493 @@ enum FairiesArt {
         }
     }
 
-    // MARK: - Revealed Meadow Fairy & Catch Celebration
+    // MARK: - 4 Interactive Meadow Encounters + Heart Jewel Ring & Cube Catch
 
-    private static func drawRevealedFairy(_ g: GraphicsContext, rev: RevealedMeadowFairy, time t: Double) {
-        let pos = rev.position
-        let pulse = 1 + CGFloat(sin(t * 5.2)) * 0.06
-        let glowR: CGFloat = 74 * pulse
+    private static func drawMeadowEncounter(_ g: GraphicsContext, enc: MeadowEncounter, sim: FairiesSim, time t: Double) {
+        switch enc.phase {
+        case .flutterDash(let state):
+            drawFlutterDashEncounter(g, kind: enc.kind, state: state, time: t)
+        case .bubblePop(let state):
+            drawBubblePopEncounter(g, kind: enc.kind, state: state, time: t)
+        case .chimeEcho(let state):
+            drawChimeEchoEncounter(g, kind: enc.kind, state: state, time: t)
+        case .treatLure(let state):
+            drawTreatLureEncounter(g, kind: enc.kind, state: state, time: t)
+        case .catching(let ring):
+            drawCatchRingEncounter(g, kind: enc.kind, ring: ring, time: t)
+        }
+    }
 
+    private static func drawFlutterDashEncounter(_ g: GraphicsContext, kind: FairyKind, state: FlutterDashState, time t: Double) {
+        // Glowing pastel ribbon trail behind the darting fairy
+        if state.ribbonTrail.count >= 2 {
+            var ribbon = Path()
+            ribbon.move(to: state.ribbonTrail[0])
+            for pt in state.ribbonTrail.dropFirst() {
+                ribbon.addLine(to: pt)
+            }
+            g.stroke(
+                ribbon,
+                with: .color(StorybookArt.color(kind.palette.emblem, alpha: 0.34)),
+                style: StrokeStyle(lineWidth: 20, lineCap: .round, lineJoin: .round)
+            )
+            g.stroke(
+                ribbon,
+                with: .color(StorybookArt.color(kind.palette.dress, alpha: 0.78)),
+                style: StrokeStyle(lineWidth: 10, lineCap: .round, lineJoin: .round)
+            )
+            g.stroke(
+                ribbon,
+                with: .color(.white.opacity(0.85)),
+                style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+            )
+        }
+
+        // Collectible floating star-hearts dropped during playful chases
+        for sh in state.starHearts {
+            let life = max(0, min(1, 1 - sh.age / sh.maxAge))
+            let scale: CGFloat = 0.9 + CGFloat(sin(t * 7 + Double(sh.id))) * 0.12
+            StorybookArt.heart(g, at: sh.pos, size: 28 * scale, color: StorybookArt.color(sh.colorHex), opacity: Double(life))
+            StorybookArt.sparkle(g, at: sh.pos, radius: 9 * scale, color: Theme.lemon, opacity: Double(life))
+        }
+
+        // Giggling peeking fairy with soft playful catch halo
+        let pos = state.position
+        let pulse = 1 + CGFloat(sin(t * 6.5)) * 0.08
+        let glowR: CGFloat = 68 * pulse
         g.fill(
             Path(ellipseIn: CGRect(x: pos.x - glowR, y: pos.y - glowR, width: glowR * 2, height: glowR * 2)),
             with: .radialGradient(
                 Gradient(colors: [
                     .white.opacity(0.85),
-                    StorybookArt.color(rev.kind.palette.emblem, alpha: 0.35),
-                    StorybookArt.color(rev.kind.palette.emblem, alpha: 0),
+                    StorybookArt.color(kind.palette.emblem, alpha: 0.34),
+                    StorybookArt.color(kind.palette.emblem, alpha: 0),
                 ]),
                 center: pos,
-                startRadius: 10,
+                startRadius: 8,
+                endRadius: glowR
+            )
+        )
+        let ring = Path(ellipseIn: CGRect(x: pos.x - 58 * pulse, y: pos.y - 58 * pulse, width: 116 * pulse, height: 116 * pulse))
+        g.stroke(ring, with: .color(.white.opacity(0.8)), style: StrokeStyle(lineWidth: 3.2, dash: [8, 8]))
+
+        var fc = g
+        fc.translateBy(x: pos.x, y: pos.y)
+        let tilt = state.dartProgress < 1 ? (state.targetPosition.x >= state.fromPosition.x ? 0.16 : -0.16) : sin(t * 5) * 0.08
+        fc.rotate(by: .radians(tilt))
+        drawFairy(fc, kind: kind, mood: .giggle, accessory: nil, time: t, scale: 1.18, blinkSeed: state.phase)
+
+        // 3 crystal heart pips showing chase progress (zero words/numbers)
+        drawProgressHeartPips(g, center: CGPoint(x: pos.x, y: pos.y - 72), filled: state.dashProgress, total: state.targetCount, activeHex: kind.palette.emblem)
+    }
+
+    private static func drawBubblePopEncounter(_ g: GraphicsContext, kind: FairyKind, state: BubblePopState, time t: Double) {
+        for b in state.bubbles {
+            let wobbleX = 1 + CGFloat(sin(t * 3.6 + b.phase)) * 0.045
+            let wobbleY = 1 - CGFloat(sin(t * 3.6 + b.phase)) * 0.045
+            var c = g
+            c.translateBy(x: b.pos.x, y: b.pos.y)
+            c.scaleBy(x: wobbleX, y: wobbleY)
+
+            let r = b.radius
+            if b.containsFairy {
+                // Warm shimmering heart-tinted halo for the fairy's bubble
+                let auraR = r + 18 + CGFloat(sin(t * 5)) * 4
+                c.fill(
+                    Path(ellipseIn: CGRect(x: -auraR, y: -auraR, width: auraR * 2, height: auraR * 2)),
+                    with: .radialGradient(
+                        Gradient(colors: [
+                            StorybookArt.color(0xFFB5DC, alpha: 0.48),
+                            StorybookArt.color(0xFFE38A, alpha: 0.18),
+                            StorybookArt.color(0xFFB5DC, alpha: 0),
+                        ]),
+                        center: .zero,
+                        startRadius: r * 0.4,
+                        endRadius: auraR
+                    )
+                )
+            }
+
+            // Iridescent translucent soap bubble sphere
+            let rect = CGRect(x: -r, y: -r, width: r * 2, height: r * 2)
+            let bubblePath = Path(ellipseIn: rect)
+            c.fill(
+                bubblePath,
+                with: .radialGradient(
+                    Gradient(colors: [
+                        .white.opacity(0.28),
+                        StorybookArt.color(b.tintHex, alpha: b.containsFairy ? 0.34 : 0.25),
+                        StorybookArt.color(b.containsFairy ? 0xFF8FB8 : 0xA6E6FF, alpha: 0.48),
+                    ]),
+                    center: CGPoint(x: -r * 0.28, y: -r * 0.28),
+                    startRadius: 4,
+                    endRadius: r
+                )
+            )
+
+            // Fairy visibly giggling & peeking right inside her shimmering bubble!
+            if b.containsFairy {
+                var fc = c
+                fc.translateBy(x: 0, y: 6 + CGFloat(sin(t * 4.5)) * 3)
+                drawFairy(fc, kind: kind, mood: .giggle, accessory: nil, time: t, scale: 0.94, blinkSeed: b.phase)
+            }
+
+            // Rainbow rim sheen arcs
+            var topArc = Path()
+            topArc.addArc(center: .zero, radius: r - 3, startAngle: .degrees(205), endAngle: .degrees(320), clockwise: false)
+            c.stroke(topArc, with: .color(StorybookArt.color(0xFFB8E2, alpha: 0.85)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+
+            var botArc = Path()
+            botArc.addArc(center: .zero, radius: r - 3, startAngle: .degrees(24), endAngle: .degrees(135), clockwise: false)
+            c.stroke(botArc, with: .color(StorybookArt.color(0x9FE8DF, alpha: 0.78)), style: StrokeStyle(lineWidth: 3.8, lineCap: .round))
+
+            c.stroke(bubblePath, with: .color(.white.opacity(0.9)), lineWidth: 2.8)
+            StorybookArt.highlight(c, in: CGRect(x: -r * 0.56, y: -r * 0.58, width: r * 0.42, height: r * 0.26), opacity: 0.85)
+            c.fill(Path(ellipseIn: CGRect(x: -r * 0.16, y: -r * 0.66, width: r * 0.14, height: r * 0.14)), with: .color(.white.opacity(0.9)))
+
+            if b.containsFairy {
+                StorybookArt.heart(c, at: CGPoint(x: r * 0.68, y: -r * 0.66), size: 17, color: Theme.pink)
+                StorybookArt.sparkle(c, at: CGPoint(x: -r * 0.72, y: r * 0.56), radius: 9, color: Theme.lemon)
+            }
+        }
+    }
+
+    private static func drawChimeEchoEncounter(_ g: GraphicsContext, kind: FairyKind, state: ChimeEchoState, time t: Double) {
+        let pos = state.fairyPos
+        // Soft musical aura around the peeking fairy
+        g.fill(
+            Path(ellipseIn: CGRect(x: pos.x - 56, y: pos.y - 56, width: 112, height: 112)),
+            with: .radialGradient(
+                Gradient(colors: [.white.opacity(0.75), StorybookArt.color(kind.palette.emblem, alpha: 0)]),
+                center: pos,
+                startRadius: 8,
+                endRadius: 56
+            )
+        )
+        var fc = g
+        fc.translateBy(x: pos.x, y: pos.y)
+        fc.rotate(by: .radians(sin(t * 4.2) * 0.1))
+        drawFairy(fc, kind: kind, mood: .happy, accessory: nil, time: t, scale: 1.06, blinkSeed: state.phase)
+
+        // Glowing music-note progress crystals right beneath the chime arch
+        let total = max(1, state.sequence.count)
+        let spacing: CGFloat = 34
+        let startX = 512 - CGFloat(total - 1) * spacing * 0.5
+        let y: CGFloat = 314
+        for idx in 0..<total {
+            let cx = startX + CGFloat(idx) * spacing
+            let chime = state.sequence[idx]
+            let done = idx < state.matchedCount
+            let isNext = idx == state.matchedCount && state.playbackIndex == nil
+            let r: CGFloat = isNext ? 14 + CGFloat(sin(t * 6)) * 1.5 : 13
+            let pill = Path(ellipseIn: CGRect(x: cx - r, y: y - r, width: r * 2, height: r * 2))
+            let fill = done ? StorybookArt.color(chime.colorHex) : (isNext ? StorybookArt.tint(for: chime.colorHex, amount: 0.45) : .white.opacity(0.85))
+            StorybookArt.fillAndStroke(g, pill, fill: fill, stroke: StorybookArt.outline(for: chime.colorHex), width: isNext ? 3.2 : 2.4)
+            if done {
+                StorybookArt.sparkle(g, at: CGPoint(x: cx, y: y), radius: 7.5, color: .white)
+            } else {
+                let dot = Path(ellipseIn: CGRect(x: cx - 3.5, y: y - 1, width: 6, height: 5))
+                g.fill(dot, with: .color(StorybookArt.outline(for: chime.colorHex)))
+                var stem = Path()
+                stem.move(to: CGPoint(x: cx + 2, y: y + 1))
+                stem.addLine(to: CGPoint(x: cx + 2, y: y - 7))
+                g.stroke(stem, with: .color(StorybookArt.outline(for: chime.colorHex)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            }
+        }
+    }
+
+    private static func drawTreatLureEncounter(_ g: GraphicsContext, kind: FairyKind, state: TreatLureState, time t: Double) {
+        let matC = FGeo.treatMatCenter
+
+        // Soft glowing aroma ring under the pastel Treat Picnic Mat
+        let glowR: CGFloat = 114 + CGFloat(sin(t * 4)) * 6
+        g.fill(
+            Path(ellipseIn: CGRect(x: matC.x - glowR, y: matC.y - glowR * 0.56, width: glowR * 2, height: glowR * 1.12)),
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xFFE38A, alpha: 0.48), StorybookArt.color(0xFFB5D6, alpha: 0)]),
+                center: matC,
+                startRadius: 18,
                 endRadius: glowR
             )
         )
 
-        let ring = Path(ellipseIn: CGRect(x: pos.x - 62 * pulse, y: pos.y - 62 * pulse, width: 124 * pulse, height: 124 * pulse))
-        g.stroke(ring, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 3, dash: [8, 8]))
+        // Scalloped pastel gingham Treat Picnic Mat
+        let matRect = CGRect(x: matC.x - 102, y: matC.y - 46, width: 204, height: 92)
+        let matOuter = Path(roundedRect: matRect.insetBy(dx: -6, dy: -6), cornerRadius: 48)
+        StorybookArt.fillAndStroke(g, matOuter, fill: .white, stroke: StorybookArt.outline(for: 0xFFA2C9), width: 3.2)
 
-        var c = g
-        c.translateBy(x: pos.x, y: pos.y)
-        drawFairy(c, kind: rev.kind, mood: .giggle, accessory: nil, time: t, scale: 1.24, blinkSeed: rev.phase)
+        let matInner = Path(roundedRect: matRect, cornerRadius: 42)
+        g.fill(matInner, with: .color(StorybookArt.color(0xFFF3F8)))
+        var clipped = g
+        clipped.clip(to: matInner)
+        for gx in stride(from: matRect.minX, through: matRect.maxX, by: 24) {
+            clipped.fill(Path(CGRect(x: gx, y: matRect.minY, width: 12, height: matRect.height)), with: .color(StorybookArt.color(0xFFC8E0, alpha: 0.42)))
+        }
+        for gy in stride(from: matRect.minY, through: matRect.maxY, by: 24) {
+            clipped.fill(Path(CGRect(x: matRect.minX, y: gy, width: matRect.width, height: 12)), with: .color(StorybookArt.color(0xFFE3A6, alpha: 0.28)))
+        }
+        g.stroke(matInner, with: .color(StorybookArt.color(0xFF9AC8)), style: StrokeStyle(lineWidth: 2.6, dash: [7, 6]))
 
-        StorybookArt.heart(g, at: CGPoint(x: pos.x - 48, y: pos.y - 44 + CGFloat(sin(t * 4)) * 6), size: 18, color: Theme.pink)
-        StorybookArt.sparkle(g, at: CGPoint(x: pos.x + 52, y: pos.y - 38 + CGFloat(cos(t * 4.5)) * 6), radius: 11, color: Theme.lemon)
+        // Porcelain picnic plate center
+        let plate = Path(ellipseIn: CGRect(x: matC.x - 42, y: matC.y - 18, width: 84, height: 34))
+        StorybookArt.fillAndStroke(g, plate, fill: .white, stroke: StorybookArt.color(0xFFD2E6), width: 2.6)
+
+        // Glowing silk ribbon swirl trail when luring .silk!
+        if state.ribbonSwirlPoints.count >= 2 {
+            var swirl = Path()
+            swirl.move(to: state.ribbonSwirlPoints[0])
+            for pt in state.ribbonSwirlPoints.dropFirst() {
+                swirl.addLine(to: pt)
+            }
+            g.stroke(swirl, with: .color(StorybookArt.color(0x9EE3CB, alpha: 0.65)), style: StrokeStyle(lineWidth: 14, lineCap: .round, lineJoin: .round))
+            g.stroke(swirl, with: .color(StorybookArt.color(0xFF8FB8, alpha: 0.85)), style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+        }
+
+        // Active flying / nibbling treat on the mat
+        if let treat = state.activeTreat {
+            let nibbleShrink = treat.flightProgress >= 1 ? max(0.35, 1 - treat.nibbleProgress * 0.55) : 1.0
+            var tc = g
+            tc.translateBy(x: treat.pos.x, y: treat.pos.y)
+            tc.scaleBy(x: 1.15 * nibbleShrink, y: 1.15 * nibbleShrink)
+            drawTreatIcon(tc, kind: treat.kind)
+        } else {
+            // Subtle heart aroma shimmer inviting a treat drop
+            let pulseY = CGFloat(sin(t * 4.5)) * 5
+            StorybookArt.heart(g, at: CGPoint(x: matC.x, y: matC.y - 2 + pulseY), size: 18, color: Theme.pink, opacity: 0.45)
+        }
+
+        // Peeking / swooping fairy
+        let isEating = state.activeTreat != nil && (state.activeTreat?.flightProgress ?? 0) >= 1
+        var fc = g
+        fc.translateBy(x: state.fairyPos.x, y: state.fairyPos.y)
+        drawFairy(fc, kind: kind, mood: isEating ? .yum : .happy, accessory: nil, time: t, scale: 1.16, blinkSeed: state.phase)
+
+        // 2 yummy heart pips next to the mat
+        drawProgressHeartPips(g, center: CGPoint(x: matC.x, y: matC.y + 58), filled: state.nibblesCount, total: state.targetNibbles, activeHex: kind.palette.emblem)
+    }
+
+    static func drawTreatIcon(_ g: GraphicsContext, kind: MeadowTreatKind) {
+        switch kind {
+        case .strawberry:
+            let berry = heartPath(center: CGPoint(x: 0, y: 4), size: 38)
+            StorybookArt.fillAndStroke(g, berry, fill: StorybookArt.color(0xFF6B92), stroke: StorybookArt.outline(for: 0xDF426E), width: 2.6)
+            StorybookArt.highlight(g, in: CGRect(x: -10, y: -4, width: 8, height: 10), opacity: 0.45)
+            // Tiny golden seeds
+            for (sx, sy) in [(-6.0, 2.0), (5.0, 1.0), (0.0, 9.0), (-4.0, 12.0), (6.0, 10.0)] as [(CGFloat, CGFloat)] {
+                g.fill(Path(ellipseIn: CGRect(x: sx - 1.5, y: sy - 2, width: 3, height: 4)), with: .color(Theme.lemon))
+            }
+            // Mint berry leaf crown
+            var leaf = Path()
+            leaf.move(to: CGPoint(x: -13, y: -9))
+            leaf.addQuadCurve(to: CGPoint(x: 0, y: -17), control: CGPoint(x: -6, y: -17))
+            leaf.addQuadCurve(to: CGPoint(x: 13, y: -9), control: CGPoint(x: 6, y: -17))
+            leaf.addQuadCurve(to: CGPoint(x: 0, y: -4), control: CGPoint(x: 7, y: -5))
+            leaf.addQuadCurve(to: CGPoint(x: -13, y: -9), control: CGPoint(x: -7, y: -5))
+            leaf.closeSubpath()
+            StorybookArt.fillAndStroke(g, leaf, fill: StorybookArt.color(0x7FE09E), stroke: StorybookArt.outline(for: 0x52B572), width: 2.2)
+
+        case .honeyDrop:
+            var drop = Path()
+            drop.move(to: CGPoint(x: 0, y: -19))
+            drop.addCurve(to: CGPoint(x: 17, y: 5), control1: CGPoint(x: 11, y: -8), control2: CGPoint(x: 19, y: -2))
+            drop.addCurve(to: CGPoint(x: 0, y: 20), control1: CGPoint(x: 17, y: 15), control2: CGPoint(x: 9, y: 20))
+            drop.addCurve(to: CGPoint(x: -17, y: 5), control1: CGPoint(x: -9, y: 20), control2: CGPoint(x: -17, y: 15))
+            drop.addCurve(to: CGPoint(x: 0, y: -19), control1: CGPoint(x: -19, y: -2), control2: CGPoint(x: -11, y: -8))
+            drop.closeSubpath()
+            g.fill(
+                drop,
+                with: .linearGradient(
+                    Gradient(colors: [StorybookArt.color(0xFFF29C), StorybookArt.color(0xFFB830)]),
+                    startPoint: CGPoint(x: -8, y: -16),
+                    endPoint: CGPoint(x: 10, y: 18)
+                )
+            )
+            g.stroke(drop, with: .color(StorybookArt.outline(for: 0xE0961E)), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+            StorybookArt.highlight(g, in: CGRect(x: -9, y: -4, width: 7, height: 11), opacity: 0.72)
+            StorybookArt.sparkle(g, at: CGPoint(x: 11, y: -12), radius: 6, color: .white)
+
+        case .bungeoppang:
+            drawBungeoppang(g, at: CGPoint(x: -2, y: 2), scale: 1.08)
+            StorybookArt.heart(g, at: CGPoint(x: -12, y: -14), size: 11, color: Theme.pink)
+
+        case .silkSwirl:
+            // Shimmering pastel Hanbok silk ribbon swirl
+            var swirl = Path()
+            swirl.move(to: CGPoint(x: -18, y: 10))
+            swirl.addCurve(to: CGPoint(x: 2, y: -14), control1: CGPoint(x: -20, y: -10), control2: CGPoint(x: -8, y: -18))
+            swirl.addCurve(to: CGPoint(x: 19, y: 4), control1: CGPoint(x: 14, y: -10), control2: CGPoint(x: 22, y: -4))
+            swirl.addCurve(to: CGPoint(x: -4, y: 14), control1: CGPoint(x: 16, y: 14), control2: CGPoint(x: 4, y: 18))
+            g.stroke(swirl, with: .color(StorybookArt.outline(for: 0x62C4A6)), style: StrokeStyle(lineWidth: 11, lineCap: .round))
+            g.stroke(swirl, with: .color(StorybookArt.color(0x9EE3CB)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+            g.stroke(swirl, with: .color(StorybookArt.color(0xFF9AC8)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+            StorybookArt.sparkle(g, at: CGPoint(x: 12, y: -12), radius: 7, color: Theme.lemon)
+            StorybookArt.sparkle(g, at: CGPoint(x: -14, y: -6), radius: 5.5, color: .white)
+        }
+    }
+
+    private static func drawProgressHeartPips(_ g: GraphicsContext, center: CGPoint, filled: Int, total: Int, activeHex: UInt32) {
+        let count = max(1, total)
+        let spacing: CGFloat = 26
+        let startX = center.x - CGFloat(count - 1) * spacing * 0.5
+        for i in 0..<count {
+            let p = CGPoint(x: startX + CGFloat(i) * spacing, y: center.y)
+            let isLit = i < filled
+            let hp = heartPath(center: p, size: isLit ? 20 : 16)
+            StorybookArt.fillAndStroke(
+                g,
+                hp,
+                fill: isLit ? StorybookArt.color(activeHex) : .white.opacity(0.82),
+                stroke: isLit ? Theme.lemon : StorybookArt.color(0xFFB5D6),
+                width: isLit ? 2.4 : 2.0
+            )
+        }
+    }
+
+    private static func drawCatchRingEncounter(_ g: GraphicsContext, kind: FairyKind, ring: CatchRingState, time t: Double) {
+        let pos = ring.position
+        let charge = max(0, min(1, ring.catchCharge))
+        let pulse = 1 + CGFloat(sin(t * (ring.isCharging ? 11.0 : 5.5))) * (ring.isCharging ? 0.08 : 0.045)
+        let ringR: CGFloat = 82 * pulse
+
+        // Dreamy pink-and-gold radial magic glow behind the Heart Jewel Ring
+        let glowR = ringR + 36 + charge * 26
+        g.fill(
+            Path(ellipseIn: CGRect(x: pos.x - glowR, y: pos.y - glowR, width: glowR * 2, height: glowR * 2)),
+            with: .radialGradient(
+                Gradient(colors: [
+                    .white.opacity(0.92),
+                    StorybookArt.color(kind.palette.emblem, alpha: 0.35 + Double(charge) * 0.35),
+                    StorybookArt.color(0xFFE38A, alpha: Double(charge) * 0.25),
+                    StorybookArt.color(kind.palette.emblem, alpha: 0),
+                ]),
+                center: pos,
+                startRadius: 12,
+                endRadius: glowR
+            )
+        )
+
+        // Outer rotating dashed crystal halo
+        var rotHalo = g
+        rotHalo.translateBy(x: pos.x, y: pos.y)
+        rotHalo.rotate(by: .radians(ring.swirlAngle))
+        let outerRing = Path(ellipseIn: CGRect(x: -ringR - 10, y: -ringR - 10, width: (ringR + 10) * 2, height: (ringR + 10) * 2))
+        rotHalo.stroke(outerRing, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 3.5, dash: [10, 9]))
+
+        // Track ring for Heart Jewel Ring charge meter
+        let track = Path(ellipseIn: CGRect(x: pos.x - ringR, y: pos.y - ringR, width: ringR * 2, height: ringR * 2))
+        g.stroke(track, with: .color(.white.opacity(0.65)), lineWidth: 13)
+        g.stroke(track, with: .color(StorybookArt.color(0xFFD6E9, alpha: 0.85)), lineWidth: 8.5)
+
+        // Shimmering radial Heart Jewel charge arc (0% -> 100%)
+        if charge > 0.01 {
+            var arc = Path()
+            arc.addArc(
+                center: pos,
+                radius: ringR,
+                startAngle: .degrees(-90),
+                endAngle: .degrees(-90 + Double(charge) * 360),
+                clockwise: false
+            )
+            g.stroke(arc, with: .color(StorybookArt.outline(for: 0xFF66A8)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+            g.stroke(arc, with: .color(StorybookArt.color(0xFF70B0)), style: StrokeStyle(lineWidth: 9.5, lineCap: .round))
+            g.stroke(arc, with: .color(Theme.lemon), style: StrokeStyle(lineWidth: 4.0, lineCap: .round))
+        }
+
+        // 4 orbiting heart crystal jewels around the Heart Jewel Ring
+        for i in 0..<4 {
+            let a = CGFloat(ring.swirlAngle) + CGFloat(i) * (.pi / 2)
+            let jp = CGPoint(x: pos.x + cos(a) * ringR, y: pos.y + sin(a) * ringR)
+            let gem = heartPath(center: jp, size: 22 + charge * 6)
+            StorybookArt.fillAndStroke(
+                g,
+                gem,
+                fill: i.isMultiple(of: 2) ? Theme.pink : Theme.lemon,
+                stroke: .white,
+                width: 2.2
+            )
+        }
+
+        // Giggling dizzy-happy fairy hovering right inside the Heart Jewel Ring
+        var fc = g
+        fc.translateBy(x: pos.x, y: pos.y)
+        fc.rotate(by: .radians(sin(t * 7) * (0.06 + Double(charge) * 0.1)))
+        drawFairy(fc, kind: kind, mood: charge > 0.5 ? .celebrate : .giggle, accessory: nil, time: t, scale: 1.24 + charge * 0.1, blinkSeed: ring.phase)
+
+        // Orbiting happy hearts above her head
+        for k in 0..<3 {
+            let a = t * 3.4 + Double(k) * (2 * .pi / 3)
+            let hx = pos.x + CGFloat(cos(a)) * 34
+            let hy = pos.y - 58 + CGFloat(sin(a)) * 8
+            StorybookArt.heart(g, at: CGPoint(x: hx, y: hy), size: 15, color: k == 1 ? Theme.lemon : Theme.pink)
+        }
     }
 
     private static func drawCatchCelebration(_ g: GraphicsContext, celebration: CatchCelebration, time t: Double) {
         let elapsed = max(0, t - celebration.startedAt)
-        let u = CGFloat(min(1, elapsed / 1.35))
-        let target = CGPoint(x: 556, y: 56) // glides toward Compact icon in top bar
-        let fly = max(0, (u - 0.45) / 0.55)
+        let u = CGFloat(min(1, elapsed / 1.65))
+        let target = CGPoint(x: 556, y: 56) // glides into Compact icon in top bar
+        let snapPhase = min(1, u / 0.36)
+        let fly = max(0, (u - 0.36) / 0.64)
         let e = fly * fly * (3 - 2 * fly)
 
         let pos = CGPoint(
             x: celebration.startPos.x + (target.x - celebration.startPos.x) * e,
-            y: celebration.startPos.y + (target.y - celebration.startPos.y) * e - sin(e * .pi) * 90
+            y: celebration.startPos.y + (target.y - celebration.startPos.y) * e - sin(e * .pi) * 92
         )
-        let popScale: CGFloat = u < 0.3 ? (1.2 + 0.35 * sin(u / 0.3 * .pi)) : (1.2 * (1 - 0.65 * e))
 
-        // Heart halo explosion
-        let ringR = 40 + u * 110
-        for i in 0..<8 {
-            let a = CGFloat(i) / 8 * 2 * .pi + u * 2
-            let hp = CGPoint(x: pos.x + cos(a) * ringR * (1 - e * 0.6), y: pos.y + sin(a) * ringR * (1 - e * 0.6))
-            StorybookArt.heart(g, at: hp, size: 22 * (1 - u * 0.5), color: i.isMultiple(of: 2) ? Theme.pink : Theme.lemon, opacity: Double(1 - u))
+        // Heart & star confetti halo burst
+        let ringR = 46 + u * 136
+        for i in 0..<10 {
+            let a = CGFloat(i) / 10 * 2 * .pi + u * 2.6
+            let hp = CGPoint(x: pos.x + cos(a) * ringR * (1 - e * 0.65), y: pos.y + sin(a) * ringR * (1 - e * 0.65))
+            if i.isMultiple(of: 2) {
+                StorybookArt.heart(g, at: hp, size: 22 * (1 - u * 0.5), color: Theme.pink, opacity: Double(1 - u))
+            } else {
+                StorybookArt.sparkle(g, at: hp, radius: 13 * (1 - u * 0.5), color: Theme.lemon, opacity: Double(1 - u))
+            }
         }
+
+        // Spinning faceted Heart Jewel Cube snapping shut around the cheering fairy!
+        let cubeScale: CGFloat = u < 0.36
+            ? (0.72 + 0.42 * sin(snapPhase * .pi * 0.5))
+            : (1.14 * (1 - 0.64 * e))
 
         var c = g
         c.translateBy(x: pos.x, y: pos.y)
-        c.rotate(by: .radians(Double(sin(u * 14) * 0.16)))
-        drawFairy(c, kind: celebration.kind, mood: .celebrate, accessory: nil, time: t, scale: popScale, blinkSeed: 1.5)
+        c.scaleBy(x: cubeScale, y: cubeScale)
+        c.rotate(by: .radians(Double(sin(u * 12) * 0.16)))
+
+        // Back crystalline cube prism glow
+        let cubeRect = CGRect(x: -54, y: -54, width: 108, height: 108)
+        let cubeBody = Path(roundedRect: cubeRect, cornerRadius: 22)
+        c.fill(
+            cubeBody,
+            with: .linearGradient(
+                Gradient(colors: [
+                    StorybookArt.color(0xFFE0F4, alpha: 0.88),
+                    StorybookArt.color(0xFFB5DC, alpha: 0.78),
+                    StorybookArt.color(0xE8D6FF, alpha: 0.86),
+                ]),
+                startPoint: CGPoint(x: -54, y: -54),
+                endPoint: CGPoint(x: 54, y: 54)
+            )
+        )
+
+        // Cheering fairy snugly inside the Heart Jewel Cube
+        drawFairy(c, kind: celebration.kind, mood: .celebrate, accessory: nil, time: t, scale: 0.94, blinkSeed: 1.5)
+
+        // Faceted crystal bevel lines & golden cube frame
+        let innerBevel = Path(roundedRect: cubeRect.insetBy(dx: 10, dy: 10), cornerRadius: 15)
+        c.stroke(innerBevel, with: .color(.white.opacity(0.75)), lineWidth: 2.4)
+        c.stroke(cubeBody, with: .color(Theme.lemon), lineWidth: 6.5)
+        c.stroke(cubeBody, with: .color(StorybookArt.outline(for: 0xE6A436)), lineWidth: 2.6)
+
+        // Translucent front specular gloss + golden heart clasp snapping shut at top
+        StorybookArt.highlight(c, in: CGRect(x: -40, y: -44, width: 42, height: 18), opacity: 0.52)
+        let clasp = heartPath(center: CGPoint(x: 0, y: -52), size: 30)
+        StorybookArt.fillAndStroke(c, clasp, fill: Theme.lemon, stroke: StorybookArt.outline(for: 0xDF9E2C), width: 2.6)
+        let claspGem = heartPath(center: CGPoint(x: 0, y: -52), size: 18)
+        StorybookArt.fillAndStroke(c, claspGem, fill: Theme.pink, stroke: .white, width: 1.6)
     }
 
     // MARK: - Heart Magic Wand
@@ -678,7 +1148,20 @@ enum FairiesArt {
         StorybookArt.sparkle(head, at: CGPoint(x: 16, y: -20), radius: 8, color: .white)
     }
 
-    // MARK: - Mode B: Heart Jewel Compact Dollhouse Scene
+    // MARK: - Mode B: Alive Free-Roaming Heart Jewel Compact Dollhouse Scene
+
+    private static func isActorRenderedInsideSpot(_ actor: CompactFairyActor, spot: CompactSpot, sim: FairiesSim) -> Bool {
+        if sim.draggingCompactFairy == actor.kind || actor.ridingCarousel || sim.discoPartyTimer > 0 {
+            return false
+        }
+        if sim.isNightMode && spot != .cloudBed {
+            return false
+        }
+        guard spot != .danceStage else { return false }
+        let rest = CGPoint(x: spot.center.x + spot.fairyOffset.x, y: spot.center.y + spot.fairyOffset.y)
+        let threshold: CGFloat = spot == .treatTable ? 48 : 30
+        return actor.currentSpot == spot && hypot(actor.position.x - rest.x, actor.position.y - rest.y) <= threshold
+    }
 
     private static func drawCompactScene(_ g: GraphicsContext, sim: FairiesSim) {
         let t = sim.time
@@ -687,17 +1170,17 @@ enum FairiesArt {
             ? CGFloat(0.86 + 0.14 * sin(min(1, openElapsed / 0.42) * .pi * 0.5) + 0.04 * sin(min(1, openElapsed / 0.42) * .pi))
             : 1.0
 
-        drawCompactBackdrop(g, time: t)
+        drawCompactBackdrop(g, isNightMode: sim.isNightMode, time: t)
 
         var room = g
         room.translateBy(x: FGeo.compactCenter.x, y: FGeo.compactCenter.y)
         room.scaleBy(x: openScale, y: openScale)
         room.translateBy(x: -FGeo.compactCenter.x, y: -FGeo.compactCenter.y)
 
-        drawHeartCompactShell(room, time: t)
+        drawHeartCompactShell(room, sim: sim, time: t)
 
         if sim.hasCarousel {
-            drawCompactCarousel(room, center: CGPoint(x: 396, y: 454), time: t)
+            drawCompactCarousel(room, center: FGeo.carouselCenter, sim: sim, time: t)
         }
 
         let showTargets = sim.draggingCompactFairy != nil || sim.pendingPlacementFairy != nil
@@ -706,8 +1189,35 @@ enum FairiesArt {
             drawCompactSpot(room, spot: spot, sim: sim, highlighted: showTargets, hovered: hovered)
         }
 
+        // Depth-sorted free-roaming & dancing fairies playing around the open dollhouse!
+        let roaming = sim.compactActors
+            .filter { actor in
+                guard sim.draggingCompactFairy != actor.kind, !actor.ridingCarousel else { return false }
+                for spot in CompactSpot.allCases where isActorRenderedInsideSpot(actor, spot: spot, sim: sim) {
+                    return false
+                }
+                return true
+            }
+            .sorted { $0.position.y < $1.position.y }
+
+        for actor in roaming {
+            drawCompactActor(room, actor: actor, sim: sim, time: t)
+        }
+
+        // Poppable floating iridescent bubbles puffed from the Teacup Bath
+        drawCompactPoppableBubbles(room, bubbles: sim.compactBubbles, time: t)
+
+        // Social heart-chats & wordless Pictorial Wish Bubbles floating cleanly above all fairies
+        drawCompactSocialHearts(room, sim: sim, time: t)
+        drawCompactWishBubbles(room, sim: sim, time: t)
+
         if sim.hasChandelier {
-            drawCompactChandelier(room, anchor: CGPoint(x: FGeo.compactCenter.x, y: FGeo.compactCenter.y - FGeo.compactHeight * 0.34 + 12), time: t)
+            drawCompactChandelier(
+                room,
+                anchor: CGPoint(x: FGeo.compactCenter.x, y: FGeo.compactCenter.y - FGeo.compactHeight * 0.34 + 12),
+                isNightMode: sim.isNightMode,
+                time: t
+            )
         }
 
         drawParticles(room, particles: sim.particles, time: t)
@@ -729,30 +1239,179 @@ enum FairiesArt {
         }
     }
 
-    private static func drawCompactBackdrop(_ g: GraphicsContext, time t: Double) {
+    private static func drawCompactActor(_ g: GraphicsContext, actor: CompactFairyActor, sim: FairiesSim, time t: Double) {
+        let bobY: CGFloat = sim.discoPartyTimer > 0
+            ? -abs(CGFloat(sin(t * 6.0 + actor.bobPhase))) * 14
+            : CGFloat(sin(t * 3.4 + actor.bobPhase)) * 4.5
+        let pos = CGPoint(x: actor.position.x, y: actor.position.y + bobY)
+
+        // Subtle soft ground shadow below fluttering fairy
+        g.fill(
+            Path(ellipseIn: CGRect(x: actor.position.x - 22, y: actor.position.y + 34, width: 44, height: 11)),
+            with: .color(Theme.ink.opacity(sim.isNightMode ? 0.22 : 0.1))
+        )
+
+        drawSelectionHaloIfNeeded(g, at: pos, fairy: actor.kind, sim: sim, time: t)
+
+        var fc = g
+        fc.translateBy(x: pos.x, y: pos.y)
+        let lean = max(-0.18, min(0.18, Double(actor.velocity.dx) * 0.0024))
+        let discoTilt = sim.discoPartyTimer > 0 ? sin(t * 6.0 + actor.bobPhase) * 0.15 : 0
+        fc.rotate(by: .radians(lean + discoTilt))
+        drawFairy(
+            fc,
+            kind: actor.kind,
+            mood: actor.mood,
+            accessory: sim.accessories[actor.kind],
+            time: t,
+            scale: 0.96,
+            blinkSeed: actor.bobPhase
+        )
+    }
+
+    private static func drawCompactPoppableBubbles(_ g: GraphicsContext, bubbles: [CompactBubble], time t: Double) {
+        for b in bubbles {
+            let fade = Double(min(1, max(0, (1 - b.age / b.maxAge) * 2.2)))
+            let r = b.radius
+            let wobble = CGFloat(sin(t * 4.5 + b.phase)) * 0.05
+            var c = g
+            c.translateBy(x: b.pos.x, y: b.pos.y)
+            c.scaleBy(x: 1 + wobble, y: 1 - wobble)
+
+            let rect = CGRect(x: -r, y: -r, width: r * 2, height: r * 2)
+            let p = Path(ellipseIn: rect)
+            c.fill(
+                p,
+                with: .radialGradient(
+                    Gradient(colors: [
+                        .white.opacity(0.32 * fade),
+                        StorybookArt.color(b.tintHex, alpha: 0.28 * fade),
+                        StorybookArt.color(0xFFB8E2, alpha: 0.45 * fade),
+                    ]),
+                    center: CGPoint(x: -r * 0.28, y: -r * 0.28),
+                    startRadius: 2,
+                    endRadius: r
+                )
+            )
+            c.stroke(p, with: .color(.white.opacity(0.92 * fade)), lineWidth: 2.4)
+            StorybookArt.highlight(c, in: CGRect(x: -r * 0.52, y: -r * 0.55, width: r * 0.44, height: r * 0.26), opacity: 0.85 * fade)
+        }
+    }
+
+    private static func drawCompactSocialHearts(_ g: GraphicsContext, sim: FairiesSim, time t: Double) {
+        var drawnPairs: Set<String> = []
+        for actor in sim.compactActors where actor.chatTimer > 0 {
+            guard let partnerKind = actor.chatPartner,
+                  let partner = sim.compactActors.first(where: { $0.kind == partnerKind }) else { continue }
+            let key = actor.kind.rawValue < partnerKind.rawValue
+                ? "\(actor.kind.rawValue)-\(partnerKind.rawValue)"
+                : "\(partnerKind.rawValue)-\(actor.kind.rawValue)"
+            guard drawnPairs.insert(key).inserted else { continue }
+
+            let mid = CGPoint(
+                x: (actor.position.x + partner.position.x) * 0.5,
+                y: min(actor.position.y, partner.position.y) - 44 + CGFloat(sin(t * 6)) * 5
+            )
+            StorybookArt.heart(g, at: CGPoint(x: mid.x - 10, y: mid.y), size: 20, color: Theme.pink)
+            StorybookArt.heart(g, at: CGPoint(x: mid.x + 11, y: mid.y - 8), size: 15, color: Theme.lemon)
+            StorybookArt.sparkle(g, at: CGPoint(x: mid.x, y: mid.y - 18), radius: 7, color: .white)
+        }
+    }
+
+    private static func drawCompactWishBubbles(_ g: GraphicsContext, sim: FairiesSim, time t: Double) {
+        for actor in sim.compactActors {
+            guard let wish = actor.wish, sim.draggingCompactFairy != actor.kind else { continue }
+            let bob = CGFloat(sin(t * 3.6 + actor.bobPhase)) * 4
+            let bubbleCenter = CGPoint(
+                x: max(195, min(829, actor.position.x + 34)),
+                y: max(172, actor.position.y - 78 + bob)
+            )
+            let tailTarget = CGPoint(x: actor.position.x + 12, y: actor.position.y - 36)
+            StorybookArt.thoughtBubble(g, center: bubbleCenter, radius: 31, tailToward: tailTarget)
+
+            var ic = g
+            ic.translateBy(x: bubbleCenter.x, y: bubbleCenter.y)
+            drawWishIcon(ic, wish: wish, time: t)
+        }
+    }
+
+    private static func drawWishIcon(_ g: GraphicsContext, wish: FairyWish, time t: Double) {
+        switch wish {
+        case .snack:
+            drawBungeoppang(g, at: CGPoint(x: -1, y: 2), scale: 0.85)
+            StorybookArt.heart(g, at: CGPoint(x: 12, y: -12), size: 10, color: Theme.pink)
+        case .bubbles:
+            drawBubble(g, at: CGPoint(x: -8, y: 5), radius: 10, alpha: 1)
+            drawBubble(g, at: CGPoint(x: 8, y: -5), radius: 12, alpha: 1)
+            StorybookArt.sparkle(g, at: CGPoint(x: -10, y: -12), radius: 5, color: Theme.lemon)
+        case .swing:
+            var arc = Path()
+            arc.addArc(center: CGPoint(x: 0, y: 12), radius: 19, startAngle: .degrees(200), endAngle: .degrees(340), clockwise: false)
+            g.stroke(arc, with: .color(Theme.pink), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+            var arc2 = Path()
+            arc2.addArc(center: CGPoint(x: 0, y: 12), radius: 14, startAngle: .degrees(200), endAngle: .degrees(340), clockwise: false)
+            g.stroke(arc2, with: .color(Theme.lemon), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+            let seat = Path(roundedRect: CGRect(x: -11, y: 5, width: 22, height: 6), cornerRadius: 3)
+            StorybookArt.fillAndStroke(g, seat, fill: Theme.pink, stroke: StorybookArt.outline(for: 0xFF8FB8), width: 1.6)
+        case .dance:
+            let col = Theme.pink
+            let head = Path(ellipseIn: CGRect(x: -11, y: 3, width: 11, height: 8))
+            g.fill(head, with: .color(col))
+            let head2 = Path(ellipseIn: CGRect(x: 3, y: 0, width: 11, height: 8))
+            g.fill(head2, with: .color(Theme.lilac))
+            var notes = Path()
+            notes.move(to: CGPoint(x: -1, y: 6))
+            notes.addLine(to: CGPoint(x: -1, y: -13))
+            notes.addLine(to: CGPoint(x: 13, y: -16))
+            notes.addLine(to: CGPoint(x: 13, y: 3))
+            g.stroke(notes, with: .color(col), style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
+            StorybookArt.sparkle(g, at: CGPoint(x: -13, y: -11), radius: 5.5, color: Theme.lemon)
+        case .sleep:
+            var crescent = Path(ellipseIn: CGRect(x: -12, y: -12, width: 24, height: 24))
+            crescent.addEllipse(in: CGRect(x: -4, y: -15, width: 22, height: 22))
+            g.fill(crescent, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
+            StorybookArt.sparkle(g, at: CGPoint(x: 10, y: -8), radius: 6, color: Theme.lilac)
+            StorybookArt.sparkle(g, at: CGPoint(x: 14, y: 6), radius: 4, color: Theme.pink)
+        case .carousel:
+            var tent = Path()
+            tent.move(to: CGPoint(x: -16, y: -2))
+            tent.addLine(to: CGPoint(x: 0, y: -16))
+            tent.addLine(to: CGPoint(x: 16, y: -2))
+            tent.closeSubpath()
+            StorybookArt.fillAndStroke(g, tent, fill: Theme.pink, stroke: StorybookArt.outline(for: 0xFF8FB8), width: 2)
+            let pole = Path(CGRect(x: -2, y: -2, width: 4, height: 14))
+            g.fill(pole, with: .color(Theme.lemon))
+            let base = Path(roundedRect: CGRect(x: -14, y: 10, width: 28, height: 6), cornerRadius: 3)
+            StorybookArt.fillAndStroke(g, base, fill: Theme.lemon, stroke: StorybookArt.outline(for: 0xE6A93B), width: 1.6)
+            StorybookArt.sparkle(g, at: CGPoint(x: 0, y: -18), radius: 5 + CGFloat(sin(t * 4)) * 1, color: Theme.lemon)
+        }
+    }
+
+    private static func drawCompactBackdrop(_ g: GraphicsContext, isNightMode: Bool, time t: Double) {
         let stage = CGRect(x: 0, y: 0, width: GameChromeLayout.width, height: GameChromeLayout.height)
         g.fill(
             Path(stage),
             with: .linearGradient(
-                Gradient(colors: [
-                    StorybookArt.color(0xFFE0F2),
-                    StorybookArt.color(0xF3E6FF),
-                    StorybookArt.color(0xFFEBF5),
-                ]),
+                Gradient(colors: isNightMode
+                    ? [StorybookArt.color(0x3D3268), StorybookArt.color(0x5A478E), StorybookArt.color(0x4A3A7A)]
+                    : [StorybookArt.color(0xFFE0F2), StorybookArt.color(0xF3E6FF), StorybookArt.color(0xFFEBF5)]
+                ),
                 startPoint: CGPoint(x: 0, y: 0),
                 endPoint: CGPoint(x: 1024, y: 834)
             )
         )
 
-        // Soft dreamy starlight bokeh
-        for i in 0..<14 {
+        // Soft dreamy starlight bokeh (extra twinkly golden stars in Starlight Night Mode!)
+        for i in 0..<18 {
             let x = CGFloat((i * 173 + 52) % 980) + 22
             let y = CGFloat((i * 139 + 64) % 720) + 40
-            let r = CGFloat(14 + (i % 4) * 9)
-            let alpha = 0.2 + 0.16 * sin(t * 1.4 + Double(i))
-            g.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(.white.opacity(alpha)))
-            if i % 2 == 0 {
-                StorybookArt.sparkle(g, at: CGPoint(x: x, y: y), radius: 7, color: Theme.lemon, opacity: alpha * 1.8)
+            let r = CGFloat(12 + (i % 4) * 8)
+            let alpha = (isNightMode ? 0.32 : 0.2) + 0.18 * sin(t * 1.6 + Double(i))
+            if !isNightMode {
+                g.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(.white.opacity(alpha)))
+            }
+            if isNightMode || i % 2 == 0 {
+                StorybookArt.sparkle(g, at: CGPoint(x: x, y: y), radius: isNightMode ? 8.5 : 7, color: Theme.lemon, opacity: min(1, alpha * 2.0))
             }
         }
     }
@@ -790,23 +1449,23 @@ enum FairiesArt {
         return p
     }
 
-    private static func drawHeartCompactShell(_ g: GraphicsContext, time t: Double) {
+    private static func drawHeartCompactShell(_ g: GraphicsContext, sim: FairiesSim, time t: Double) {
         let c = FGeo.compactCenter
+        let night = sim.isNightMode
 
         // Drop shadow under jewel box
         let shadowPath = heartCompactPath(center: CGPoint(x: c.x, y: c.y + 12), width: FGeo.compactWidth + 14, height: FGeo.compactHeight + 14)
-        g.fill(shadowPath, with: .color(Theme.ink.opacity(0.14)))
+        g.fill(shadowPath, with: .color(Theme.ink.opacity(night ? 0.34 : 0.14)))
 
         // Outer rose-pink & gold bezel shell
         let outer = heartCompactPath(center: c, width: FGeo.compactWidth, height: FGeo.compactHeight)
         g.fill(
             outer,
             with: .linearGradient(
-                Gradient(colors: [
-                    StorybookArt.color(0xFFB8DC),
-                    StorybookArt.color(0xFF9AC8),
-                    StorybookArt.color(0xE88BC2),
-                ]),
+                Gradient(colors: night
+                    ? [StorybookArt.color(0x8D72C8), StorybookArt.color(0x7058AC), StorybookArt.color(0x5E4898)]
+                    : [StorybookArt.color(0xFFB8DC), StorybookArt.color(0xFF9AC8), StorybookArt.color(0xE88BC2)]
+                ),
                 startPoint: CGPoint(x: c.x, y: c.y - 300),
                 endPoint: CGPoint(x: c.x, y: c.y + 300)
             )
@@ -814,16 +1473,15 @@ enum FairiesArt {
         g.stroke(outer, with: .color(StorybookArt.color(0xF5CA5C)), lineWidth: 10)
         g.stroke(outer, with: .color(StorybookArt.outline(for: 0xE6A436)), lineWidth: 3.2)
 
-        // Creamy pastel velvet room interior
+        // Creamy pastel velvet (or Cozy Starlight twilight!) room interior
         let inner = heartCompactPath(center: c, width: FGeo.compactWidth - 46, height: FGeo.compactHeight - 44)
         g.fill(
             inner,
             with: .radialGradient(
-                Gradient(colors: [
-                    StorybookArt.color(0xFFFDFB),
-                    StorybookArt.color(0xFFF2F8),
-                    StorybookArt.color(0xFCE2F2),
-                ]),
+                Gradient(colors: night
+                    ? [StorybookArt.color(0x634E96), StorybookArt.color(0x4E3D7C), StorybookArt.color(0x3F3068)]
+                    : [StorybookArt.color(0xFFFDFB), StorybookArt.color(0xFFF2F8), StorybookArt.color(0xFCE2F2)]
+                ),
                 center: CGPoint(x: c.x, y: c.y - 40),
                 startRadius: 30,
                 endRadius: 420
@@ -831,20 +1489,34 @@ enum FairiesArt {
         )
         g.stroke(inner, with: .color(StorybookArt.color(0xF5D078)), lineWidth: 5)
 
-        // Subtle wallpaper stripes & dollhouse floor line clipped to interior
+        // Subtle wallpaper stripes, night stars, disco spotlights & floor clipped to interior
         var clipped = g
         clipped.clip(to: inner)
         for sx in stride(from: c.x - 380, through: c.x + 380, by: 48) {
             clipped.fill(
                 Path(CGRect(x: sx, y: c.y - 310, width: 22, height: 340)),
-                with: .color(StorybookArt.color(0xFFD9EB, alpha: 0.22))
+                with: .color(night ? StorybookArt.color(0x8B72C8, alpha: 0.18) : StorybookArt.color(0xFFD9EB, alpha: 0.22))
             )
         }
-        // Cozy warm pastel dollhouse floor
+
+        if night {
+            // Twinkling twilight stars & dreamy pastel crescent on the starlight wall
+            for k in 0..<16 {
+                let sx = c.x - 300 + CGFloat((k * 97) % 600)
+                let sy = c.y - 190 + CGFloat((k * 61) % 190)
+                let alpha = 0.45 + 0.5 * abs(sin(t * 2.2 + Double(k)))
+                StorybookArt.sparkle(clipped, at: CGPoint(x: sx, y: sy), radius: CGFloat(5.0 + Double(k % 3) * 2.5), color: Theme.lemon, opacity: alpha)
+            }
+        }
+
+        // Cozy pastel dollhouse floor
         clipped.fill(
             Path(CGRect(x: c.x - 420, y: c.y + 24, width: 840, height: 290)),
             with: .linearGradient(
-                Gradient(colors: [StorybookArt.color(0xFFF4E6), StorybookArt.color(0xFCE4D6)]),
+                Gradient(colors: night
+                    ? [StorybookArt.color(0x5A4786), StorybookArt.color(0x4A3A72)]
+                    : [StorybookArt.color(0xFFF4E6), StorybookArt.color(0xFCE4D6)]
+                ),
                 startPoint: CGPoint(x: c.x, y: c.y + 24),
                 endPoint: CGPoint(x: c.x, y: c.y + 300)
             )
@@ -852,30 +1524,75 @@ enum FairiesArt {
         var molding = Path()
         molding.move(to: CGPoint(x: c.x - 420, y: c.y + 24))
         molding.addLine(to: CGPoint(x: c.x + 420, y: c.y + 24))
-        clipped.stroke(molding, with: .color(StorybookArt.color(0xF0C2D8)), lineWidth: 5)
+        clipped.stroke(molding, with: .color(night ? StorybookArt.color(0x9A82D0) : StorybookArt.color(0xF0C2D8)), lineWidth: 5)
 
         // Scalloped heart rug in the center of the floor
         let rug = Path(ellipseIn: CGRect(x: c.x - 148, y: c.y + 42, width: 296, height: 92))
-        StorybookArt.fillAndStroke(clipped, rug, fill: StorybookArt.color(0xFFE0F0, alpha: 0.72), stroke: StorybookArt.color(0xFFB5D6), width: 3.5)
+        StorybookArt.fillAndStroke(
+            clipped,
+            rug,
+            fill: night ? StorybookArt.color(0x7A62B2, alpha: 0.72) : StorybookArt.color(0xFFE0F0, alpha: 0.72),
+            stroke: night ? StorybookArt.color(0xC9B6FF) : StorybookArt.color(0xFFB5D6),
+            width: 3.5
+        )
 
-        // Crown jewel clasp nestled in the heart's top center dip
+        // Sweeping Fairy Disco Party rainbow spotlights across the entire room!
+        if sim.discoPartyTimer > 0 {
+            let discoColors: [UInt32] = [0xFF8FB8, 0xFFE38A, 0x9FE3CF, 0x9CCBFF, 0xD2A8FF]
+            let origin = CGPoint(x: c.x, y: c.y - FGeo.compactHeight * 0.34 + 18)
+            for (idx, hex) in discoColors.enumerated() {
+                let sweep = sin(t * 2.8 + Double(idx) * 1.26) * 280
+                let baseX = c.x + CGFloat(idx - 2) * 90 + CGFloat(sweep) * 0.65
+                var beam = Path()
+                beam.move(to: origin)
+                beam.addLine(to: CGPoint(x: baseX - 58, y: c.y + 260))
+                beam.addLine(to: CGPoint(x: baseX + 58, y: c.y + 260))
+                beam.closeSubpath()
+                clipped.fill(beam, with: .color(StorybookArt.color(hex, alpha: 0.24)))
+            }
+        }
+
+        // Interactive Twilight / Sunbeam Crown Jewel Clasp nestled in the heart's top center dip
         let claspCenter = CGPoint(x: c.x, y: c.y - FGeo.compactHeight * 0.34 - 8)
-        let claspGem = heartPath(center: claspCenter, size: 38)
+        let claspHaloR: CGFloat = night ? 42 : 30
+        g.fill(
+            Path(ellipseIn: CGRect(x: claspCenter.x - claspHaloR, y: claspCenter.y - claspHaloR, width: claspHaloR * 2, height: claspHaloR * 2)),
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xFFF3B0, alpha: night ? 0.65 : 0.35), StorybookArt.color(0xFFF3B0, alpha: 0)]),
+                center: claspCenter,
+                startRadius: 6,
+                endRadius: claspHaloR
+            )
+        )
+        let claspGem = heartPath(center: claspCenter, size: 42)
         StorybookArt.fillAndStroke(g, claspGem, fill: Theme.lemon, stroke: StorybookArt.outline(for: 0xDF9E2C), width: 3)
-        let innerGem = heartPath(center: claspCenter, size: 24)
-        StorybookArt.fillAndStroke(g, innerGem, fill: Theme.pink, stroke: StorybookArt.outline(for: 0xDF669A), width: 2)
-        StorybookArt.sparkle(g, at: CGPoint(x: claspCenter.x + 18, y: claspCenter.y - 12), radius: 8 + CGFloat(sin(t * 4)) * 2, color: .white)
+        let innerGem = heartPath(center: claspCenter, size: 28)
+        StorybookArt.fillAndStroke(
+            g,
+            innerGem,
+            fill: night ? StorybookArt.color(0x7862B8) : Theme.pink,
+            stroke: StorybookArt.outline(for: night ? 0x523E92 : 0xDF669A),
+            width: 2
+        )
+        if night {
+            var moon = Path(ellipseIn: CGRect(x: claspCenter.x - 6, y: claspCenter.y - 6, width: 12, height: 12))
+            moon.addEllipse(in: CGRect(x: claspCenter.x - 2, y: claspCenter.y - 8, width: 11, height: 11))
+            g.fill(moon, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
+        } else {
+            StorybookArt.sparkle(g, at: claspCenter, radius: 7, color: .white)
+        }
+        StorybookArt.sparkle(g, at: CGPoint(x: claspCenter.x + 20, y: claspCenter.y - 12), radius: 8 + CGFloat(sin(t * 4)) * 2, color: .white)
 
         // Pearl studs along outer heart curve
         let pearls: [CGPoint] = [
-            CGPoint(x: c.x - 245, y: c.y - 244),
-            CGPoint(x: c.x - 356, y: c.y - 150),
+            CGPoint(x: c.x - 245, y: c.y - 238),
+            CGPoint(x: c.x - 356, y: c.y - 146),
             CGPoint(x: c.x - 364, y: c.y + 18),
-            CGPoint(x: c.x - 240, y: c.y + 168),
-            CGPoint(x: c.x + 245, y: c.y - 244),
-            CGPoint(x: c.x + 356, y: c.y - 150),
+            CGPoint(x: c.x - 240, y: c.y + 162),
+            CGPoint(x: c.x + 245, y: c.y - 238),
+            CGPoint(x: c.x + 356, y: c.y - 146),
             CGPoint(x: c.x + 364, y: c.y + 18),
-            CGPoint(x: c.x + 240, y: c.y + 168),
+            CGPoint(x: c.x + 240, y: c.y + 162),
         ]
         for pt in pearls {
             let pearl = Path(ellipseIn: CGRect(x: pt.x - 7, y: pt.y - 7, width: 14, height: 14))
@@ -893,9 +1610,7 @@ enum FairiesArt {
         hovered: Bool
     ) {
         let t = sim.time
-        let occupant = sim.spotOccupants[spot]
-        let hideOccupant = occupant != nil && sim.draggingCompactFairy == occupant && sim.compactDragOriginSpot == spot
-        let activeFairy = hideOccupant ? nil : occupant
+        let seatedActors = sim.compactActors.filter { isActorRenderedInsideSpot($0, spot: spot, sim: sim) }
         let reactLeft = max(0, (sim.compactSpotReactUntil[spot] ?? -10) - t)
         let react = reactLeft > 0 ? CGFloat(sin(min(1, reactLeft / 0.65) * .pi)) : 0
 
@@ -922,21 +1637,21 @@ enum FairiesArt {
 
         switch spot {
         case .cloudBed:
-            drawCloudBedSpot(g, center: spot.center, fairy: activeFairy, sim: sim, time: t, react: react)
+            drawCloudBedSpot(g, center: spot.center, actors: seatedActors, sim: sim, time: t, react: react)
         case .rainbowSwing:
-            drawRainbowSwingSpot(g, center: spot.center, fairy: activeFairy, sim: sim, time: t, react: react)
+            drawRainbowSwingSpot(g, center: spot.center, actor: seatedActors.first, sim: sim, time: t, react: react)
         case .teacupBath:
-            drawTeacupBathSpot(g, center: spot.center, fairy: activeFairy, sim: sim, time: t, react: react)
+            drawTeacupBathSpot(g, center: spot.center, actor: seatedActors.first, sim: sim, time: t, react: react)
         case .danceStage:
-            drawDanceStageSpot(g, center: spot.center, fairy: activeFairy, sim: sim, time: t, react: react)
+            drawDanceStageSpot(g, center: spot.center, sim: sim, time: t, react: react)
         case .treatTable:
-            drawTreatTableSpot(g, center: spot.center, fairy: activeFairy, sim: sim, time: t, react: react)
+            drawTreatTableSpot(g, center: spot.center, actors: seatedActors, sim: sim, time: t, react: react)
         }
     }
 
     private static func drawSelectionHaloIfNeeded(_ g: GraphicsContext, at point: CGPoint, fairy: FairyKind, sim: FairiesSim, time t: Double) {
         if sim.selectedFairy == fairy {
-            let r: CGFloat = 52 + CGFloat(sin(t * 4.5)) * 3
+            let r: CGFloat = 50 + CGFloat(sin(t * 4.5)) * 3
             let ring = Path(ellipseIn: CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2))
             g.stroke(ring, with: .color(Theme.lemon.opacity(0.9)), style: StrokeStyle(lineWidth: 3.5, dash: [7, 6]))
         }
@@ -948,7 +1663,7 @@ enum FairiesArt {
     private static func drawCloudBedSpot(
         _ g: GraphicsContext,
         center: CGPoint,
-        fairy: FairyKind?,
+        actors: [CompactFairyActor],
         sim: FairiesSim,
         time t: Double,
         react: CGFloat
@@ -971,12 +1686,12 @@ enum FairiesArt {
             g.fill(Path(ellipseIn: CGRect(x: center.x + dx - r, y: center.y + dy - r, width: r * 2, height: r * 2)), with: .color(StorybookArt.color(0xF7FCFF)))
         }
 
-        if let fairy {
-            let pos = CGPoint(x: center.x, y: center.y - 16 + bounce)
-            drawSelectionHaloIfNeeded(g, at: pos, fairy: fairy, sim: sim, time: t)
+        for actor in actors {
+            let pos = CGPoint(x: actor.position.x, y: actor.position.y + bounce)
+            drawSelectionHaloIfNeeded(g, at: pos, fairy: actor.kind, sim: sim, time: t)
             var fc = g
             fc.translateBy(x: pos.x, y: pos.y)
-            drawFairy(fc, kind: fairy, mood: react > 0.2 ? .giggle : .sleepy, accessory: sim.accessories[fairy], time: t, scale: 0.94, blinkSeed: 0.7)
+            drawFairy(fc, kind: actor.kind, mood: react > 0.2 ? .giggle : .sleepy, accessory: sim.accessories[actor.kind], time: t, scale: 0.94, blinkSeed: actor.bobPhase)
         }
 
         // Cozy scalloped pastel quilt tucked over front
@@ -991,7 +1706,7 @@ enum FairiesArt {
     private static func drawRainbowSwingSpot(
         _ g: GraphicsContext,
         center: CGPoint,
-        fairy: FairyKind?,
+        actor: CompactFairyActor?,
         sim: FairiesSim,
         time t: Double,
         react: CGFloat
@@ -1010,8 +1725,9 @@ enum FairiesArt {
             g.stroke(arc, with: .color(StorybookArt.color(hex)), style: StrokeStyle(lineWidth: 10, lineCap: .round))
         }
 
-        let swingAmp: Double = fairy != nil ? (0.22 + Double(react) * 0.24) : 0.05
-        let swingAngle = sin(t * 2.6) * swingAmp
+        let baseAmp: Double = actor != nil ? 0.22 : 0.06
+        let swingAmp: Double = baseAmp + Double(sim.swingEnergy) * 0.4 + Double(react) * 0.12
+        let swingAngle = sin(sim.swingPhase) * swingAmp
         let pivot = CGPoint(x: center.x, y: center.y - 36)
 
         var sw = g
@@ -1026,12 +1742,12 @@ enum FairiesArt {
             sw.stroke(rope, with: .color(StorybookArt.color(0xE6B046)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
         }
 
-        if let fairy {
+        if let actor {
             let fairyLocal = CGPoint(x: 0, y: 42)
-            drawSelectionHaloIfNeeded(sw, at: fairyLocal, fairy: fairy, sim: sim, time: t)
+            drawSelectionHaloIfNeeded(sw, at: fairyLocal, fairy: actor.kind, sim: sim, time: t)
             var fc = sw
             fc.translateBy(x: fairyLocal.x, y: fairyLocal.y)
-            drawFairy(fc, kind: fairy, mood: .giggle, accessory: sim.accessories[fairy], time: t, scale: 0.94, blinkSeed: 2.1)
+            drawFairy(fc, kind: actor.kind, mood: .giggle, accessory: sim.accessories[actor.kind], time: t, scale: 0.94, blinkSeed: actor.bobPhase)
         }
 
         // Cushioned blush swing seat
@@ -1044,7 +1760,7 @@ enum FairiesArt {
     private static func drawTeacupBathSpot(
         _ g: GraphicsContext,
         center: CGPoint,
-        fairy: FairyKind?,
+        actor: CompactFairyActor?,
         sim: FairiesSim,
         time t: Double,
         react: CGFloat
@@ -1063,14 +1779,13 @@ enum FairiesArt {
         let rim = Path(ellipseIn: CGRect(x: center.x - 58, y: center.y - 26, width: 116, height: 26))
         StorybookArt.fillAndStroke(g, rim, fill: StorybookArt.color(0xA6E6FF), stroke: cupOutline, width: 3)
 
-        // Fairy sitting in the bubbly bath
-        if let fairy {
-            let bob = CGFloat(sin(t * 3.4)) * 3 - react * 10
+        if let actor {
+            let bob = CGFloat(sin(t * 3.4 + actor.bobPhase)) * 3 - react * 10
             let pos = CGPoint(x: center.x, y: center.y - 24 + bob)
-            drawSelectionHaloIfNeeded(g, at: pos, fairy: fairy, sim: sim, time: t)
+            drawSelectionHaloIfNeeded(g, at: pos, fairy: actor.kind, sim: sim, time: t)
             var fc = g
             fc.translateBy(x: pos.x, y: pos.y)
-            drawFairy(fc, kind: fairy, mood: react > 0.2 ? .giggle : .happy, accessory: sim.accessories[fairy], time: t, scale: 0.94, blinkSeed: 3.4)
+            drawFairy(fc, kind: actor.kind, mood: react > 0.2 ? .giggle : .happy, accessory: sim.accessories[actor.kind], time: t, scale: 0.94, blinkSeed: actor.bobPhase)
         }
 
         // Front porcelain teacup wall
@@ -1105,66 +1820,65 @@ enum FairiesArt {
     private static func drawDanceStageSpot(
         _ g: GraphicsContext,
         center: CGPoint,
-        fairy: FairyKind?,
         sim: FairiesSim,
         time t: Double,
         react: CGFloat
     ) {
-        // Rainbow spotlight beams when occupied
-        if fairy != nil {
-            let beamColors: [(CGFloat, UInt32)] = [(-44, 0xFFB0D8), (0, 0xFFF099), (44, 0xA6E6FF)]
-            for (offset, hex) in beamColors {
-                var beam = Path()
-                beam.move(to: CGPoint(x: center.x + offset * 0.4, y: center.y - 148))
-                beam.addLine(to: CGPoint(x: center.x + offset - 32, y: center.y + 32))
-                beam.addLine(to: CGPoint(x: center.x + offset + 32, y: center.y + 32))
-                beam.closeSubpath()
-                g.fill(beam, with: .color(StorybookArt.color(hex, alpha: 0.22 + Double(react) * 0.14)))
-            }
+        let partyActive = sim.discoPartyTimer > 0
+        let pulse = partyActive ? CGFloat(0.6 + 0.4 * sin(t * 9)) : 0
+
+        if partyActive {
+            let glowR: CGFloat = 94 + pulse * 14
+            g.fill(
+                Path(ellipseIn: CGRect(x: center.x - glowR, y: center.y - glowR * 0.42 + 14, width: glowR * 2, height: glowR * 0.84)),
+                with: .radialGradient(
+                    Gradient(colors: [StorybookArt.color(0xFFE38A, alpha: 0.55), StorybookArt.color(0xFF9AC8, alpha: 0)]),
+                    center: CGPoint(x: center.x, y: center.y + 16),
+                    startRadius: 12,
+                    endRadius: glowR
+                )
+            )
         }
 
-        // Gilded starry pedestal stage
+        // Gilded starry music-box pedestal stage
         let goldOutline = StorybookArt.outline(for: 0xE6A93B)
         let base = Path(roundedRect: CGRect(x: center.x - 74, y: center.y + 18, width: 148, height: 30), cornerRadius: 15)
-        StorybookArt.fillAndStroke(g, base, fill: StorybookArt.color(0xFFE48E), stroke: goldOutline, width: 3.4)
+        StorybookArt.fillAndStroke(g, base, fill: StorybookArt.color(partyActive ? 0xFFF099 : 0xFFE48E), stroke: goldOutline, width: 3.4)
+
+        // Cute golden music-box wind-up key on the right rim
+        let keyPivot = CGPoint(x: center.x + 80, y: center.y + 33)
+        var kc = g
+        kc.translateBy(x: keyPivot.x, y: keyPivot.y)
+        kc.rotate(by: .radians(partyActive ? t * 5.0 : 0.2))
+        let keyLoop = Path(ellipseIn: CGRect(x: -5, y: -11, width: 14, height: 22))
+        StorybookArt.fillAndStroke(kc, keyLoop, fill: Theme.lemon, stroke: goldOutline, width: 2.4)
 
         let top = Path(ellipseIn: CGRect(x: center.x - 74, y: center.y + 4, width: 148, height: 28))
         StorybookArt.fillAndStroke(g, top, fill: StorybookArt.color(0xFFF6D6), stroke: goldOutline, width: 3.2)
 
         let innerStar = Path(ellipseIn: CGRect(x: center.x - 46, y: center.y + 10, width: 92, height: 16))
-        g.fill(innerStar, with: .color(StorybookArt.color(0xFFB8DC, alpha: 0.5)))
+        g.fill(innerStar, with: .color(StorybookArt.color(partyActive ? 0xFF8FB8 : 0xFFB8DC, alpha: partyActive ? 0.72 : 0.5)))
 
         for sx in [-44.0, 0.0, 44.0] as [CGFloat] {
-            StorybookArt.sparkle(g, at: CGPoint(x: center.x + sx, y: center.y + 36), radius: 7, color: .white)
-        }
-
-        if let fairy {
-            let hop = abs(CGFloat(sin(t * 4.4))) * 12 + react * 18
-            let twirlTilt = sin(t * 4.4) * 0.14
-            let pos = CGPoint(x: center.x, y: center.y - 34 - hop)
-            drawSelectionHaloIfNeeded(g, at: pos, fairy: fairy, sim: sim, time: t)
-            var fc = g
-            fc.translateBy(x: pos.x, y: pos.y)
-            fc.rotate(by: .radians(twirlTilt))
-            drawFairy(fc, kind: fairy, mood: .celebrate, accessory: sim.accessories[fairy], time: t, scale: 1.06, blinkSeed: 4.2)
+            StorybookArt.sparkle(g, at: CGPoint(x: center.x + sx, y: center.y + 36), radius: 7 + pulse * 2.5, color: .white)
         }
     }
 
     private static func drawTreatTableSpot(
         _ g: GraphicsContext,
         center: CGPoint,
-        fairy: FairyKind?,
+        actors: [CompactFairyActor],
         sim: FairiesSim,
         time t: Double,
         react: CGFloat
     ) {
-        if let fairy {
-            let nibbleBob = CGFloat(sin(t * 5.2)) * 3.5 - react * 10
-            let pos = CGPoint(x: center.x, y: center.y - 34 + nibbleBob)
-            drawSelectionHaloIfNeeded(g, at: pos, fairy: fairy, sim: sim, time: t)
+        for actor in actors {
+            let nibbleBob = CGFloat(sin(t * 5.2 + actor.bobPhase)) * 3.5 - react * 10
+            let pos = CGPoint(x: actor.position.x, y: actor.position.y + nibbleBob)
+            drawSelectionHaloIfNeeded(g, at: pos, fairy: actor.kind, sim: sim, time: t)
             var fc = g
             fc.translateBy(x: pos.x, y: pos.y)
-            drawFairy(fc, kind: fairy, mood: react > 0.2 ? .giggle : .yum, accessory: sim.accessories[fairy], time: t, scale: 0.94, blinkSeed: 5.1)
+            drawFairy(fc, kind: actor.kind, mood: react > 0.2 ? .giggle : .yum, accessory: sim.accessories[actor.kind], time: t, scale: 0.94, blinkSeed: actor.bobPhase)
         }
 
         let tableOutline = StorybookArt.outline(for: 0xF0ACC6)
@@ -1176,10 +1890,11 @@ enum FairiesArt {
         let cloth = Path(ellipseIn: CGRect(x: center.x - 72, y: center.y - 4, width: 144, height: 38))
         StorybookArt.fillAndStroke(g, cloth, fill: StorybookArt.color(0xFFF9FC), stroke: tableOutline, width: 3.4)
 
-        // Pastel macaron stack on the left side of the table
-        let macColors: [UInt32] = [0xFF9AC6, 0x9FE3CF, 0xFFE38A]
+        // Pastel macaron stack on the left side of the table (extra tall when fresh treats served!)
+        let hasFreshTreats = !sim.compactTableTreats.isEmpty
+        let macColors: [UInt32] = hasFreshTreats ? [0xFF9AC6, 0x9FE3CF, 0xFFE38A, 0xD2A8FF] : [0xFF9AC6, 0x9FE3CF, 0xFFE38A]
         for (i, hex) in macColors.enumerated() {
-            let my = center.y + 8 - CGFloat(i) * 11
+            let my = center.y + 8 - CGFloat(i) * 10
             let mx = center.x - 30
             let mac = Path(roundedRect: CGRect(x: mx - 16, y: my - 6, width: 32, height: 11), cornerRadius: 5.5)
             StorybookArt.fillAndStroke(g, mac, fill: StorybookArt.color(hex), stroke: StorybookArt.outline(for: hex), width: 2.2)
@@ -1189,10 +1904,14 @@ enum FairiesArt {
         // Porcelain dessert plate + golden Korean bungeoppang on the right side
         let plate = Path(ellipseIn: CGRect(x: center.x - 2, y: center.y + 4, width: 58, height: 20))
         StorybookArt.fillAndStroke(g, plate, fill: .white, stroke: StorybookArt.color(0xB8DCFF), width: 2.4)
-        drawBungeoppang(g, at: CGPoint(x: center.x + 26, y: center.y + 8), scale: 1.0)
+        drawBungeoppang(g, at: CGPoint(x: center.x + 26, y: center.y + 8), scale: hasFreshTreats ? 1.12 : 1.0)
+        if hasFreshTreats {
+            let steamY = CGFloat(sin(t * 5)) * 4
+            StorybookArt.heart(g, at: CGPoint(x: center.x + 26, y: center.y - 12 + steamY), size: 12, color: Theme.pink, opacity: 0.85)
+        }
 
         if sim.hasHanbokTea {
-            drawHanbokTeaSet(g, center: center, time: t)
+            drawHanbokTeaSet(g, center: center, pouring: sim.teaPourTimer > 0, time: t)
         }
     }
 
@@ -1224,11 +1943,16 @@ enum FairiesArt {
             c.stroke(scaleArc, with: .color(crust.opacity(0.65)), lineWidth: 1.6)
         }
         c.fill(Path(ellipseIn: CGRect(x: -12, y: -3, width: 3.6, height: 3.6)), with: .color(crust))
+        c.fill(Path(ellipseIn: CGRect(x: -10, y: 1.5, width: 4.5, height: 2.8)), with: .color(StorybookArt.color(0xFF94B4, alpha: 0.65)))
+        var smile = Path()
+        smile.move(to: CGPoint(x: -15.5, y: 2.5))
+        smile.addQuadCurve(to: CGPoint(x: -11.5, y: 3.5), control: CGPoint(x: -13.5, y: 5.5))
+        c.stroke(smile, with: .color(crust), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
     }
 
     // MARK: - Compact Room Treasures (Chandelier, Carousel, Celadon Hanbok Tea)
 
-    private static func drawCompactChandelier(_ g: GraphicsContext, anchor: CGPoint, time t: Double) {
+    private static func drawCompactChandelier(_ g: GraphicsContext, anchor: CGPoint, isNightMode: Bool, time t: Double) {
         let sway = sin(t * 1.45) * 0.055
         let goldHex: UInt32 = 0xFFD966
         let goldOutline = StorybookArt.outline(for: 0xE6A93B)
@@ -1237,19 +1961,21 @@ enum FairiesArt {
         c.translateBy(x: anchor.x, y: anchor.y)
         c.rotate(by: .radians(sway))
 
-        // Warm pastel chandelier light halo
+        // Warm pastel chandelier light halo (radiates extra brightly in Starlight Night Mode!)
         let pulse = 0.88 + 0.12 * sin(t * 3.1)
+        let haloW: CGFloat = isNightMode ? 240 : 176
+        let haloH: CGFloat = isNightMode ? 156 : 112
         c.fill(
-            Path(ellipseIn: CGRect(x: -88, y: 4, width: 176, height: 112)),
+            Path(ellipseIn: CGRect(x: -haloW * 0.5, y: 0, width: haloW, height: haloH)),
             with: .radialGradient(
                 Gradient(colors: [
-                    StorybookArt.color(0xFFF6C4, alpha: 0.52 * pulse),
-                    StorybookArt.color(0xFFD6EE, alpha: 0.24 * pulse),
+                    StorybookArt.color(0xFFF6C4, alpha: (isNightMode ? 0.82 : 0.52) * pulse),
+                    StorybookArt.color(0xFFD6EE, alpha: (isNightMode ? 0.42 : 0.24) * pulse),
                     StorybookArt.color(0xFFD6EE, alpha: 0),
                 ]),
                 center: CGPoint(x: 0, y: 52),
                 startRadius: 8,
-                endRadius: 88
+                endRadius: haloW * 0.5
             )
         )
 
@@ -1320,7 +2046,7 @@ enum FairiesArt {
         StorybookArt.sparkle(c, at: CGPoint(x: 38, y: 16), radius: 6.0 * CGFloat(pulse), color: Theme.lemon, opacity: 0.92)
     }
 
-    private static func drawCompactCarousel(_ g: GraphicsContext, center: CGPoint, time t: Double) {
+    private static func drawCompactCarousel(_ g: GraphicsContext, center: CGPoint, sim: FairiesSim, time t: Double) {
         let goldHex: UInt32 = 0xFFD966
         let goldOutline = StorybookArt.outline(for: 0xE6A93B)
         let pinkOutline = StorybookArt.outline(for: 0xF08CB8)
@@ -1344,7 +2070,7 @@ enum FairiesArt {
             let depth: CGFloat
             let y: CGFloat
         }
-        let spin = t * 1.35
+        let spin = sim.carouselSpinAngle
         let seats: [Seat] = (0..<4).map { i in
             let a = spin + Double(i) * (.pi / 2)
             let depth = CGFloat(sin(a))
@@ -1354,12 +2080,20 @@ enum FairiesArt {
             return Seat(index: i, x: x, depth: depth, y: y)
         }.sorted { $0.depth < $1.depth }
 
+        let riders = sim.compactActors.filter { $0.ridingCarousel && sim.draggingCompactFairy != $0.kind }
+
         func drawSeat(_ s: Seat) {
             let scale = 0.82 + (s.depth + 1) * 0.14
             var rod = Path()
             rod.move(to: CGPoint(x: s.x, y: center.y - 60))
             rod.addLine(to: CGPoint(x: s.x, y: center.y - 11 + s.depth * 3))
             g.stroke(rod, with: .color(StorybookArt.color(0xF0C052, alpha: 0.85)), lineWidth: 2.2)
+
+            if let rider = riders.first(where: { $0.carouselSeatIndex == s.index }) {
+                var rc = g
+                rc.translateBy(x: s.x, y: s.y - 12)
+                drawFairy(rc, kind: rider.kind, mood: .giggle, accessory: sim.accessories[rider.kind], time: t, scale: 0.68 * scale, blinkSeed: rider.bobPhase)
+            }
 
             var sc = g
             sc.translateBy(x: s.x, y: s.y)
@@ -1425,39 +2159,57 @@ enum FairiesArt {
         StorybookArt.sparkle(g, at: CGPoint(x: apex.x, y: apex.y - 7), radius: 4.5, color: .white, opacity: 0.95)
     }
 
-    private static func drawHanbokTeaSet(_ g: GraphicsContext, center: CGPoint, time t: Double) {
+    private static func drawHanbokTeaSet(_ g: GraphicsContext, center: CGPoint, pouring: Bool, time t: Double) {
         let jadeHex: UInt32 = 0x90DCC4
         let jadeLight: UInt32 = 0xC8F4E6
         let jadeOutline = StorybookArt.outline(for: 0x52B096)
 
         // Celadon Korean teapot nestled at the top-center of the table
         let potC = CGPoint(x: center.x - 3, y: center.y - 1)
+        let cupC = CGPoint(x: center.x - 44, y: center.y + 18)
+
+        // Graceful shimmering pale-jade tea stream when freshly poured!
+        if pouring {
+            var pourArc = Path()
+            pourArc.move(to: CGPoint(x: potC.x - 24, y: potC.y - 11))
+            pourArc.addQuadCurve(to: CGPoint(x: cupC.x, y: cupC.y - 5), control: CGPoint(x: cupC.x + 2, y: potC.y - 8))
+            g.stroke(pourArc, with: .color(StorybookArt.color(0xD8F2A6, alpha: 0.92)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+            g.stroke(pourArc, with: .color(.white.opacity(0.68)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+        }
+
         // Soft rising steam wisps
-        for k in 0..<2 {
-            let drift = CGFloat(sin(t * 2.4 + Double(k) * 2.2)) * 3.5
+        for k in 0..<(pouring ? 3 : 2) {
+            let drift = CGFloat(sin(t * 2.8 + Double(k) * 2.2)) * 4.0
             var steam = Path()
-            steam.move(to: CGPoint(x: potC.x - 16 + CGFloat(k) * 4, y: potC.y - 12))
+            steam.move(to: CGPoint(x: (pouring ? cupC.x : potC.x - 16) + CGFloat(k) * 4, y: (pouring ? cupC.y - 8 : potC.y - 12)))
             steam.addQuadCurve(
-                to: CGPoint(x: potC.x - 18 + drift, y: potC.y - 28),
-                control: CGPoint(x: potC.x - 22 - drift, y: potC.y - 20)
+                to: CGPoint(x: (pouring ? cupC.x : potC.x - 18) + drift, y: (pouring ? cupC.y - 26 : potC.y - 28)),
+                control: CGPoint(x: (pouring ? cupC.x - 4 : potC.x - 22) - drift, y: (pouring ? cupC.y - 17 : potC.y - 20))
             )
-            g.stroke(steam, with: .color(.white.opacity(0.68)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            g.stroke(steam, with: .color(.white.opacity(0.75)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+
+        var potCtx = g
+        if pouring {
+            potCtx.translateBy(x: potC.x, y: potC.y - 6)
+            potCtx.rotate(by: .radians(-0.28 + sin(t * 8) * 0.04))
+            potCtx.translateBy(x: -potC.x, y: -(potC.y - 6))
         }
 
         // Graceful curved spout (left) and arched handle (right)
         var spout = Path()
         spout.move(to: CGPoint(x: potC.x - 10, y: potC.y + 1))
         spout.addQuadCurve(to: CGPoint(x: potC.x - 21, y: potC.y - 9), control: CGPoint(x: potC.x - 20, y: potC.y + 1))
-        g.stroke(spout, with: .color(jadeOutline), style: StrokeStyle(lineWidth: 7.2, lineCap: .round))
-        g.stroke(spout, with: .color(StorybookArt.color(jadeHex)), style: StrokeStyle(lineWidth: 4.0, lineCap: .round))
+        potCtx.stroke(spout, with: .color(jadeOutline), style: StrokeStyle(lineWidth: 7.2, lineCap: .round))
+        potCtx.stroke(spout, with: .color(StorybookArt.color(jadeHex)), style: StrokeStyle(lineWidth: 4.0, lineCap: .round))
 
         let handle = Path(ellipseIn: CGRect(x: potC.x + 8, y: potC.y - 10, width: 14, height: 16))
-        g.stroke(handle, with: .color(jadeOutline), lineWidth: 5.5)
-        g.stroke(handle, with: .color(StorybookArt.color(jadeHex)), lineWidth: 2.8)
+        potCtx.stroke(handle, with: .color(jadeOutline), lineWidth: 5.5)
+        potCtx.stroke(handle, with: .color(StorybookArt.color(jadeHex)), lineWidth: 2.8)
 
         // Rounded celadon teapot body
         let potBody = Path(ellipseIn: CGRect(x: potC.x - 14, y: potC.y - 11, width: 28, height: 22))
-        g.fill(
+        potCtx.fill(
             potBody,
             with: .radialGradient(
                 Gradient(colors: [StorybookArt.color(jadeLight), StorybookArt.color(jadeHex)]),
@@ -1466,18 +2218,17 @@ enum FairiesArt {
                 endRadius: 16
             )
         )
-        g.stroke(potBody, with: .color(jadeOutline), lineWidth: 2.2)
+        potCtx.stroke(potBody, with: .color(jadeOutline), lineWidth: 2.2)
 
         // Domed celadon lid & pearl knob
         let lid = Path(ellipseIn: CGRect(x: potC.x - 9, y: potC.y - 15, width: 18, height: 8))
-        StorybookArt.fillAndStroke(g, lid, fill: StorybookArt.color(jadeLight), stroke: jadeOutline, width: 1.8)
+        StorybookArt.fillAndStroke(potCtx, lid, fill: StorybookArt.color(jadeLight), stroke: jadeOutline, width: 1.8)
         let knob = Path(ellipseIn: CGRect(x: potC.x - 3.5, y: potC.y - 19, width: 7, height: 6))
-        StorybookArt.fillAndStroke(g, knob, fill: StorybookArt.color(0xFFE68A), stroke: StorybookArt.outline(for: 0xE0A838), width: 1.4)
+        StorybookArt.fillAndStroke(potCtx, knob, fill: StorybookArt.color(0xFFE68A), stroke: StorybookArt.outline(for: 0xE0A838), width: 1.4)
         // Delicate white plum blossom inlay on teapot belly
-        drawTinyFlower(g, at: CGPoint(x: potC.x, y: potC.y + 1), radius: 5.5, petalHex: 0xFFFFFF)
+        drawTinyFlower(potCtx, at: CGPoint(x: potC.x, y: potC.y + 1), radius: 5.5, petalHex: 0xFFFFFF)
 
         // Matching miniature celadon teacup on front-left of table
-        let cupC = CGPoint(x: center.x - 44, y: center.y + 18)
         let cupSaucer = Path(ellipseIn: CGRect(x: cupC.x - 12, y: cupC.y + 2, width: 24, height: 8))
         StorybookArt.fillAndStroke(g, cupSaucer, fill: StorybookArt.color(jadeLight), stroke: jadeOutline, width: 1.6)
         var cup = Path()
@@ -2129,6 +2880,12 @@ enum FairiesArt {
                 // Drawn as a tiny dreamy crescent & sparkle (zero letters/text for pre-readers!)
                 StorybookArt.sparkle(g, at: p.pos, radius: p.size * 0.55, color: StorybookArt.color(p.colorHex), opacity: alpha)
                 StorybookArt.sparkle(g, at: CGPoint(x: p.pos.x + 9, y: p.pos.y - 7), radius: p.size * 0.35, color: Theme.lemon, opacity: alpha)
+            case .confetti:
+                var c = g
+                c.translateBy(x: p.pos.x, y: p.pos.y)
+                c.rotate(by: .radians(Double(t * 5.2 + Double(p.phase))))
+                let rect = CGRect(x: -p.size * 0.42, y: -p.size * 0.24, width: p.size * 0.84, height: p.size * 0.48)
+                c.fill(Path(roundedRect: rect, cornerRadius: 2.5), with: .color(StorybookArt.color(p.colorHex, alpha: alpha)))
             }
         }
     }

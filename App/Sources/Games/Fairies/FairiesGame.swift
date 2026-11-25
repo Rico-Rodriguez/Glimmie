@@ -29,15 +29,20 @@ private struct FairiesTileIcon: View {
 
 private struct FairiesBackdropFill: View {
     let mode: FairiesMode
+    let isNightMode: Bool
 
     var body: some View {
-        LinearGradient(
-            colors: mode == .meadow
-                ? [Color(hex: 0xFFE6F6), Color(hex: 0xE8F8FF), Color(hex: 0x9DE0B4)]
-                : [Color(hex: 0xFFE0F2), Color(hex: 0xF3E6FF), Color(hex: 0xFFEBF5)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        let colors: [Color] = {
+            if mode == .meadow {
+                return [Color(hex: 0xFFE6F6), Color(hex: 0xE8F8FF), Color(hex: 0x9DE0B4)]
+            }
+            if isNightMode {
+                return [Color(hex: 0x3D3268), Color(hex: 0x5A478E), Color(hex: 0x4A3A7A)]
+            }
+            return [Color(hex: 0xFFE0F2), Color(hex: 0xF3E6FF), Color(hex: 0xFFEBF5)]
+        }()
+        LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+            .animation(.easeInOut(duration: 0.4), value: isNightMode)
     }
 }
 
@@ -50,14 +55,17 @@ struct FairiesView: View {
     @StateObject private var sim = FairiesSim()
     @State private var showBook = false
     @State private var wandDragStarted = false
+    @State private var treatDragKind: MeadowTreatKind?
+    @State private var treatDragStarted = false
     @State private var trayDragFairy: FairyKind?
-    @State private var sceneDragSpot: CompactSpot?
+    @State private var sceneDragActor: CompactFairyActor?
     @State private var sceneDragStarted = false
+    @State private var meadowTouchStarted = false
 
     var body: some View {
         let paused = showBook || scenePhase != .active
         ZStack {
-            GameStage(background: { FairiesBackdropFill(mode: sim.mode) }) {
+            GameStage(background: { FairiesBackdropFill(mode: sim.mode, isNightMode: sim.isNightMode) }) {
                 ZStack {
                     TimelineView(.animation(minimumInterval: 1.0 / 60, paused: paused)) { tl in
                         Canvas { ctx, _ in
@@ -69,7 +77,7 @@ struct FairiesView: View {
                     .contentShape(Rectangle())
                     .gesture(sceneGesture)
 
-                    if sim.mode == .compact, sim.draggingCompactFairy != nil, sim.compactDragOriginSpot != nil {
+                    if sim.mode == .compact, sim.draggingCompactFairy != nil, sim.compactDragStartedInRoom {
                         ReturnDropBadge(hovered: sim.compactReturnHovered)
                             .position(FGeo.returnBadgeCenter)
                             .allowsHitTesting(false)
@@ -115,6 +123,7 @@ struct FairiesView: View {
             }
         }
         .ignoresSafeArea()
+        .defersSystemGestures(on: .bottom)
         .onChange(of: scenePhase) { phase in
             if phase != .active {
                 sim.save()
@@ -203,7 +212,7 @@ struct FairiesView: View {
         .accessibilityLabel(label)
     }
 
-    // MARK: - Bottom Dock
+    // MARK: - Lifted Bottom Dock (y = GameChromeLayout.dockY = 740)
 
     @ViewBuilder
     private var bottomDock: some View {
@@ -223,13 +232,23 @@ struct FairiesView: View {
                     .fill(Theme.blush)
                     .frame(width: 3, height: 54)
 
-                HStack(spacing: 6) {
-                    ForEach(FairyKind.allCases) { kind in
-                        meadowCollectionBadge(kind)
+                if sim.activeTreatLureFairy != nil {
+                    HStack(spacing: 12) {
+                        ForEach(sim.availableMeadowTreats) { treat in
+                            meadowTreatDockTile(treat)
+                        }
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                } else {
+                    HStack(spacing: 6) {
+                        ForEach(FairyKind.allCases) { kind in
+                            meadowCollectionBadge(kind)
+                        }
                     }
                 }
             }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: sim.activeTreatLureFairy != nil)
     }
 
     private var wandDockTile: some View {
@@ -253,6 +272,31 @@ struct FairiesView: View {
         .contentShape(Rectangle())
         .gesture(wandDockGesture)
         .accessibilityLabel("Magic Wand")
+    }
+
+    private func meadowTreatDockTile(_ treat: MeadowTreatKind) -> some View {
+        let isDraggingThis = sim.draggingMeadowTreat == treat
+        return GameDockTile(
+            size: 72,
+            selected: isDraggingThis,
+            pulsing: !isDraggingThis,
+            tint: Color(hex: treat.accentHex, alpha: 0.2),
+            cornerRadius: 22
+        ) {
+            if !isDraggingThis {
+                Canvas { ctx, sz in
+                    var g = ctx
+                    g.translateBy(x: sz.width / 2, y: sz.height / 2)
+                    g.scaleBy(x: 1.05, y: 1.05)
+                    FairiesArt.drawTreatIcon(g, kind: treat)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .opacity(isDraggingThis ? 0.35 : 1)
+        .contentShape(Rectangle())
+        .gesture(meadowTreatGesture(treat))
+        .accessibilityLabel(treat.rawValue)
     }
 
     private func meadowCollectionBadge(_ kind: FairyKind) -> some View {
@@ -298,7 +342,7 @@ struct FairiesView: View {
     }
 
     private var compactDock: some View {
-        let trayWidth = min(CGFloat(492), CGFloat(max(1, sim.befriended.count)) * 74 + 12)
+        let trayWidth = min(CGFloat(472), CGFloat(max(1, sim.befriended.count)) * 72 + 12)
         return GameTrayCard(cornerRadius: 34, paddingH: 14, paddingV: 10) {
             HStack(spacing: 11) {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -310,7 +354,7 @@ struct FairiesView: View {
                     .padding(.vertical, 4)
                     .padding(.horizontal, 4)
                 }
-                .frame(width: trayWidth, height: 76)
+                .frame(width: trayWidth, height: 74)
 
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(Theme.blush)
@@ -333,12 +377,12 @@ struct FairiesView: View {
 
     private func compactFairyTile(_ fairy: FairyKind) -> some View {
         let isSelected = sim.selectedFairy == fairy
-        let isDraggingThis = sim.draggingCompactFairy == fairy && sim.compactDragOriginSpot == nil
-        let isPlaced = sim.spot(containing: fairy) != nil
+        let isDraggingThis = sim.draggingCompactFairy == fairy && !sim.compactDragStartedInRoom
+        let isInRoom = sim.activeCompactFairies.contains(fairy)
         let isPinned = sim.pinnedFairy == fairy
 
         return GameDockTile(
-            size: 66,
+            size: 64,
             selected: isSelected,
             tint: Color(hex: fairy.palette.wingInner),
             cornerRadius: 20
@@ -347,7 +391,7 @@ struct FairiesView: View {
                 Canvas { ctx, sz in
                     var g = ctx
                     g.translateBy(x: sz.width / 2, y: sz.height / 2 + 5)
-                    FairiesArt.drawFairy(g, kind: fairy, mood: .happy, accessory: sim.accessories[fairy], time: 0.25, scale: 0.66, blinkSeed: 0)
+                    FairiesArt.drawFairy(g, kind: fairy, mood: .happy, accessory: sim.accessories[fairy], time: 0.25, scale: 0.64, blinkSeed: 0)
                 }
                 .allowsHitTesting(false)
             }
@@ -359,7 +403,7 @@ struct FairiesView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if isPlaced {
+            if isInRoom {
                 Circle()
                     .fill(Theme.mint)
                     .frame(width: 14, height: 14)
@@ -381,7 +425,7 @@ struct FairiesView: View {
             sim.toggleAccessory(accessory)
         } label: {
             GameDockTile(
-                size: 56,
+                size: 54,
                 selected: worn,
                 tint: worn ? Theme.blush.opacity(0.65) : .white,
                 cornerRadius: 18
@@ -463,6 +507,30 @@ struct FairiesView: View {
             }
     }
 
+    private func meadowTreatGesture(_ treat: MeadowTreatKind) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("fairies"))
+            .onChanged { v in
+                let moved = hypot(v.translation.width, v.translation.height)
+                if !treatDragStarted {
+                    guard moved >= 12 else { return }
+                    treatDragStarted = true
+                    treatDragKind = treat
+                    sim.beginMeadowTreatDrag(treat, at: Self.liftedFairy(v.location))
+                } else if treatDragKind == treat {
+                    sim.updateMeadowTreatDrag(to: Self.liftedFairy(v.location))
+                }
+            }
+            .onEnded { v in
+                if treatDragStarted && treatDragKind == treat {
+                    sim.endMeadowTreatDrag(at: Self.liftedFairy(v.location))
+                } else {
+                    _ = sim.serveMeadowTreat(treat, from: v.location)
+                }
+                treatDragStarted = false
+                treatDragKind = nil
+            }
+    }
+
     private func compactTrayFairyGesture(_ fairy: FairyKind) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .named("fairies"))
             .onChanged { v in
@@ -470,7 +538,7 @@ struct FairiesView: View {
                 if trayDragFairy == nil {
                     guard v.translation.height < -10, abs(v.translation.height) >= abs(v.translation.width) * 0.45 else { return }
                     trayDragFairy = fairy
-                    sim.beginCompactDrag(fairy: fairy, fromSpot: nil, at: Self.liftedFairy(p))
+                    sim.beginCompactDrag(fairy: fairy, fromSpot: nil, at: Self.liftedFairy(p), fromRoom: false)
                 }
                 guard trayDragFairy == fairy else { return }
                 sim.updateCompactDrag(to: Self.liftedFairy(p))
@@ -485,24 +553,29 @@ struct FairiesView: View {
     private var sceneGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("fairies"))
             .onChanged { v in
-                guard sim.mode == .compact else { return }
+                if sim.mode == .meadow {
+                    let isStart = !meadowTouchStarted
+                    meadowTouchStarted = true
+                    sim.meadowTouchMoved(to: v.location, isStart: isStart)
+                    return
+                }
                 let moved = hypot(v.translation.width, v.translation.height)
                 if !sceneDragStarted {
-                    if sceneDragSpot == nil {
-                        sceneDragSpot = sim.nearestCompactSpot(to: v.startLocation, maxRadius: 94)
+                    if sceneDragActor == nil {
+                        sceneDragActor = sim.nearestCompactActor(to: v.startLocation, maxRadius: 58)
                     }
-                    guard moved >= 12,
-                          let spot = sceneDragSpot,
-                          let occupant = sim.spotOccupants[spot] else { return }
+                    guard moved >= 12, let actor = sceneDragActor else { return }
                     sceneDragStarted = true
-                    sim.beginCompactDrag(fairy: occupant, fromSpot: spot, at: Self.liftedFairy(v.location))
+                    sim.beginCompactDrag(fairy: actor.kind, fromSpot: actor.currentSpot, at: Self.liftedFairy(v.location), fromRoom: true)
                 } else {
                     sim.updateCompactDrag(to: Self.liftedFairy(v.location))
                 }
             }
             .onEnded { v in
                 if sim.mode == .meadow {
-                    sim.tapMeadow(at: v.location)
+                    let moved = hypot(v.translation.width, v.translation.height)
+                    sim.meadowTouchEnded(at: v.location, movedDistance: moved)
+                    meadowTouchStarted = false
                     return
                 }
                 if sceneDragStarted {
@@ -511,7 +584,7 @@ struct FairiesView: View {
                     sim.tapCompact(at: v.location)
                 }
                 sceneDragStarted = false
-                sceneDragSpot = nil
+                sceneDragActor = nil
             }
     }
 

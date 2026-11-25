@@ -8,7 +8,7 @@ enum GardenTool: Equatable {
 }
 
 enum GPart {
-    case water, splash, clod, seed, rain, petal, leaf, sparkle, dust, ripple, heart
+    case water, splash, clod, seed, rain, petal, leaf, sparkle, dust, ripple, heart, confetti, snow, pollen
 }
 
 struct GParticle {
@@ -31,7 +31,11 @@ struct GParticle {
 enum GFlyerKind {
     case crop(PlantKind, Int, Bool)
     case flowerToVase(PlantKind, Int)
+    case hybridCrop(HybridKind)
+    case hybridFlowerToVase(HybridKind)
     case flyingSeed(PlantKind, Int)
+    case picnicSnack(String)
+    case caughtFirefly
     case weed(Int)
     case uprooted(Plant)
 }
@@ -45,6 +49,8 @@ struct GFlyer {
     var spin: CGFloat
     var toBasket: Bool
     var toVase: Bool = false
+    var toPicnic: Bool = false
+    var toJar: Bool = false
 
     static let gravity: CGFloat = 1500
 
@@ -64,6 +70,29 @@ struct SurprisePop {
     var origin: CGPoint
     var start: Double
     var dur: Double = 1.3
+}
+
+struct PicnicSnack: Equatable {
+    var item: String
+    var pos: CGPoint
+    var placedAt: Double
+}
+
+struct PicnicCritter: Equatable {
+    enum State: Equatable { case hoppingIn, munching, happy, hoppingOut }
+    var id: Int
+    var kind: GVisitorKind
+    var p: CGPoint
+    var target: CGPoint
+    var state: State = .hoppingIn
+    var stateAt: Double = 0
+    var facing: CGFloat = -1
+    var walk: CGFloat = 0
+    var snackItem: String
+    var wearingCrown: Bool = false
+    var crownColors: [GRGB] = []
+    var poked: Double = -10
+    var nextHeartAt: Double = 0
 }
 
 struct GPlot {
@@ -160,6 +189,9 @@ struct GBee {
     var nextThink: Double = 0
     var phase: CGFloat = 0
     var leaving = false
+    var carryingPollenFrom: PlantKind? = nil
+    var carryingPlotIndex: Int? = nil
+    var pollinateTargetPlot: Int? = nil
 }
 
 struct GLadybug {
@@ -194,6 +226,9 @@ final class GardenSim {
     static let gameID = "garden"
     static let gravity: CGFloat = 1700
     static let maxBouquet = 6
+    static let maxTreehouseStage = 5
+    static let maxPicnicSnacks = 3
+    static let maxCaughtFireflies = 10
 
     // Soil height & wetness fields
     var h: [CGFloat]
@@ -222,7 +257,29 @@ final class GardenSim {
     var vaseBounce: CGFloat = 0
     var vaseBounceV: CGFloat = 0
 
-    // Weather
+    // Hybrid discoveries
+    var discoveredHybrids: [HybridKind] = []
+    var lastDiscoveredHybrid: HybridKind?
+    var hybridDiscoveryAt: Double = -100
+    private var chimeIndex = 0
+    var hasRecentHybridDiscovery: Bool { time - hybridDiscoveryAt < 5.0 }
+
+    // Critter picnic & 5-stage storybook treehouse
+    var picnicSnacks: [PicnicSnack] = []
+    var picnicCritters: [PicnicCritter] = []
+    var picnicFeedCount: Int = 0
+    var treehouseStage: Int = 0
+    var picnicBounce: CGFloat = 0
+    var picnicBounceV: CGFloat = 0
+    var treehousePoke: Double = -10
+    var treehouseUpgradeAt: Double = -100
+    var treehouseBounce: CGFloat = 0
+    var treehouseBounceV: CGFloat = 0
+    private var nextPicnicCritterID = 1
+    private var picnicSpeciesCursor = 0
+
+    // Seasons, weather & firefly lantern jar
+    var season: GardenSeason = .spring
     var weather: Weather = .sun
     var rain: CGFloat = 0
     var wind: CGFloat = 0.08
@@ -231,6 +288,17 @@ final class GardenSim {
     var rainbowAt: Double = -100
     var windNow: CGFloat = 0
     var cloudDrift: CGFloat = 0
+    var vortexCenter: CGPoint?
+    var vortexUntil: Double = -10
+    var caughtFireflies: Int = 0
+    var jarBounce: CGFloat = 0
+    var jarBounceV: CGFloat = 0
+
+    // Wearable flower crown
+    var craftedCrownColors: [GRGB] = []
+    var hasCraftedCrown: Bool { !craftedCrownColors.isEmpty }
+    var crownBounce: CGFloat = 0
+    var crownBounceV: CGFloat = 0
 
     // Time
     var time: Double = 0
@@ -238,6 +306,8 @@ final class GardenSim {
     private var lastSave: Double = 0
     private var nextWeed: Double = 18
     private var nextLeaf: Double = 0
+    private var nextSeasonFlake: Double = 0
+    private var nextBeeSpawn: Double = 1.2
     private var rainAcc: CGFloat = 0
     private var waterAcc: CGFloat = 0
     private var nextDecorID = 1
@@ -265,6 +335,8 @@ final class GardenSim {
         case carrot(Int)
         case decor(Int)
         case basketFeed
+        case pollen(fromPlot: Int, kind: PlantKind)
+        case flowerCrown
     }
     private var pickedThisStroke = Set<Int>()
     private var grab: Grab?
@@ -280,6 +352,38 @@ final class GardenSim {
         return false
     }
     var overReturnBadge = false
+
+    var dragPollenPos: CGPoint? {
+        if case .pollen? = grab, handDown { return handP }
+        return nil
+    }
+
+    var dragPollenFromPlot: Int? {
+        if case .pollen(let idx, _)? = grab, handDown { return idx }
+        return nil
+    }
+
+    var dragPollenKind: PlantKind? {
+        if case .pollen(_, let k)? = grab, handDown { return k }
+        return nil
+    }
+
+    var dragCrownPos: CGPoint? {
+        if case .flowerCrown? = grab, handDown { return handP }
+        return nil
+    }
+
+    var dragBasketPos: CGPoint? {
+        if case .basketFeed? = grab, handDown { return handP }
+        return nil
+    }
+
+    var dragBasketPreview: String? {
+        if case .basketFeed? = grab, handDown {
+            return basket.last(where: isPicnicSnack) ?? basket.last
+        }
+        return nil
+    }
 
     func isOverReturnBadge(_ p: CGPoint) -> Bool {
         hypot(p.x - GGeo.returnBadge.x, p.y - GGeo.returnBadge.y) < 76
@@ -364,6 +468,11 @@ final class GardenSim {
         }
         basket = Array(s.basket.suffix(60))
         bouquet = Array((s.bouquet ?? []).suffix(GardenSim.maxBouquet))
+        discoveredHybrids = s.discoveredHybrids ?? []
+        picnicFeedCount = max(0, s.picnicFeedCount ?? 0)
+        treehouseStage = max(0, min(GardenSim.maxTreehouseStage, max(s.treehouseStage ?? 0, picnicFeedCount / 2)))
+        season = s.season ?? .spring
+        caughtFireflies = max(0, min(GardenSim.maxCaughtFireflies, s.caughtFireflies ?? 0))
         weather = s.weather
         rain = weather == .rain ? 1 : 0
         night = weather == .night ? 1 : 0
@@ -380,7 +489,12 @@ final class GardenSim {
             decor: decor.map { DecorSave(kind: $0.kind, x: Double($0.x), water: Double($0.water)) },
             basket: Array(basket.suffix(40)),
             weather: weather,
-            bouquet: bouquet.isEmpty ? nil : Array(bouquet.suffix(GardenSim.maxBouquet))
+            bouquet: bouquet.isEmpty ? nil : Array(bouquet.suffix(GardenSim.maxBouquet)),
+            discoveredHybrids: discoveredHybrids.isEmpty ? nil : discoveredHybrids,
+            treehouseStage: treehouseStage > 0 ? treehouseStage : nil,
+            picnicFeedCount: picnicFeedCount > 0 ? picnicFeedCount : nil,
+            season: season,
+            caughtFireflies: caughtFireflies > 0 ? caughtFireflies : nil
         )
     }
 
@@ -443,19 +557,84 @@ final class GardenSim {
         stepFlyers()
         stepDecor(dt)
         stepCritters(dt)
+        stepPicnic(dt)
         stepFinds(dt)
         stepProps(dt)
         stepSound()
         if time - lastSave > 20 { lastSave = time; save() }
     }
 
-    // MARK: Weather
+    // MARK: Weather & 4-Season Magic
+
+    func setSeason(_ s: GardenSeason) {
+        guard s != season else { return }
+        season = s
+        spawnSeasonalBurst(for: s)
+        Sound.shared.play(.sparkle, volume: 0.5)
+        Sound.shared.tap()
+        save()
+    }
+
+    func cycleSeason() {
+        setSeason(season.next)
+    }
+
+    private func spawnSeasonalBurst(for s: GardenSeason) {
+        for i in 0..<14 {
+            let x = CGFloat.random(in: 80...940)
+            let y = CGFloat.random(in: 110...340)
+            switch s {
+            case .spring:
+                let col = i % 2 == 0 ? GRGB(0xFFB3D2) : GRGB(0xFFE1EE)
+                particles.append(GParticle(kind: .petal, p: CGPoint(x: x, y: y),
+                                           v: CGVector(dx: CGFloat.random(in: 40...120), dy: CGFloat.random(in: 10...55)),
+                                           life: 4.5, size: CGFloat.random(in: 7...11), color: col,
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -4...4)))
+            case .summer:
+                particles.append(GParticle(kind: .sparkle, p: CGPoint(x: x, y: y),
+                                           v: CGVector(dx: CGFloat.random(in: -40...40), dy: CGFloat.random(in: -30...30)),
+                                           life: 1.1, size: CGFloat.random(in: 7...12), color: GRGB(0xFFE680),
+                                           spin: CGFloat.random(in: -3...3)))
+            case .autumn:
+                let cols = [GRGB(0xF08B36), GRGB(0xE8B44A), GRGB(0xE05A3A), GRGB(0xD97828)]
+                particles.append(GParticle(kind: .leaf, p: CGPoint(x: x, y: y),
+                                           v: CGVector(dx: CGFloat.random(in: 60...150), dy: CGFloat.random(in: 20...70)),
+                                           life: 5.0, size: CGFloat.random(in: 9...14), color: cols[i % cols.count],
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -4...4)))
+            case .winter:
+                let col = i % 2 == 0 ? GRGB(0xFFFFFF) : GRGB(0xD4F0FF)
+                particles.append(GParticle(kind: .snow, p: CGPoint(x: x, y: y),
+                                           v: CGVector(dx: CGFloat.random(in: -20...45), dy: CGFloat.random(in: 25...65)),
+                                           life: 5.5, size: CGFloat.random(in: 4...8), color: col,
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -2...2)))
+            }
+        }
+    }
 
     func setWeather(_ w: Weather) {
         guard w != weather else { return }
-        if weather == .rain && (w == .sun || w == .wind) { rainbowAt = time }
+        if weather == .rain && (w == .sun || w == .wind) {
+            rainbowAt = time
+            chargeRipeBloomsWithRainbow()
+        }
         weather = w
         if w == .rain { fulfillRainVisitors() }
+    }
+
+    func chargeRipeBloomsWithRainbow() {
+        var chargedAny = false
+        for i in plots.indices {
+            guard var p = plots[i].plant, p.growth >= 1, p.left > 0 else { continue }
+            p.rainbowCharged = true
+            plots[i].plant = p
+            plots[i].popV += 6
+            let c = head(plot: i) ?? CGPoint(x: GGeo.plotX[i], y: surface(GGeo.plotX[i]) - 48)
+            sparkle(at: c, count: 9)
+            chargedAny = true
+        }
+        if chargedAny {
+            Sound.shared.play(.sparkle, volume: 0.65)
+        }
     }
 
     var rainbow: CGFloat {
@@ -491,12 +670,58 @@ final class GardenSim {
         }
         if wind > 0.4 && time > nextLeaf {
             nextLeaf = time + Double.random(in: 0.25...0.85) / Double(wind)
-            let colors = [GRGB(0x9CCB5A), GRGB(0xE8B44A), GRGB(0xE07B39), GRGB(0x6FB04B)]
-            let leaf = GParticle(kind: .leaf, p: CGPoint(x: -60, y: CGFloat.random(in: 110...480)),
-                                 v: CGVector(dx: 260, dy: 0), life: 8, size: CGFloat.random(in: 9...14),
+            let colors: [GRGB]
+            switch season {
+            case .spring: colors = [GRGB(0xFFB3D2), GRGB(0xFFD6E8), GRGB(0x9CCB5A)]
+            case .summer: colors = [GRGB(0x9CCB5A), GRGB(0x6FB04B), GRGB(0xFFE07A)]
+            case .autumn: colors = [GRGB(0xF08B36), GRGB(0xE8B44A), GRGB(0xE05A3A)]
+            case .winter: colors = [GRGB(0xFFFFFF), GRGB(0xD4F0FF), GRGB(0xB8E2FF)]
+            }
+            let kind: GPart = season == .winter ? .snow : (season == .spring ? .petal : .leaf)
+            let leaf = GParticle(kind: kind, p: CGPoint(x: -60, y: CGFloat.random(in: 110...480)),
+                                 v: CGVector(dx: 260, dy: 0), life: 8, size: kind == .snow ? CGFloat.random(in: 4...7) : CGFloat.random(in: 9...14),
                                  color: colors.randomElement() ?? colors[0], rot: CGFloat.random(in: 0...6),
                                  spin: CGFloat.random(in: -4...4))
             particles.append(leaf)
+        }
+
+        // Gentle signature seasonal ambient particles
+        if time > nextSeasonFlake && rain < 0.6 {
+            switch season {
+            case .spring:
+                nextSeasonFlake = time + Double.random(in: 0.35...0.75)
+                let col = Bool.random() ? GRGB(0xFFB3D2) : GRGB(0xFFE0EE)
+                particles.append(GParticle(kind: .petal,
+                                           p: CGPoint(x: CGFloat.random(in: -20...980), y: CGFloat.random(in: 60...140)),
+                                           v: CGVector(dx: 38 + windNow * 120, dy: CGFloat.random(in: 24...48)),
+                                           life: 7.5, size: CGFloat.random(in: 6.5...10), color: col,
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -3...3)))
+            case .summer:
+                nextSeasonFlake = time + Double.random(in: 0.9...1.6)
+                if night < 0.4 {
+                    particles.append(GParticle(kind: .sparkle,
+                                               p: CGPoint(x: CGFloat.random(in: 80...940), y: CGFloat.random(in: 130...430)),
+                                               v: CGVector(dx: CGFloat.random(in: -12...18), dy: CGFloat.random(in: -14...10)),
+                                               life: 1.4, size: CGFloat.random(in: 4.5...7.5), color: GRGB(0xFFF0A6),
+                                               spin: CGFloat.random(in: -2...2)))
+                }
+            case .autumn:
+                nextSeasonFlake = time + Double.random(in: 0.4...0.85)
+                let cols = [GRGB(0xF08B36), GRGB(0xE8B44A), GRGB(0xDC5539), GRGB(0xC96A22)]
+                particles.append(GParticle(kind: .leaf,
+                                           p: CGPoint(x: CGFloat.random(in: -20...980), y: CGFloat.random(in: 60...140)),
+                                           v: CGVector(dx: 48 + windNow * 140, dy: CGFloat.random(in: 28...58)),
+                                           life: 7.5, size: CGFloat.random(in: 8...12.5), color: cols.randomElement() ?? cols[0],
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -3.5...3.5)))
+            case .winter:
+                nextSeasonFlake = time + Double.random(in: 0.16...0.34)
+                let col = Bool.random() ? GRGB(0xFFFFFF) : GRGB(0xD8F1FF)
+                particles.append(GParticle(kind: .snow,
+                                           p: CGPoint(x: CGFloat.random(in: -20...1044), y: CGFloat.random(in: 50...110)),
+                                           v: CGVector(dx: windNow * 80 + CGFloat.random(in: -14...14), dy: CGFloat.random(in: 34...66)),
+                                           life: 8.5, size: CGFloat.random(in: 3.5...7.0), color: col,
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -2...2)))
+            }
         }
     }
 
@@ -934,6 +1159,410 @@ final class GardenSim {
         burstSoil(at: base, n: 8)
     }
 
+    // MARK: Cross-Breeding Magic Hybrids
+
+    func pollinatable(_ i: Int) -> Bool {
+        guard plots.indices.contains(i), let p = plots[i].plant else { return false }
+        return p.growth >= 0.98 && p.left > 0 && p.hybrid == nil
+    }
+
+    func hasPollenPartner(for i: Int) -> Bool {
+        guard pollinatable(i), let k = plots[i].plant?.kind else { return false }
+        return plots.indices.contains { j in
+            j != i && pollinatable(j) && plots[j].plant?.kind != k
+        }
+    }
+
+    func pollenAnchor(plot i: Int) -> CGPoint? {
+        guard plots.indices.contains(i), let p = plots[i].plant else { return nil }
+        let x = GGeo.plotX[i]
+        let baseY = surface(x)
+        if p.kind == .pumpkin {
+            return CGPoint(x: x + 12, y: baseY - 52)
+        }
+        return head(plot: i) ?? CGPoint(x: x, y: baseY - 56)
+    }
+
+    func pollenOrbPos(plot i: Int) -> CGPoint? {
+        guard hasPollenPartner(for: i), let p = plots[i].plant else { return nil }
+        let x = GGeo.plotX[i]
+        let baseY = surface(x)
+        if p.kind == .pumpkin {
+            return CGPoint(x: x + 28, y: baseY - 92)
+        }
+        let anchor = head(plot: i) ?? CGPoint(x: x, y: baseY - 56)
+        return CGPoint(x: anchor.x + 22, y: max(116, anchor.y - 24))
+    }
+
+    @discardableResult
+    func crossBreed(fromPlot a: Int, ontoPlot b: Int) -> HybridKind? {
+        guard a != b, plots.indices.contains(a), plots.indices.contains(b) else { return nil }
+        guard let donor = plots[a].plant, donor.growth >= 0.95 else { return nil }
+        return crossBreed(from: donor.kind, ontoPlot: b)
+    }
+
+    @discardableResult
+    func crossBreed(from donor: PlantKind, ontoPlot b: Int) -> HybridKind? {
+        guard plots.indices.contains(b), var target = plots[b].plant, target.growth >= 0.95, target.hybrid == nil else { return nil }
+        guard let hybrid = HybridKind.cross(from: donor, onto: target.kind) else { return nil }
+        target.hybrid = hybrid
+        target.growth = 1.0
+        target.left = hybrid.crop
+        plots[b].plant = target
+        plots[b].popV += 14
+        plots[b].moundPopV += 8
+
+        let pos = pollenAnchor(plot: b) ?? CGPoint(x: GGeo.plotX[b], y: surface(GGeo.plotX[b]) - 60)
+        sparkle(at: pos, count: 18)
+        petals(at: pos, color: hybrid.primaryColor, n: 8)
+        GardenSound.shared.play(.grow, volume: 0.9)
+        Sound.shared.play(.sparkle, volume: 0.75)
+        Sound.shared.tap()
+
+        if !discoveredHybrids.contains(hybrid) {
+            discoveredHybrids.append(hybrid)
+            lastDiscoveredHybrid = hybrid
+            hybridDiscoveryAt = time
+            earnCoins(5, from: pos)
+            confettiBurst(at: pos, count: 24)
+            Sound.shared.play(.fanfare, volume: 0.65)
+            save()
+        }
+        return hybrid
+    }
+
+    func starlightChime(at p: CGPoint) {
+        let notes: [SFX] = [.note1, .note2, .note3, .note4]
+        Sound.shared.play(notes[chimeIndex % notes.count], volume: 0.6)
+        chimeIndex += 1
+        sparkle(at: p, count: 7)
+    }
+
+    // MARK: Critter Picnic & 5-Stage Storybook Treehouse
+
+    func isPicnicSnack(_ entry: String) -> Bool {
+        if entry.hasPrefix("hybrid:") { return true }
+        return entry.hasPrefix("carrot:")
+            || entry.hasPrefix("strawberry:")
+            || entry.hasPrefix("tomato:")
+            || entry.hasPrefix("pumpkin:")
+    }
+
+    func isOverPicnic(_ p: CGPoint) -> Bool {
+        abs(p.x - GGeo.picnic.x) < GGeo.picnicSize.width * 0.68
+            && abs(p.y - GGeo.picnic.y) < GGeo.picnicSize.height * 0.95
+    }
+
+    @discardableResult
+    func servePicnicSnack(at dropPoint: CGPoint? = nil) -> Bool {
+        guard let idx = basket.lastIndex(where: isPicnicSnack) else { return false }
+        let item = basket.remove(at: idx)
+        let plateOffsets: [CGPoint] = [
+            CGPoint(x: -42, y: -4),
+            CGPoint(x: 2, y: 6),
+            CGPoint(x: 44, y: -6),
+        ]
+        let slot = picnicSnacks.count % plateOffsets.count
+        let offset = plateOffsets[slot]
+        let snackPos = CGPoint(x: GGeo.picnic.x + offset.x, y: GGeo.picnic.y + offset.y)
+        if picnicSnacks.count >= GardenSim.maxPicnicSnacks {
+            picnicSnacks.removeFirst()
+        }
+        picnicSnacks.append(PicnicSnack(item: item, pos: snackPos, placedAt: time))
+        picnicBounceV += 10
+        if dropPoint == nil {
+            let start = CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 26)
+            let dur = 0.45
+            flyers.append(GFlyer(kind: .picnicSnack(item), p0: start,
+                                 v0: GFlyer.aim(from: start, to: snackPos, dur: dur),
+                                 start: time, dur: dur, spin: 5, toBasket: false, toPicnic: true))
+        }
+        GardenSound.shared.play(.basket, volume: 0.7)
+        Sound.shared.play(.pop, volume: 0.55)
+        Sound.shared.tap()
+
+        // Call an adorable garden critter to hop onto the blanket and munch
+        let species: [GVisitorKind] = [.bunny, .hedgehog, .frog, .bluebird]
+        let kind = species[picnicSpeciesCursor % species.count]
+        picnicSpeciesCursor += 1
+        let seatX = max(GGeo.picnic.x - 56, min(GGeo.picnic.x + 56, snackPos.x + (slot == 0 ? 18 : -18)))
+        let seat = CGPoint(x: seatX, y: GGeo.picnic.y + 8)
+        let startPt = CGPoint(x: 1068, y: kind == .bluebird ? 540 : GGeo.picnic.y + 8)
+        let critter = PicnicCritter(
+            id: nextPicnicCritterID,
+            kind: kind,
+            p: startPt,
+            target: seat,
+            state: .hoppingIn,
+            stateAt: time,
+            facing: -1,
+            snackItem: item
+        )
+        nextPicnicCritterID += 1
+        if picnicCritters.count >= 3 { picnicCritters.removeFirst() }
+        picnicCritters.append(critter)
+        if kind == .bluebird { GardenSound.shared.play(.flutter, volume: 0.55) }
+
+        earnCoins(3, from: GGeo.picnic)
+        picnicFeedCount += 1
+        let targetStage = min(GardenSim.maxTreehouseStage, picnicFeedCount / 2)
+        if targetStage > treehouseStage {
+            treehouseStage = targetStage
+            treehouseUpgradeAt = time
+            treehouseBounceV += 14
+            let thCenter = CGPoint(x: GGeo.treehouse.x, y: GGeo.treehouse.y - 125)
+            sparkle(at: thCenter, count: 22)
+            confettiBurst(at: thCenter, count: 24)
+            Sound.shared.play(.fanfare, volume: 0.65)
+            Sound.shared.play(.sparkle, volume: 0.75)
+        }
+        save()
+        return true
+    }
+
+    private func stepPicnic(_ dt: CGFloat) {
+        for i in picnicCritters.indices.reversed() {
+            var c = picnicCritters[i]
+            switch c.state {
+            case .hoppingIn, .hoppingOut:
+                let dx = c.target.x - c.p.x
+                let dy = c.target.y - c.p.y
+                let d = hypot(dx, dy)
+                let speed: CGFloat = max(135, c.kind.speed * 1.1) * dt
+                if d <= speed {
+                    c.p = c.target
+                    if c.state == .hoppingOut {
+                        picnicCritters.remove(at: i)
+                        continue
+                    }
+                    c.state = .munching
+                    c.stateAt = time
+                    c.nextHeartAt = time + 0.3
+                    c.facing = c.p.x >= GGeo.picnic.x ? -1 : 1
+                    playVisitorSound(c.kind)
+                } else {
+                    c.p.x += dx / d * speed
+                    c.p.y += dy / d * speed
+                    c.walk += speed
+                    if abs(dx) > 2 { c.facing = dx > 0 ? 1 : -1 }
+                }
+            case .munching:
+                if time >= c.nextHeartAt {
+                    c.nextHeartAt = time + 0.95
+                    heartBurst(at: CGPoint(x: c.p.x, y: c.p.y - 38), count: 2)
+                }
+                if time - c.stateAt >= 3.4 {
+                    if let sIdx = picnicSnacks.firstIndex(where: { $0.item == c.snackItem }) {
+                        let sPos = picnicSnacks[sIdx].pos
+                        picnicSnacks.remove(at: sIdx)
+                        sparkle(at: sPos, count: 7)
+                    }
+                    c.state = .happy
+                    c.stateAt = time
+                    heartBurst(at: CGPoint(x: c.p.x, y: c.p.y - 44), count: 4)
+                    playVisitorSound(c.kind)
+                }
+            case .happy:
+                let linger = c.wearingCrown ? 6.5 : 2.6
+                if time - c.stateAt >= linger {
+                    c.state = .hoppingOut
+                    c.stateAt = time
+                    c.target = CGPoint(x: 1090, y: c.kind == .bluebird ? 520 : GGeo.picnic.y + 8)
+                    c.facing = 1
+                }
+            }
+            picnicCritters[i] = c
+        }
+    }
+
+    func pokeTreehouse() {
+        treehousePoke = time
+        treehouseBounceV += 11
+        let center = CGPoint(x: GGeo.treehouse.x, y: GGeo.treehouse.y - 125)
+        sparkle(at: center, count: 10)
+        if treehouseStage >= 4 {
+            starlightChime(at: CGPoint(x: GGeo.treehouse.x + 38, y: GGeo.treehouse.y - 96))
+        } else {
+            GardenSound.shared.play(.rustle, volume: 0.7)
+        }
+        if treehouseStage >= 5 {
+            GardenSound.shared.play(.chirp, volume: 0.85)
+            heartBurst(at: CGPoint(x: GGeo.treehouse.x, y: GGeo.treehouse.y - 146), count: 5)
+        }
+        Sound.shared.tap()
+        let dropCol: GRGB
+        let dropKind: GPart
+        switch season {
+        case .spring: dropCol = GRGB(0xFFB3D2); dropKind = .petal
+        case .summer: dropCol = GRGB(0x78C456); dropKind = .leaf
+        case .autumn: dropCol = GRGB(0xF08B36); dropKind = .leaf
+        case .winter: dropCol = GRGB(0xE8F7FF); dropKind = .snow
+        }
+        for _ in 0..<7 {
+            particles.append(GParticle(kind: dropKind,
+                                       p: CGPoint(x: GGeo.treehouse.x + CGFloat.random(in: -70...70), y: GGeo.treehouse.y - CGFloat.random(in: 120...190)),
+                                       v: CGVector(dx: CGFloat.random(in: -55...55), dy: CGFloat.random(in: 15...60)),
+                                       life: 3.4, size: dropKind == .snow ? 5.5 : 9, color: dropCol,
+                                       rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -4...4)))
+        }
+    }
+
+    // MARK: Night Firefly Lantern Jar
+
+    @discardableResult
+    func catchFirefly(at p: CGPoint) -> Bool {
+        guard night > 0.35 || weather == .night else { return false }
+        guard let idx = fireflies.indices.min(by: { hypot(fireflies[$0].p.x - p.x, fireflies[$0].p.y - p.y) < hypot(fireflies[$1].p.x - p.x, fireflies[$1].p.y - p.y) }) else {
+            return false
+        }
+        let f = fireflies[idx]
+        guard hypot(f.p.x - p.x, f.p.y - p.y) < 56 else { return false }
+        fireflies.remove(at: idx)
+        caughtFireflies = min(GardenSim.maxCaughtFireflies, caughtFireflies + 1)
+        let dest = CGPoint(x: GGeo.fireflyJar.x, y: GGeo.fireflyJar.y - 22)
+        let dur = 0.42
+        flyers.append(GFlyer(kind: .caughtFirefly, p0: f.p,
+                             v0: GFlyer.aim(from: f.p, to: dest, dur: dur),
+                             start: time, dur: dur, spin: 0, toBasket: false, toJar: true))
+        sparkle(at: f.p, count: 6)
+        let notes: [SFX] = [.note1, .note2, .note3, .note4]
+        Sound.shared.play(notes[(caughtFireflies - 1) % notes.count], volume: 0.65)
+        Sound.shared.tap()
+        save()
+        return true
+    }
+
+    @discardableResult
+    func releaseFireflyJar() -> Int {
+        guard caughtFireflies > 0 else { return 0 }
+        let count = caughtFireflies
+        caughtFireflies = 0
+        jarBounceV += 14
+        let origin = CGPoint(x: GGeo.fireflyJar.x, y: GGeo.fireflyJar.y - 34)
+        for i in 0..<count {
+            let angle = CGFloat(i) / CGFloat(max(1, count)) * 2 * .pi - .pi / 2
+            let speed = CGFloat.random(in: 120...210)
+            fireflies.append(GFirefly(
+                p: origin,
+                v: CGVector(dx: cos(angle) * speed - 40, dy: sin(angle) * speed - 120),
+                phase: CGFloat(i) * 0.7
+            ))
+        }
+        sparkle(at: origin, count: 16)
+        Sound.shared.play(.sparkle, volume: 0.7)
+        Sound.shared.play(.ding, volume: 0.5)
+        Sound.shared.tap()
+        save()
+        return count
+    }
+
+    // MARK: Wearable Flower Crowns
+
+    @discardableResult
+    func weaveFlowerCrown() -> Bool {
+        guard bouquet.count >= 3 else { return false }
+        let used = Array(bouquet.suffix(3))
+        bouquet.removeLast(3)
+        var colors: [GRGB] = []
+        for f in used {
+            let main = f.hybrid?.primaryColor ?? f.kind.bloom(f.variant)
+            colors.append(main)
+        }
+        for f in used.prefix(2) {
+            let accent = f.hybrid?.accentColor ?? f.kind.bloom(f.variant).shade(0.18)
+            colors.append(accent)
+        }
+        craftedCrownColors = colors
+        vaseBounceV += 14
+        crownBounceV += 16
+        sparkle(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 72), count: 14)
+        sparkle(at: CGPoint(x: GGeo.flowerCrownSpot.x, y: GGeo.flowerCrownSpot.y - 14), count: 10)
+        Sound.shared.play(.sparkle, volume: 0.65)
+        Sound.shared.play(.ding, volume: 0.6)
+        Sound.shared.tap()
+        save()
+        return true
+    }
+
+    @discardableResult
+    func placeCrownOnVisitor(at i: Int) -> Bool {
+        guard hasCraftedCrown, visitors.indices.contains(i) else { return false }
+        visitors[i].wearingCrown = true
+        visitors[i].crownColors = craftedCrownColors
+        visitors[i].poked = time
+        visitors[i].stayUntil = max(visitors[i].stayUntil, time + 10)
+        craftedCrownColors = []
+        let pos = visitors[i].pos
+        let origin = CGPoint(x: pos.x, y: pos.y - visitors[i].kind.stickerHeight * 0.5)
+        playVisitorSound(visitors[i].kind)
+        Sound.shared.play(.cheer, volume: 0.55)
+        Sound.shared.play(.sparkle, volume: 0.7)
+        Sound.shared.tap()
+        heartBurst(at: origin, count: 6)
+        confettiBurst(at: origin, count: 20)
+        earnCoins(3, from: pos)
+        return true
+    }
+
+    @discardableResult
+    func placeCrownOnPicnicCritter(at i: Int) -> Bool {
+        guard hasCraftedCrown, picnicCritters.indices.contains(i) else { return false }
+        picnicCritters[i].wearingCrown = true
+        picnicCritters[i].crownColors = craftedCrownColors
+        picnicCritters[i].poked = time
+        if picnicCritters[i].state == .happy {
+            picnicCritters[i].stateAt = time
+        }
+        craftedCrownColors = []
+        let pos = picnicCritters[i].p
+        let origin = CGPoint(x: pos.x, y: pos.y - 40)
+        playVisitorSound(picnicCritters[i].kind)
+        Sound.shared.play(.cheer, volume: 0.55)
+        Sound.shared.play(.sparkle, volume: 0.7)
+        Sound.shared.tap()
+        heartBurst(at: origin, count: 6)
+        confettiBurst(at: origin, count: 20)
+        earnCoins(3, from: pos)
+        return true
+    }
+
+    @discardableResult
+    func placeCrown(at p: CGPoint) -> Bool {
+        guard hasCraftedCrown else { return false }
+        if let pi = picnicCritterHit(p, radius: 85) {
+            return placeCrownOnPicnicCritter(at: pi)
+        }
+        if let vi = visitorHit(p) {
+            return placeCrownOnVisitor(at: vi)
+        }
+        if let vi = visitors.indices.min(by: { hypot(visitors[$0].p.x - p.x, visitors[$0].p.y - p.y) < hypot(visitors[$1].p.x - p.x, visitors[$1].p.y - p.y) }),
+           hypot(visitors[vi].p.x - p.x, visitors[vi].p.y - p.y) < 88 {
+            return placeCrownOnVisitor(at: vi)
+        }
+        return false
+    }
+
+    @discardableResult
+    func placeCrownOnNearestCritter() -> Bool {
+        guard hasCraftedCrown else { return false }
+        if let pi = picnicCritters.indices.first(where: { !picnicCritters[$0].wearingCrown }) ?? picnicCritters.indices.first {
+            return placeCrownOnPicnicCritter(at: pi)
+        }
+        if let vi = visitors.indices.first(where: { !visitors[$0].wearingCrown }) ?? visitors.indices.first {
+            return placeCrownOnVisitor(at: vi)
+        }
+        return false
+    }
+
+    private func picnicCritterHit(_ p: CGPoint, radius: CGFloat = 54) -> Int? {
+        for i in picnicCritters.indices {
+            let c = picnicCritters[i]
+            let mid = CGPoint(x: c.p.x, y: c.p.y - 30)
+            if hypot(mid.x - p.x, mid.y - p.y) < radius { return i }
+        }
+        return nil
+    }
+
     // MARK: Soil
 
     private func stepSoil(_ dt: CGFloat) {
@@ -1017,7 +1646,7 @@ final class GardenSim {
 
     func bloomed(_ i: Int) -> Bool {
         guard plots.indices.contains(i), let p = plots[i].plant else { return false }
-        return p.kind.isFlower && p.growth >= 0.95
+        return p.effectiveIsFlower && p.growth >= 0.95
     }
 
     private func stepPlants(_ dt: CGFloat) {
@@ -1055,7 +1684,7 @@ final class GardenSim {
                         plots[i].popV += 8
                         let top = CGPoint(x: x, y: surface(x) - GardenPlants.stemHeight(p) - 10)
                         if s >= 1 {
-                            p.left = p.kind.crop
+                            p.left = p.effectiveCrop
                             plots[i].waterPulse = 0
                             sparkle(at: top, count: 14)
                             GardenSound.shared.play(.grow, volume: 0.9)
@@ -1148,6 +1777,7 @@ final class GardenSim {
 
     private func stepParticles(_ dt: CGFloat) {
         let g = GardenSim.gravity
+        let vortexActive = vortexCenter != nil && time < vortexUntil
         var keep: [GParticle] = []
         keep.reserveCapacity(particles.count)
         for var q in particles {
@@ -1174,12 +1804,23 @@ final class GardenSim {
                     q.rot += q.spin * dt
                     if landSolid(&q) { continue }
                 }
-            case .petal, .leaf:
+            case .petal, .leaf, .snow:
                 let t = CGFloat(time)
-                let flutter = sin(t * 5 + q.rot * 3) * 40
-                let push = windNow * 280 + 20
+                let flutter = sin(t * (q.kind == .snow ? 2.6 : 5.0) + q.rot * 3) * (q.kind == .snow ? 24 : 40)
+                let push = windNow * (q.kind == .snow ? 140 : 280) + (q.kind == .snow ? 8 : 20)
                 q.v.dx += (push - q.v.dx) * dt * 1.2
-                q.v.dy += (70 + flutter - q.v.dy) * dt * 1.6
+                q.v.dy += ((q.kind == .snow ? 44 : 70) + flutter - q.v.dy) * dt * 1.6
+                if vortexActive, let vc = vortexCenter {
+                    let dx = q.p.x - vc.x
+                    let dy = q.p.y - vc.y
+                    let dist = hypot(dx, dy)
+                    if dist > 6 && dist < 170 {
+                        let str = (1 - dist / 170) * 520 * dt
+                        q.v.dx += (-dy / dist - dx / dist * 0.18) * str
+                        q.v.dy += (dx / dist - 0.55) * str
+                        q.spin += 4 * dt
+                    }
+                }
                 q.p.x += q.v.dx * dt
                 q.p.y += q.v.dy * dt
                 q.rot += q.spin * dt
@@ -1190,6 +1831,17 @@ final class GardenSim {
                     q.spin = 0
                 }
                 if q.p.x > 1160 { continue }
+            case .confetti:
+                q.v.dy += 280 * dt
+                q.v.dx *= (1 - dt * 1.2)
+                q.p.x += q.v.dx * dt + sin(CGFloat(time) * 8 + q.rot) * 28 * dt
+                q.p.y += q.v.dy * dt
+                q.rot += q.spin * dt
+            case .pollen:
+                q.v.dx *= (1 - dt * 2.2)
+                q.v.dy += (-20 - q.v.dy) * dt * 1.6
+                q.p.x += q.v.dx * dt
+                q.p.y += q.v.dy * dt
             case .sparkle:
                 q.v.dy += 60 * dt
                 q.v.dx *= (1 - dt * 2)
@@ -1232,7 +1884,7 @@ final class GardenSim {
                 guard let p = plots[i].plant else { continue }
                 let x = GGeo.plotX[i]
                 let top = surface(x) - GardenPlants.stemHeight(p)
-                if abs(q.p.x - x) < p.kind.reach * 0.6 && q.p.y > top && q.p.y < top + 44 {
+                if abs(q.p.x - x) < p.effectiveReach * 0.6 && q.p.y > top && q.p.y < top + 44 {
                     plots[i].bendV += q.v.dx * 0.0006 + CGFloat.random(in: -0.02...0.02)
                 }
             }
@@ -1329,6 +1981,21 @@ final class GardenSim {
         }
     }
 
+    func confettiBurst(at p: CGPoint, count: Int) {
+        let colors = [GRGB(0xFF7CA8), GRGB(0xFFD54A), GRGB(0x7FE3B0), GRGB(0x88C8FF), GRGB(0xC9A8FF), GRGB(0xFFB085)]
+        for k in 0..<count {
+            let a = CGFloat(k) / CGFloat(max(1, count)) * 2 * .pi + CGFloat.random(in: -0.25...0.25)
+            let sp = CGFloat.random(in: 120...280)
+            particles.append(GParticle(kind: .confetti, p: p,
+                                       v: CGVector(dx: cos(a) * sp, dy: sin(a) * sp - 150),
+                                       life: CGFloat.random(in: 1.4...2.2),
+                                       size: CGFloat.random(in: 6...10),
+                                       color: colors[k % colors.count],
+                                       rot: CGFloat.random(in: 0...6),
+                                       spin: CGFloat.random(in: -8...8)))
+        }
+    }
+
     func heartBurst(at p: CGPoint, count: Int) {
         let colors = [GRGB(0xFF7CA8), GRGB(0xFF9EC2), GRGB(0xFFB3CF)]
         for k in 0..<count {
@@ -1365,6 +2032,14 @@ final class GardenSim {
                 Sound.shared.play(.ding, volume: 0.4)
                 sparkle(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 68), count: 8)
             }
+            if f.toPicnic {
+                picnicBounceV += 8
+                sparkle(at: CGPoint(x: GGeo.picnic.x, y: GGeo.picnic.y - 12), count: 6)
+            }
+            if f.toJar {
+                jarBounceV += 10
+                sparkle(at: CGPoint(x: GGeo.fireflyJar.x, y: GGeo.fireflyJar.y - 26), count: 6)
+            }
         }
         flyers = keep
     }
@@ -1374,6 +2049,14 @@ final class GardenSim {
         basketBounce += basketBounceV * dt
         vaseBounceV += (-170 * vaseBounce - 10 * vaseBounceV) * dt
         vaseBounce += vaseBounceV * dt
+        picnicBounceV += (-160 * picnicBounce - 10 * picnicBounceV) * dt
+        picnicBounce += picnicBounceV * dt
+        jarBounceV += (-170 * jarBounce - 10 * jarBounceV) * dt
+        jarBounce += jarBounceV * dt
+        crownBounceV += (-170 * crownBounce - 10 * crownBounceV) * dt
+        crownBounce += crownBounceV * dt
+        treehouseBounceV += (-120 * treehouseBounce - 9 * treehouseBounceV) * dt
+        treehouseBounce += treehouseBounceV * dt
         surprisePops.removeAll { time - $0.start >= $0.dur }
     }
 
@@ -1382,26 +2065,61 @@ final class GardenSim {
         let x = GGeo.plotX[i]
         let base = CGPoint(x: x, y: surface(x))
         var from = head(plot: i) ?? base
-        switch p.kind {
-        case .tomato:
-            let spots = GardenPlants.tomatoSpots
-            let s = spots[(p.kind.crop - p.left) % spots.count]
-            from = CGPoint(x: base.x + s.x, y: base.y - s.y)
-        case .strawberry:
-            let s = GardenPlants.berrySpots[(p.kind.crop - p.left) % GardenPlants.berrySpots.count]
-            from = CGPoint(x: base.x + s.x, y: base.y - s.y)
-        case .pumpkin:
-            from = CGPoint(x: base.x + 12, y: base.y - (p.giant ? 42 : 28))
-        case .carrot:
-            from = CGPoint(x: base.x, y: base.y + 8)
-        default: break
+        if p.hybrid == nil {
+            switch p.kind {
+            case .tomato:
+                let spots = GardenPlants.tomatoSpots
+                let s = spots[(p.kind.crop - p.left) % spots.count]
+                from = CGPoint(x: base.x + s.x, y: base.y - s.y)
+            case .strawberry:
+                let s = GardenPlants.berrySpots[(p.kind.crop - p.left) % GardenPlants.berrySpots.count]
+                from = CGPoint(x: base.x + s.x, y: base.y - s.y)
+            case .pumpkin:
+                from = CGPoint(x: base.x + 12, y: base.y - (p.giant ? 42 : 28))
+            case .carrot:
+                from = CGPoint(x: base.x, y: base.y + 8)
+            default: break
+            }
+        } else if p.hybrid == .crystalPumpkin {
+            from = CGPoint(x: base.x + 8, y: base.y - 36)
         }
+
         let wasGiant = p.giant
-        basket.append("\(p.kind.rawValue):\(p.variant)")
+        let wasRainbow = p.rainbowCharged
+        let hybrid = p.hybrid
+
+        if let hybrid {
+            basket.append("hybrid:\(hybrid.rawValue)")
+        } else {
+            basket.append("\(p.kind.rawValue):\(p.variant)")
+        }
         if basket.count > 60 { basket.removeFirst(basket.count - 60) }
         p.left -= 1
 
-        if p.kind.isFlower {
+        if let hybrid {
+            if hybrid.isFlower {
+                bouquet.append(BouquetFlower(kind: p.kind, variant: p.variant, hybrid: hybrid))
+                if bouquet.count > GardenSim.maxBouquet {
+                    bouquet.removeFirst(bouquet.count - GardenSim.maxBouquet)
+                }
+                let target = CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 64)
+                let dur = 0.62 + Double(abs(target.x - from.x)) / 2400
+                flyers.append(GFlyer(kind: .hybridFlowerToVase(hybrid), p0: from,
+                                     v0: GFlyer.aim(from: from, to: target, dur: dur),
+                                     start: time, dur: dur, spin: CGFloat.random(in: -5...5),
+                                     toBasket: false, toVase: true))
+                petals(at: from, color: hybrid.primaryColor, n: 8)
+                if hybrid == .starlightRose { starlightChime(at: from) }
+            } else {
+                let target = CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 20)
+                let dur = 0.65 + Double(abs(target.x - from.x)) / 2400
+                flyers.append(GFlyer(kind: .hybridCrop(hybrid), p0: from,
+                                     v0: GFlyer.aim(from: from, to: target, dur: dur),
+                                     start: time, dur: dur, spin: CGFloat.random(in: -6...6),
+                                     toBasket: true, toVase: false))
+                sparkle(at: from, count: 14)
+            }
+        } else if p.kind.isFlower {
             bouquet.append(BouquetFlower(kind: p.kind, variant: p.variant))
             if bouquet.count > GardenSim.maxBouquet {
                 bouquet.removeFirst(bouquet.count - GardenSim.maxBouquet)
@@ -1426,6 +2144,13 @@ final class GardenSim {
             }
         }
 
+        if wasRainbow {
+            p.rainbowCharged = false
+            earnCoins(2, from: from)
+            sparkle(at: from, count: 14)
+            Sound.shared.play(.sparkle, volume: 0.65)
+        }
+
         GardenSound.shared.play(.pluck, volume: 0.8)
         Sound.shared.tap()
         plots[i].bendV += CGFloat.random(in: -1.5...1.5)
@@ -1433,23 +2158,31 @@ final class GardenSim {
         fulfillMatchingVisitors(harvested: p.kind)
 
         if p.left <= 0 {
-            switch p.kind {
-            case .carrot:
-                plots[i].state = .empty(surprise: BuriedSurprise.random())
-                plots[i].surpriseReady = true
-                plots[i].pull = 0
-                burstSoil(at: base, n: 9)
-                let c = GGeo.column(x)
-                for j in max(0, c - 4)...min(GGeo.columns - 1, c + 4) { h[j] += 4 }
-                return
-            case .pumpkin:
-                p.growth = 0.55
-                p.giant = false
-                plots[i].waterPulse = 0
-            default:
+            if p.hybrid != nil {
+                p.hybrid = nil
+                p.rainbowCharged = false
                 p.growth = 0.65
+                p.left = 0
+            } else {
+                switch p.kind {
+                case .carrot:
+                    plots[i].state = .empty(surprise: BuriedSurprise.random())
+                    plots[i].surpriseReady = true
+                    plots[i].pull = 0
+                    burstSoil(at: base, n: 9)
+                    let c = GGeo.column(x)
+                    for j in max(0, c - 4)...min(GGeo.columns - 1, c + 4) { h[j] += 4 }
+                    return
+                case .pumpkin:
+                    p.growth = 0.55
+                    p.giant = false
+                    plots[i].waterPulse = 0
+                default:
+                    p.growth = 0.65
+                }
+                p.rainbowCharged = false
+                p.left = 0
             }
-            p.left = 0
         }
         plots[i].plant = p
     }
@@ -1470,7 +2203,7 @@ final class GardenSim {
             let x = GGeo.plotX[i]
             let base = surface(x)
             let top = base - GardenPlants.stemHeight(pl) - 38
-            if abs(p.x - x) < pl.kind.reach + 14 && p.y > top && p.y < base + 42 {
+            if abs(p.x - x) < pl.effectiveReach + 14 && p.y > top && p.y < base + 42 {
                 return i
             }
         }
@@ -1507,7 +2240,7 @@ final class GardenSim {
         }
         // 2. Ripe carrots grab for elastic pull-up harvest.
         for i in plots.indices {
-            guard let pl = plots[i].plant, pl.kind == .carrot, pl.growth >= 1 else { continue }
+            guard let pl = plots[i].plant, pl.kind == .carrot, pl.hybrid == nil, pl.growth >= 1 else { continue }
             let x = GGeo.plotX[i]
             let base = surface(x)
             if abs(x - p.x) < 48 && p.y > base - 105 && p.y < base + 42 {
@@ -1516,7 +2249,25 @@ final class GardenSim {
                 return
             }
         }
-        // 2b. Dragging harvest from basket to a visitor.
+        // 2a. Glowing pollen orb drag for hands-on cross-breeding!
+        for i in plots.indices {
+            guard let orb = pollenOrbPos(plot: i), let pl = plots[i].plant else { continue }
+            if hypot(p.x - orb.x, p.y - orb.y) < 30 {
+                grab = .pollen(fromPlot: i, kind: pl.kind)
+                Sound.shared.play(.sparkle, volume: 0.45)
+                Sound.shared.tap()
+                return
+            }
+        }
+        // 2b. Dragging woven Flower Crown from the bench onto any critter.
+        if hasCraftedCrown && hypot(p.x - GGeo.flowerCrownSpot.x, p.y - (GGeo.flowerCrownSpot.y - 16)) < 46 {
+            grab = .flowerCrown
+            crownBounceV += 8
+            Sound.shared.play(.pop, volume: 0.5)
+            Sound.shared.tap()
+            return
+        }
+        // 2c. Dragging harvest from basket to a visitor or picnic blanket.
         if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 62 {
             if !basket.isEmpty {
                 grab = .basketFeed
@@ -1524,11 +2275,12 @@ final class GardenSim {
             }
             return
         }
-        // 3. Foreground ripe plants, plant stems, visitors, and bouquet vase beat background decor,
-        // while short decor peeking beside a growing plant remains reachable.
+        // 3. Foreground ripe plants, plant stems, visitors, picnic, bench props beat background decor.
         if blockingPlantHit(p) != nil
             || visitorHit(p) != nil
-            || hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 48)) < 64 {
+            || isOverPicnic(p)
+            || hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 44)) < 50
+            || hypot(p.x - GGeo.fireflyJar.x, p.y - (GGeo.fireflyJar.y - 24)) < 32 {
             return
         }
         // 4. Background lawn decorations.
@@ -1576,6 +2328,19 @@ final class GardenSim {
             decor[d].vy = 0
             decor[d].tiltV += (p.x - handLast.x) * 0.05
             overReturnBadge = isOverReturnBadge(p)
+        case .pollen?:
+            if Int(time * 24) % 2 == 0 {
+                particles.append(GParticle(kind: .pollen,
+                                           p: CGPoint(x: p.x + CGFloat.random(in: -8...8), y: p.y + CGFloat.random(in: -8...8)),
+                                           v: CGVector(dx: CGFloat.random(in: -22...22), dy: CGFloat.random(in: -24...12)),
+                                           life: 0.6, size: CGFloat.random(in: 3.5...6), color: GRGB(0xFFE05C)))
+            }
+        case .flowerCrown?:
+            if Int(time * 20) % 3 == 0, let col = craftedCrownColors.randomElement() {
+                particles.append(GParticle(kind: .petal, p: p,
+                                           v: CGVector(dx: CGFloat.random(in: -30...30), dy: CGFloat.random(in: -25...15)),
+                                           life: 0.9, size: 6, color: col, rot: CGFloat.random(in: 0...6), spin: 3))
+            }
         case .basketFeed?:
             break
         case nil:
@@ -1619,6 +2384,33 @@ final class GardenSim {
                 }
             }
             overReturnBadge = false
+        case .pollen(let fromPlot, let kind)?:
+            if tap {
+                sparkle(at: p, count: 8)
+            } else {
+                // Find the closest different pollinatable plot near the drop point
+                let hitPlot = plantHit(p) ?? plots.indices.min(by: { abs(GGeo.plotX[$0] - p.x) < abs(GGeo.plotX[$1] - p.x) }).flatMap { idx in
+                    abs(GGeo.plotX[idx] - p.x) < 68 && p.y > 220 && p.y < GGeo.bedBottom ? idx : nil
+                }
+                if let targetIdx = hitPlot, targetIdx != fromPlot, pollinatable(targetIdx), plots[targetIdx].plant?.kind != kind {
+                    crossBreed(fromPlot: fromPlot, ontoPlot: targetIdx)
+                } else {
+                    sparkle(at: p, count: 6)
+                }
+            }
+        case .flowerCrown?:
+            if tap {
+                if !placeCrownOnNearestCritter() {
+                    crownBounceV += 12
+                    sparkle(at: CGPoint(x: GGeo.flowerCrownSpot.x, y: GGeo.flowerCrownSpot.y - 16), count: 8)
+                    Sound.shared.play(.boing, volume: 0.35)
+                }
+            } else {
+                if !placeCrown(at: p) {
+                    crownBounceV += 10
+                    Sound.shared.play(.whoosh, volume: 0.35)
+                }
+            }
         case .basketFeed?:
             if tap {
                 basketBounceV += 12
@@ -1626,7 +2418,9 @@ final class GardenSim {
                 Sound.shared.tap()
                 sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
             } else {
-                _ = feedVisitorFromBasket(at: p)
+                if !feedVisitorFromBasket(at: p) && isOverPicnic(p) {
+                    _ = servePicnicSnack(at: p)
+                }
             }
         case nil:
             if tap { tapAt(p) }
@@ -1636,25 +2430,44 @@ final class GardenSim {
 
     private func brush(from a: CGPoint, to b: CGPoint) {
         let dx = b.x - a.x
+        let moved = hypot(b.x - a.x, b.y - a.y)
         let sweep = abs(b.x - grabStart.x) > 22
+
+        // Spring cherry breeze (and autumn/winter breeze) swirls floating particles into playful vortexes!
+        if moved > 4 && (season == .spring || season == .autumn || season == .winter) {
+            vortexCenter = b
+            vortexUntil = time + 0.55
+            if season == .spring && Int.random(in: 0..<3) == 0 {
+                let col = Bool.random() ? GRGB(0xFFB3D2) : GRGB(0xFFE0EE)
+                particles.append(GParticle(kind: .petal, p: b,
+                                           v: CGVector(dx: (b.x - a.x) * 3.5 + CGFloat.random(in: -30...30),
+                                                       dy: (b.y - a.y) * 3.5 - 45),
+                                           life: 2.8, size: CGFloat.random(in: 7...10), color: col,
+                                           rot: CGFloat.random(in: 0...6), spin: CGFloat.random(in: -6...6)))
+            }
+        }
+
         for i in plots.indices {
             guard let pl = plots[i].plant else { continue }
             let x = GGeo.plotX[i]
             let base = surface(x)
             let top = base - GardenPlants.stemHeight(pl) - 32
-            if sweep && pl.kind != .carrot && pl.growth >= 1 && pl.left > 0 && !pickedThisStroke.contains(i) {
+            if sweep && (pl.kind != .carrot || pl.hybrid != nil) && pl.growth >= 1 && pl.left > 0 && !pickedThisStroke.contains(i) {
                 let t = abs(dx) > 1 ? min(1, max(0, (x - a.x) / dx)) : 1
                 let y = a.y + (b.y - a.y) * t
-                if abs(a.x + dx * t - x) < pl.kind.reach + 6 && y >= top && y <= base + 10 {
+                if abs(a.x + dx * t - x) < pl.effectiveReach + 6 && y >= top && y <= base + 10 {
                     pickedThisStroke.insert(i)
                     harvest(i)
                 }
             }
-            if abs(b.x - x) < pl.kind.reach + 10 && b.y > top && b.y < base + 6 {
+            if abs(b.x - x) < pl.effectiveReach + 10 && b.y > top && b.y < base + 6 {
                 let leverage = (base - b.y) / max(40, base - top)
                 plots[i].bendV += dx * 0.05 * (0.4 + leverage)
+                if pl.hybrid == .starlightRose && abs(dx) > 8, let hd = head(plot: i) {
+                    starlightChime(at: hd)
+                }
                 if bloomed(i) && abs(dx) > 14 && Int.random(in: 0..<4) == 0, let hd = head(plot: i) {
-                    petals(at: hd, color: pl.kind.bloom(pl.variant), n: 1)
+                    petals(at: hd, color: pl.hybrid?.primaryColor ?? pl.kind.bloom(pl.variant), n: 1)
                 }
                 if abs(dx) > 6 { GardenSound.shared.play(.rustle, volume: 0.5, gap: 0.22) }
             }
@@ -1697,6 +2510,21 @@ final class GardenSim {
     }
 
     private func tapAt(_ p: CGPoint) {
+        // Night firefly catching (high priority when glowing at night!)
+        if catchFirefly(at: p) { return }
+
+        // Bench Firefly Lantern Jar
+        if hypot(p.x - GGeo.fireflyJar.x, p.y - (GGeo.fireflyJar.y - 24)) < 32 {
+            if caughtFireflies > 0 {
+                _ = releaseFireflyJar()
+            } else {
+                jarBounceV += 10
+                Sound.shared.play(.ding, volume: 0.35)
+                Sound.shared.tap()
+            }
+            return
+        }
+
         // Woven harvest basket
         if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 62 {
             basketBounceV += 12
@@ -1705,18 +2533,47 @@ final class GardenSim {
             sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
             return
         }
-        // Bouquet vase on cedar bench
-        if hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 48)) < 64 {
+
+        // Bouquet vase on cedar bench (>= 3 blooms weaves a Wearable Flower Crown!)
+        if hypot(p.x - GGeo.vase.x, p.y - (GGeo.vase.y - 44)) < 50 {
+            if bouquet.count >= 3 && !hasCraftedCrown {
+                _ = weaveFlowerCrown()
+                return
+            }
             vaseBounceV += 12
             Sound.shared.play(.ding, volume: 0.5)
             Sound.shared.tap()
             sparkle(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 72), count: 8)
             if let last = bouquet.last {
-                petals(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 78), color: last.kind.bloom(last.variant), n: 5)
+                let col = last.hybrid?.primaryColor ?? last.kind.bloom(last.variant)
+                petals(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 78), color: col, n: 5)
             }
             return
         }
+
+        // Picnic critters & Critter Picnic Blanket
+        if let pi = picnicCritterHit(p) {
+            if hasCraftedCrown {
+                _ = placeCrownOnPicnicCritter(at: pi)
+                return
+            }
+            picnicCritters[pi].poked = time
+            playVisitorSound(picnicCritters[pi].kind)
+            heartBurst(at: CGPoint(x: picnicCritters[pi].p.x, y: picnicCritters[pi].p.y - 38), count: 4)
+            Sound.shared.tap()
+            return
+        }
+        if isOverPicnic(p) {
+            if !servePicnicSnack() {
+                picnicBounceV += 8
+                basketBounceV += 8
+                Sound.shared.play(.boing, volume: 0.3)
+            }
+            return
+        }
+
         if tapVisitor(p) { return }
+
         for i in butterflies.indices where hypot(butterflies[i].p.x - p.x, butterflies[i].p.y - p.y) < 56 {
             flee(i, from: CGPoint(x: p.x, y: p.y + 20))
             sparkle(at: butterflies[i].p, count: 5)
@@ -1738,18 +2595,29 @@ final class GardenSim {
         }
         if let i = plantHit(p), let pl = plots[i].plant {
             let x = GGeo.plotX[i]
-            if pl.growth >= 1 && pl.left > 0 && !pl.kind.pulled {
+            if pl.growth >= 1 && pl.left > 0 && (!pl.kind.pulled || pl.hybrid != nil) {
                 harvest(i)
             } else {
                 plots[i].popV += 6
                 plots[i].bendV += (p.x < x ? 1.2 : -1.2)
-                GardenSound.shared.play(.rustle, volume: 0.6)
+                if pl.hybrid == .starlightRose, let hd = head(plot: i) {
+                    starlightChime(at: hd)
+                } else {
+                    GardenSound.shared.play(.rustle, volume: 0.6)
+                }
                 if plots[i].dry > 1.5 {
                     Sound.shared.play(.boing, volume: 0.3)
                 }
             }
             return
         }
+
+        // Tapping the Storybook Oak Treehouse in the hills!
+        if hypot(p.x - GGeo.treehouse.x, p.y - (GGeo.treehouse.y - 125)) < 102 {
+            pokeTreehouse()
+            return
+        }
+
         if GGeo.inBed(p.x) && abs(p.y - surface(p.x)) < 50 {
             let s = surface(p.x)
             for _ in 0..<5 {
@@ -1782,9 +2650,9 @@ final class GardenSim {
         for i in plots.indices {
             guard let pl = plots[i].plant else { continue }
             let dx = abs(GGeo.plotX[i] - x)
-            let span = pl.kind.reach + 14
+            let span = pl.effectiveReach + 14
             if dx < span {
-                let tallPlant = pl.kind.height >= k.size.height
+                let tallPlant = (pl.hybrid?.height ?? pl.kind.height) >= k.size.height
                 plantPenalty += tallPlant ? 240 : 120
             }
         }
@@ -1896,7 +2764,7 @@ final class GardenSim {
         }
     }
 
-    // MARK: Bugs
+    // MARK: Bugs & Live Cross-Breeding Bee
 
     private func spawnButterfly(_ k: Int, fromEdge: Bool) {
         let left = Bool.random()
@@ -1913,10 +2781,20 @@ final class GardenSim {
         GardenSound.shared.play(.flutter, volume: 0.5)
     }
 
+    private func bestPollinatePartner(for plotIndex: Int) -> Int? {
+        guard pollinatable(plotIndex), let kind = plots[plotIndex].plant?.kind else { return nil }
+        let candidates = plots.indices.filter { j in
+            j != plotIndex && pollinatable(j) && plots[j].plant?.kind != kind
+        }
+        // Prefer adjacent blooms first so kids easily watch the bee hop between neighbors!
+        return candidates.min { abs($0 - plotIndex) < abs($1 - plotIndex) }
+    }
+
     private func stepCritters(_ dt: CGFloat) {
         let t = CGFloat(time)
         let outside = rain < 0.35 && night < 0.5
         let blooms = plots.indices.filter { bloomed($0) }
+        let readyPollenPlots = plots.indices.filter { hasPollenPartner(for: $0) }
 
         let want = outside ? 2 + min(2, blooms.count) : 0
         if butterflies.filter({ !$0.leaving }).count < want && Int.random(in: 0..<200) == 0 {
@@ -1981,29 +2859,56 @@ final class GardenSim {
         }
         butterflies.removeAll { $0.leaving && ($0.p.x < -100 || $0.p.x > 1124) }
 
-        if outside && !blooms.isEmpty && weather != .rain {
-            if bee == nil && Int.random(in: 0..<240) == 0 {
-                bee = GBee(p: CGPoint(x: 1080, y: 210), v: CGVector(dx: -120, dy: 0), target: CGPoint(x: 680, y: 250))
+        // Bee with visible golden pollen cross-breeding flight!
+        if outside && (!blooms.isEmpty || !readyPollenPlots.isEmpty) && weather != .rain {
+            if bee == nil && time >= nextBeeSpawn {
+                nextBeeSpawn = time + (!readyPollenPlots.isEmpty ? 1.0 : 3.5)
+                let firstTargetIdx = readyPollenPlots.first ?? blooms.first
+                let tgt = firstTargetIdx.flatMap { pollenAnchor(plot: $0) } ?? CGPoint(x: 680, y: 250)
+                let fromLeft = tgt.x < 512
+                let start = CGPoint(x: fromLeft ? -40 : 1060, y: max(150, tgt.y - 70))
+                var fresh = GBee(p: start, v: CGVector(dx: fromLeft ? 160 : -160, dy: 0), target: tgt)
+                if let idx = firstTargetIdx {
+                    fresh.perchUntil = -Double(idx) - 1
+                }
+                bee = fresh
             }
         } else if var b = bee, !b.leaving {
             b.leaving = true
             b.perch = nil
+            b.carryingPollenFrom = nil
+            b.pollinateTargetPlot = nil
             b.target = CGPoint(x: 1180, y: 120)
             bee = b
         }
         if var b = bee {
             b.phase += dt * 60
             if let pi = b.perch {
-                if let hd = head(plot: pi), bloomed(pi), time < b.perchUntil {
+                if let hd = pollenAnchor(plot: pi), (bloomed(pi) || pollinatable(pi)), time < b.perchUntil {
                     b.p = CGPoint(x: hd.x + 4, y: hd.y - 10)
                 } else {
+                    // Taking off from plot `pi`: pick up golden pollen if a different ripe neighbor exists!
+                    if b.carryingPollenFrom == nil, let partner = bestPollinatePartner(for: pi), let kind = plots[pi].plant?.kind {
+                        b.carryingPollenFrom = kind
+                        b.carryingPlotIndex = pi
+                        b.pollinateTargetPlot = partner
+                        b.perchUntil = -Double(partner) - 1
+                        if let hd = pollenAnchor(plot: partner) { b.target = hd }
+                        sparkle(at: b.p, count: 6)
+                    }
                     b.perch = nil
-                    b.nextThink = time
+                    b.nextThink = time + 0.1
                 }
             } else {
-                if !b.leaving && time > b.nextThink {
-                    b.nextThink = time + Double.random(in: 1.5...3)
-                    if let pi = blooms.randomElement(), let hd = head(plot: pi), Bool.random() {
+                if b.carryingPollenFrom != nil && Int(time * 24) % 4 == 0 {
+                    particles.append(GParticle(kind: .pollen,
+                                               p: CGPoint(x: b.p.x, y: b.p.y + 8),
+                                               v: CGVector(dx: CGFloat.random(in: -16...16), dy: CGFloat.random(in: -10...20)),
+                                               life: 0.65, size: 4.2, color: GRGB(0xFFE05C)))
+                }
+                if !b.leaving && b.pollinateTargetPlot == nil && time > b.nextThink {
+                    b.nextThink = time + Double.random(in: 1.0...2.0)
+                    if let pi = readyPollenPlots.first ?? blooms.randomElement(), let hd = pollenAnchor(plot: pi) {
                         b.target = hd
                         b.perchUntil = -Double(pi) - 1
                     } else {
@@ -2013,20 +2918,30 @@ final class GardenSim {
                 }
                 if b.perchUntil < 0 {
                     let pi = Int(-b.perchUntil - 1)
-                    if pi < plots.count, let hd = head(plot: pi), bloomed(pi) {
+                    if pi < plots.count, let hd = pollenAnchor(plot: pi), (bloomed(pi) || pollinatable(pi)) {
                         b.target = hd
-                        if hypot(hd.x - b.p.x, hd.y - b.p.y) < 14 {
+                        if hypot(hd.x - b.p.x, hd.y - b.p.y) < 18 {
+                            if let donor = b.carryingPollenFrom, b.pollinateTargetPlot == pi {
+                                _ = crossBreed(from: donor, ontoPlot: pi)
+                                b.carryingPollenFrom = nil
+                                b.carryingPlotIndex = nil
+                                b.pollinateTargetPlot = nil
+                            }
                             b.perch = pi
-                            b.perchUntil = time + Double.random(in: 1.2...2.4)
+                            b.perchUntil = time + (b.carryingPollenFrom == nil && bestPollinatePartner(for: pi) != nil ? 0.75 : Double.random(in: 1.1...2.0))
                         }
+                    } else {
+                        b.perchUntil = 0
+                        b.pollinateTargetPlot = nil
                     }
                 }
                 let dx = b.target.x - b.p.x
                 let dy = b.target.y - b.p.y
                 let d = max(1, hypot(dx, dy))
-                let speed: CGFloat = min(260, d * 2.4 + 40)
-                b.v.dx += ((dx / d * speed - b.v.dx) * 3 + sin(t * 13) * 140) * dt
-                b.v.dy += ((dy / d * speed - b.v.dy) * 3 + cos(t * 11) * 140) * dt
+                let speed: CGFloat = b.carryingPollenFrom != nil ? min(280, d * 3.0 + 90) : min(260, d * 2.4 + 40)
+                let jitter: CGFloat = b.carryingPollenFrom != nil ? 45 : 130
+                b.v.dx += ((dx / d * speed - b.v.dx) * 3.4 + sin(t * 13) * jitter) * dt
+                b.v.dy += ((dy / d * speed - b.v.dy) * 3.4 + cos(t * 11) * jitter) * dt
                 b.p.x += b.v.dx * dt
                 b.p.y += b.v.dy * dt
             }

@@ -508,4 +508,238 @@ final class GardenTests: XCTestCase {
         let restored = GardenSim(save: decoded)
         XCTAssertEqual(restored.decor.map(\.kind), [.lotus])
     }
+
+    // MARK: Wave 2D — Hybrids, Picnic & 5-Stage Treehouse, Seasons/Fireflies & Flower Crowns
+
+    func testManualPollenCrossBreedingCreatesAllSixHybridsAndSavesDiscovery() throws {
+        let sim = freshSim()
+        for i in sim.plots.indices { sim.plots[i].plant = nil }
+
+        // Dragging the glowing pollen orb from ripe Tulip (plot 0) onto ripe Daisy (plot 1) breeds Starlight Rose!
+        sim.plots[0].plant = Plant(kind: .tulip, growth: 1, left: 1, variant: 0)
+        sim.plots[1].plant = Plant(kind: .daisy, growth: 1, left: 2, variant: 0)
+        guard let orb = sim.pollenOrbPos(plot: 0), let targetAnchor = sim.pollenAnchor(plot: 1) else {
+            return XCTFail("Expected glowing pollen orb and partner anchor")
+        }
+        let coinsBefore = Coins.shared.balance
+        sim.handBegan(orb)
+        XCTAssertNotNil(sim.dragPollenPos)
+        sim.handMoved(targetAnchor)
+        sim.handEnded(targetAnchor, tap: false)
+
+        XCTAssertEqual(sim.plots[1].plant?.hybrid, .starlightRose)
+        XCTAssertTrue(sim.discoveredHybrids.contains(.starlightRose))
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 5, "First-time hybrid discovery should award +5 Play Coins")
+
+        // Breeding Starlight Rose a second time does not double-award first-time discovery coins.
+        sim.plots[2].plant = Plant(kind: .daisy, growth: 1, left: 2, variant: 0)
+        XCTAssertEqual(sim.crossBreed(fromPlot: 0, ontoPlot: 2), .starlightRose)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 5)
+
+        // Verify the remaining 5 distinct HybridKind recipes.
+        let pairs: [(PlantKind, PlantKind, HybridKind)] = [
+            (.lavender, .sunflower, .cottonSunflower),
+            (.tulip, .strawberry, .moonberryTulip),
+            (.sunflower, .lavender, .rainbowLavender),
+            (.daisy, .pumpkin, .crystalPumpkin),
+            (.tomato, .strawberry, .sparkleBerryVine),
+        ]
+        for (donor, target, expected) in pairs {
+            sim.plots[3].plant = Plant(kind: target, growth: 1, left: target.crop, variant: 0)
+            let created = sim.crossBreed(from: donor, ontoPlot: 3)
+            XCTAssertEqual(created, expected)
+            XCTAssertEqual(sim.plots[3].plant?.hybrid, expected)
+        }
+        XCTAssertEqual(Set(sim.discoveredHybrids), Set(HybridKind.allCases))
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 30)
+
+        // Harvesting a hybrid flower puts it into the bouquet; harvesting a hybrid fruit puts it into the basket.
+        sim.harvest(1) // starlightRose
+        XCTAssertEqual(sim.bouquet.last?.hybrid, .starlightRose)
+        sim.plots[4].plant = Plant(kind: .pumpkin, growth: 1, left: 1, variant: 0, hybrid: .crystalPumpkin)
+        sim.harvest(4)
+        XCTAssertEqual(sim.basket.last, "hybrid:crystalPumpkin")
+
+        // Verify discoveredHybrids persists across GardenSave round-trip.
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let decoded = try JSONDecoder().decode(GardenSave.self, from: data)
+        let restored = GardenSim(save: decoded)
+        XCTAssertEqual(restored.discoveredHybrids, sim.discoveredHybrids)
+    }
+
+    func testLiveBeePollinatesTwoDifferentRipeBloomsIntoHybrid() {
+        let sim = freshSim()
+        for i in sim.plots.indices { sim.plots[i].plant = nil }
+        sim.plots[0].plant = Plant(kind: .tulip, growth: 1, left: 1, variant: 0)
+        sim.plots[1].plant = Plant(kind: .daisy, growth: 1, left: 2, variant: 0)
+        sim.setWeather(.sun)
+        sim.settleWeather()
+
+        var sawCarryingPollen = false
+        for _ in 0..<600 {
+            sim.step(dt: 1.0 / 60)
+            if sim.bee?.carryingPollenFrom != nil { sawCarryingPollen = true }
+            if sim.plots[0].plant?.hybrid != nil || sim.plots[1].plant?.hybrid != nil { break }
+        }
+        XCTAssertTrue(sawCarryingPollen, "Live bee should visibly carry golden pollen between blooms")
+        let hybrid = sim.plots[0].plant?.hybrid ?? sim.plots[1].plant?.hybrid
+        XCTAssertEqual(hybrid, .starlightRose)
+        XCTAssertTrue(sim.discoveredHybrids.contains(.starlightRose))
+    }
+
+    func testCritterPicnicFeedingAndFiveStageStorybookTreehouse() throws {
+        let sim = freshSim()
+        sim.basket = [
+            "carrot:0", "strawberry:0", "tomato:0", "pumpkin:0", "hybrid:crystalPumpkin",
+            "carrot:0", "strawberry:0", "tomato:0", "pumpkin:0", "hybrid:sparkleBerryVine", "carrot:0"
+        ]
+        XCTAssertEqual(sim.treehouseStage, 0)
+
+        // Dragging from Harvest Basket onto Critter Picnic Blanket feeds a critter and awards +3 coins.
+        let coinsBefore = Coins.shared.balance
+        sim.handBegan(GGeo.basket)
+        sim.handMoved(GGeo.picnic)
+        sim.handEnded(GGeo.picnic, tap: false)
+
+        XCTAssertEqual(sim.picnicFeedCount, 1)
+        XCTAssertEqual(sim.treehouseStage, 0)
+        XCTAssertEqual(sim.basket.count, 10)
+        XCTAssertEqual(sim.picnicCritters.count, 1)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 3)
+
+        // Tapping the Picnic Blanket serves another snack -> feedCount == 2 -> Treehouse Stage 1!
+        sim.handBegan(GGeo.picnic)
+        sim.handEnded(GGeo.picnic, tap: true)
+        XCTAssertEqual(sim.picnicFeedCount, 2)
+        XCTAssertEqual(sim.treehouseStage, 1)
+
+        // Continue feeding up to Stage 5 and ensure stage caps cleanly at 5.
+        for expectedStage in 2...5 {
+            XCTAssertTrue(sim.servePicnicSnack())
+            XCTAssertTrue(sim.servePicnicSnack())
+            XCTAssertEqual(sim.treehouseStage, expectedStage)
+        }
+        XCTAssertTrue(sim.servePicnicSnack())
+        XCTAssertEqual(sim.treehouseStage, GardenSim.maxTreehouseStage)
+
+        // Verify treehouseStage & picnicFeedCount round-trip through GardenSave.
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let decoded = try JSONDecoder().decode(GardenSave.self, from: data)
+        let restored = GardenSim(save: decoded)
+        XCTAssertEqual(restored.treehouseStage, 5)
+        XCTAssertEqual(restored.picnicFeedCount, sim.picnicFeedCount)
+
+        // Verify layout clearance: Picnic Blanket clears lifted dock (dockY = 740) and bed plots.
+        let dockRight: CGFloat = 512 + 196
+        let picnicLeft = GGeo.picnic.x - GGeo.picnicSize.width / 2
+        XCTAssertGreaterThan(picnicLeft, dockRight + 20, "Picnic blanket must clear the lifted bottom dock")
+        XCTAssertGreaterThan(GGeo.picnic.y - GGeo.picnicSize.height / 2, GGeo.bedBottom + 20, "Picnic blanket must clear the raised bed")
+    }
+
+    func testSeasonCyclingSpringVortexRainbowShimmerAndFireflyJar() throws {
+        let sim = freshSim()
+        XCTAssertEqual(sim.season, .spring)
+        sim.cycleSeason()
+        XCTAssertEqual(sim.season, .summer)
+        sim.cycleSeason()
+        XCTAssertEqual(sim.season, .autumn)
+        sim.cycleSeason()
+        XCTAssertEqual(sim.season, .winter)
+        sim.cycleSeason()
+        XCTAssertEqual(sim.season, .spring)
+
+        // Spring cherry breeze finger swipe activates vortex & swirls cherry petals.
+        sim.handBegan(CGPoint(x: 240, y: 260))
+        sim.handMoved(CGPoint(x: 340, y: 240))
+        sim.handMoved(CGPoint(x: 420, y: 210))
+        sim.handEnded(CGPoint(x: 420, y: 210), tap: false)
+        XCTAssertNotNil(sim.vortexCenter)
+        XCTAssertGreaterThan(sim.vortexUntil, sim.time)
+
+        // Rainbow Sunshower: rain -> sun charges ripe blooms for +2 bonus coins on harvest.
+        sim.plots[2].plant = Plant(kind: .tulip, growth: 1, left: 1, variant: 0)
+        sim.setWeather(.rain)
+        sim.setWeather(.sun)
+        XCTAssertTrue(sim.plots[2].plant?.rainbowCharged ?? false)
+        let coinsBefore = Coins.shared.balance
+        sim.harvest(2)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 2)
+        XCTAssertFalse(sim.plots[2].plant?.rainbowCharged ?? true)
+
+        // Night Firefly Lantern Jar: tapping catches firefly, tapping jar releases in starry swirl!
+        sim.setWeather(.night)
+        sim.settleWeather()
+        let flyPos = CGPoint(x: 420, y: 310)
+        sim.fireflies = [GFirefly(p: flyPos, v: .zero, phase: 0)]
+        sim.handBegan(flyPos)
+        sim.handEnded(flyPos, tap: true)
+        XCTAssertEqual(sim.caughtFireflies, 1)
+        XCTAssertTrue(sim.fireflies.isEmpty)
+
+        // Persist season & caughtFireflies cleanly
+        sim.setSeason(.autumn)
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let decoded = try JSONDecoder().decode(GardenSave.self, from: data)
+        let restored = GardenSim(save: decoded)
+        XCTAssertEqual(restored.season, .autumn)
+        XCTAssertEqual(restored.caughtFireflies, 1)
+
+        // Tapping bench lantern jar releases all caught fireflies back into the night garden.
+        let jarTap = CGPoint(x: GGeo.fireflyJar.x, y: GGeo.fireflyJar.y - 20)
+        sim.handBegan(jarTap)
+        sim.handEnded(jarTap, tap: true)
+        XCTAssertEqual(sim.caughtFireflies, 0)
+        XCTAssertEqual(sim.fireflies.count, 1)
+    }
+
+    func testWeaveFlowerCrownFromVaseAndPlaceOnVisitingAndPicnicCritters() {
+        let sim = freshSim()
+        sim.bouquet = [
+            BouquetFlower(kind: .tulip, variant: 0),
+            BouquetFlower(kind: .daisy, variant: 1),
+        ]
+        // Fewer than 3 flowers cannot weave a crown yet.
+        XCTAssertFalse(sim.weaveFlowerCrown())
+        XCTAssertFalse(sim.hasCraftedCrown)
+
+        // Add a 3rd bloom (a hybrid!) and tap the sparkling vase to weave a Flower Crown!
+        sim.bouquet.append(BouquetFlower(kind: .sunflower, variant: 0, hybrid: .cottonSunflower))
+        let vaseTap = CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 40)
+        sim.handBegan(vaseTap)
+        sim.handEnded(vaseTap, tap: true)
+        XCTAssertTrue(sim.hasCraftedCrown)
+        XCTAssertEqual(sim.craftedCrownColors.count, 5)
+        XCTAssertTrue(sim.bouquet.isEmpty)
+
+        // Drag the Flower Crown onto a visiting bunny -> bunny wears crown proudly + awards +3 Play Coins!
+        var bunny = GVisitor(kind: .bunny, p: CGPoint(x: 420, y: GGeo.yardY + 8), facing: 1)
+        bunny.state = .staying
+        bunny.stayUntil = 30
+        sim.visitors = [bunny]
+
+        let coinsBefore = Coins.shared.balance
+        let crownStart = CGPoint(x: GGeo.flowerCrownSpot.x, y: GGeo.flowerCrownSpot.y - 14)
+        let bunnyDrop = CGPoint(x: bunny.p.x, y: bunny.p.y - 36)
+        sim.handBegan(crownStart)
+        sim.handMoved(bunnyDrop)
+        sim.handEnded(bunnyDrop, tap: false)
+
+        XCTAssertTrue(sim.visitors[0].wearingCrown)
+        XCTAssertEqual(sim.visitors[0].crownColors.count, 5)
+        XCTAssertFalse(sim.hasCraftedCrown)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 3)
+
+        // Weave a 2nd crown and place it onto a picnic critter!
+        sim.bouquet = [
+            BouquetFlower(kind: .tulip, variant: 0),
+            BouquetFlower(kind: .lavender, variant: 0),
+            BouquetFlower(kind: .daisy, variant: 0, hybrid: .starlightRose),
+        ]
+        XCTAssertTrue(sim.weaveFlowerCrown())
+        sim.basket = ["strawberry:0"]
+        XCTAssertTrue(sim.servePicnicSnack())
+        XCTAssertTrue(sim.placeCrownOnNearestCritter())
+        XCTAssertTrue(sim.picnicCritters.first?.wearingCrown ?? false)
+        XCTAssertFalse(sim.hasCraftedCrown)
+    }
 }

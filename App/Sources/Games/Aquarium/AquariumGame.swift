@@ -87,11 +87,15 @@ enum AquaSFX: String, CaseIterable {
 final class AquaSound {
     static let shared = AquaSound()
     static let looping: Set<AquaSFX> = [.hum, .pump]
+    private static let maxPoolSize = 2
+
     private var players: [AquaSFX: [AVAudioPlayer]] = [:]
     private var loops: [AquaSFX: AVAudioPlayer] = [:]
     private var missing: Set<AquaSFX> = []
-    private var last: [AquaSFX: Date] = [:]
+    private var last: [AquaSFX: TimeInterval] = [:]
+    private var recentSeeks: [TimeInterval] = []
     private let queue = DispatchQueue(label: "aquarium.sound", qos: .userInitiated)
+    private let loopLock = NSLock()
     private var loopLevel: [AquaSFX: Float] = [:]
     private var loopSent: [AquaSFX: Float] = [:]
 
@@ -99,28 +103,58 @@ final class AquaSound {
         _ = Sound.shared
     }
 
+    static func minimumGap(for s: AquaSFX) -> Double {
+        switch s {
+        case .chime: return 0.25
+        case .plop: return 0.14
+        case .gulp: return 0.14
+        case .bloop: return 0.16
+        case .pop: return 0.14
+        case .shake: return 0.14
+        default: return 0.05
+        }
+    }
+
     private func soundURL(for s: AquaSFX) -> URL? {
         GameFiles.url(s.rawValue, "caf", game: "Aquarium")
             ?? GameFiles.url(s.rawValue, "wav", game: "Aquarium")
     }
 
-    private func ensurePool(for s: AquaSFX) -> [AVAudioPlayer] {
-        if let existing = players[s] { return existing }
-        guard !missing.contains(s), let url = soundURL(for: s) else {
+    private func makePlayer(for s: AquaSFX) -> AVAudioPlayer? {
+        guard !missing.contains(s), let url = soundURL(for: s),
+              let player = try? AVAudioPlayer(contentsOf: url) else {
             missing.insert(s)
-            return []
+            return nil
         }
-        let pool = (0..<3).compactMap { _ -> AVAudioPlayer? in
-            let p = try? AVAudioPlayer(contentsOf: url)
-            p?.prepareToPlay()
-            return p
+        player.prepareToPlay()
+        return player
+    }
+
+    /// Lazily pre-warms only the 4 feeding cues (1 player each) on the audio queue so first feed has zero init hitch.
+    func prewarmFeedingCues() {
+        queue.async {
+            for cue in [AquaSFX.shake, .plop, .gulp, .bloop] {
+                if self.players[cue] == nil, let player = self.makePlayer(for: cue) {
+                    self.players[cue] = [player]
+                }
+            }
         }
-        if pool.isEmpty {
-            missing.insert(s)
-        } else {
-            players[s] = pool
+    }
+
+    private func playerForPlay(_ s: AquaSFX) -> AVAudioPlayer? {
+        guard !missing.contains(s) else { return nil }
+        let pool = players[s] ?? []
+        if let idle = pool.first(where: { !$0.isPlaying }) { return idle }
+        if pool.count < Self.maxPoolSize {
+            if let created = makePlayer(for: s) {
+                players[s] = pool + [created]
+                return created
+            }
         }
-        return pool
+        if let oldest = pool.max(by: { $0.currentTime < $1.currentTime }), oldest.currentTime > 0.08 {
+            return oldest
+        }
+        return nil
     }
 
     private func ensureLoop(for s: AquaSFX) -> AVAudioPlayer? {
@@ -138,14 +172,16 @@ final class AquaSound {
     }
 
     func play(_ s: AquaSFX, volume: Float = 0.9, gap: Double = 0) {
-        let now = Date()
-        if gap > 0, let t = last[s], now.timeIntervalSince(t) < gap { return }
-        last[s] = now
+        let minGap = max(gap, Self.minimumGap(for: s))
         let v = volume * Float.random(in: 0.85...1)
         queue.async {
-            let pool = self.ensurePool(for: s)
-            guard !pool.isEmpty else { return }
-            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            let now = ProcessInfo.processInfo.systemUptime
+            if let prev = self.last[s], now - prev < minGap { return }
+            self.recentSeeks.removeAll { now - $0 > 0.15 }
+            if self.recentSeeks.count >= 4 && s != .chime { return }
+            guard let p = self.playerForPlay(s) else { return }
+            self.last[s] = now
+            self.recentSeeks.append(now)
             p.volume = v
             p.currentTime = 0
             p.play()
@@ -153,13 +189,18 @@ final class AquaSound {
     }
 
     func setLoop(_ s: AquaSFX, volume: Float) {
+        loopLock.lock()
         let old = loopLevel[s] ?? 0
         let v = old + (volume - old) * 0.08
         loopLevel[s] = v
         let sent = loopSent[s] ?? 0
         let on = v > 0.01
-        guard abs(v - sent) > 0.01 || (on != (sent > 0.01)) else { return }
-        loopSent[s] = on ? v : 0
+        let shouldDispatch = abs(v - sent) > 0.01 || (on != (sent > 0.01))
+        if shouldDispatch {
+            loopSent[s] = on ? v : 0
+        }
+        loopLock.unlock()
+        guard shouldDispatch else { return }
         queue.async {
             if on {
                 guard let p = self.ensureLoop(for: s) else { return }
@@ -173,10 +214,12 @@ final class AquaSound {
     }
 
     func stopLoops() {
+        loopLock.lock()
         for s in AquaSound.looping {
             loopLevel[s] = 0
             loopSent[s] = 0
         }
+        loopLock.unlock()
         queue.async {
             for p in self.loops.values {
                 p.pause()
@@ -191,11 +234,11 @@ final class AquaSound {
 private enum AquaCatalogTab: Equatable { case fish, decor }
 
 private enum AquaSlot: String, CaseIterable {
-    case food, wiper, hoop, net, drawer
+    case food, wiper, hoop, sub, net, drawer
 
     var spot: CGPoint {
         let i = CGFloat(AquaSlot.allCases.firstIndex(of: self) ?? 0)
-        return CGPoint(x: 512 + (i - 2) * 96, y: GameChromeLayout.dockY)
+        return CGPoint(x: 314 + i * 92, y: GameChromeLayout.dockY)
     }
 
     var tileTint: Color {
@@ -203,6 +246,7 @@ private enum AquaSlot: String, CaseIterable {
         case .food: return Color(hex: 0xFFF5E6)
         case .wiper: return Color(hex: 0xE6FAF8)
         case .hoop: return Color(hex: 0xEEF4FF)
+        case .sub: return Color(hex: 0xFFF7D6)
         case .net: return Color(hex: 0xEBFAF2)
         case .drawer: return Color(hex: 0xFFF0F6)
         }
@@ -213,6 +257,7 @@ private enum AquaSlot: String, CaseIterable {
         case .food: return .food
         case .wiper: return .wiper
         case .hoop: return .hoop
+        case .sub: return nil
         case .net: return .net
         case .drawer: return nil
         }
@@ -223,6 +268,7 @@ private enum AquaSlot: String, CaseIterable {
         case .food: return "Fish Food"
         case .wiper: return "Glass Wiper"
         case .hoop: return "Bubble Hoop"
+        case .sub: return "Yellow Submarine"
         case .net: return "Fish Net"
         case .drawer: return "Fish and Decor"
         }
@@ -231,6 +277,7 @@ private enum AquaSlot: String, CaseIterable {
 
 private struct AquaSlotIcon: View {
     let slot: AquaSlot
+    let treatMode: AquaTreatMode
 
     var body: some View {
         Canvas { ctx, size in
@@ -240,7 +287,7 @@ private struct AquaSlotIcon: View {
             case .food:
                 g.translateBy(x: 0, y: -26)
                 g.scaleBy(x: 0.62, y: 0.62)
-                AquaDecorPainter.shaker(g)
+                AquaDecorPainter.shaker(g, mode: treatMode)
             case .wiper:
                 g.rotate(by: .radians(-0.18))
                 g.scaleBy(x: 0.72, y: 0.72)
@@ -248,6 +295,8 @@ private struct AquaSlotIcon: View {
             case .hoop:
                 g.scaleBy(x: 0.95, y: 0.95)
                 AquaDecorPainter.hoopIcon(g, time: 0.4)
+            case .sub:
+                AquaDecorPainter.submarineIcon(g)
             case .net:
                 g.rotate(by: .radians(0.55))
                 g.translateBy(x: 0, y: -32)
@@ -283,6 +332,12 @@ struct AquariumView: View {
     @State private var hand = AquaHandState()
     @State private var started = false
     @State private var book = false
+    @State private var hasHungryFish = false
+    @State private var hasDirtyGlass = false
+    @State private var showReturnZone = false
+    @State private var hoveringReturnZone = false
+    @State private var subActive = false
+    @State private var treatMode: AquaTreatMode = .flakes
 
     var body: some View {
         ZStack {
@@ -290,17 +345,17 @@ struct AquariumView: View {
                 AquariumRoomBackdrop(lightsOn: lightsOn)
             } content: {
                 ZStack {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: book)) { _ in
-                        Canvas { ctx, _ in
-                            AquaPainter.drawBackdrop(ctx, sim: sim)
-                        }
-                    }
-                    .allowsHitTesting(false)
+                    // Cached static tank backdrop (cabinet, sand, 90 pebbles, 240 grains) rendered once via Metal texture.
+                    AquaStaticTankBackdrop(isNight: false)
+                    AquaStaticTankBackdrop(isNight: true)
+                        .opacity(lightsOn ? 0 : 1)
+                        .animation(.easeInOut(duration: 0.65), value: lightsOn)
 
                     TimelineView(.animation(minimumInterval: 1.0 / 60, paused: book)) { tl in
                         Canvas { ctx, _ in
                             sim.step(tl.date)
                             AquaPainter.draw(ctx, sim: sim)
+                            sim.schedulePostFrameFlush()
                         }
                     }
                     .contentShape(Rectangle())
@@ -332,6 +387,7 @@ struct AquariumView: View {
             }
         }
         .ignoresSafeArea()
+        .defersSystemGestures(on: .bottom)
         .onAppear(perform: start)
         .onChange(of: scenePhase) { phase in
             if phase != .active {
@@ -340,6 +396,7 @@ struct AquariumView: View {
             }
         }
         .onDisappear {
+            sim.onUIStateChange = nil
             sim.save()
             AquaSound.shared.stopLoops()
         }
@@ -348,9 +405,27 @@ struct AquariumView: View {
     private func start() {
         guard !started else { return }
         started = true
-        _ = AquaSound.shared
+        AquaSound.shared.prewarmFeedingCues()
         lightsOn = sim.lightsOn
         pump = sim.pump
+        hasHungryFish = sim.anyHungry
+        hasDirtyGlass = sim.dirtiness > 0.3
+        subActive = sim.submarine.active
+        treatMode = sim.treatMode
+        sim.onUIStateChange = { state in
+            if hasHungryFish != state.hasHungryFish { hasHungryFish = state.hasHungryFish }
+            if hasDirtyGlass != state.hasDirtyGlass { hasDirtyGlass = state.hasDirtyGlass }
+            if showReturnZone != state.isCarryingReturnable {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                    showReturnZone = state.isCarryingReturnable
+                }
+            }
+            if hoveringReturnZone != state.isHoveringReturnZone {
+                hoveringReturnZone = state.isHoveringReturnZone
+            }
+            if subActive != state.submarineActive { subActive = state.submarineActive }
+            if treatMode != state.treatMode { treatMode = state.treatMode }
+        }
         applyLaunchArguments()
     }
 
@@ -397,39 +472,71 @@ struct AquariumView: View {
     // MARK: - Bottom Dock
 
     private var dockLayer: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: book)) { _ in
-            let foodPulse = sim.anyHungry && sim.tool == nil && !drawerOpen
-            let wiperPulse = !foodPulse && sim.dirtiness > 0.3 && sim.tool == nil && !drawerOpen
-            GameTrayCard(cornerRadius: 30, paddingH: 14, paddingV: 10) {
-                HStack(spacing: 14) {
-                    ForEach(AquaSlot.allCases, id: \.rawValue) { slot in
-                        let isHidden = hidden == slot.rawValue
-                        let pulsing = (slot == .food && foodPulse) || (slot == .wiper && wiperPulse)
-                        GameDockTile(
-                            size: 82,
-                            selected: slot == .drawer && drawerOpen,
-                            pulsing: pulsing,
-                            tint: slot.tileTint,
-                            cornerRadius: 22
-                        ) {
-                            if !isHidden {
-                                AquaSlotIcon(slot: slot)
-                            }
+        let canPulse = carrying == nil && !drawerOpen && !subActive && !book
+        let foodPulse = canPulse && hasHungryFish
+        let wiperPulse = canPulse && !foodPulse && hasDirtyGlass
+
+        return GameTrayCard(cornerRadius: 30, paddingH: 14, paddingV: 10) {
+            HStack(spacing: 10) {
+                Button {
+                    Sound.shared.tap()
+                    sim.toggleTreatMode()
+                    treatMode = sim.treatMode
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(treatMode == .pearls ? Color(hex: 0xEDE6FF) : Color(hex: 0xFFF3DE))
+                        Canvas { ctx, size in
+                            var g = ctx
+                            g.translateBy(x: size.width / 2, y: size.height / 2)
+                            AquaDecorPainter.treatToggleIcon(g, mode: treatMode, time: 0)
                         }
-                        .opacity(isHidden ? 0.32 : 1)
-                        .contentShape(Rectangle())
-                        .gesture(dockGesture(slot))
-                        .accessibilityLabel(slot.accessibilityName)
+                        .allowsHitTesting(false)
                     }
+                    .frame(width: 54, height: 54)
+                    .overlay(Circle().stroke(treatMode == .pearls ? Theme.lilac : Theme.peach, lineWidth: 3))
+                    .shadow(color: Theme.ink.opacity(0.14), radius: 4, y: 2)
+                }
+                .buttonStyle(Squish())
+                .accessibilityLabel(treatMode == .pearls ? "Pearl Pellets" : "Rainbow Flakes")
+
+                ForEach(AquaSlot.allCases, id: \.rawValue) { slot in
+                    let isHidden = hidden == slot.rawValue
+                    let pulsing = (slot == .food && foodPulse) || (slot == .wiper && wiperPulse)
+                    let selected = (slot == .drawer && drawerOpen) || (slot == .sub && subActive)
+                    GameDockTile(
+                        size: 82,
+                        selected: selected,
+                        pulsing: pulsing,
+                        tint: slot == .food && treatMode == .pearls ? Color(hex: 0xEFEAFF) : slot.tileTint,
+                        cornerRadius: 22
+                    ) {
+                        if !isHidden {
+                            AquaSlotIcon(slot: slot, treatMode: treatMode)
+                        }
+                    }
+                    .opacity(isHidden ? 0.32 : 1)
+                    .contentShape(Rectangle())
+                    .gesture(dockGesture(slot))
+                    .accessibilityLabel(slot.accessibilityName)
                 }
             }
-            .position(x: 512, y: GameChromeLayout.dockY)
         }
+        .position(x: 512, y: GameChromeLayout.dockY)
     }
 
     private func dockGesture(_ slot: AquaSlot) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named("aquarium"))
             .onChanged { v in
+                if slot == .sub {
+                    guard !ToolTap.isTap(v.translation) else { return }
+                    if drawerOpen {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { drawerOpen = false }
+                    }
+                    sim.steerSubmarine(to: v.location)
+                    subActive = sim.submarine.active
+                    return
+                }
                 guard slot.tool != nil else { return }
                 guard !ToolTap.isTap(v.translation) else { return }
                 useTool(slot, v.location)
@@ -442,6 +549,13 @@ struct AquariumView: View {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.76)) {
                         drawerOpen.toggle()
                     }
+                case .sub:
+                    if ToolTap.isTap(v.translation) {
+                        Sound.shared.tap()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { drawerOpen = false }
+                        sim.toggleSubmarine()
+                        subActive = sim.submarine.active
+                    }
                 case .food, .wiper, .hoop, .net:
                     if carrying != nil {
                         endTool(slot)
@@ -453,7 +567,7 @@ struct AquariumView: View {
                         case .wiper: sim.tapDockWiper(from: slot.spot)
                         case .hoop: sim.tapDockHoop()
                         case .net: sim.tapDockNet(from: slot.spot)
-                        case .drawer: break
+                        case .sub, .drawer: break
                         }
                     }
                 }
@@ -491,9 +605,9 @@ struct AquariumView: View {
     // MARK: - Single-Row Catalog Drawer
 
     private var catalogDrawer: some View {
-        let fishList = FishKind.allCases
+        let fishList = FishKind.classicCases
         let decorList = AquaDecorKind.available
-        let itemCount = catalogTab == .fish ? fishList.count : decorList.count
+        let itemCount = catalogTab == .fish ? fishList.count + 1 : decorList.count
         let overflows = itemCount * 92 > 572
 
         return GameTrayCard(cornerRadius: 28, paddingH: 14, paddingV: 10) {
@@ -521,9 +635,11 @@ struct AquariumView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 10) {
                                 if catalogTab == .fish {
+                                    catalogEggTile(key: "egg_0")
+                                        .id(0)
                                     ForEach(Array(fishList.enumerated()), id: \.offset) { idx, kind in
                                         catalogFishTile(kind, key: "fish_\(idx)")
-                                            .id(idx)
+                                            .id(idx + 1)
                                     }
                                 } else {
                                     ForEach(Array(decorList.enumerated()), id: \.offset) { idx, kind in
@@ -619,6 +735,53 @@ struct AquariumView: View {
         }
         .buttonStyle(Squish())
         .accessibilityLabel(tab == .fish ? "Fish" : "Decorations")
+    }
+
+    private func catalogEggTile(key: String) -> some View {
+        let dragKey = "cat_\(key)"
+        return RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(Color(hex: 0xFFF3F8))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Theme.lemon, lineWidth: 3.5))
+            .overlay {
+                Canvas { ctx, size in
+                    var g = ctx
+                    g.translateBy(x: size.width / 2, y: size.height / 2 + 24)
+                    g.scaleBy(x: 1.05, y: 1.05)
+                    AquaDecorPainter.egg(g, palette: .pinkSpeckle, taps: 0, time: 0.5)
+                }
+                .allowsHitTesting(false)
+            }
+            .frame(width: 82, height: 82)
+            .opacity(hidden == dragKey ? 0.25 : 1)
+            .contentShape(Rectangle())
+            .accessibilityLabel("Mystery Reef Egg")
+            .onTapGesture {
+                Sound.shared.tap()
+                let x = CGFloat.random(in: 220...800)
+                _ = sim.dropEgg(at: x, y: AGeo.waterY - 12)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10, coordinateSpace: .named("aquarium"))
+                    .onChanged { v in
+                        if carrying == nil {
+                            guard v.translation.height < -10, abs(v.translation.height) >= abs(v.translation.width) * 0.45 else { return }
+                            carrying = dragKey
+                            hidden = dragKey
+                            Sound.shared.tap()
+                            let tool = AquaTool.egg
+                            sim.pickUp(tool, at: AquariumView.lifted(v.location, tool))
+                        }
+                        guard carrying == dragKey, let tl = sim.tool else { return }
+                        sim.carry(to: AquariumView.lifted(v.location, tl), hand: v.location)
+                    }
+                    .onEnded { _ in
+                        guard carrying == dragKey else { return }
+                        sim.release(home: AquaSlot.drawer.spot)
+                        carrying = nil
+                        hidden = nil
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { drawerOpen = false }
+                    }
+            )
     }
 
     private func catalogFishTile(_ kind: FishKind, key: String) -> some View {
@@ -726,19 +889,14 @@ struct AquariumView: View {
 
     // MARK: - Explicit Return Zone Overlay
 
+    @ViewBuilder
     private var returnZoneOverlay: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: book)) { _ in
-            ZStack {
-                if sim.isCarryingReturnable {
-                    ReturnDropBadge(hovered: sim.isHoveringReturnZone)
-                        .position(AGeo.returnBadgeCenter)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
-            .animation(.spring(response: 0.28, dampingFraction: 0.72), value: sim.isCarryingReturnable)
+        if showReturnZone {
+            ReturnDropBadge(hovered: hoveringReturnZone)
+                .position(AGeo.returnBadgeCenter)
+                .transition(.scale.combined(with: .opacity))
+                .allowsHitTesting(false)
         }
-        .allowsHitTesting(false)
     }
 
     // MARK: - Direct Hand Gesture
@@ -783,6 +941,7 @@ struct AquariumView: View {
         case .wiper: return FingerLift.grip
         case .food: return FingerLift.pour
         case .hoop: return FingerLift.tool
+        case .egg: return FingerLift.carry(below: 32)
         case .fish: return FingerLift.carry(below: 50)
         case .decor(let k): return FingerLift.carry(below: k.size.height * 0.5)
         }
@@ -898,6 +1057,7 @@ extension AquariumSim {
         fish = []
         decor = []
         hoops = []
+        eggs = []
         addDecor(.seaweed, x: 110)
         addDecor(.castle, x: 270)
         addDecor(.diver, x: 420)
@@ -922,6 +1082,8 @@ extension AquariumSim {
             fish[i].z = 0.4 + CGFloat(i % 4) * 0.15
         }
         spawnBubbleHoop(at: CGPoint(x: 512, y: 340))
+        _ = dropEgg(at: 392, y: AGeo.sand(392), species: .narwhal)
+        spawn(.axolotl, variant: 0, at: CGPoint(x: 340, y: 520), growthStage: 0)
         for k in 0..<12 {
             addFlake(at: CGPoint(x: 460 + CGFloat(k) * 9, y: AGeo.waterY + 30 + CGFloat(k * 7 % 60)), v: .zero)
             food[food.count - 1].state = .sinking

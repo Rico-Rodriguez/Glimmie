@@ -37,6 +37,7 @@ enum GardenPainter {
         visitors(g, sim, t, behind: false, flying: false)
         cedarBedFrame(g)
         frontGrass(g, sim, t)
+        picnicBlanket(g, sim, t)
         particles(g, sim, front: false)
         flyers(g, sim)
         bugs(g, sim, t)
@@ -49,20 +50,84 @@ enum GardenPainter {
         particles(g, sim, front: true)
         nightGlow(g, sim, t)
         hints(g, sim, t)
+        dragOverlays(g, sim, t)
         tool(g, sim, t)
     }
 
-    // MARK: Sky, hills, fence & lawns
+    // MARK: Seasonal Palettes, Sky, Hills, Treehouse, Fence & Lawns
+
+    private struct SeasonColors {
+        var skyTop: GRGB
+        var skyBot: GRGB
+        var farTop: GRGB
+        var farBot: GRGB
+        var nearTop: GRGB
+        var nearBot: GRGB
+        var backTop: GRGB
+        var backBot: GRGB
+        var frontTop: GRGB
+        var frontBot: GRGB
+        var treeCrown: GRGB
+        var oakCrown: GRGB
+        var blossomAccent: GRGB?
+        var frost: Bool
+    }
+
+    private static func seasonColors(_ s: GardenSeason) -> SeasonColors {
+        switch s {
+        case .spring:
+            return SeasonColors(
+                skyTop: GRGB(0x74C6F5), skyBot: GRGB(0xE4F5FF),
+                farTop: GRGB(0xB8E6A4), farBot: GRGB(0x9AD488),
+                nearTop: GRGB(0xA3DC8E), nearBot: GRGB(0x88CB76),
+                backTop: GRGB(0x9ED976), backBot: GRGB(0x7EC55E),
+                frontTop: GRGB(0x82CC5E), frontBot: GRGB(0x63B148),
+                treeCrown: GRGB(0x74C464), oakCrown: GRGB(0x66BA58),
+                blossomAccent: GRGB(0xFFB3D2), frost: false
+            )
+        case .summer:
+            return SeasonColors(
+                skyTop: GRGB(0x52B6F2), skyBot: GRGB(0xD8F3FF),
+                farTop: GRGB(0x9CE084), farBot: GRGB(0x7DC668),
+                nearTop: GRGB(0x8BD270), nearBot: GRGB(0x6EBA56),
+                backTop: GRGB(0x8FD162), backBot: GRGB(0x6EB84C),
+                frontTop: GRGB(0x76C44E), frontBot: GRGB(0x56A43A),
+                treeCrown: GRGB(0x52AE4A), oakCrown: GRGB(0x4AA444),
+                blossomAccent: GRGB(0xFFE47A), frost: false
+            )
+        case .autumn:
+            return SeasonColors(
+                skyTop: GRGB(0x78B6E8), skyBot: GRGB(0xFFE8CE),
+                farTop: GRGB(0xD8C67C), farBot: GRGB(0xC2A65C),
+                nearTop: GRGB(0xC8B86A), nearBot: GRGB(0xAE9A50),
+                backTop: GRGB(0xBCC266), backBot: GRGB(0x9DA44E),
+                frontTop: GRGB(0xA6B656), frontBot: GRGB(0x84983E),
+                treeCrown: GRGB(0xE8893A), oakCrown: GRGB(0xE27A34),
+                blossomAccent: GRGB(0xF6C44E), frost: false
+            )
+        case .winter:
+            return SeasonColors(
+                skyTop: GRGB(0x88BCE8), skyBot: GRGB(0xE8F4FF),
+                farTop: GRGB(0xDCEEF8), farBot: GRGB(0xC2DFEE),
+                nearTop: GRGB(0xCFE8F2), nearBot: GRGB(0xB4D6E4),
+                backTop: GRGB(0xC4E4DF), backBot: GRGB(0xA4CFD0),
+                frontTop: GRGB(0xB2DDD6), frontBot: GRGB(0x90C4C2),
+                treeCrown: GRGB(0x9ECAE0), oakCrown: GRGB(0xA6D2E6),
+                blossomAccent: GRGB(0xFFFFFF), frost: true
+            )
+        }
+    }
 
     private static func sky(_ g: GraphicsContext, _ r: CGRect, _ sim: GardenSim, _ t: CGFloat) {
+        let pal = seasonColors(sim.season)
         let grey = max(sim.rain, (sim.cloud - 0.12) * 0.45)
-        let top = GRGB(0x74C6F5).mix(GRGB(0x7E8DA0), grey).mix(GRGB(0x263574), sim.night)
-        let bottom = GRGB(0xDDF4FF).mix(GRGB(0xBAC6D2), grey).mix(GRGB(0x5E589E), sim.night)
+        let top = pal.skyTop.mix(GRGB(0x7E8DA0), grey).mix(GRGB(0x263574), sim.night)
+        let bottom = pal.skyBot.mix(GRGB(0xBAC6D2), grey).mix(GRGB(0x5E589E), sim.night)
         let rect = CGRect(x: r.minX, y: r.minY, width: r.width, height: 520 - r.minY)
         g.fill(Path(rect), with: .linearGradient(Gradient(colors: [top.color, bottom.color]),
                                                  startPoint: CGPoint(x: 0, y: r.minY), endPoint: CGPoint(x: 0, y: 450)))
 
-        // Twinkling night stars and crescent moon (placed clear of the top bar).
+        // Twinkling night stars and crescent moon (placed clear of top bar and oak treehouse).
         if sim.night > 0.01 {
             let n = Double(sim.night)
             let starA = n * Double(1 - sim.cloud * 0.7)
@@ -77,7 +142,7 @@ enum GardenPainter {
             for (k, p) in stars.enumerated() {
                 g.fill(p, with: .color(.white.opacity(starA * (Double(k) + 0.5) / 4)))
             }
-            let mc = CGPoint(x: 886, y: 162)
+            let mc = GGeo.sunPos
             g.fill(Path(ellipseIn: CGRect(x: mc.x - 104, y: mc.y - 104, width: 208, height: 208)),
                    with: .radialGradient(Gradient(colors: [Color(hex: 0xFFF8D6, alpha: 0.32 * n), Color.white.opacity(0)]),
                                          center: mc, startRadius: 18, endRadius: 104))
@@ -89,22 +154,23 @@ enum GardenPainter {
         // Warm storybook sun with turning rays, fully visible below the top bar.
         let sunA = Double((1 - sim.rain) * (1 - sim.night) * (1 - (sim.cloud - 0.12) * 0.45))
         if sunA > 0.01 {
-            let c = CGPoint(x: 886, y: 162)
+            let c = GGeo.sunPos
+            let sunGlowHex: UInt32 = sim.season == .summer ? 0xFFE680 : 0xFFF3B0
             g.fill(Path(ellipseIn: CGRect(x: c.x - 150, y: c.y - 150, width: 300, height: 300)),
-                   with: .radialGradient(Gradient(colors: [Color(hex: 0xFFF3B0, alpha: 0.55 * sunA), Color(hex: 0xFFF3B0, alpha: 0)]),
+                   with: .radialGradient(Gradient(colors: [Color(hex: sunGlowHex, alpha: 0.55 * sunA), Color(hex: sunGlowHex, alpha: 0)]),
                                          center: c, startRadius: 28, endRadius: 150))
             var rays = Path()
             for i in 0..<12 {
                 let a = CGFloat(i) / 12 * 2 * .pi + t * 0.08
-                rays.move(to: CGPoint(x: c.x + cos(a - 0.07) * 52, y: c.y + sin(a - 0.07) * 52))
-                rays.addLine(to: CGPoint(x: c.x + cos(a) * 88, y: c.y + sin(a) * 88))
-                rays.addLine(to: CGPoint(x: c.x + cos(a + 0.07) * 52, y: c.y + sin(a + 0.07) * 52))
+                rays.move(to: CGPoint(x: c.x + cos(a - 0.07) * 50, y: c.y + sin(a - 0.07) * 50))
+                rays.addLine(to: CGPoint(x: c.x + cos(a) * 84, y: c.y + sin(a) * 84))
+                rays.addLine(to: CGPoint(x: c.x + cos(a + 0.07) * 50, y: c.y + sin(a + 0.07) * 50))
                 rays.closeSubpath()
             }
             g.fill(rays, with: .color(Color(hex: 0xFFE27A, alpha: 0.48 * sunA)))
-            let disk = Path(ellipseIn: CGRect(x: c.x - 42, y: c.y - 42, width: 84, height: 84))
+            let disk = Path(ellipseIn: CGRect(x: c.x - 40, y: c.y - 40, width: 80, height: 80))
             g.fill(disk, with: .radialGradient(Gradient(colors: [Color(hex: 0xFFFBD6, alpha: sunA), Color(hex: 0xFFC93C, alpha: sunA)]),
-                                               center: CGPoint(x: c.x - 10, y: c.y - 12), startRadius: 0, endRadius: 50))
+                                               center: CGPoint(x: c.x - 10, y: c.y - 12), startRadius: 0, endRadius: 48))
             g.stroke(disk, with: .color(StorybookArt.outline(for: 0xFFC93C, factor: 0.8).opacity(0.45 * sunA)), lineWidth: 2)
         }
 
@@ -116,7 +182,7 @@ enum GardenPainter {
                 let rad = CGFloat(456 - i * 12)
                 var arc = Path()
                 arc.addArc(center: CGPoint(x: 475, y: 556), radius: rad, startAngle: .degrees(196), endAngle: .degrees(344), clockwise: false)
-                g.stroke(arc, with: .color(Color(hex: hex, alpha: 0.48 * Double(rb))), lineWidth: 12.5)
+                g.stroke(arc, with: .color(Color(hex: hex, alpha: 0.52 * Double(rb))), lineWidth: 12.5)
             }
         }
 
@@ -149,6 +215,7 @@ enum GardenPainter {
     }
 
     private static func hills(_ g: GraphicsContext, _ r: CGRect, _ sim: GardenSim, _ t: CGFloat) {
+        let pal = seasonColors(sim.season)
         let dusk = sim.night * 0.45
         let damp = sim.rain * 0.22
         var far = Path()
@@ -161,19 +228,19 @@ enum GardenPainter {
         }
         far.addLine(to: CGPoint(x: r.maxX + 20, y: 520))
         far.closeSubpath()
-        let farTop = GRGB(0xB8E6A4).mix(GRGB(0x70917B), damp).mix(GRGB(0x3D537B), dusk)
-        let farBot = GRGB(0x9AD488).mix(GRGB(0x5E7E6C), damp).mix(GRGB(0x304568), dusk)
+        let farTop = pal.farTop.mix(GRGB(0x70917B), damp).mix(GRGB(0x3D537B), dusk)
+        let farBot = pal.farBot.mix(GRGB(0x5E7E6C), damp).mix(GRGB(0x304568), dusk)
         g.fill(far, with: .linearGradient(Gradient(colors: [farTop.color, farBot.color]),
                                           startPoint: CGPoint(x: 0, y: 340), endPoint: CGPoint(x: 0, y: 440)))
 
-        let trees: [CGFloat] = [-140, 88, 318, 604, 964, 1180]
+        let trees: [CGFloat] = [-140, 88, 318, 604, 1180]
         for (i, tx) in trees.enumerated() {
             let base = CGPoint(x: tx, y: 366 + sin(tx * 0.0042 + 1) * 20 + sin(tx * 0.011) * 6 + 6)
             let sway = sim.windNow * 9 + sin(t * 1.3 + CGFloat(i)) * 1.5
             let trunkCol = GRGB(0x9A6B45).mix(GRGB(0x473852), dusk)
             let trunk = Path(roundedRect: CGRect(x: base.x - 5, y: base.y - 44, width: 10, height: 48), cornerRadius: 4)
             g.fill(trunk, with: .color(trunkCol.color))
-            let crown = GRGB(0x6DBA5C).mix(GRGB(0x4E7D5C), damp).mix(GRGB(0x33536A), dusk)
+            let crown = pal.treeCrown.mix(GRGB(0x4E7D5C), damp).mix(GRGB(0x33536A), dusk)
             for (k, o) in [(-17.0, -48.0, 24.0), (15.0, -52.0, 26.0), (0.0, -72.0, 28.0)].enumerated() {
                 let c = CGPoint(x: base.x + CGFloat(o.0) + sway * (1 + CGFloat(k) * 0.3), y: base.y + CGFloat(o.1))
                 let rr = CGFloat(o.2)
@@ -181,6 +248,11 @@ enum GardenPainter {
                 g.fill(puff, with: .radialGradient(Gradient(colors: [crown.shade(0.18).color, crown.shade(-0.18).color]),
                                                    center: CGPoint(x: c.x - rr * 0.35, y: c.y - rr * 0.35), startRadius: 0, endRadius: rr * 1.3))
                 g.stroke(puff, with: .color(crown.shade(-0.38).color(0.45)), lineWidth: 1.4)
+                if let accent = pal.blossomAccent {
+                    let dotC = accent.mix(GRGB(0x7082B2), dusk)
+                    g.fill(Path(ellipseIn: CGRect(x: c.x - rr * 0.4, y: c.y - rr * 0.35, width: 7, height: 7)), with: .color(dotC.color(0.85)))
+                    g.fill(Path(ellipseIn: CGRect(x: c.x + rr * 0.18, y: c.y - rr * 0.1, width: 6, height: 6)), with: .color(dotC.color(0.8)))
+                }
             }
         }
 
@@ -194,15 +266,262 @@ enum GardenPainter {
         }
         near.addLine(to: CGPoint(x: r.maxX + 20, y: 520))
         near.closeSubpath()
-        let nearTop = GRGB(0xA3DC8E).mix(GRGB(0x668D72), damp).mix(GRGB(0x35506F), dusk)
-        let nearBot = GRGB(0x88CB76).mix(GRGB(0x567B62), damp).mix(GRGB(0x2A435F), dusk)
+        let nearTop = pal.nearTop.mix(GRGB(0x668D72), damp).mix(GRGB(0x35506F), dusk)
+        let nearBot = pal.nearBot.mix(GRGB(0x567B62), damp).mix(GRGB(0x2A435F), dusk)
         g.fill(near, with: .linearGradient(Gradient(colors: [nearTop.color, nearBot.color]),
                                            startPoint: CGPoint(x: 0, y: 390), endPoint: CGPoint(x: 0, y: 470)))
+
+        // Grand 5-Stage Persistent Storybook Oak Treehouse on the right hillside!
+        storybookTreehouse(g, sim, t, pal: pal)
+    }
+
+    private static func storybookTreehouse(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat, pal: SeasonColors) {
+        let base = GGeo.treehouse
+        let stage = sim.treehouseStage
+        let dusk = sim.night * 0.42
+        let damp = sim.rain * 0.18
+        let sway = sim.windNow * 6 + sin(t * 1.4) * 1.4
+
+        var tg = g
+        tg.translateBy(x: base.x, y: base.y)
+        tg.scaleBy(x: 1 - sim.treehouseBounce * 0.018, y: 1 + sim.treehouseBounce * 0.026)
+
+        // Warm gnarled storybook oak trunk & twin boughs
+        let bark = GRGB(0x9C6B46).mix(GRGB(0x4F3D58), dusk)
+        var trunk = Path()
+        trunk.move(to: CGPoint(x: -36, y: 18))
+        trunk.addQuadCurve(to: CGPoint(x: -20, y: -96), control: CGPoint(x: -22, y: -32))
+        trunk.addQuadCurve(to: CGPoint(x: -74, y: -138), control: CGPoint(x: -46, y: -112))
+        trunk.addLine(to: CGPoint(x: -60, y: -152))
+        trunk.addQuadCurve(to: CGPoint(x: -6, y: -116), control: CGPoint(x: -34, y: -124))
+        trunk.addLine(to: CGPoint(x: 10, y: -116))
+        trunk.addQuadCurve(to: CGPoint(x: 68, y: -152), control: CGPoint(x: 38, y: -124))
+        trunk.addLine(to: CGPoint(x: 78, y: -136))
+        trunk.addQuadCurve(to: CGPoint(x: 22, y: -92), control: CGPoint(x: 48, y: -110))
+        trunk.addQuadCurve(to: CGPoint(x: 38, y: 18), control: CGPoint(x: 24, y: -30))
+        trunk.closeSubpath()
+        tg.fill(trunk, with: .linearGradient(Gradient(colors: [bark.shade(0.14).color, bark.color, bark.shade(-0.22).color]),
+                                             startPoint: CGPoint(x: -36, y: -60), endPoint: CGPoint(x: 36, y: -60)))
+        tg.stroke(trunk, with: .color(bark.shade(-0.46).color), style: StrokeStyle(lineWidth: 2.2, lineJoin: .round))
+        // Cozy oak tree hollow
+        let hollow = Path(ellipseIn: CGRect(x: -9, y: -56, width: 16, height: 22))
+        tg.fill(hollow, with: .color(bark.shade(-0.55).color))
+
+        // Lush layered seasonal oak canopy
+        let crown = pal.oakCrown.mix(GRGB(0x4E7D5C), damp).mix(GRGB(0x304D68), dusk)
+        let puffs: [(CGFloat, CGFloat, CGFloat)] = [
+            (-76, -158, 44), (74, -158, 46), (-42, -196, 52), (44, -198, 52), (0, -214, 56), (0, -162, 48)
+        ]
+        for (k, p) in puffs.enumerated() {
+            let cx = p.0 + sway * (0.7 + CGFloat(k % 3) * 0.25)
+            let cy = p.1
+            let rr = p.2
+            let ell = Path(ellipseIn: CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2))
+            tg.fill(ell, with: .radialGradient(Gradient(colors: [crown.shade(0.2).color, crown.color, crown.shade(-0.2).color]),
+                                               center: CGPoint(x: cx - rr * 0.3, y: cy - rr * 0.35), startRadius: 2, endRadius: rr * 1.25))
+            tg.stroke(ell, with: .color(crown.shade(-0.42).color(0.55)), lineWidth: 1.8)
+        }
+        if let accent = pal.blossomAccent {
+            let dotC = accent.mix(GRGB(0x7082B2), dusk)
+            for i in 0..<14 {
+                let cx = (gdRand(i, 91) - 0.5) * 168 + sway
+                let cy = -142 - gdRand(i, 92) * 98
+                let rr = 4.5 + gdRand(i, 93) * 4.5
+                tg.fill(Path(ellipseIn: CGRect(x: cx - rr, y: cy - rr, width: rr * 2, height: rr * 2)), with: .color(dotC.color(0.85)))
+            }
+        }
+
+        // Stage 1+: Wooden rope ladder & tree platform
+        if stage >= 1 {
+            // Rope ladder dangling down trunk
+            let ladderSway = sim.windNow * 5 + sin(t * 2.1) * 1.5
+            for rx in [-13.0, 13.0] as [CGFloat] {
+                var rope = Path()
+                rope.move(to: CGPoint(x: rx, y: -98))
+                rope.addQuadCurve(to: CGPoint(x: rx + ladderSway, y: 2), control: CGPoint(x: rx + ladderSway * 0.4, y: -48))
+                tg.stroke(rope, with: .color(GRGB(0xE8D2A2).mix(GRGB(0x7A7492), dusk).color), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+            }
+            for step in 0..<5 {
+                let u = CGFloat(step + 1) / 6.0
+                let ry = -98 + u * 96
+                let ox = ladderSway * u
+                let rung = Path(roundedRect: CGRect(x: -16 + ox, y: ry - 2.5, width: 32, height: 6), cornerRadius: 3)
+                StorybookArt.shape(tg, rung, hex: 0xD99B62, width: 1.8)
+            }
+            // Support brackets
+            for side in [-1.0, 1.0] as [CGFloat] {
+                var br = Path()
+                br.move(to: CGPoint(x: side * 18, y: -76))
+                br.addLine(to: CGPoint(x: side * 46, y: -98))
+                tg.stroke(br, with: .color(StorybookArt.outline(for: 0xC6884E)), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
+            // Cedar tree platform deck
+            let deck = Path(roundedRect: CGRect(x: -58, y: -108, width: 116, height: 12), cornerRadius: 5)
+            StorybookArt.shape(tg, deck, hex: 0xDC9E64, width: 2.2)
+            StorybookArt.highlight(tg, in: CGRect(x: -48, y: -106, width: 96, height: 3), opacity: 0.35)
+        }
+
+        // Stage 5: Rainbow curving slide & scalloped tea balcony!
+        if stage >= 5 {
+            // Tea balcony extension on the left
+            let balcony = Path(roundedRect: CGRect(x: -94, y: -108, width: 42, height: 10), cornerRadius: 4)
+            StorybookArt.shape(tg, balcony, hex: 0xE6AC74, width: 2)
+            let rail = Path(roundedRect: CGRect(x: -92, y: -124, width: 38, height: 4), cornerRadius: 2)
+            StorybookArt.shape(tg, rail, hex: 0xFFF4E6, width: 1.6)
+            for px in [-88.0, -74.0, -60.0] as [CGFloat] {
+                var post = Path()
+                post.move(to: CGPoint(x: px, y: -122))
+                post.addLine(to: CGPoint(x: px, y: -108))
+                tg.stroke(post, with: .color(StorybookArt.outline(for: 0xE6D2BC)), lineWidth: 2.4)
+            }
+            // Tiny pink teapot on tea balcony
+            let pot = Path(ellipseIn: CGRect(x: -82, y: -119, width: 11, height: 9))
+            StorybookArt.shape(tg, pot, hex: 0xFF9AC8, width: 1.4)
+
+            // Pastel rainbow curving slide swooping off the right side
+            let slideCols: [UInt32] = [0xFF8FB8, 0xFFE07A, 0x8CE3B8, 0x8EC8FF]
+            for (k, hex) in slideCols.enumerated() {
+                let off = CGFloat(k) * 3.8
+                var sp = Path()
+                sp.move(to: CGPoint(x: 48, y: -100 + off))
+                sp.addCurve(to: CGPoint(x: 108, y: -6 + off * 0.5),
+                            control1: CGPoint(x: 92, y: -96 + off),
+                            control2: CGPoint(x: 78, y: -18 + off))
+                tg.stroke(sp, with: .color(StorybookArt.color(hex)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+            }
+        }
+
+        // Stage 2+: Pastel acorn-roof cabin with round window
+        if stage >= 2 {
+            let wall = Path(roundedRect: CGRect(x: -38, y: -164, width: 76, height: 58), cornerRadius: 8)
+            StorybookArt.shape(tg, wall, hex: 0xFFF3DE, width: 2.4)
+            // Soft wood trim bands
+            for wy in [-144.0, -124.0] as [CGFloat] {
+                var plank = Path()
+                plank.move(to: CGPoint(x: -36, y: wy))
+                plank.addLine(to: CGPoint(x: 36, y: wy))
+                tg.stroke(plank, with: .color(StorybookArt.outline(for: 0xE6C8A2).opacity(0.45)), lineWidth: 1.4)
+            }
+            // Curved pastel acorn-cap roof
+            var roof = Path()
+            roof.move(to: CGPoint(x: -48, y: -158))
+            roof.addCurve(to: CGPoint(x: 48, y: -158), control1: CGPoint(x: -44, y: -210), control2: CGPoint(x: 44, y: -210))
+            roof.addQuadCurve(to: CGPoint(x: -48, y: -158), control: CGPoint(x: 0, y: -150))
+            roof.closeSubpath()
+            let roofHex: UInt32 = 0xE6889A
+            tg.fill(roof, with: .linearGradient(Gradient(colors: [Color(hex: 0xFFA4B6), Color(hex: roofHex), Color(hex: 0xC66478)]),
+                                                startPoint: CGPoint(x: 0, y: -206), endPoint: CGPoint(x: 0, y: -154)))
+            tg.stroke(roof, with: .color(StorybookArt.outline(for: roofHex)), style: StrokeStyle(lineWidth: 2.4, lineJoin: .round))
+            // Acorn stem finial
+            var finial = Path()
+            finial.move(to: CGPoint(x: 0, y: -198))
+            finial.addQuadCurve(to: CGPoint(x: 7, y: -212), control: CGPoint(x: -2, y: -208))
+            tg.stroke(finial, with: .color(StorybookArt.outline(for: 0x9C6B46)), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
+
+            // Round cozy window
+            let winRect = CGRect(x: -16, y: -152, width: 32, height: 32)
+            let winFill = sim.night > 0.2 ? Color(hex: 0xFFE996) : Color(hex: 0xC6ECFF)
+            StorybookArt.fillAndStroke(tg, Path(ellipseIn: winRect), fill: winFill, stroke: StorybookArt.outline(for: 0xC98A54), width: 3)
+
+            // Stage 5: Befriended critters peeking out window & tea balcony waving!
+            let waving = sim.time - sim.treehousePoke < 2.6
+            if stage >= 5 {
+                let wave = waving ? sin(t * 16) * 5 : sin(t * 2.5) * 1.5
+                // Tiny bunny peeking in the round window
+                let bunnyHead = Path(ellipseIn: CGRect(x: -7, y: -140 + (waving ? -2 : 0), width: 14, height: 13))
+                tg.fill(bunnyHead, with: .color(GRGB(0xC9A27E).color))
+                for ex in [-4.5, 2.5] as [CGFloat] {
+                    tg.fill(Path(ellipseIn: CGRect(x: ex, y: -150, width: 4, height: 11)), with: .color(GRGB(0xC9A27E).color))
+                    tg.fill(Path(ellipseIn: CGRect(x: ex + 1, y: -148, width: 2, height: 7)), with: .color(GRGB(0xFFB3C7).color))
+                }
+                tg.fill(Path(ellipseIn: CGRect(x: -3.5, y: -136, width: 2.2, height: 2.4)), with: .color(Color(hex: 0x3A2630)))
+                tg.fill(Path(ellipseIn: CGRect(x: 2, y: -136, width: 2.2, height: 2.4)), with: .color(Color(hex: 0x3A2630)))
+                // Tiny waving paw
+                var paw = Path()
+                paw.move(to: CGPoint(x: 6, y: -131))
+                paw.addLine(to: CGPoint(x: 11, y: -136 + wave * 0.5))
+                tg.stroke(paw, with: .color(GRGB(0xC9A27E).color), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                // Tiny bluebird waving on the left tea balcony
+                let birdY = -132 + (waving ? -abs(sin(t * 12)) * 5 : 0)
+                tg.fill(Path(ellipseIn: CGRect(x: -82, y: birdY, width: 14, height: 11)), with: .color(Color(hex: 0x5296E6)))
+                tg.fill(Path(ellipseIn: CGRect(x: -74, y: birdY - 6, width: 9, height: 9)), with: .color(Color(hex: 0x5296E6)))
+                tg.fill(Path(ellipseIn: CGRect(x: -69, y: birdY - 3, width: 2, height: 2)), with: .color(Color(hex: 0x2A2020)))
+            }
+
+            // Window mullions
+            var cross = Path()
+            cross.move(to: CGPoint(x: -14, y: -136))
+            cross.addLine(to: CGPoint(x: 14, y: -136))
+            cross.move(to: CGPoint(x: 0, y: -150))
+            cross.addLine(to: CGPoint(x: 0, y: -122))
+            tg.stroke(cross, with: .color(StorybookArt.outline(for: 0xC98A54).opacity(stage >= 5 ? 0.4 : 0.8)), lineWidth: 2)
+        }
+
+        // Stage 3+: Flower window box & colorful pennant bunting
+        if stage >= 3 {
+            let box = Path(roundedRect: CGRect(x: -20, y: -121, width: 40, height: 9), cornerRadius: 3)
+            StorybookArt.shape(tg, box, hex: 0x8CE0B0, width: 1.8)
+            let blooms: [(CGFloat, UInt32)] = [(-13, 0xFF7CB4), (-4, 0xFFE066), (5, 0xC9A8FF), (13, 0xFF9AC8)]
+            for (bx, hex) in blooms {
+                tg.fill(Path(ellipseIn: CGRect(x: bx - 4.5, y: -128, width: 9, height: 9)), with: .color(Color(hex: hex)))
+                tg.fill(Path(ellipseIn: CGRect(x: bx - 1.8, y: -125.3, width: 3.6, height: 3.6)), with: .color(.white))
+            }
+
+            // Colorful bunting string draped across branches & eaves
+            var rope = Path()
+            rope.move(to: CGPoint(x: -74 + sway * 0.5, y: -158))
+            rope.addQuadCurve(to: CGPoint(x: 74 + sway * 0.5, y: -158), control: CGPoint(x: 0, y: -138))
+            tg.stroke(rope, with: .color(Color(hex: 0xFFF4E6)), lineWidth: 1.8)
+            let flags: [UInt32] = [0xFF8FB8, 0xFFE37A, 0x8CE3B8, 0x8EC8FF, 0xC9B6FF, 0xFFAE80, 0xFF8FB8]
+            for (k, hex) in flags.enumerated() {
+                let u = CGFloat(k + 1) / CGFloat(flags.count + 1)
+                let pt = GardenPlants.quad(CGPoint(x: -74 + sway * 0.5, y: -158), CGPoint(x: 0, y: -138), CGPoint(x: 74 + sway * 0.5, y: -158), u)
+                var tri = Path()
+                tri.move(to: CGPoint(x: pt.x - 6, y: pt.y))
+                tri.addLine(to: CGPoint(x: pt.x + 6, y: pt.y))
+                tri.addLine(to: CGPoint(x: pt.x, y: pt.y + 12))
+                tri.closeSubpath()
+                StorybookArt.shape(tg, tri, hex: hex, width: 1.3)
+            }
+        }
+
+        // Stage 4+: Glowing pastel fairy lanterns & swaying wind chimes
+        if stage >= 4 {
+            let lanterns: [(CGFloat, CGFloat, UInt32)] = [
+                (-66, -138, 0xFFE38A), (0, -172, 0xFFB3D2), (66, -138, 0x9FF0D8)
+            ]
+            for (k, l) in lanterns.enumerated() {
+                let lx = l.0 + sway * 0.6 + sin(t * 2.2 + CGFloat(k)) * 1.8
+                let ly = l.1
+                var str = Path()
+                str.move(to: CGPoint(x: lx, y: ly - 14))
+                str.addLine(to: CGPoint(x: lx, y: ly))
+                tg.stroke(str, with: .color(Color(hex: 0x6E5A4C)), lineWidth: 1.4)
+                let orb = Path(ellipseIn: CGRect(x: lx - 7.5, y: ly, width: 15, height: 17))
+                StorybookArt.fillAndStroke(tg, orb, fill: Color(hex: l.2), stroke: StorybookArt.outline(for: l.2), width: 1.6)
+                StorybookArt.highlight(tg, in: CGRect(x: lx - 4, y: ly + 3, width: 4, height: 5), opacity: 0.75)
+            }
+
+            // Wind chimes beneath right bough
+            let chimeX: CGFloat = 44 + sway * 0.4
+            let chimeY: CGFloat = -96
+            let jingle = (sim.time - sim.treehousePoke < 1.5 ? sin(t * 24) * 5 : 0) + sim.windNow * 6
+            let cap = Path(roundedRect: CGRect(x: chimeX - 9, y: chimeY, width: 18, height: 4), cornerRadius: 2)
+            StorybookArt.shape(tg, cap, hex: 0xFFD966, width: 1.4)
+            for k in -1...1 {
+                let cx = chimeX + CGFloat(k) * 5
+                var bar = Path()
+                bar.move(to: CGPoint(x: cx, y: chimeY + 4))
+                bar.addLine(to: CGPoint(x: cx + jingle * 0.5, y: chimeY + 18 + CGFloat(abs(k)) * 3))
+                tg.stroke(bar, with: .color(Color(hex: 0xD8F2FF)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+            }
+        }
     }
 
     private static func fence(_ g: GraphicsContext, _ r: CGRect, _ sim: GardenSim) {
         let dusk = sim.night * 0.42
-        let paint = GRGB(0xFFFBF2).mix(GRGB(0x8D9AC4), dusk)
+        let paint = GRGB(0xFFFBF2).mix(GRGB(0xE8F5FF), sim.season == .winter ? 0.4 : 0).mix(GRGB(0x8D9AC4), dusk)
         let line = GRGB(0xD7C5B2).mix(GRGB(0x525B84), dusk)
         for y in [426.0, 456.0] as [CGFloat] {
             let rail = Path(CGRect(x: r.minX, y: y, width: r.width, height: 8))
@@ -221,15 +540,20 @@ enum GardenPainter {
             g.fill(p, with: .linearGradient(Gradient(colors: [paint.color, paint.shade(-0.12).color]),
                                             startPoint: CGPoint(x: x, y: 0), endPoint: CGPoint(x: x + 18, y: 0)))
             g.stroke(p, with: .color(line.color(0.85)), style: StrokeStyle(lineWidth: 1.6, lineJoin: .round))
+            if sim.season == .winter {
+                let cap = Path(ellipseIn: CGRect(x: x + 1, y: GGeo.fenceTopY - 6, width: 16, height: 8))
+                g.fill(cap, with: .color(.white.opacity(0.92 * Double(1 - dusk * 0.5))))
+            }
             x += 30
         }
     }
 
     private static func backLawn(_ g: GraphicsContext, _ r: CGRect, _ sim: GardenSim, _ t: CGFloat) {
+        let pal = seasonColors(sim.season)
         let dusk = sim.night * 0.44
         let damp = sim.rain * 0.2
-        let top = GRGB(0x9ED976).mix(GRGB(0x6A9868), damp).mix(GRGB(0x335368), dusk)
-        let bot = GRGB(0x7EC55E).mix(GRGB(0x568458), damp).mix(GRGB(0x28455C), dusk)
+        let top = pal.backTop.mix(GRGB(0x6A9868), damp).mix(GRGB(0x335368), dusk)
+        let bot = pal.backBot.mix(GRGB(0x568458), damp).mix(GRGB(0x28455C), dusk)
         g.fill(Path(CGRect(x: r.minX, y: 466, width: r.width, height: 140)),
                with: .linearGradient(Gradient(colors: [top.color, bot.color]),
                                      startPoint: CGPoint(x: 0, y: 466), endPoint: CGPoint(x: 0, y: 530)))
@@ -237,22 +561,28 @@ enum GardenPainter {
     }
 
     private static func frontLawn(_ g: GraphicsContext, _ r: CGRect, _ sim: GardenSim, _ t: CGFloat) {
+        let pal = seasonColors(sim.season)
         let dusk = sim.night * 0.45
         let damp = sim.rain * 0.2
-        let top = GRGB(0x82CC5E).mix(GRGB(0x5B8A58), damp).mix(GRGB(0x2A475D), dusk)
-        let bot = GRGB(0x63B148).mix(GRGB(0x467346), damp).mix(GRGB(0x1E364D), dusk)
+        let top = pal.frontTop.mix(GRGB(0x5B8A58), damp).mix(GRGB(0x2A475D), dusk)
+        let bot = pal.frontBot.mix(GRGB(0x467346), damp).mix(GRGB(0x1E364D), dusk)
         let rect = CGRect(x: r.minX, y: 590, width: r.width, height: max(260, r.maxY - 590))
         g.fill(Path(rect), with: .linearGradient(Gradient(colors: [top.color, bot.color]),
                                                  startPoint: CGPoint(x: 0, y: 590), endPoint: CGPoint(x: 0, y: 834)))
 
-        // Soft clover flowers scattered across the front meadow.
+        // Soft clover flowers (or winter frost sparkles) scattered across the front meadow.
         for i in 0..<18 {
             let x = r.minX + gdRand(i, 41) * r.width
             let y = 636 + gdRand(i, 42) * 184
-            if abs(x - GGeo.basket.x) < 76 && y > 725 { continue }
-            if abs(x - 512) < 210 && y > 716 { continue }
-            let col = i % 3 == 0 ? GRGB(0xFFD1E3) : (i % 3 == 1 ? GRGB(0xFFFFFF) : GRGB(0xFFF3B8))
-            GardenPlants.daisyHead(g, at: CGPoint(x: x, y: y), open: 1, color: col.mix(GRGB(0x7C84B5), dusk), size: 0.38, spin: CGFloat(i))
+            if abs(x - GGeo.basket.x) < 82 && y > 695 { continue }
+            if abs(x - 512) < 215 && y > 680 { continue }
+            if abs(x - GGeo.picnic.x) < 100 && abs(y - GGeo.picnic.y) < 58 { continue }
+            if sim.season == .winter {
+                StorybookArt.sparkle(g, at: CGPoint(x: x, y: y), radius: 5, color: .white, opacity: 0.72 * Double(1 - dusk * 0.5))
+            } else {
+                let col = i % 3 == 0 ? GRGB(0xFFD1E3) : (i % 3 == 1 ? GRGB(0xFFFFFF) : GRGB(0xFFF3B8))
+                GardenPlants.daisyHead(g, at: CGPoint(x: x, y: y), open: 1, color: col.mix(GRGB(0x7C84B5), dusk), size: 0.38, spin: CGFloat(i))
+            }
         }
     }
 
@@ -319,6 +649,48 @@ enum GardenPainter {
         slat.addLine(to: CGPoint(x: r.maxX - 8, y: r.midY + 1))
         g.stroke(slat, with: .color(StorybookArt.outline(for: 0xDC9E64).opacity(0.45)), lineWidth: 1.5)
 
+        // Firefly Lantern Jar on the left end of the cedar bench
+        let jc = GGeo.fireflyJar
+        var jg = g
+        jg.translateBy(x: jc.x, y: jc.y)
+        jg.scaleBy(x: 1 - sim.jarBounce * 0.03, y: 1 + sim.jarBounce * 0.05)
+        GardenPlants.shadow(jg, at: CGPoint(x: 0, y: 2), width: 32)
+        let jarGlow = Double(sim.caughtFireflies) / Double(GardenSim.maxCaughtFireflies)
+        if jarGlow > 0 {
+            let pulse = 0.88 + 0.12 * sin(t * 3.8)
+            let gr: CGFloat = 22 + 22 * CGFloat(jarGlow)
+            jg.fill(
+                Path(ellipseIn: CGRect(x: -gr, y: -22 - gr, width: gr * 2, height: gr * 2)),
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xF5FF94, alpha: (0.28 + 0.44 * jarGlow) * Double(pulse)), Color(hex: 0xE6FF7A, alpha: 0)]),
+                    center: CGPoint(x: 0, y: -22), startRadius: 2, endRadius: gr
+                )
+            )
+        }
+        let jarBody = Path(roundedRect: CGRect(x: -13, y: -38, width: 26, height: 38), cornerRadius: 8)
+        let jarTint = jarGlow > 0
+            ? Color(hex: 0xF2FFC0, alpha: 0.42 + 0.28 * jarGlow)
+            : Color(hex: 0xDDF4FF, alpha: 0.48)
+        StorybookArt.fillAndStroke(jg, jarBody, fill: jarTint, stroke: Color(hex: 0x8EB8CC), width: 2.0)
+        // Caught glowing fireflies gently bobbing inside the jar
+        for k in 0..<sim.caughtFireflies {
+            let fx = sin(t * (2.2 + CGFloat(k % 3) * 0.6) + CGFloat(k) * 1.9) * 7.5
+            let fy = -12 - CGFloat(k % 4) * 5.2 + cos(t * 2.8 + CGFloat(k)) * 2.5
+            let tw = 0.65 + 0.35 * sin(t * 5 + CGFloat(k))
+            jg.fill(Path(ellipseIn: CGRect(x: fx - 5, y: fy - 5, width: 10, height: 10)),
+                    with: .color(Color(hex: 0xF4FF82, alpha: 0.55 * Double(tw))))
+            jg.fill(Path(ellipseIn: CGRect(x: fx - 2.1, y: fy - 2.1, width: 4.2, height: 4.2)),
+                    with: .color(Color(hex: 0xFFFFD6, alpha: Double(tw))))
+        }
+        StorybookArt.highlight(jg, in: CGRect(x: -9, y: -32, width: 4.5, height: 18), opacity: 0.65)
+        // Jar neck twine & warm cork stopper
+        let cork = Path(roundedRect: CGRect(x: -9, y: -45, width: 18, height: 8), cornerRadius: 3)
+        StorybookArt.shape(jg, cork, hex: 0xC89058, width: 1.8)
+        var neck = Path()
+        neck.move(to: CGPoint(x: -11, y: -38))
+        neck.addLine(to: CGPoint(x: 11, y: -38))
+        jg.stroke(neck, with: .color(Color(hex: 0xE6C488)), style: StrokeStyle(lineWidth: 2.8, lineCap: .round))
+
         // Bouquet Vase sitting on the cedar bench
         let vc = GGeo.vase
         var vg = g
@@ -327,7 +699,7 @@ enum GardenPainter {
 
         GardenPlants.shadow(vg, at: CGPoint(x: 0, y: 2), width: 66)
 
-        // Picked flowers fanned out of the vase neck
+        // Picked flowers (including hybrids!) fanned out of the vase neck
         let flowers = sim.bouquet
         let count = flowers.count
         for (idx, flower) in flowers.enumerated() {
@@ -336,7 +708,7 @@ enum GardenPainter {
             let stemLen: CGFloat = 56 + (idx % 2 == 0 ? 12 : 0) - abs(spread) * 14
             var fg = vg
             fg.translateBy(x: spread * 14, y: -54)
-            GardenPlants.drawBouquetStem(fg, kind: flower.kind, variant: flower.variant, angle: spread + sway, stemLength: stemLen)
+            GardenPlants.drawBouquetStem(fg, kind: flower.kind, variant: flower.variant, angle: spread + sway, stemLength: stemLen, hybrid: flower.hybrid, time: t)
         }
 
         // Glazed pastel ceramic vase body
@@ -357,6 +729,37 @@ enum GardenPainter {
         let rim = Path(roundedRect: CGRect(x: -21, y: -64, width: 42, height: 10), cornerRadius: 5)
         StorybookArt.shape(vg, rim, hex: 0xFFB0CE, width: 2.2)
         StorybookArt.heart(vg, at: CGPoint(x: 0, y: -26), size: 16, color: Theme.pink, opacity: 0.85)
+
+        // Gentle sparkle invitation when >= 3 flowers are ready to weave into a Flower Crown!
+        if sim.bouquet.count >= 3 && !sim.hasCraftedCrown {
+            let glowP = 0.6 + 0.4 * sin(t * 3.6)
+            vg.fill(
+                Path(ellipseIn: CGRect(x: -44, y: -116, width: 88, height: 88)),
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xFFE58A, alpha: 0.34 * Double(glowP)), Color(hex: 0xFFB3D2, alpha: 0)]),
+                    center: CGPoint(x: 0, y: -72), startRadius: 8, endRadius: 44
+                )
+            )
+            GardenVisitorPainter.twinkles(vg, around: CGPoint(x: 0, y: -74), radius: 38, time: t * 1.4, count: 4, alpha: 0.95)
+        }
+
+        // Woven Wearable Flower Crown resting sparkling on the right end of the cedar bench!
+        if sim.hasCraftedCrown && sim.dragCrownPos == nil {
+            let cc = GGeo.flowerCrownSpot
+            let bob = sin(t * 3.4) * 3
+            var cg = g
+            cg.translateBy(x: cc.x, y: cc.y - 12 + bob)
+            cg.scaleBy(x: 1 - sim.crownBounce * 0.03, y: 1 + sim.crownBounce * 0.05)
+            cg.fill(
+                Path(ellipseIn: CGRect(x: -28, y: -22, width: 56, height: 44)),
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: 0xFFE89A, alpha: 0.48), Color(hex: 0xFFB3D2, alpha: 0)]),
+                    center: .zero, startRadius: 4, endRadius: 28
+                )
+            )
+            GardenVisitorPainter.drawFlowerCrown(cg, at: .zero, colors: sim.craftedCrownColors, scale: 1.25)
+            GardenVisitorPainter.twinkles(cg, around: .zero, radius: 24, time: t * 1.6, count: 3, alpha: 0.95)
+        }
     }
 
     // MARK: Raised Cedar Garden Bed & Soil
@@ -551,24 +954,57 @@ enum GardenPainter {
             let x = GGeo.plotX[i]
             let base = CGPoint(x: x, y: sim.surface(x))
             let st = sim.plots[i]
-            // Special rare variants glow and twinkle even as a tiny mystery sprout!
-            if p.isSpecial {
-                let hgt = GardenPlants.stemHeight(p)
+            let hgt = GardenPlants.stemHeight(p)
+            // Rainbow sunshower shimmer halo behind charged ripe blooms!
+            if p.rainbowCharged {
+                let center = sim.pollenAnchor(plot: i) ?? CGPoint(x: base.x, y: base.y - max(24, hgt * 0.72))
+                let rr: CGFloat = 46 + sin(t * 3.2 + CGFloat(i)) * 4
+                let rColors: [Color] = [
+                    Color(hex: 0xFF8FB8, alpha: 0.4), Color(hex: 0xFFE37A, alpha: 0.35),
+                    Color(hex: 0x8CE3B8, alpha: 0.3), Color(hex: 0x8EC8FF, alpha: 0.0)
+                ]
+                g.fill(Path(ellipseIn: CGRect(x: center.x - rr, y: center.y - rr, width: rr * 2, height: rr * 2)),
+                       with: .radialGradient(Gradient(colors: rColors), center: center, startRadius: 6, endRadius: rr))
+            }
+            // Special rare variants & Magic Hybrids glow warmly!
+            if p.isSpecial || p.hybrid != nil {
                 let center = CGPoint(x: base.x, y: base.y - max(18, hgt * 0.65))
-                let auraR: CGFloat = 26 + 22 * CGFloat(p.growth)
+                let auraR: CGFloat = 28 + 24 * CGFloat(p.growth)
+                let col = p.hybrid?.primaryColor ?? p.kind.specialColor
                 g.fill(Path(ellipseIn: CGRect(x: center.x - auraR, y: center.y - auraR, width: auraR * 2, height: auraR * 2)),
-                       with: .radialGradient(Gradient(colors: [p.kind.specialColor.color(0.32), p.kind.specialColor.color(0)]),
+                       with: .radialGradient(Gradient(colors: [col.color(0.36), col.color(0)]),
                                              center: center, startRadius: 4, endRadius: auraR))
             }
             GardenPlants.draw(g, plant: p, base: base, bend: st.bend, pop: st.pop, pull: st.pull, time: t, droop: st.dry > 1.5)
-            if p.isSpecial {
-                let hgt = GardenPlants.stemHeight(p)
-                let low = !p.kind.isFlower
+            if p.isSpecial || p.hybrid != nil || p.rainbowCharged {
+                let low = !p.effectiveIsFlower
                 let c = low ? CGPoint(x: base.x + (p.kind == .pumpkin ? 12 : 0), y: base.y - max(24, hgt * 0.55))
                             : (sim.head(plot: i) ?? CGPoint(x: base.x, y: base.y - max(22, hgt)))
-                GardenVisitorPainter.twinkles(g, around: c, radius: low ? 38 : 34, time: t + CGFloat(i), count: 3, alpha: 0.95)
+                GardenVisitorPainter.twinkles(g, around: c, radius: low ? 40 : 36, time: t + CGFloat(i), count: p.hybrid != nil ? 4 : 3, alpha: 0.96)
+            }
+            // Tappable & draggable Glowing Golden Pollen Sparkle above cross-breedable ripe blooms!
+            if sim.tool == nil, sim.dragPollenFromPlot != i, let orb = sim.pollenOrbPos(plot: i) {
+                let bob = sin(t * 3.4 + CGFloat(i) * 1.3) * 3.5
+                let op = CGPoint(x: orb.x, y: orb.y + bob)
+                drawPollenOrb(g, at: op, time: t + CGFloat(i), scale: 1.0)
             }
         }
+    }
+
+    private static func drawPollenOrb(_ g: GraphicsContext, at p: CGPoint, time t: CGFloat, scale: CGFloat) {
+        let pulse = 0.88 + 0.14 * sin(t * 4.5)
+        let r: CGFloat = 19 * scale * pulse
+        g.fill(
+            Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF9C0, alpha: 0.85), Color(hex: 0xFFD23F, alpha: 0.45), Color(hex: 0xFFD23F, alpha: 0)]),
+                center: p, startRadius: 2, endRadius: r
+            )
+        )
+        let coreR: CGFloat = 7.5 * scale
+        let core = Path(ellipseIn: CGRect(x: p.x - coreR, y: p.y - coreR, width: coreR * 2, height: coreR * 2))
+        StorybookArt.fillAndStroke(g, core, fill: Color(hex: 0xFFE466), stroke: Color(hex: 0xE6A01E), width: 1.6)
+        StorybookArt.sparkle(g, at: p, radius: 9.5 * scale * pulse, color: .white, opacity: 0.95)
     }
 
     private static func visitors(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat, behind: Bool, flying: Bool) {
@@ -618,9 +1054,80 @@ enum GardenPainter {
     }
 
     private static func frontGrass(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
+        let pal = seasonColors(sim.season)
         let dusk = sim.night * 0.44
-        let col = GRGB(0x74C054).mix(GRGB(0x28455C), dusk)
+        let col = pal.frontTop.shade(-0.08).mix(GRGB(0x28455C), dusk)
         grass(g, from: 20, to: 1004, y: GGeo.bedBottom + 14, depth: 10, count: 130, sim: sim, t: t, color: col, salt: 31)
+    }
+
+    // MARK: Cozy Gingham Critter Picnic Blanket
+
+    private static func picnicBlanket(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
+        let c = GGeo.picnic
+        let sz = GGeo.picnicSize
+        var pg = g
+        pg.translateBy(x: c.x, y: c.y)
+        pg.scaleBy(x: 1 + sim.picnicBounce * 0.016, y: 1 - sim.picnicBounce * 0.012)
+
+        // Soft grass shadow
+        GardenPlants.shadow(pg, at: CGPoint(x: 0, y: sz.height * 0.46), width: sz.width * 1.06)
+
+        // Soft inviting warm glow when carrying snacks from the Harvest Basket
+        if sim.dragBasketPos != nil {
+            let pulse = 0.72 + 0.28 * sin(t * 5)
+            let halo = Path(roundedRect: CGRect(x: -sz.width * 0.56, y: -sz.height * 0.58, width: sz.width * 1.12, height: sz.height * 1.16), cornerRadius: 24)
+            pg.stroke(halo, with: .color(Theme.lemon.opacity(0.9 * Double(pulse))), style: StrokeStyle(lineWidth: 5, dash: [10, 6]))
+        }
+
+        // Cozy perspective gingham blanket cloth
+        let rect = CGRect(x: -sz.width / 2, y: -sz.height / 2, width: sz.width, height: sz.height)
+        let cloth = Path(roundedRect: rect, cornerRadius: 18)
+        pg.fill(cloth, with: .color(Color(hex: 0xFFF8EE)))
+        var clipG = pg
+        clipG.clip(to: cloth)
+        let sq: CGFloat = 18
+        var gx = rect.minX
+        var colIdx = 0
+        while gx < rect.maxX {
+            var gy = rect.minY
+            var rowIdx = 0
+            while gy < rect.maxY {
+                let cell = Path(CGRect(x: gx, y: gy, width: sq, height: sq))
+                let even = (colIdx + rowIdx) % 2 == 0
+                if even {
+                    clipG.fill(cell, with: .color(Color(hex: 0xFF9AB8, alpha: 0.52)))
+                } else if colIdx % 2 == 0 || rowIdx % 2 == 0 {
+                    clipG.fill(cell, with: .color(Color(hex: 0xFFC8DA, alpha: 0.42)))
+                }
+                gy += sq
+                rowIdx += 1
+            }
+            gx += sq
+            colIdx += 1
+        }
+        // Cream stitched trim & storybook outline
+        pg.stroke(cloth, with: .color(StorybookArt.outline(for: 0xFF8FB8)), lineWidth: 2.6)
+        let stitch = Path(roundedRect: rect.insetBy(dx: 5, dy: 5), cornerRadius: 14)
+        pg.stroke(stitch, with: .color(.white.opacity(0.88)), style: StrokeStyle(lineWidth: 1.6, dash: [5, 4]))
+
+        // Tiny corner tassels
+        for (tx, ty) in [(-sz.width / 2 + 4, -sz.height / 2 + 4), (sz.width / 2 - 4, -sz.height / 2 + 4),
+                         (-sz.width / 2 + 4, sz.height / 2 - 4), (sz.width / 2 - 4, sz.height / 2 - 4)] as [(CGFloat, CGFloat)] {
+            pg.fill(Path(ellipseIn: CGRect(x: tx - 4, y: ty - 4, width: 8, height: 8)), with: .color(Color(hex: 0xFFE38A)))
+        }
+
+        // Cute pastel paper plates holding placed snacks
+        for snack in sim.picnicSnacks {
+            let local = CGPoint(x: snack.pos.x - c.x, y: snack.pos.y - c.y)
+            let plate = Path(ellipseIn: CGRect(x: local.x - 19, y: local.y - 11, width: 38, height: 22))
+            StorybookArt.fillAndStroke(pg, plate, fill: .white, stroke: Theme.blush, width: 2)
+            GardenPlants.drawBasketItem(pg, entry: snack.item, at: CGPoint(x: local.x, y: local.y - 4), size: 0.65, rot: 0, time: t)
+        }
+
+        // Hopping & munching picnic critters right on the blanket!
+        for critter in sim.picnicCritters {
+            GardenVisitorPainter.drawPicnicCritter(g, critter, time: t, nowTime: sim.time)
+        }
     }
 
     // MARK: Particles, flyers & surprise pops
@@ -680,6 +1187,26 @@ enum GardenPainter {
             case .heart where front:
                 let s = q.size * CGFloat(0.65 + 0.35 * sin(CGFloat(1 - life) * .pi))
                 StorybookArt.heart(g, at: q.p, size: s, color: q.color.color, opacity: min(1, life * 1.5))
+            case .confetti where front:
+                var cg = g
+                cg.translateBy(x: q.p.x, y: q.p.y)
+                cg.rotate(by: .radians(Double(q.rot)))
+                let flip = max(0.25, abs(cos(q.rot * 2.2)))
+                let r = CGRect(x: -q.size * 0.55, y: -q.size * 0.32 * flip, width: q.size * 1.1, height: q.size * 0.64 * flip)
+                cg.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(q.color.color(min(1, life * 2))))
+            case .snow where front:
+                let fade = min(1, life * 2.5)
+                let r = CGRect(x: q.p.x - q.size * 0.5, y: q.p.y - q.size * 0.5, width: q.size, height: q.size)
+                g.fill(Path(ellipseIn: r), with: .color(q.color.color(0.92 * fade)))
+                if q.size > 5 {
+                    StorybookArt.sparkle(g, at: q.p, radius: q.size * 0.72, color: .white, opacity: 0.75 * fade)
+                }
+            case .pollen where front:
+                let r = q.size * CGFloat(0.5 + 0.5 * life)
+                g.fill(Path(ellipseIn: CGRect(x: q.p.x - r * 1.6, y: q.p.y - r * 1.6, width: r * 3.2, height: r * 3.2)),
+                       with: .color(Color(hex: 0xFFE36E, alpha: 0.42 * life)))
+                g.fill(Path(ellipseIn: CGRect(x: q.p.x - r * 0.6, y: q.p.y - r * 0.6, width: r * 1.2, height: r * 1.2)),
+                       with: .color(Color(hex: 0xFFFBE0, alpha: 0.95 * life)))
             case .petal where front, .leaf where front:
                 var sg = g
                 sg.translateBy(x: q.p.x, y: q.p.y)
@@ -752,6 +1279,17 @@ enum GardenPainter {
             case .flowerToVase(let kind, let v):
                 let s = 1 + 0.25 * sin(min(1, k / CGFloat(f.dur)) * .pi)
                 GardenPlants.drawCrop(g, kind: kind, variant: v, at: p, size: s, rot: rot)
+            case .hybridCrop(let h), .hybridFlowerToVase(let h):
+                let s = 1 + 0.28 * sin(min(1, k / CGFloat(f.dur)) * .pi)
+                GardenPlants.drawHybridIcon(g, hybrid: h, at: p, size: s * 0.95, rot: rot, time: CGFloat(sim.time))
+            case .picnicSnack(let item):
+                let s = 0.85 + 0.22 * sin(min(1, k / CGFloat(f.dur)) * .pi)
+                GardenPlants.drawBasketItem(g, entry: item, at: p, size: s, rot: rot, time: CGFloat(sim.time))
+            case .caughtFirefly:
+                g.fill(Path(ellipseIn: CGRect(x: p.x - 16, y: p.y - 16, width: 32, height: 32)),
+                       with: .radialGradient(Gradient(colors: [Color(hex: 0xF5FF8A, alpha: 0.9), Color(hex: 0xE6FF7A, alpha: 0)]),
+                                             center: p, startRadius: 1, endRadius: 16))
+                g.fill(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)), with: .color(Color(hex: 0xFFFFE0)))
             case .flyingSeed(let kind, _):
                 var sg = g
                 sg.translateBy(x: p.x, y: p.y)
@@ -921,6 +1459,10 @@ enum GardenPainter {
             face.translateBy(x: bee.p.x, y: bee.p.y)
             face.scaleBy(x: bee.v.dx < 0 ? -1 : 1, y: 1)
             face.fill(Path(ellipseIn: CGRect(x: 6, y: -3.5, width: 2.6, height: 3)), with: .color(GRGB(0x2A2020).color))
+            // Glowing golden pollen orb visibly carried beneath the buzzing bee!
+            if bee.carryingPollenFrom != nil {
+                drawPollenOrb(g, at: CGPoint(x: bee.p.x, y: bee.p.y + 11), time: t * 1.4, scale: 0.72)
+            }
         }
     }
 
@@ -943,14 +1485,11 @@ enum GardenPainter {
 
         let items = sim.basket.suffix(12)
         for (k, name) in items.enumerated() {
-            let parts = name.split(separator: ":")
-            guard let kind = PlantKind(rawValue: String(parts.first ?? "")) else { continue }
-            let v = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
             let row = k / 4
             let col = k % 4
             let x = -34 + CGFloat(col) * 22 + (row % 2 == 0 ? 0 : 9)
             let y = -11 - CGFloat(row) * 12
-            GardenPlants.drawCrop(b, kind: kind, variant: v, at: CGPoint(x: x, y: y), size: 0.58, rot: (gdRand(k, 9) - 0.5) * 0.8)
+            GardenPlants.drawBasketItem(b, entry: name, at: CGPoint(x: x, y: y), size: 0.58, rot: (gdRand(k, 9) - 0.5) * 0.8, time: CGFloat(sim.time))
         }
 
         var front = Path()
@@ -1021,6 +1560,72 @@ enum GardenPainter {
                       with: .radialGradient(Gradient(colors: [Color(hex: 0xE6FF7A, alpha: 0.72 * a), Color(hex: 0xE6FF7A, alpha: 0)]),
                                             center: f.p, startRadius: 0, endRadius: 16))
             glow.fill(Path(ellipseIn: CGRect(x: f.p.x - 2.4, y: f.p.y - 2.4, width: 4.8, height: 4.8)), with: .color(Color(hex: 0xFAFFD0, alpha: a)))
+        }
+        // Bench Firefly Lantern Jar glowing brighter with each caught firefly!
+        if sim.caughtFireflies > 0 {
+            let level = Double(sim.caughtFireflies) / Double(GardenSim.maxCaughtFireflies)
+            let pulse = 0.9 + 0.1 * sin(t * 3.5)
+            let jc = CGPoint(x: GGeo.fireflyJar.x, y: GGeo.fireflyJar.y - 22)
+            let r: CGFloat = 44 + 78 * CGFloat(level)
+            glow.fill(Path(ellipseIn: CGRect(x: jc.x - r, y: jc.y - r, width: r * 2, height: r * 2)),
+                      with: .radialGradient(
+                        Gradient(colors: [Color(hex: 0xF5FF94, alpha: (0.35 + 0.55 * level) * n * Double(pulse)), Color(hex: 0xE6FF7A, alpha: 0)]),
+                        center: jc, startRadius: 4, endRadius: r
+                      ))
+        }
+        // Storybook Treehouse glowing cabin window (Stage 2+) & fairy lanterns (Stage 4+) at dusk/night!
+        let th = GGeo.treehouse
+        if sim.treehouseStage >= 2 {
+            let wc = CGPoint(x: th.x, y: th.y - 136)
+            glow.fill(Path(ellipseIn: CGRect(x: wc.x - 56, y: wc.y - 56, width: 112, height: 112)),
+                      with: .radialGradient(Gradient(colors: [Color(hex: 0xFFE38A, alpha: 0.52 * n), Color(hex: 0xFFE38A, alpha: 0)]),
+                                            center: wc, startRadius: 6, endRadius: 56))
+        }
+        if sim.treehouseStage >= 4 {
+            let lanterns: [(CGFloat, CGFloat, UInt32)] = [(-66, -130, 0xFFE38A), (0, -164, 0xFFB3D2), (66, -130, 0x9FF0D8)]
+            for (k, l) in lanterns.enumerated() {
+                let c = CGPoint(x: th.x + l.0, y: th.y + l.1)
+                let pulse = 0.88 + 0.12 * sin(t * 2.8 + CGFloat(k))
+                glow.fill(Path(ellipseIn: CGRect(x: c.x - 52, y: c.y - 52, width: 104, height: 104)),
+                          with: .radialGradient(Gradient(colors: [Color(hex: l.2, alpha: 0.65 * n * Double(pulse)), Color(hex: l.2, alpha: 0)]),
+                                                center: c, startRadius: 4, endRadius: 52))
+            }
+        }
+    }
+
+    // MARK: Active Bare-Hand Drag Overlays (Pollen, Flower Crown, Basket Snack)
+
+    private static func dragOverlays(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
+        if let pp = sim.dragPollenPos, let fromIdx = sim.dragPollenFromPlot, let donor = sim.dragPollenKind {
+            // Soft golden aim rings over eligible different ripe plots
+            let pulse = 0.75 + 0.25 * sin(t * 6)
+            for i in sim.plots.indices where i != fromIdx && sim.pollinatable(i) && sim.plots[i].plant?.kind != donor {
+                if let anc = sim.pollenAnchor(plot: i) {
+                    let ring = Path(ellipseIn: CGRect(x: anc.x - 36, y: anc.y - 36, width: 72, height: 72))
+                    g.stroke(ring, with: .color(Theme.lemon.opacity(0.95 * Double(pulse))), style: StrokeStyle(lineWidth: 4, dash: [8, 6]))
+                }
+            }
+            drawPollenOrb(g, at: pp, time: t * 2, scale: 1.35)
+        }
+        if let cp = sim.dragCrownPos {
+            // Soft inviting rings over any visiting or picnic critter
+            let pulse = 0.75 + 0.25 * sin(t * 6)
+            for v in sim.visitors {
+                let mid = v.kind.flies ? v.p : CGPoint(x: v.p.x, y: v.p.y - v.kind.stickerHeight * 0.5)
+                let ring = Path(ellipseIn: CGRect(x: mid.x - 38, y: mid.y - 38, width: 76, height: 76))
+                g.stroke(ring, with: .color(Theme.pink.opacity(0.85 * Double(pulse))), style: StrokeStyle(lineWidth: 3.5, dash: [8, 6]))
+            }
+            for pc in sim.picnicCritters {
+                let mid = CGPoint(x: pc.p.x, y: pc.p.y - 34)
+                let ring = Path(ellipseIn: CGRect(x: mid.x - 36, y: mid.y - 36, width: 72, height: 72))
+                g.stroke(ring, with: .color(Theme.pink.opacity(0.85 * Double(pulse))), style: StrokeStyle(lineWidth: 3.5, dash: [8, 6]))
+            }
+            GardenVisitorPainter.drawFlowerCrown(g, at: cp, colors: sim.craftedCrownColors, scale: 1.45)
+        }
+        if let bp = sim.dragBasketPos, let item = sim.dragBasketPreview {
+            let bubble = Path(ellipseIn: CGRect(x: bp.x - 28, y: bp.y - 28, width: 56, height: 56))
+            StorybookArt.fillAndStroke(g, bubble, fill: .white.opacity(0.9), stroke: Theme.lemon, width: 3)
+            GardenPlants.drawBasketItem(g, entry: item, at: bp, size: 0.9, rot: sin(t * 8) * 0.12, time: t)
         }
     }
 

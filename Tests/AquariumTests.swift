@@ -15,7 +15,9 @@ final class AquariumTests: XCTestCase {
         sim.bubbles = []
         sim.hoops = []
         sim.decor = []
+        sim.eggs = []
         sim.visitors = []
+        sim.submarine.active = false
         sim.moss = AquaMossPatch.makeDefault()
         sim.pump = false
         return sim
@@ -23,6 +25,7 @@ final class AquariumTests: XCTestCase {
 
     private func run(_ sim: AquariumSim, seconds: Double) {
         for _ in 0..<Int(seconds * 60) { sim.step(dt: 1.0 / 60) }
+        sim.flushPendingRewards()
     }
 
     // MARK: - Feeding, Hungry Crumb Cues & Rewards
@@ -117,6 +120,7 @@ final class AquariumTests: XCTestCase {
             }
         }
         sim.release(home: CGPoint(x: 416, y: AGeo.dockY))
+        sim.flushPendingRewards()
 
         XCTAssertLessThan(sim.dirtiness, 0.03, "magnetic wiper polishes smudges away")
         XCTAssertTrue(sim.visitors.contains { $0.kind == .turtle }, "polishing tank clean invites the Sea Turtle")
@@ -460,7 +464,7 @@ final class AquariumTests: XCTestCase {
         let entry = GameRegistry.all.first { $0.id == AquariumSim.gameID }
         XCTAssertEqual(entry?.stickers.count, 14)
         XCTAssertEqual(entry?.stickers.map(\.id), AquaFind.allCases.map(\.rawValue))
-        for k in FishKind.allCases { XCTAssertEqual(AquaFind.rare(k).fish, k) }
+        for k in FishKind.classicCases { XCTAssertEqual(AquaFind.rare(k)?.fish, k) }
         for v in AVisitorKind.allCases { XCTAssertEqual(AquaFind(rawValue: v.rawValue)?.visitor, v) }
 
         let sim = freshSim()
@@ -475,5 +479,206 @@ final class AquariumTests: XCTestCase {
                 ?? GameFiles.url(sfx.rawValue, "wav", game: "Aquarium")
             XCTAssertNotNil(url, "missing bundled Aquarium sound \(sfx.rawValue)")
         }
+    }
+
+    // MARK: - 60 FPS Performance Fixes (Deferred Rewards, Cached AquaBody, Particle Cap)
+
+    func testDeferredRewardsQueueDuringStepWithoutMutatingCoinsUntilFlushed() {
+        let sim = freshSim()
+        let fIdx = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 420, y: 360))
+        sim.fish[fIdx].dir = 1
+        sim.fish[fIdx].facing = 1
+        sim.spawnBubbleHoop(at: CGPoint(x: 460, y: 360))
+
+        for _ in 0..<120 { sim.step(dt: 1.0 / 60) }
+
+        XCTAssertFalse(sim.pendingCoins.isEmpty, "step(dt:) should queue coin rewards rather than mutating @Published inside Canvas")
+        XCTAssertEqual(Coins.shared.balance, 0, "Coins.shared.balance must remain untouched during step(dt:)")
+
+        sim.flushPendingRewards()
+        XCTAssertTrue(sim.pendingCoins.isEmpty)
+        XCTAssertEqual(Coins.shared.balance, 2, "flushPendingRewards() applies queued coin rewards deterministically")
+    }
+
+    func testAquaBodyCachesOutlinePathAndUsesPrecomputedProfiles() {
+        let body = AquaBody(L: 70, H: 46, a: 0.85, b: 0.5, bend: 0.08)
+        XCTAssertTrue(AquaBody.hasCachedProfile(a: 0.85, b: 0.5))
+        XCTAssertTrue(AquaBody.hasCachedProfile(a: 0.75, b: 0.6))
+        XCTAssertTrue(AquaBody.hasCachedProfile(a: 0.65, b: 0.7))
+        XCTAssertTrue(AquaBody.hasCachedProfile(a: 0.78, b: 0.58))
+        XCTAssertGreaterThan(body.peak, 0)
+        XCTAssertFalse(body.outlinePath.isEmpty)
+        XCTAssertEqual(body.outline.boundingRect, body.outlinePath.boundingRect)
+        XCTAssertGreaterThan(body.half(0.5), 10)
+        XCTAssertEqual(body.half(0), body.half(-0.5), accuracy: 0.001)
+    }
+
+    func testGlobalParticleCapEnforcedAcrossAllEmitters() {
+        let sim = freshSim()
+        sim.night = 1
+        for k in 0..<15 {
+            sim.splash(at: 200 + CGFloat(k * 40), strength: 1.2)
+            sim.emitParticle(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: 400, y: 300),
+                    v: .zero,
+                    life: 2.0,
+                    size: 14,
+                    color: ARGB(0xFFE69A)
+                )
+            )
+            sim.emitParticle(
+                AquaParticle(
+                    kind: .glow,
+                    p: CGPoint(x: 500, y: 350),
+                    v: .zero,
+                    life: 5.0,
+                    size: 3,
+                    color: ARGB(0x8CF7FF)
+                )
+            )
+        }
+        XCTAssertLessThanOrEqual(sim.particles.count, AquariumSim.maxParticles)
+        XCTAssertEqual(AquariumSim.maxParticles, 120)
+        run(sim, seconds: 0.5)
+        XCTAssertLessThanOrEqual(sim.particles.count, AquariumSim.maxParticles)
+    }
+
+    // MARK: - Hatchable Mystery Reef Eggs & Baby Growth Loop
+
+    func testMysteryEggThreeTapHatchSpawnsBabyCreatureAndRespectsMaxCap() {
+        let sim = freshSim()
+        XCTAssertNotNil(sim.dropEgg(at: 320, y: AGeo.sand(320), species: .axolotl))
+        XCTAssertNotNil(sim.dropEgg(at: 480, y: AGeo.sand(480), species: .seaBunny))
+        XCTAssertNotNil(sim.dropEgg(at: 640, y: AGeo.sand(640), species: .narwhal))
+        XCTAssertNil(sim.dropEgg(at: 720, y: AGeo.sand(720), species: .goldfish), "tank holds at most 3 mystery eggs")
+        XCTAssertEqual(sim.eggs.count, 3)
+
+        let tapSpot = CGPoint(x: 320, y: AGeo.sand(320) - 22)
+        XCTAssertTrue(sim.tapEgg(tapSpot))
+        XCTAssertEqual(sim.eggs[0].taps, 1)
+        XCTAssertTrue(sim.fish.isEmpty)
+
+        XCTAssertTrue(sim.tapEgg(tapSpot))
+        XCTAssertEqual(sim.eggs[0].taps, 2)
+        XCTAssertTrue(sim.fish.isEmpty)
+
+        XCTAssertTrue(sim.tapEgg(tapSpot))
+        XCTAssertEqual(sim.eggs.count, 2, "3rd tap hatches and removes the egg")
+        XCTAssertEqual(sim.fish.count, 1)
+        XCTAssertEqual(sim.fish[0].kind, .axolotl)
+        XCTAssertEqual(sim.fish[0].growthStage, 0)
+        XCTAssertEqual(sim.fish[0].growthScale, 0.55, accuracy: 0.001)
+    }
+
+    func testFeedingBabyCreatureGrowsBabyToKidToAdultAndAwardsCoins() {
+        let sim = freshSim()
+        sim.lastFeedRewardAt = 1000 // Isolate growth coins from the 3-flake baby-visitor bonus.
+        let idx = sim.spawn(.seaBunny, variant: 0, at: CGPoint(x: 500, y: 420), growthStage: 0)
+        sim.fish[idx].dir = 1
+        sim.fish[idx].facing = 1
+        sim.fish[idx].appetite = 5
+
+        for k in 0..<3 {
+            sim.addFlake(at: CGPoint(x: 508 + CGFloat(k) * 8, y: 420), v: .zero, kind: .pearls)
+        }
+        run(sim, seconds: 6)
+        XCTAssertEqual(sim.fish[idx].growthStage, 1, "3 bites grows baby -> kid")
+        XCTAssertEqual(sim.fish[idx].growthScale, 0.78, accuracy: 0.001)
+        XCTAssertEqual(Coins.shared.balance, 2, "growing to kid awards 2 Play Coins")
+
+        for k in 0..<3 {
+            sim.addFlake(at: CGPoint(x: sim.fish[idx].p.x + CGFloat(k) * 8, y: sim.fish[idx].p.y), v: .zero, kind: .pearls)
+        }
+        run(sim, seconds: 6)
+        XCTAssertEqual(sim.fish[idx].growthStage, 2, "3 more bites grows kid -> shimmering adult")
+        XCTAssertEqual(sim.fish[idx].growthScale, 1.0, accuracy: 0.001)
+        XCTAssertTrue(sim.fish[idx].grewUp)
+        XCTAssertEqual(Coins.shared.balance, 4, "growing to adult awards 2 more Play Coins")
+    }
+
+    // MARK: - Interactive Yellow Submarine, Musical Singing Clams & Pearl Pellets
+
+    func testYellowSubmarineSteeringAndSpotlightWakeHiddenSurprises() {
+        let sim = freshSim()
+        XCTAssertFalse(sim.submarine.active)
+        sim.toggleSubmarine()
+        XCTAssertTrue(sim.submarine.active)
+
+        let spot = sim.hiddenSpots[0]
+        sim.steerSubmarine(to: CGPoint(x: spot.p.x - 45, y: spot.p.y - 60))
+        run(sim, seconds: 3.5)
+
+        XCTAssertLessThan(hypot(sim.submarine.p.x - sim.submarine.target.x, sim.submarine.p.y - sim.submarine.target.y), 25)
+        XCTAssertGreaterThan(sim.hiddenSpots[0].pop, 0.4, "submarine spotlight wakes hiding reef surprise")
+        XCTAssertEqual(Coins.shared.balance, 2, "waking hidden surprise awards 2 Play Coins")
+
+        // Immediate re-run inside cooldown must not double-pay the same spot.
+        run(sim, seconds: 1.0)
+        XCTAssertEqual(Coins.shared.balance, 2)
+    }
+
+    func testMusicalSingingClamsTriggerFishRibbonDance() {
+        let sim = freshSim()
+        sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 200, y: 300))
+        sim.spawn(.narwhal, variant: 0, at: CGPoint(x: 800, y: 300))
+        XCTAssertEqual(sim.clams.count, 4)
+        XCTAssertFalse(sim.isRibbonDanceActive)
+
+        for idx in 0..<3 {
+            let c = sim.clams[idx]
+            XCTAssertTrue(sim.tapClam(CGPoint(x: c.x, y: c.y - 10)))
+            run(sim, seconds: 0.35)
+        }
+
+        XCTAssertTrue(sim.isRibbonDanceActive, "tapping 3+ clams within 4s triggers Fish Ribbon Dance")
+        XCTAssertTrue(sim.particles.contains { $0.kind == .note }, "singing clams emit floating music notes")
+        XCTAssertTrue(sim.clams.allSatisfy { $0.open > 0.3 }, "all clams sing together during Ribbon Dance")
+    }
+
+    func testPearlPelletsSinkDirectlyAndGiveFishStardustShimmer() {
+        let sim = freshSim()
+        sim.toggleTreatMode()
+        XCTAssertEqual(sim.treatMode, .pearls)
+
+        sim.addFlake(at: CGPoint(x: 420, y: 80), v: .zero)
+        run(sim, seconds: 0.5)
+        XCTAssertEqual(sim.food.first?.kind, .pearls)
+        XCTAssertEqual(sim.food.first?.state, .sinking, "glowing pearl pellets sink gently without floating")
+
+        let idx = sim.spawn(.narwhal, variant: 0, at: CGPoint(x: 420, y: sim.food[0].p.y + 8))
+        run(sim, seconds: 2.5)
+        XCTAssertGreaterThan(sim.fish[idx].stardustUntil, sim.time, "eating a pearl pellet gives fish stardust shimmer for 6s")
+    }
+
+    func testAquaSaveBackwardCompatibilityDefaultsGrowthStageAndRoundTripsEggs() throws {
+        let legacyFishJSON = """
+        {
+            "fish": [{"kind": "goldfish", "variant": 1}],
+            "decor": [],
+            "moss": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "night": false,
+            "pump": true
+        }
+        """
+        let legacyDecoded = try JSONDecoder().decode(AquaSave.self, from: Data(legacyFishJSON.utf8))
+        XCTAssertEqual(legacyDecoded.fish.first?.growthStage, 2, "legacy saves default fish growthStage to adult (2)")
+        XCTAssertTrue(legacyDecoded.eggs.isEmpty)
+
+        let sim = freshSim()
+        sim.spawn(.narwhal, variant: 2, growthStage: 0, growthBites: 2)
+        _ = sim.dropEgg(at: 410, y: AGeo.sand(410), species: .seaBunny)
+        sim.eggs[0].taps = 2
+
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let decoded = try JSONDecoder().decode(AquaSave.self, from: data)
+        let restored = AquariumSim(save: decoded)
+        XCTAssertEqual(restored.fish.first?.kind, .narwhal)
+        XCTAssertEqual(restored.fish.first?.growthStage, 0)
+        XCTAssertEqual(restored.fish.first?.growthBites, 2)
+        XCTAssertEqual(restored.eggs.count, 1)
+        XCTAssertEqual(restored.eggs[0].species, .seaBunny)
+        XCTAssertEqual(restored.eggs[0].taps, 2)
     }
 }

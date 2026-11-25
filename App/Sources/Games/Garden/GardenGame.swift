@@ -238,20 +238,24 @@ struct GardenView: View {
     @State private var sim = GardenSim()
     @State private var dockMode: GardenDockMode = .hand
     @State private var weather: Weather = .sun
+    @State private var season: GardenSeason = .spring
     @State private var carrying: String?
     @State private var hidden: String?
     @State private var hand = GardenHandState()
     @State private var started = false
     @State private var auto = AutoTool()
     @State private var book = false
+    @State private var almanac = false
     @State private var showReturnBadge = false
     @State private var overReturnBadge = false
+
+    private var modalOpen: Bool { book || almanac }
 
     var body: some View {
         GameStage {
             GeometryReader { geo in
                 let map = GameStageMap(size: geo.size)
-                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: book)) { _ in
+                TimelineView(.animation(minimumInterval: 1.0 / 30, paused: modalOpen)) { _ in
                     Canvas(opaque: true) { ctx, _ in
                         GardenPainter.drawBackdrop(ctx, map: map, sim: sim)
                     }
@@ -260,7 +264,7 @@ struct GardenView: View {
             .allowsHitTesting(false)
         } content: {
             ZStack {
-                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: book)) { tl in
+                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: modalOpen)) { tl in
                     Canvas { ctx, _ in
                         sim.step(tl.date)
                         GardenPainter.drawWorld(ctx, sim: sim)
@@ -286,6 +290,11 @@ struct GardenView: View {
                             book = true
                         }
                     },
+                    center: {
+                        TimelineView(.animation(minimumInterval: 0.4, paused: modalOpen)) { _ in
+                            hybridDiscoveryStrip
+                        }
+                    },
                     trailing: { weatherBar }
                 )
 
@@ -295,7 +304,7 @@ struct GardenView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                TimelineView(.animation(minimumInterval: 0.3, paused: book)) { _ in
+                TimelineView(.animation(minimumInterval: 0.3, paused: modalOpen)) { _ in
                     dockBar(hint: dockMode == .hand && sim.tool == nil ? suggested : nil)
                 }
                 .position(x: 512, y: GGeo.dockY)
@@ -313,10 +322,16 @@ struct GardenView: View {
             .coinPurse(game: GardenSim.gameID)
         }
         .ignoresSafeArea()
+        .defersSystemGestures(on: .bottom)
         .overlay {
             if book {
                 StickerBookView(game: GardenSim.gameID) {
                     withAnimation(.easeOut(duration: 0.2)) { book = false }
+                }
+                .transition(.opacity)
+            } else if almanac {
+                HybridAlmanacView(discovered: sim.discoveredHybrids) {
+                    withAnimation(.easeOut(duration: 0.2)) { almanac = false }
                 }
                 .transition(.opacity)
             }
@@ -341,6 +356,7 @@ struct GardenView: View {
         started = true
         _ = GardenSound.shared
         weather = sim.weather
+        season = sim.season
         applyLaunchArguments()
     }
 
@@ -392,13 +408,83 @@ struct GardenView: View {
         }
     }
 
-    // MARK: Weather Top-Bar Controls
+    // MARK: Pictorial Hybrid Discovery Strip & Season/Weather Top-Bar Controls
+
+    private var hybridDiscoveryStrip: some View {
+        let discovered = Set(sim.discoveredHybrids)
+        let recent = sim.hasRecentHybridDiscovery
+        return Button {
+            Sound.shared.play(.flip, volume: 0.65)
+            Sound.shared.tap()
+            auto.cancel()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                almanac = true
+            }
+        } label: {
+            HStack(spacing: 5) {
+                ForEach(HybridKind.allCases, id: \.self) { h in
+                    let found = discovered.contains(h)
+                    ZStack {
+                        Circle()
+                            .fill(found ? Color.white : Theme.blush.opacity(0.45))
+                        Canvas { ctx, size in
+                            var g = ctx
+                            g.translateBy(x: size.width / 2, y: size.height / 2)
+                            if found {
+                                GardenPlants.drawHybridIcon(g, hybrid: h, at: .zero, size: 0.44, rot: 0, time: 0)
+                            } else {
+                                g.opacity = 0.28
+                                GardenPlants.drawHybridIcon(g, hybrid: h, at: .zero, size: 0.40, rot: 0, time: 0)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                    }
+                    .frame(width: 28, height: 28)
+                    .overlay(Circle().stroke(found ? Theme.lemon : .white.opacity(0.75), lineWidth: found ? 2.2 : 1.5))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Theme.cream.opacity(0.95)))
+            .overlay(
+                Capsule()
+                    .stroke(recent ? Theme.lemon : Theme.blush, lineWidth: recent ? 4 : 3)
+                    .shadow(color: recent ? Theme.lemon.opacity(0.75) : .clear, radius: 6)
+            )
+            .shadow(color: Theme.ink.opacity(0.18), radius: 6, y: 3)
+            .scaleEffect(recent ? 1.05 : 1.0)
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel("Hybrids")
+    }
 
     private var weatherBar: some View {
-        HStack(spacing: 10) {
+        let btnSize: CGFloat = 58
+        return HStack(spacing: 8) {
+            // 4-Season Magic Cycle Button right beside the Weather toggle!
+            Button {
+                Sound.shared.tap()
+                Sound.shared.play(.pop, volume: 0.6)
+                sim.cycleSeason()
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.68)) {
+                    season = sim.season
+                }
+            } label: {
+                ZStack {
+                    Circle().fill(.white)
+                    SeasonButtonIcon(season: season)
+                        .frame(width: btnSize * 0.66, height: btnSize * 0.66)
+                }
+                .frame(width: btnSize, height: btnSize)
+                .overlay(Circle().stroke(season.tint, lineWidth: 4.2))
+                .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel(season.rawValue.capitalized)
+
             ForEach(Weather.allCases, id: \.self) { w in
                 let active = weather == w
-                RoundButton(symbol: w.symbol, tint: w.tint, size: GameChromeLayout.buttonSize) {
+                RoundButton(symbol: w.symbol, tint: w.tint, size: btnSize) {
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
                     weather = w
@@ -406,11 +492,11 @@ struct GardenView: View {
                 }
                 .overlay(
                     Circle()
-                        .stroke(Theme.pink, lineWidth: 4.5)
+                        .stroke(Theme.pink, lineWidth: 4.2)
                         .shadow(color: Theme.pink.opacity(0.6), radius: 7)
                         .opacity(active ? 1 : 0)
                 )
-                .scaleEffect(active ? 1.07 : 0.96)
+                .scaleEffect(active ? 1.06 : 0.96)
                 .animation(.spring(response: 0.3, dampingFraction: 0.65), value: weather)
                 .accessibilityLabel(w.rawValue.capitalized)
             }
@@ -746,5 +832,219 @@ extension GardenSim {
         night = weather == .night ? 1 : 0
         wind = weather == .wind ? 1 : (weather == .rain ? 0.35 : 0.08)
         cloud = weather == .rain ? 1 : (weather == .wind ? 0.45 : 0.12)
+    }
+}
+
+// MARK: - Seasonal Cycle Icon & Wordless Hybrid Picture Almanac
+
+private struct SeasonButtonIcon: View {
+    let season: GardenSeason
+
+    var body: some View {
+        Canvas { ctx, size in
+            var g = ctx
+            let r = min(size.width, size.height) * 0.5
+            g.translateBy(x: size.width / 2, y: size.height / 2)
+            switch season {
+            case .spring:
+                // 5-petal pink cherry blossom
+                for i in 0..<5 {
+                    var pg = g
+                    pg.rotate(by: .radians(Double(i) * 2 * .pi / 5))
+                    let pet = Path(ellipseIn: CGRect(x: -r * 0.26, y: -r * 0.88, width: r * 0.52, height: r * 0.72))
+                    StorybookArt.fillAndStroke(pg, pet, fill: Color(hex: 0xFFB0CE), stroke: StorybookArt.outline(for: 0xFF8FB8), width: 1.4)
+                }
+                g.fill(Path(ellipseIn: CGRect(x: -r * 0.22, y: -r * 0.22, width: r * 0.44, height: r * 0.44)), with: .color(Theme.lemon))
+            case .summer:
+                // Bright sunlit green clover with warm golden heart
+                for i in 0..<4 {
+                    var pg = g
+                    pg.rotate(by: .radians(Double(i) * .pi / 2 + .pi / 4))
+                    let leaf = Path(ellipseIn: CGRect(x: -r * 0.28, y: -r * 0.84, width: r * 0.56, height: r * 0.68))
+                    StorybookArt.fillAndStroke(pg, leaf, fill: Color(hex: 0x68CE62), stroke: StorybookArt.outline(for: 0x4EA648), width: 1.4)
+                }
+                g.fill(Path(ellipseIn: CGRect(x: -r * 0.24, y: -r * 0.24, width: r * 0.48, height: r * 0.48)), with: .color(Color(hex: 0xFFD94A)))
+            case .autumn:
+                // Warm maple leaf
+                var leaf = Path()
+                leaf.move(to: CGPoint(x: 0, y: -r * 0.88))
+                leaf.addLine(to: CGPoint(x: r * 0.24, y: -r * 0.36))
+                leaf.addLine(to: CGPoint(x: r * 0.82, y: -r * 0.42))
+                leaf.addLine(to: CGPoint(x: r * 0.42, y: r * 0.02))
+                leaf.addLine(to: CGPoint(x: r * 0.66, y: r * 0.46))
+                leaf.addLine(to: CGPoint(x: r * 0.12, y: r * 0.36))
+                leaf.addLine(to: CGPoint(x: 0, y: r * 0.86))
+                leaf.addLine(to: CGPoint(x: -r * 0.12, y: r * 0.36))
+                leaf.addLine(to: CGPoint(x: -r * 0.66, y: r * 0.46))
+                leaf.addLine(to: CGPoint(x: -r * 0.42, y: r * 0.02))
+                leaf.addLine(to: CGPoint(x: -r * 0.82, y: -r * 0.42))
+                leaf.addLine(to: CGPoint(x: -r * 0.24, y: -r * 0.36))
+                leaf.closeSubpath()
+                StorybookArt.shape(g, leaf, hex: 0xF08B36, width: 1.6)
+            case .winter:
+                // Crisp pastel 6-spoke snowflake
+                for i in 0..<6 {
+                    var sg = g
+                    sg.rotate(by: .radians(Double(i) * .pi / 3))
+                    var arm = Path()
+                    arm.move(to: .zero)
+                    arm.addLine(to: CGPoint(x: 0, y: -r * 0.84))
+                    arm.move(to: CGPoint(x: -r * 0.22, y: -r * 0.62))
+                    arm.addLine(to: CGPoint(x: 0, y: -r * 0.46))
+                    arm.addLine(to: CGPoint(x: r * 0.22, y: -r * 0.62))
+                    sg.stroke(arm, with: .color(Color(hex: 0x58B4F2)), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+                }
+                g.fill(Path(ellipseIn: CGRect(x: -r * 0.16, y: -r * 0.16, width: r * 0.32, height: r * 0.32)), with: .color(Color(hex: 0xB8E6FF)))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Wordless picture almanac showing every 2-parent hybrid recipe -> hybrid bloom.
+private struct HybridAlmanacView: View {
+    let discovered: [HybridKind]
+    let close: () -> Void
+
+    @State private var shown = false
+    @State private var pokedHybrid: HybridKind?
+
+    var body: some View {
+        let foundSet = Set(discovered)
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture(perform: shut)
+            DesignCanvas {
+                VStack(spacing: 18) {
+                    // Wordless star progress bar at top
+                    HStack(spacing: 10) {
+                        ForEach(HybridKind.allCases, id: \.self) { h in
+                            let has = foundSet.contains(h)
+                            Image(systemName: has ? "star.fill" : "star")
+                                .font(.system(size: 26, weight: .bold))
+                                .foregroundStyle(has ? Theme.lemon : Theme.ink.opacity(0.2))
+                                .shadow(color: has ? Theme.ink.opacity(0.22) : .clear, radius: 1, y: 1)
+                        }
+                    }
+                    .padding(.top, 24)
+
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)], spacing: 16) {
+                        ForEach(HybridKind.allCases, id: \.self) { h in
+                            recipeCard(h, found: foundSet.contains(h))
+                        }
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 26)
+                }
+                .frame(width: 780, height: 550)
+                .background(Theme.cream)
+                .clipShape(RoundedRectangle(cornerRadius: 42, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 42, style: .continuous).stroke(.white, lineWidth: 8))
+                .shadow(color: Theme.ink.opacity(0.32), radius: 18, y: 10)
+                .overlay(alignment: .topTrailing) {
+                    Button(action: shut) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 26, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 62, height: 62)
+                            .background(Circle().fill(Theme.pink))
+                            .overlay(Circle().stroke(.white, lineWidth: 5))
+                            .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+                    }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("Close")
+                    .offset(x: 16, y: -16)
+                }
+                .scaleEffect(shown ? 1 : 0.86)
+                .opacity(shown ? 1 : 0)
+            }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.76)) {
+                shown = true
+            }
+        }
+    }
+
+    private func recipeCard(_ h: HybridKind, found: Bool) -> some View {
+        let (parentA, parentB) = h.parents
+        let active = pokedHybrid == h
+        return Button {
+            Sound.shared.play(found ? .sparkle : .tap, volume: 0.55)
+            Sound.shared.tap()
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.55)) {
+                pokedHybrid = h
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if pokedHybrid == h {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                        pokedHybrid = nil
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                parentIcon(parentA)
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .black))
+                    .foregroundStyle(Theme.pink)
+                parentIcon(parentB)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 20, weight: .black))
+                    .foregroundStyle(Theme.lilac)
+                ZStack {
+                    Circle()
+                        .fill(found ? Color(hex: 0xFFFBF0) : Theme.blush.opacity(0.32))
+                        .overlay(Circle().stroke(found ? Theme.lemon : Theme.blush, lineWidth: found ? 3.5 : 2))
+                    Canvas { ctx, size in
+                        var g = ctx
+                        g.translateBy(x: size.width / 2, y: size.height / 2)
+                        if found {
+                            GardenPlants.drawHybridIcon(g, hybrid: h, at: .zero, size: 1.0, rot: 0, time: 0.4)
+                        } else {
+                            g.opacity = 0.24
+                            GardenPlants.drawHybridIcon(g, hybrid: h, at: .zero, size: 0.92, rot: 0, time: 0)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
+                .frame(width: 86, height: 86)
+                .scaleEffect(active ? 1.12 : 1.0)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, height: 126)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(found ? Theme.lemon : Theme.blush, lineWidth: found ? 4 : 2.5)
+            )
+            .shadow(color: Theme.ink.opacity(0.1), radius: 6, y: 3)
+        }
+        .buttonStyle(Squish())
+    }
+
+    private func parentIcon(_ kind: PlantKind) -> some View {
+        ZStack {
+            Circle()
+                .fill(Theme.cream)
+                .overlay(Circle().stroke(Theme.blush, lineWidth: 2))
+            Canvas { ctx, size in
+                var g = ctx
+                g.translateBy(x: size.width / 2, y: size.height / 2)
+                GardenPlants.drawCrop(g, kind: kind, variant: 0, at: .zero, size: kind == .pumpkin ? 0.68 : 0.92, rot: 0)
+            }
+            .allowsHitTesting(false)
+        }
+        .frame(width: 64, height: 64)
+    }
+
+    private func shut() {
+        Sound.shared.play(.flip, volume: 0.6)
+        close()
     }
 }

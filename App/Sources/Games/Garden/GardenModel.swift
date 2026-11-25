@@ -142,30 +142,169 @@ enum PlantKind: String, Codable, CaseIterable {
     }
 }
 
+enum HybridKind: String, CaseIterable, Codable, Equatable {
+    case starlightRose
+    case cottonSunflower
+    case moonberryTulip
+    case rainbowLavender
+    case crystalPumpkin
+    case sparkleBerryVine
+
+    var parents: (PlantKind, PlantKind) {
+        switch self {
+        case .starlightRose: return (.tulip, .daisy)
+        case .cottonSunflower: return (.lavender, .sunflower)
+        case .moonberryTulip: return (.tulip, .strawberry)
+        case .rainbowLavender: return (.sunflower, .lavender)
+        case .crystalPumpkin: return (.pumpkin, .daisy)
+        case .sparkleBerryVine: return (.strawberry, .tomato)
+        }
+    }
+
+    var isFlower: Bool {
+        switch self {
+        case .starlightRose, .cottonSunflower, .moonberryTulip, .rainbowLavender: return true
+        case .crystalPumpkin, .sparkleBerryVine: return false
+        }
+    }
+
+    var height: CGFloat {
+        switch self {
+        case .starlightRose: return 152
+        case .cottonSunflower: return 236
+        case .moonberryTulip: return 148
+        case .rainbowLavender: return 146
+        case .crystalPumpkin: return 96
+        case .sparkleBerryVine: return 174
+        }
+    }
+
+    var reach: CGFloat {
+        switch self {
+        case .crystalPumpkin: return 68
+        case .cottonSunflower, .sparkleBerryVine: return 56
+        default: return 48
+        }
+    }
+
+    var crop: Int {
+        switch self {
+        case .sparkleBerryVine: return 3
+        case .rainbowLavender: return 2
+        default: return 1
+        }
+    }
+
+    var primaryColor: GRGB {
+        switch self {
+        case .starlightRose: return GRGB(0xFF7CB4)
+        case .cottonSunflower: return GRGB(0xFFB3D9)
+        case .moonberryTulip: return GRGB(0x9A6BFF)
+        case .rainbowLavender: return GRGB(0x7EC8FF)
+        case .crystalPumpkin: return GRGB(0x9BE5FF)
+        case .sparkleBerryVine: return GRGB(0xFFD054)
+        }
+    }
+
+    var accentColor: GRGB {
+        switch self {
+        case .starlightRose: return GRGB(0xFFE07A)
+        case .cottonSunflower: return GRGB(0xA6F0E0)
+        case .moonberryTulip: return GRGB(0xFFE99A)
+        case .rainbowLavender: return GRGB(0xFFB0D6)
+        case .crystalPumpkin: return GRGB(0xFFE799)
+        case .sparkleBerryVine: return GRGB(0xFF6B9A)
+        }
+    }
+
+    static func cross(from donor: PlantKind, onto target: PlantKind) -> HybridKind? {
+        guard donor != target else { return nil }
+        switch (donor, target) {
+        case (.tulip, .daisy), (.daisy, .tulip):
+            return .starlightRose
+        case (.lavender, .sunflower):
+            return .cottonSunflower
+        case (.sunflower, .lavender):
+            return .rainbowLavender
+        case (.tulip, .strawberry), (.strawberry, .tulip):
+            return .moonberryTulip
+        case (.pumpkin, .daisy), (.daisy, .pumpkin), (.pumpkin, .tulip), (.tulip, .pumpkin):
+            return .crystalPumpkin
+        case (.strawberry, .tomato), (.tomato, .strawberry):
+            return .sparkleBerryVine
+        default:
+            break
+        }
+        // Any two distinct ripe species cross-breed into a matching hybrid so exploration always delights.
+        if target == .pumpkin || donor == .pumpkin { return .crystalPumpkin }
+        switch target {
+        case .sunflower: return .cottonSunflower
+        case .lavender: return .rainbowLavender
+        case .strawberry, .tomato: return .sparkleBerryVine
+        case .tulip: return .moonberryTulip
+        case .daisy, .carrot: return .starlightRose
+        }
+    }
+}
+
+enum GardenSeason: String, Codable, CaseIterable, Equatable {
+    case spring, summer, autumn, winter
+
+    var next: GardenSeason {
+        let all = GardenSeason.allCases
+        let idx = all.firstIndex(of: self) ?? 0
+        return all[(idx + 1) % all.count]
+    }
+
+    var tint: Color {
+        switch self {
+        case .spring: return Color(hex: 0xFF8FB8)
+        case .summer: return Color(hex: 0x58BE5A)
+        case .autumn: return Color(hex: 0xF08B36)
+        case .winter: return Color(hex: 0x6EBDF6)
+        }
+    }
+}
+
 struct Plant: Codable, Equatable {
     var kind: PlantKind
     var growth: Double = 0
     var left: Int = 0
     var variant: Int = 0
     var giant: Bool = false
+    var hybrid: HybridKind? = nil
+    var rainbowCharged: Bool = false
 
     static let specialVariant = 100
     var isSpecial: Bool { variant >= Plant.specialVariant }
     var specialTint: GRGB? { isSpecial ? kind.specialColor : nil }
+    var effectiveIsFlower: Bool { hybrid?.isFlower ?? kind.isFlower }
+    var effectiveReach: CGFloat { hybrid?.reach ?? kind.reach }
+    var effectiveCrop: Int { hybrid?.crop ?? kind.crop }
 
-    init(kind: PlantKind, growth: Double = 0, left: Int = 0, variant: Int = 0, giant: Bool = false) {
+    init(
+        kind: PlantKind,
+        growth: Double = 0,
+        left: Int = 0,
+        variant: Int = 0,
+        giant: Bool = false,
+        hybrid: HybridKind? = nil,
+        rainbowCharged: Bool = false
+    ) {
         self.kind = kind
         self.growth = growth
         self.left = left
         self.variant = variant
         self.giant = giant
+        self.hybrid = hybrid
+        self.rainbowCharged = rainbowCharged
     }
 
     private enum CodingKeys: String, CodingKey {
-        case kind, growth, left, variant, giant
+        case kind, growth, left, variant, giant, hybrid, rainbowCharged
     }
 
-    // Old garden.json saves omit `giant`; decode cleanly with default false.
+    // Old garden.json saves omit `giant`, `hybrid`, and `rainbowCharged`; decode cleanly with defaults.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         kind = try c.decode(PlantKind.self, forKey: .kind)
@@ -173,6 +312,8 @@ struct Plant: Codable, Equatable {
         left = try c.decodeIfPresent(Int.self, forKey: .left) ?? 0
         variant = try c.decodeIfPresent(Int.self, forKey: .variant) ?? 0
         giant = try c.decodeIfPresent(Bool.self, forKey: .giant) ?? false
+        hybrid = try c.decodeIfPresent(HybridKind.self, forKey: .hybrid)
+        rainbowCharged = try c.decodeIfPresent(Bool.self, forKey: .rainbowCharged) ?? false
     }
 }
 
@@ -193,6 +334,24 @@ enum GardenPlotState: Equatable {
 struct BouquetFlower: Codable, Equatable {
     var kind: PlantKind
     var variant: Int
+    var hybrid: HybridKind? = nil
+
+    init(kind: PlantKind, variant: Int, hybrid: HybridKind? = nil) {
+        self.kind = kind
+        self.variant = variant
+        self.hybrid = hybrid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, variant, hybrid
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decode(PlantKind.self, forKey: .kind)
+        variant = try c.decodeIfPresent(Int.self, forKey: .variant) ?? 0
+        hybrid = try c.decodeIfPresent(HybridKind.self, forKey: .hybrid)
+    }
 }
 
 enum DecorKind: String, Codable, CaseIterable {
@@ -271,6 +430,63 @@ struct GardenSave: Codable, Equatable {
     var basket: [String]
     var weather: Weather
     var bouquet: [BouquetFlower]? = nil
+    var discoveredHybrids: [HybridKind]? = nil
+    var treehouseStage: Int? = nil
+    var picnicFeedCount: Int? = nil
+    var season: GardenSeason? = nil
+    var caughtFireflies: Int? = nil
+
+    init(
+        plots: [Plant?],
+        soil: [Double],
+        wet: [Double],
+        weeds: [WeedSave],
+        decor: [DecorSave],
+        basket: [String],
+        weather: Weather,
+        bouquet: [BouquetFlower]? = nil,
+        discoveredHybrids: [HybridKind]? = nil,
+        treehouseStage: Int? = nil,
+        picnicFeedCount: Int? = nil,
+        season: GardenSeason? = nil,
+        caughtFireflies: Int? = nil
+    ) {
+        self.plots = plots
+        self.soil = soil
+        self.wet = wet
+        self.weeds = weeds
+        self.decor = decor
+        self.basket = basket
+        self.weather = weather
+        self.bouquet = bouquet
+        self.discoveredHybrids = discoveredHybrids
+        self.treehouseStage = treehouseStage
+        self.picnicFeedCount = picnicFeedCount
+        self.season = season
+        self.caughtFireflies = caughtFireflies
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case plots, soil, wet, weeds, decor, basket, weather, bouquet
+        case discoveredHybrids, treehouseStage, picnicFeedCount, season, caughtFireflies
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        plots = try c.decode([Plant?].self, forKey: .plots)
+        soil = try c.decode([Double].self, forKey: .soil)
+        wet = try c.decode([Double].self, forKey: .wet)
+        weeds = try c.decode([WeedSave].self, forKey: .weeds)
+        decor = try c.decode([DecorSave].self, forKey: .decor)
+        basket = try c.decode([String].self, forKey: .basket)
+        weather = try c.decode(Weather.self, forKey: .weather)
+        bouquet = try c.decodeIfPresent([BouquetFlower].self, forKey: .bouquet)
+        discoveredHybrids = try c.decodeIfPresent([HybridKind].self, forKey: .discoveredHybrids)
+        treehouseStage = try c.decodeIfPresent(Int.self, forKey: .treehouseStage)
+        picnicFeedCount = try c.decodeIfPresent(Int.self, forKey: .picnicFeedCount)
+        season = try c.decodeIfPresent(GardenSeason.self, forKey: .season)
+        caughtFireflies = try c.decodeIfPresent(Int.self, forKey: .caughtFireflies)
+    }
 }
 
 /// Fixed coordinates in the 1024 x 834 garden design canvas.
@@ -289,14 +505,21 @@ enum GGeo {
     static let yardMinX: CGFloat = 64
     static let yardMaxX: CGFloat = 956
 
-    static let benchRect = CGRect(x: 838, y: 572, width: 158, height: 18)
+    static let sunPos = CGPoint(x: 192, y: 154)
+    static let treehouse = CGPoint(x: 874, y: 396)
+
+    static let benchRect = CGRect(x: 842, y: 572, width: 164, height: 18)
+    static let fireflyJar = CGPoint(x: 862, y: 570)
     static let vase = CGPoint(x: 916, y: 570)
+    static let flowerCrownSpot = CGPoint(x: 974, y: 566)
 
     static let lawnY: CGFloat = 614
-    static let basket = CGPoint(x: 132, y: 786)
-    static let returnBadge = CGPoint(x: 932, y: 766)
+    static let basket = CGPoint(x: 132, y: 756)
+    static let picnic = CGPoint(x: 854, y: 696)
+    static let picnicSize = CGSize(width: 158, height: 74)
+    static let returnBadge = CGPoint(x: 932, y: 740)
     static let dockY: CGFloat = GameChromeLayout.dockY
-    static let trayY: CGFloat = 668
+    static let trayY: CGFloat = 636
 
     static func colX(_ i: Int) -> CGFloat { bedLeft + col * CGFloat(i) + col / 2 }
     static func column(_ x: CGFloat) -> Int { Int(((x - bedLeft) / col).rounded(.down)) }

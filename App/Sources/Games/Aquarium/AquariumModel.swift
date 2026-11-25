@@ -150,10 +150,100 @@ struct BubbleHoop: Identifiable {
     var passedFishIDs: Set<Int> = []
 }
 
+// MARK: - Treat Mode, Mystery Reef Eggs, Submarine & Musical Clams
+
+enum AquaTreatMode: String, Codable, Equatable {
+    case flakes
+    case pearls
+}
+
+enum AquaEggPalette: Int, Codable, CaseIterable {
+    case pinkSpeckle, mintSwirl, lilacStar
+}
+
+struct AquaEgg: Identifiable, Equatable {
+    var id: Int
+    var x: CGFloat
+    var y: CGFloat
+    var vy: CGFloat = 0
+    var falling: Bool = false
+    var taps: Int = 0
+    var palette: AquaEggPalette
+    var species: FishKind
+    var wobble: CGFloat = 0
+    var wobbleV: CGFloat = 0
+    var lastTap: Double = -10
+    var shimmerPhase: CGFloat = 0
+}
+
+struct AquaEggSave: Codable, Equatable {
+    var x: CGFloat
+    var taps: Int
+    var palette: AquaEggPalette
+    var species: FishKind
+}
+
+struct AquaSubmarine: Equatable {
+    var active: Bool = false
+    var p: CGPoint = CGPoint(x: 512, y: 340)
+    var target: CGPoint = CGPoint(x: 512, y: 340)
+    var v: CGVector = .zero
+    var facing: CGFloat = 1
+    var propPhase: CGFloat = 0
+    var bobPhase: CGFloat = 0
+    var beamAngle: CGFloat = 0.28
+    var nextBubble: Double = 0
+}
+
+enum AquaHiddenSpotKind: String, CaseIterable, Equatable {
+    case hermitCrab, glowSeahorse, starfish, sunkenPearl
+}
+
+struct AquaHiddenSpot: Identifiable, Equatable {
+    var id: Int
+    var kind: AquaHiddenSpotKind
+    var p: CGPoint
+    var awakeUntil: Double = -10
+    var lastCoinAt: Double = -100
+    var pop: CGFloat = 0
+}
+
+struct AquaSingingClam: Identifiable, Equatable {
+    var id: Int
+    var x: CGFloat
+    var y: CGFloat
+    var noteIndex: Int
+    var shellHex: UInt32
+    var open: CGFloat = 0
+    var openUntil: Double = -10
+    var bounce: CGFloat = 0
+    var bounceV: CGFloat = 0
+}
+
+struct AquaUIState: Equatable {
+    var hasHungryFish: Bool = false
+    var hasDirtyGlass: Bool = false
+    var isCarryingReturnable: Bool = false
+    var isHoveringReturnZone: Bool = false
+    var submarineActive: Bool = false
+    var treatMode: AquaTreatMode = .flakes
+}
+
 // MARK: - Fish
 
 enum FishKind: String, Codable, CaseIterable {
     case goldfish, clownfish, angelfish, tetra, puffer, betta, guppy, seahorse
+    case axolotl, seaBunny, narwhal
+
+    static let classicCases: [FishKind] = [
+        .goldfish, .clownfish, .angelfish, .tetra, .puffer, .betta, .guppy, .seahorse,
+    ]
+
+    static let reefBabyCases: [FishKind] = [.axolotl, .seaBunny, .narwhal]
+
+    var isReefBabySpecies: Bool {
+        self == .axolotl || self == .seaBunny || self == .narwhal
+    }
 
     var length: CGFloat {
         switch self {
@@ -165,6 +255,9 @@ enum FishKind: String, Codable, CaseIterable {
         case .betta: return 50
         case .guppy: return 32
         case .seahorse: return 30
+        case .axolotl: return 62
+        case .seaBunny: return 44
+        case .narwhal: return 70
         }
     }
 
@@ -178,6 +271,9 @@ enum FishKind: String, Codable, CaseIterable {
         case .betta: return 22
         case .guppy: return 13
         case .seahorse: return 74
+        case .axolotl: return 30
+        case .seaBunny: return 26
+        case .narwhal: return 34
         }
     }
 
@@ -191,6 +287,9 @@ enum FishKind: String, Codable, CaseIterable {
         case .betta: return 50
         case .guppy: return 30
         case .seahorse: return 0
+        case .axolotl: return 34
+        case .seaBunny: return 10
+        case .narwhal: return 24
         }
     }
 
@@ -204,14 +303,20 @@ enum FishKind: String, Codable, CaseIterable {
         case .betta: return 34
         case .guppy: return 66
         case .seahorse: return 16
+        case .axolotl: return 36
+        case .seaBunny: return 26
+        case .narwhal: return 52
         }
     }
 
     var topSpeed: CGFloat {
         switch self {
         case .seahorse: return 60
+        case .seaBunny: return 135
         case .puffer: return 140
+        case .axolotl: return 180
         case .angelfish, .betta: return 190
+        case .narwhal: return 225
         default: return 260
         }
     }
@@ -234,12 +339,15 @@ enum FishKind: String, Codable, CaseIterable {
         case .betta: return 0.0...0.45
         case .guppy: return 0.0...0.5
         case .seahorse: return 0.4...0.9
+        case .axolotl: return 0.55...0.94
+        case .seaBunny: return 0.65...0.96
+        case .narwhal: return 0.12...0.65
         }
     }
 
     var variants: Int {
         switch self {
-        case .goldfish, .betta, .guppy, .seahorse: return 3
+        case .goldfish, .betta, .guppy, .seahorse, .axolotl, .seaBunny, .narwhal: return 3
         default: return 1
         }
     }
@@ -250,6 +358,27 @@ enum FishKind: String, Codable, CaseIterable {
 struct AquaFishSave: Codable, Equatable {
     var kind: FishKind
     var variant: Int
+    var growthStage: Int
+    var growthBites: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, variant, growthStage, growthBites
+    }
+
+    init(kind: FishKind, variant: Int, growthStage: Int = 2, growthBites: Int = 0) {
+        self.kind = kind
+        self.variant = variant
+        self.growthStage = max(0, min(2, growthStage))
+        self.growthBites = max(0, growthBites)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try c.decode(FishKind.self, forKey: .kind)
+        variant = try c.decode(Int.self, forKey: .variant)
+        growthStage = max(0, min(2, try c.decodeIfPresent(Int.self, forKey: .growthStage) ?? 2))
+        growthBites = max(0, try c.decodeIfPresent(Int.self, forKey: .growthBites) ?? 0)
+    }
 }
 
 // MARK: - Decorations
@@ -321,9 +450,10 @@ struct AquaSave: Codable {
     var moss: [Float]
     var night: Bool
     var pump: Bool
+    var eggs: [AquaEggSave]
 
     private enum CodingKeys: String, CodingKey {
-        case fish, decor, moss, algae, night, pump
+        case fish, decor, moss, algae, night, pump, eggs
     }
 
     private struct RawDecorSave: Decodable {
@@ -332,12 +462,13 @@ struct AquaSave: Codable {
         var flip: Bool
     }
 
-    init(fish: [AquaFishSave], decor: [AquaDecorSave], moss: [Float], night: Bool, pump: Bool) {
+    init(fish: [AquaFishSave], decor: [AquaDecorSave], moss: [Float], night: Bool, pump: Bool, eggs: [AquaEggSave] = []) {
         self.fish = fish
         self.decor = decor
         self.moss = moss
         self.night = night
         self.pump = pump
+        self.eggs = eggs
     }
 
     init(from decoder: Decoder) throws {
@@ -362,6 +493,7 @@ struct AquaSave: Codable {
         }
         night = try c.decodeIfPresent(Bool.self, forKey: .night) ?? false
         pump = try c.decodeIfPresent(Bool.self, forKey: .pump) ?? true
+        eggs = try c.decodeIfPresent([AquaEggSave].self, forKey: .eggs) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -371,11 +503,13 @@ struct AquaSave: Codable {
         try c.encode(moss, forKey: .moss)
         try c.encode(night, forKey: .night)
         try c.encode(pump, forKey: .pump)
+        try c.encode(eggs, forKey: .eggs)
     }
 }
 
 enum AquaStorage {
     static let file = "aquarium.json"
+    static let saveQueue = DispatchQueue(label: "aquarium.save", qos: .utility)
 
     static func load() -> AquaSave? {
         GameStorage.load(AquaSave.self, game: AquariumSim.gameID, file: file)
@@ -383,5 +517,15 @@ enum AquaStorage {
 
     static func save(_ s: AquaSave) {
         GameStorage.save(s, game: AquariumSim.gameID, file: file)
+    }
+
+    static func saveAsync(_ s: AquaSave) {
+        saveQueue.async {
+            GameStorage.save(s, game: AquariumSim.gameID, file: file)
+        }
+    }
+
+    static func flushAsyncSaves() {
+        saveQueue.sync {}
     }
 }

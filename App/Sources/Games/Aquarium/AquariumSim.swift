@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum AquaTool: Equatable {
-    case food, wiper, hoop, net
+    case food, wiper, hoop, net, egg
     case fish(FishKind)
     case decor(AquaDecorKind)
 }
@@ -41,8 +41,22 @@ struct AquaFish {
     var restUntil: Double = -10
     var nextBubble: Double = 0
     var caught = false
+    /// Growth stage: 0 = baby (0.55x), 1 = kid (0.78x), 2 = adult (1.0x).
+    var growthStage: Int = 2
+    var growthBites: Int = 0
+    var grewUp: Bool = false
+    /// Glowing stardust shimmer after eating a Pearl Pellet.
+    var stardustUntil: Double = -10
 
-    var scale: CGFloat { 0.8 + 0.22 * z }
+    var growthScale: CGFloat {
+        switch growthStage {
+        case 0: return 0.55
+        case 1: return 0.78
+        default: return 1.0
+        }
+    }
+
+    var scale: CGFloat { (0.8 + 0.22 * z) * growthScale }
 }
 
 enum FoodState { case air, floating, sinking, settled }
@@ -57,6 +71,7 @@ struct AquaFood {
     var rot: CGFloat
     var spin: CGFloat
     var seed: CGFloat
+    var kind: AquaTreatMode = .flakes
 }
 
 struct AquaBubble {
@@ -67,7 +82,7 @@ struct AquaBubble {
     var back = false
 }
 
-enum AquaPart { case splash, sand, heart, sparkle, ring, moss, glow, poof }
+enum AquaPart { case splash, sand, heart, sparkle, ring, moss, glow, poof, note }
 
 struct AquaParticle {
     var kind: AquaPart
@@ -126,6 +141,8 @@ final class AquariumSim {
     static let gameID = "aquarium"
     static let gravity: CGFloat = 1600
     static let maxFish = 24
+    static let maxParticles = 120
+    static let maxEggs = 3
     static let wiperScale: CGFloat = 1.45
     static let coinCooldown: Double = 2.5
 
@@ -135,6 +152,10 @@ final class AquariumSim {
     var hoops: [BubbleHoop] = []
     var particles: [AquaParticle] = []
     var decor: [AquaDecor] = []
+    var eggs: [AquaEgg] = []
+    var submarine = AquaSubmarine()
+    var hiddenSpots: [AquaHiddenSpot] = []
+    var clams: [AquaSingingClam] = []
     var snail: AquaSnail
     var moss: [AquaMossPatch]
     var sh: [CGFloat]
@@ -142,6 +163,7 @@ final class AquariumSim {
 
     var lightsOn = true
     var pump = true
+    var treatMode: AquaTreatMode = .flakes
     var night: CGFloat = 0
     var time: Double = 0
     var demo = false
@@ -151,15 +173,35 @@ final class AquariumSim {
     var lastHoopCoinAt: Double = -100
     var lastChestCoinAt: Double = -100
     var lastCleanCoinAt: Double = -100
+    var lastSubCoinAt: Double = -100
+
+    var clamTapTimes: [Double] = []
+    var ribbonDanceStart: Double = -100
+    var ribbonDanceUntil: Double = -100
+    var isRibbonDanceActive: Bool { time < ribbonDanceUntil }
 
     var visitors: [AVisitor] = []
     var nextVisit: Double = 8
     var pearl: (id: Int, until: Double)?
 
+    /// Deferred side-effects queued during `step()` and flushed after Canvas render so 60 FPS draws never trigger `@Published` or disk I/O.
+    var pendingCoins: [(Int, CGPoint)] = []
+    var pendingStickers: [String] = []
+    var needsSave = false
+    var onUIStateChange: ((AquaUIState) -> Void)?
+    private(set) var isStepping = false
+    private var flushScheduled = false
+    private var lastCueCheck: Double = -10
+    private var cachedHungryFish = false
+    private var cachedDirtyGlass = false
+    private var lastEmittedUIState = AquaUIState()
+    private var pendingUIState: AquaUIState?
+
     private var last: Date?
     private var lastSave: Double = 0
     private var nextID = 1
     private var wasDirty = false
+    private var nextEggSpeciesCursor = 0
 
     // Carried tool state
     var tool: AquaTool?
@@ -198,10 +240,36 @@ final class AquariumSim {
         sh = [CGFloat](repeating: 0, count: AGeo.surfaceNodes)
         sv = [CGFloat](repeating: 0, count: AGeo.surfaceNodes)
         snail = AquaSnail(p: CGPoint(x: 880, y: 560), heading: .pi, target: CGPoint(x: 700, y: 520))
+        clams = Self.makeDefaultClams()
+        hiddenSpots = Self.makeDefaultHiddenSpots()
         if let s = save {
             restore(s)
         } else {
             starterTank()
+        }
+    }
+
+    private static func makeDefaultClams() -> [AquaSingingClam] {
+        let specs: [(CGFloat, UInt32)] = [
+            (188, 0xFFB0C8),
+            (396, 0xFFE48F),
+            (628, 0x9BE8CE),
+            (842, 0xC7B4FF),
+        ]
+        return specs.enumerated().map { idx, spec in
+            AquaSingingClam(id: idx, x: spec.0, y: AGeo.sand(spec.0) - 8, noteIndex: idx, shellHex: spec.1)
+        }
+    }
+
+    private static func makeDefaultHiddenSpots() -> [AquaHiddenSpot] {
+        let specs: [(AquaHiddenSpotKind, CGFloat, CGFloat)] = [
+            (.hermitCrab, 245, 0),
+            (.glowSeahorse, 455, -18),
+            (.starfish, 695, 0),
+            (.sunkenPearl, 865, 0),
+        ]
+        return specs.enumerated().map { idx, spec in
+            AquaHiddenSpot(id: idx, kind: spec.0, p: CGPoint(x: spec.1, y: AGeo.sand(spec.1) + spec.2))
         }
     }
 
@@ -222,6 +290,9 @@ final class AquariumSim {
         for _ in 0..<5 { spawn(.tetra, variant: 0) }
         spawn(.puffer, variant: 0)
 
+        // Starter shimmering mystery reef egg resting on the sand bed.
+        _ = dropEgg(at: 408, y: AGeo.sand(408), species: .axolotl)
+
         // Gentle edge-hugging sea moss on a few corner patches so the magnetic wiper is inviting immediately.
         let starterMoss: [CGFloat] = [0.68, 0.52, 0.18, 0, 0.25, 0.22, 0.64, 0.48, 0.15, 0]
         moss = AquaMossPatch.makeDefault(opacities: starterMoss)
@@ -229,10 +300,27 @@ final class AquariumSim {
     }
 
     private func restore(_ s: AquaSave) {
-        for f in s.fish { spawn(f.kind, variant: f.variant) }
+        for f in s.fish {
+            spawn(f.kind, variant: f.variant, growthStage: f.growthStage, growthBites: f.growthBites)
+        }
         for d in s.decor {
             let i = addDecor(d.kind, x: d.x)
             decor[i].flip = d.flip
+        }
+        eggs = s.eggs.prefix(Self.maxEggs).map { saved in
+            let cx = max(AGeo.left + 44, min(AGeo.right - 44, saved.x))
+            let egg = AquaEgg(
+                id: nextID,
+                x: cx,
+                y: AGeo.sand(cx),
+                falling: false,
+                taps: max(0, min(2, saved.taps)),
+                palette: saved.palette,
+                species: saved.species,
+                shimmerPhase: CGFloat.random(in: 0...6)
+            )
+            nextID += 1
+            return egg
         }
         moss = AquaMossPatch.makeDefault(opacities: s.moss.map { CGFloat($0) })
         wasDirty = dirtiness > 0.14
@@ -243,17 +331,102 @@ final class AquariumSim {
 
     func makeSave() -> AquaSave {
         AquaSave(
-            fish: fish.map { AquaFishSave(kind: $0.kind, variant: $0.variant) },
+            fish: fish.map {
+                AquaFishSave(kind: $0.kind, variant: $0.variant, growthStage: $0.growthStage, growthBites: $0.growthBites)
+            },
             decor: decor.filter { !$0.held }.map { AquaDecorSave(kind: $0.kind, x: $0.x, flip: $0.flip) },
             moss: moss.map { Float($0.opacity) },
             night: !lightsOn,
-            pump: pump
+            pump: pump,
+            eggs: eggs.map { AquaEggSave(x: $0.x, taps: $0.taps, palette: $0.palette, species: $0.species) }
         )
     }
 
     func save() {
+        saveAsync()
+    }
+
+    func saveAsync() {
         guard !demo else { return }
-        AquaStorage.save(makeSave())
+        AquaStorage.saveAsync(makeSave())
+    }
+
+    // MARK: - Deferred Reward & Particle Helpers
+
+    func queueCoin(_ amount: Int, from origin: CGPoint) {
+        guard amount > 0 else { return }
+        pendingCoins.append((amount, origin))
+        if !isStepping { flushPendingRewards() }
+    }
+
+    func flushPendingRewards() {
+        if !pendingCoins.isEmpty {
+            let coins = pendingCoins
+            pendingCoins.removeAll(keepingCapacity: true)
+            for (amount, origin) in coins {
+                Coins.shared.earn(amount, game: AquariumSim.gameID, from: origin)
+            }
+        }
+        if !pendingStickers.isEmpty {
+            let stickers = pendingStickers
+            pendingStickers.removeAll(keepingCapacity: true)
+            for id in stickers {
+                _ = StickerBook.shared.find(game: AquariumSim.gameID, id: id)
+            }
+        }
+        if needsSave {
+            needsSave = false
+            saveAsync()
+        }
+        if let next = pendingUIState {
+            pendingUIState = nil
+            onUIStateChange?(next)
+        }
+    }
+
+    func schedulePostFrameFlush() {
+        let hasPending = !pendingCoins.isEmpty || !pendingStickers.isEmpty || needsSave || pendingUIState != nil
+        guard hasPending, !flushScheduled else { return }
+        flushScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.flushScheduled = false
+            self.flushPendingRewards()
+        }
+    }
+
+    func emitParticle(_ particle: AquaParticle) {
+        if particles.count >= Self.maxParticles {
+            if particle.kind == .glow || particle.kind == .sand || particle.kind == .moss { return }
+            if let idx = particles.firstIndex(where: { $0.kind == .glow || $0.kind == .sand || $0.kind == .moss || $0.kind == .splash }) {
+                particles[idx] = particle
+            } else {
+                particles[0] = particle
+            }
+            return
+        }
+        particles.append(particle)
+    }
+
+    private func syncUIStateIfNeeded(force: Bool = false) {
+        if force || time - lastCueCheck >= 1.0 {
+            lastCueCheck = time
+            cachedHungryFish = anyHungry
+            cachedDirtyGlass = dirtiness > 0.3
+        }
+        let next = AquaUIState(
+            hasHungryFish: cachedHungryFish,
+            hasDirtyGlass: cachedDirtyGlass,
+            isCarryingReturnable: isCarryingReturnable,
+            isHoveringReturnZone: isHoveringReturnZone,
+            submarineActive: submarine.active,
+            treatMode: treatMode
+        )
+        if next != lastEmittedUIState {
+            lastEmittedUIState = next
+            pendingUIState = next
+            if !isStepping { flushPendingRewards() }
+        }
     }
 
     // MARK: - Computed UI cues
@@ -285,8 +458,16 @@ final class AquariumSim {
     // MARK: - Fish
 
     @discardableResult
-    func spawn(_ kind: FishKind, variant: Int, at p: CGPoint? = nil) -> Int {
-        let s: CGFloat = 0.9
+    func spawn(
+        _ kind: FishKind,
+        variant: Int,
+        at p: CGPoint? = nil,
+        growthStage: Int = 2,
+        growthBites: Int = 0
+    ) -> Int {
+        let clampedStage = max(0, min(2, growthStage))
+        let growthMult: CGFloat = clampedStage == 0 ? 0.55 : (clampedStage == 1 ? 0.78 : 1.0)
+        let s: CGFloat = 0.9 * growthMult
         let half = (kind.length + kind.tailLength) * 0.5 * s
         let lim = AGeo.swim(half: half)
         let x = p?.x ?? CGFloat.random(in: lim.minX...lim.maxX)
@@ -300,13 +481,15 @@ final class AquariumSim {
             target: CGPoint(x: x, y: y)
         )
         nextID += 1
+        f.growthStage = clampedStage
+        f.growthBites = max(0, growthBites)
         f.dir = Bool.random() ? 1 : -1
         f.facing = f.dir
         f.phase = CGFloat.random(in: 0...6)
         f.z = CGFloat.random(in: 0.1...0.95)
         f.zTarget = f.z
         f.nextBubble = time + Double.random(in: 3...12)
-        f.snackReadyAt = time + Double.random(in: 8...26)
+        f.snackReadyAt = clampedStage < 2 ? time + 2.5 : time + Double.random(in: 8...26)
         f.anemoneCooldown = time + Double.random(in: 4...12)
         fish.append(f)
         return fish.count - 1
@@ -391,6 +574,18 @@ final class AquariumSim {
                 goal = CGPoint(x: f.p.x + f.flee.dx * 240, y: f.p.y + f.flee.dy * 120)
                 speed = k.topSpeed
                 urgent = true
+            } else if isRibbonDanceActive {
+                let count = max(1, CGFloat(fish.count))
+                let a = CGFloat(time - ribbonDanceStart) * 1.45 + CGFloat(i) / count * 2 * .pi
+                let sA = sin(a)
+                let hx = 512 + 195 * sA * sA * sA
+                let hy = 368 - (120 * cos(a) - 46 * cos(2 * a) - 18 * cos(3 * a))
+                goal = CGPoint(
+                    x: max(lim.minX + 18, min(lim.maxX - 18, hx)),
+                    y: max(lim.minY + 12, min(floorY - 12, hy))
+                )
+                speed = min(k.topSpeed, max(k.cruise * 1.9, 108))
+                urgent = true
             } else if let hi = nearestHoop(for: f, within: 360) {
                 let hoop = hoops[hi]
                 let throughDir: CGFloat = abs(f.p.x - hoop.p.x) > 14 ? (f.p.x < hoop.p.x ? 1 : -1) : f.dir
@@ -398,6 +593,15 @@ final class AquariumSim {
                 speed = min(k.topSpeed, k.cruise * 2.2 + 40)
                 urgent = true
                 hoopIdx = hi
+            } else if submarine.active, hypot(submarine.p.x - f.p.x, submarine.p.y - f.p.y) < 260 {
+                // Nearby fish excitedly race in the yellow submarine's bubble wake!
+                let wakeOffset = 68 + CGFloat(f.id % 3) * 28
+                let lane = (CGFloat(f.id % 5) - 2) * 18
+                goal = CGPoint(
+                    x: submarine.p.x - submarine.facing * wakeOffset,
+                    y: submarine.p.y + lane + sin(CGFloat(time) * 3.2 + CGFloat(f.id)) * 12
+                )
+                speed = min(k.topSpeed, k.cruise * 1.85 + 24)
             } else if tool == .hoop, AGeo.inWater(toolP), hypot(toolP.x - f.p.x, toolP.y - f.p.y) < 300 {
                 let a = CGFloat(f.id) * 1.9
                 goal = CGPoint(x: toolP.x + cos(a) * 54, y: toolP.y + sin(a) * 26)
@@ -485,8 +689,9 @@ final class AquariumSim {
             if f.p.x < lim.minX + edge { dx += (lim.minX + edge - f.p.x) * 2.2 }
             if f.p.x > lim.maxX - edge { dx -= (f.p.x - (lim.maxX - edge)) * 2.2 }
             let topY = feeding ? AGeo.waterY + k.height * 0.3 * s + 2 : lim.minY
+            let bottomY = feeding ? AGeo.sand(f.p.x) - k.height * 0.42 * s - 4 : floorY
             if !feeding && f.p.y < lim.minY + 30 { dy += (lim.minY + 30 - f.p.y) * 2 }
-            if f.p.y > floorY - 30 { dy -= (f.p.y - (floorY - 30)) * 2 }
+            if !feeding && f.p.y > floorY - 30 { dy -= (f.p.y - (floorY - 30)) * 2 }
 
             let maxA = (urgent ? 2.8 : 1.4) * k.topSpeed + 60
             var sx = (dx - f.v.dx) * 3, sy = (dy - f.v.dy) * 3
@@ -506,7 +711,7 @@ final class AquariumSim {
             if f.p.x < lim.minX { f.p.x = lim.minX; f.v.dx = abs(f.v.dx) * 0.3 }
             if f.p.x > lim.maxX { f.p.x = lim.maxX; f.v.dx = -abs(f.v.dx) * 0.3 }
             if f.p.y < topY { f.p.y = topY; f.v.dy = abs(f.v.dy) * 0.3 }
-            if f.p.y > floorY { f.p.y = floorY; f.v.dy = -abs(f.v.dy) * 0.3 }
+            if f.p.y > bottomY { f.p.y = bottomY; f.v.dy = -abs(f.v.dy) * 0.3 }
 
             if !feeding || dist > half * 1.6 {
                 if f.v.dx > 9 { f.dir = 1 } else if f.v.dx < -9 { f.dir = -1 }
@@ -520,7 +725,8 @@ final class AquariumSim {
             f.amp += (wantAmp - f.amp) * min(1, dt * 4)
             f.z += (f.zTarget - f.z) * min(1, dt * 0.25)
             f.gulp = max(0, f.gulp - dt * 3)
-            if f.appetite < 5 { f.appetite = min(5, f.appetite + dt / 9) }
+            let appetiteRate: CGFloat = f.growthStage < 2 ? 1.0 / 2.2 : 1.0 / 9.0
+            if f.appetite < 5 { f.appetite = min(5, f.appetite + dt * appetiteRate) }
 
             let puffWant: CGFloat = time < f.puffUntil ? 1 : 0
             f.puffV += ((puffWant - f.puff) * 90 - f.puffV * 9) * dt
@@ -579,7 +785,8 @@ final class AquariumSim {
         var best: Int?
         var bd = within * within
         for j in food.indices where food[j].state != .air {
-            if food[j].state == .settled && food[j].age > 10 { continue }
+            let maxSettledAge: CGFloat = food[j].kind == .pearls ? 18 : 10
+            if food[j].state == .settled && food[j].age > maxSettledAge { continue }
             let dx = food[j].p.x - p.x, dy = food[j].p.y - p.y
             let d = dx * dx + dy * dy
             if d < bd { bd = d; best = j }
@@ -590,23 +797,40 @@ final class AquariumSim {
     private func eat(_ i: Int) {
         guard fish[i].appetite >= 1 else { return }
         let m = mouth(fish[i])
-        let reach = 12 + 8 * fish[i].scale
+        let reach = max(14 + 10 * fish[i].scale, fish[i].kind.height * 0.45 * fish[i].scale + 8)
         guard let j = food.indices.first(where: { food[$0].state != .air && hypot(food[$0].p.x - m.x, food[$0].p.y - m.y) < reach }) else { return }
-        let fp = food[j].p
+        let eaten = food[j]
+        let fp = eaten.p
         let wasHungry = fish[i].hungryCue > 0.15
         food.remove(at: j)
         fish[i].appetite = max(0, fish[i].appetite - 1)
         fish[i].gulp = 1
         fish[i].happy = time
-        fish[i].snackReadyAt = time + Double.random(in: 24...42)
+        fish[i].snackReadyAt = fish[i].growthStage < 2 ? time + 4 : time + Double.random(in: 24...42)
         fish[i].hungryCue = 0
-        AquaSound.shared.play(.gulp, volume: 0.55, gap: 0.08)
+        AquaSound.shared.play(.gulp, volume: 0.55, gap: 0.14)
         if fp.y < surfaceY(fp.x) + 26 {
             disturb(fp.x, -3, width: 2)
-            AquaSound.shared.play(.bloop, volume: 0.35, gap: 0.1)
+            AquaSound.shared.play(.bloop, volume: 0.35, gap: 0.16)
+        }
+        if eaten.kind == .pearls {
+            fish[i].stardustUntil = time + 6.0
+            for k in 0..<5 {
+                let a = CGFloat(k) / 5 * 2 * .pi
+                emitParticle(
+                    AquaParticle(
+                        kind: .sparkle,
+                        p: CGPoint(x: m.x + cos(a) * 20, y: m.y + sin(a) * 16),
+                        v: CGVector(dx: cos(a) * 14, dy: -16),
+                        life: 0.7,
+                        size: 11,
+                        color: k % 2 == 0 ? ARGB(0xFFE69A) : ARGB(0xE8C8FF)
+                    )
+                )
+            }
         }
         if wasHungry || Int.random(in: 0..<2) == 0 {
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .heart,
                     p: CGPoint(x: m.x, y: m.y - 16),
@@ -617,14 +841,44 @@ final class AquariumSim {
                 )
             )
         }
+
+        // Real growth loop: 3 bites grows baby (0) -> kid (1) -> shimmering full-size adult (2).
+        if fish[i].growthStage < 2 {
+            fish[i].growthBites += 1
+            fish[i].appetite = max(2, fish[i].appetite)
+            if fish[i].growthBites >= 3 {
+                fish[i].growthBites = 0
+                fish[i].growthStage += 1
+                if fish[i].growthStage == 2 { fish[i].grewUp = true }
+                fish[i].flipStart = time
+                fish[i].happy = time
+                AquaSound.shared.play(.chime, volume: 0.76, gap: 0.25)
+                for k in 0..<8 {
+                    let a = CGFloat(k) / 8 * 2 * .pi
+                    emitParticle(
+                        AquaParticle(
+                            kind: .sparkle,
+                            p: CGPoint(x: fish[i].p.x + cos(a) * 28, y: fish[i].p.y + sin(a) * 22),
+                            v: CGVector(dx: cos(a) * 18, dy: -28),
+                            life: 0.9,
+                            size: 15,
+                            color: ARGB(0xFFE066)
+                        )
+                    )
+                }
+                queueCoin(2, from: fish[i].p)
+                if !demo { needsSave = true }
+            }
+        }
+
         feedEatenCount += 1
         if feedEatenCount >= 3 {
             feedEatenCount = 0
             spawnBabyFish(near: m)
-            AquaSound.shared.play(.chime, volume: 0.65)
+            AquaSound.shared.play(.chime, volume: 0.65, gap: 0.25)
             for k in 0..<8 {
                 let a = CGFloat(k) / 8 * 2 * .pi
-                particles.append(
+                emitParticle(
                     AquaParticle(
                         kind: .sparkle,
                         p: CGPoint(x: m.x + cos(a) * 32, y: m.y + sin(a) * 24),
@@ -637,7 +891,7 @@ final class AquariumSim {
             }
             if time - lastFeedRewardAt >= 8 {
                 lastFeedRewardAt = time
-                Coins.shared.earn(3, game: AquariumSim.gameID, from: m)
+                queueCoin(3, from: m)
             }
         }
     }
@@ -700,7 +954,7 @@ final class AquariumSim {
 
         for k in 0..<8 {
             let a = CGFloat(k) / 8 * 2 * .pi
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .sparkle,
                     p: CGPoint(x: hp.x + cos(a) * 34, y: hp.y + sin(a) * 44),
@@ -712,7 +966,7 @@ final class AquariumSim {
             )
         }
         for k in 0..<2 {
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .heart,
                     p: CGPoint(x: hp.x + CGFloat(k * 22 - 11), y: hp.y - 26),
@@ -727,22 +981,21 @@ final class AquariumSim {
             let a = CGFloat(k) / 6 * 2 * .pi
             addBubble(CGPoint(x: hp.x + cos(a) * 18, y: hp.y + sin(a) * 36), r: CGFloat.random(in: 2.5...5.5))
         }
-        AquaSound.shared.play(.chime, volume: 0.68, gap: 0.12)
-        AquaSound.shared.play(.blub, volume: 0.55, gap: 0.12)
+        AquaSound.shared.play(.chime, volume: 0.68, gap: 0.25)
+        AquaSound.shared.play(.blub, volume: 0.55, gap: 0.14)
         if time - lastHoopCoinAt >= Self.coinCooldown {
             lastHoopCoinAt = time
-            Coins.shared.earn(2, game: AquariumSim.gameID, from: hp)
+            queueCoin(2, from: hp)
         }
     }
 
     private func stepHoops(_ dt: CGFloat) {
-        var i = 0
-        while i < hoops.count {
-            var h = hoops[i]
+        var write = 0
+        for read in 0..<hoops.count {
+            var h = hoops[read]
             h.age += dt
             if h.age >= h.life {
                 bye(h.p)
-                hoops.remove(at: i)
                 continue
             }
             h.p.x += h.vx * dt
@@ -755,8 +1008,11 @@ final class AquariumSim {
                 let a = CGFloat.random(in: 0...(2 * .pi))
                 addBubble(CGPoint(x: h.p.x + cos(a) * h.radius * 0.42, y: h.p.y + sin(a) * h.radius), r: CGFloat.random(in: 1.5...3.2))
             }
-            hoops[i] = h
-            i += 1
+            hoops[write] = h
+            write += 1
+        }
+        if write < hoops.count {
+            hoops.removeSubrange(write..<hoops.count)
         }
     }
 
@@ -782,6 +1038,13 @@ final class AquariumSim {
 
     private static let flakeLimit = 48
 
+    func toggleTreatMode() {
+        treatMode = treatMode == .flakes ? .pearls : .flakes
+        Sound.shared.play(.pop, volume: 0.65)
+        Sound.shared.play(.sparkle, volume: 0.45)
+        syncUIStateIfNeeded()
+    }
+
     func feed(at point: CGPoint) {
         guard point.x >= AGeo.left, point.x <= AGeo.right,
               point.y >= AGeo.rimY - 40, point.y <= AGeo.bottomY else { return }
@@ -792,15 +1055,17 @@ final class AquariumSim {
             let dx = CGFloat(offset)
             addFlake(
                 at: CGPoint(x: x + dx, y: surfaceY(x) - 10 - abs(dx) * 0.6),
-                v: CGVector(dx: dx * 1.3, dy: 45)
+                v: CGVector(dx: dx * 1.3, dy: 45),
+                kind: treatMode
             )
         }
         disturb(x, 2.5, width: 2)
-        AquaSound.shared.play(.shake, volume: 0.55, gap: 0.12)
+        AquaSound.shared.play(.shake, volume: 0.55, gap: 0.14)
     }
 
-    func addFlake(at p: CGPoint, v: CGVector) {
+    func addFlake(at p: CGPoint, v: CGVector, kind: AquaTreatMode? = nil) {
         guard food.count < Self.flakeLimit else { return }
+        let mode = kind ?? treatMode
         let sy = surfaceY(p.x)
         let state: FoodState = p.y >= sy ? .sinking : .air
         food.append(
@@ -808,20 +1073,21 @@ final class AquariumSim {
                 p: p,
                 v: v,
                 state: state,
-                floatFor: CGFloat.random(in: 0.8...2.2),
+                floatFor: mode == .pearls ? 0 : CGFloat.random(in: 0.8...2.2),
                 hue: Int.random(in: 0..<4),
                 rot: CGFloat.random(in: 0...6),
                 spin: CGFloat.random(in: -3...3),
-                seed: CGFloat.random(in: 0...6)
+                seed: CGFloat.random(in: 0...6),
+                kind: mode
             )
         )
         lastFed = time
     }
 
     private func stepFood(_ dt: CGFloat) {
-        var i = 0
-        while i < food.count {
-            var f = food[i]
+        var write = 0
+        for read in 0..<food.count {
+            var f = food[read]
             f.age += dt
             let sy = surfaceY(f.p.x)
             switch f.state {
@@ -831,12 +1097,18 @@ final class AquariumSim {
                 f.p.y += f.v.dy * dt
                 f.rot += f.spin * dt
                 if f.p.y >= sy {
-                    f.state = .floating
                     f.age = 0
                     f.p.y = sy
-                    f.v = CGVector(dx: f.v.dx * 0.2, dy: 0)
+                    if f.kind == .pearls {
+                        // Glowing Pearl Pellets sink gently straight down to bottom swimmers & sea bunnies.
+                        f.state = .sinking
+                        f.v = CGVector(dx: f.v.dx * 0.12, dy: 42)
+                    } else {
+                        f.state = .floating
+                        f.v = CGVector(dx: f.v.dx * 0.2, dy: 0)
+                    }
                     disturb(f.p.x, 1.2, width: 1)
-                    AquaSound.shared.play(.plop, volume: 0.25, gap: 0.07)
+                    AquaSound.shared.play(.plop, volume: 0.25, gap: 0.14)
                 }
             case .floating:
                 f.p.y = sy + 1
@@ -845,19 +1117,24 @@ final class AquariumSim {
                 f.rot += sin(CGFloat(time) + f.seed) * dt * 0.5
                 if f.age > f.floatFor { f.state = .sinking; f.v = CGVector(dx: 0, dy: 6) }
             case .sinking:
-                let fall: CGFloat = 26 + f.seed * 2
-                f.v.dy += (fall - f.v.dy) * min(1, dt * 2)
+                let fall: CGFloat = f.kind == .pearls ? (54 + f.seed * 1.5) : (26 + f.seed * 2)
+                f.v.dy += (fall - f.v.dy) * min(1, dt * 2.4)
                 f.p.y += f.v.dy * dt
-                f.p.x += sin(f.age * 2.6 + f.seed) * 12 * dt
+                let drift: CGFloat = f.kind == .pearls ? 6 : 12
+                f.p.x += sin(f.age * 2.6 + f.seed) * drift * dt
                 f.rot = sin(f.age * 2.6 + f.seed) * 0.8
                 let ground = AGeo.sand(f.p.x) - 2
                 if f.p.y >= ground { f.p.y = ground; f.state = .settled; f.age = 0 }
             case .settled:
-                if f.age > 14 { food.remove(at: i); continue }
+                let settleLimit: CGFloat = f.kind == .pearls ? 20 : 14
+                if f.age > settleLimit { continue }
             }
             f.p.x = max(AGeo.left + 4, min(AGeo.right - 4, f.p.x))
-            food[i] = f
-            i += 1
+            food[write] = f
+            write += 1
+        }
+        if write < food.count {
+            food.removeSubrange(write..<food.count)
         }
     }
 
@@ -869,10 +1146,10 @@ final class AquariumSim {
     }
 
     private func stepBubbles(_ dt: CGFloat) {
-        var i = 0
+        var write = 0
         var pops = 0
-        while i < bubbles.count {
-            var b = bubbles[i]
+        for read in 0..<bubbles.count {
+            var b = bubbles[read]
             let rise = min(185, 34 + b.r * 13)
             b.vy += (-rise - b.vy) * min(1, dt * 3)
             b.phase += dt * (4 + 26 / max(1.5, b.r))
@@ -884,11 +1161,11 @@ final class AquariumSim {
                 pops += 1
                 disturb(b.p.x, -min(2.5, b.r * 0.22), width: 1)
                 if b.r > 2.2 {
-                    particles.append(AquaParticle(kind: .ring, p: CGPoint(x: b.p.x, y: top), v: .zero, life: 0.35, size: b.r * 1.6, color: ARGB(0xFFFFFF)))
+                    emitParticle(AquaParticle(kind: .ring, p: CGPoint(x: b.p.x, y: top), v: .zero, life: 0.35, size: b.r * 1.6, color: ARGB(0xFFFFFF)))
                 }
                 if b.r > 4.5 {
                     for _ in 0..<2 {
-                        particles.append(
+                        emitParticle(
                             AquaParticle(
                                 kind: .splash,
                                 p: CGPoint(x: b.p.x, y: top - 2),
@@ -900,13 +1177,15 @@ final class AquariumSim {
                         )
                     }
                 }
-                bubbles.remove(at: i)
                 continue
             }
-            bubbles[i] = b
-            i += 1
+            bubbles[write] = b
+            write += 1
         }
-        if pops > 0 { AquaSound.shared.play(.pop, volume: Float(min(0.45, 0.12 + CGFloat(pops) * 0.05)), gap: 0.09) }
+        if write < bubbles.count {
+            bubbles.removeSubrange(write..<bubbles.count)
+        }
+        if pops > 0 { AquaSound.shared.play(.pop, volume: Float(min(0.45, 0.12 + CGFloat(pops) * 0.05)), gap: 0.14) }
 
         for d in decor where !d.held && !d.falling && d.kind == .bubbler {
             let boosted = time < d.boostUntil
@@ -950,7 +1229,7 @@ final class AquariumSim {
         disturb(x, 7 * strength, width: 3)
         let y = surfaceY(x)
         for _ in 0..<Int(10 + 12 * strength) {
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .splash,
                     p: CGPoint(x: x + CGFloat.random(in: -16...16), y: y - 2),
@@ -1121,7 +1400,7 @@ final class AquariumSim {
         let w = d.kind.size.width * 0.45
         for _ in 0..<n {
             let side: CGFloat = Bool.random() ? 1 : -1
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .sand,
                     p: CGPoint(x: d.x + side * CGFloat.random(in: 0...w), y: d.y - 3),
@@ -1133,7 +1412,7 @@ final class AquariumSim {
             )
         }
         for k in 0..<3 {
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .poof,
                     p: CGPoint(x: d.x + CGFloat(k - 1) * w * 0.7, y: d.y - 6),
@@ -1221,7 +1500,7 @@ final class AquariumSim {
             off += before - next
             if sparkle && before > 0.14 && next < 0.08 {
                 for k in 0..<3 {
-                    particles.append(
+                    emitParticle(
                         AquaParticle(
                             kind: .sparkle,
                             p: CGPoint(x: moss[i].center.x + CGFloat(k * 18 - 18), y: moss[i].center.y + CGFloat((k % 2) * 14 - 7)),
@@ -1242,9 +1521,9 @@ final class AquariumSim {
         let dirty = dirtiness
         if wasDirty && dirty < 0.03 {
             wasDirty = false
-            AquaSound.shared.play(.chime, volume: 0.72)
+            AquaSound.shared.play(.chime, volume: 0.72, gap: 0.25)
             for k in 0..<16 {
-                particles.append(
+                emitParticle(
                     AquaParticle(
                         kind: .sparkle,
                         p: CGPoint(x: 90 + CGFloat(k) * 56, y: CGFloat.random(in: 200...600)),
@@ -1258,7 +1537,7 @@ final class AquariumSim {
             inviteTurtle()
             if time - lastCleanCoinAt >= 10 {
                 lastCleanCoinAt = time
-                Coins.shared.earn(3, game: AquariumSim.gameID, from: CGPoint(x: 512, y: 360))
+                queueCoin(3, from: CGPoint(x: 512, y: 360))
             }
         } else if dirty > 0.14 {
             wasDirty = true
@@ -1331,7 +1610,7 @@ final class AquariumSim {
             let x = center.x - 130 + CGFloat(k) * 52
             let y = center.y + sin(CGFloat(k) / 5 * .pi) * 44
             addBubble(CGPoint(x: x, y: y), r: CGFloat.random(in: 2.6...5.4))
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .sparkle,
                     p: CGPoint(x: x, y: y - 10),
@@ -1375,7 +1654,7 @@ final class AquariumSim {
                 )
             }
             if CGFloat.random(in: 0...1) < dt * 16 {
-                particles.append(
+                emitParticle(
                     AquaParticle(
                         kind: .sparkle,
                         p: CGPoint(x: pos.x + CGFloat.random(in: -22...22), y: pos.y + CGFloat.random(in: -18...18)),
@@ -1391,14 +1670,409 @@ final class AquariumSim {
         }
     }
 
+    // MARK: - Mystery Reef Eggs
+
+    @discardableResult
+    func dropEgg(at x: CGFloat, y: CGFloat? = nil, species: FishKind? = nil) -> Int? {
+        guard eggs.count < Self.maxEggs else {
+            if let first = eggs.indices.first {
+                eggs[first].wobbleV = 10
+                AquaSound.shared.play(.bloop, volume: 0.5)
+            }
+            return nil
+        }
+        let cx = max(AGeo.left + 64, min(AGeo.right - 64, x))
+        let sandY = AGeo.sand(cx)
+        let startY = y ?? (AGeo.waterY - 12)
+        let isFalling = startY < sandY - 6
+        let chosen = species ?? nextEggSpecies()
+        let palette = AquaEggPalette.allCases[nextID % AquaEggPalette.allCases.count]
+        let egg = AquaEgg(
+            id: nextID,
+            x: cx,
+            y: isFalling ? startY : sandY,
+            vy: isFalling ? 90 : 0,
+            falling: isFalling,
+            taps: 0,
+            palette: palette,
+            species: chosen,
+            wobble: 0,
+            wobbleV: isFalling ? 0 : 4,
+            shimmerPhase: CGFloat.random(in: 0...6)
+        )
+        nextID += 1
+        eggs.append(egg)
+        if isFalling {
+            if startY < surfaceY(cx) { splash(at: cx, strength: 0.45) }
+            else { AquaSound.shared.play(.bloop, volume: 0.55) }
+        }
+        if !demo { needsSave = true }
+        return eggs.count - 1
+    }
+
+    private func nextEggSpecies() -> FishKind {
+        let present = Set(fish.map(\.kind))
+        for magic in FishKind.reefBabyCases where !present.contains(magic) && !eggs.contains(where: { $0.species == magic }) {
+            return magic
+        }
+        let pool: [FishKind] = [.axolotl, .seaBunny, .narwhal, .goldfish, .clownfish, .puffer, .seahorse, .betta]
+        let pick = pool[nextEggSpeciesCursor % pool.count]
+        nextEggSpeciesCursor += 1
+        return pick
+    }
+
+    @discardableResult
+    func tapEgg(_ p: CGPoint) -> Bool {
+        for i in eggs.indices.reversed() {
+            let e = eggs[i]
+            if hypot(e.x - p.x, (e.y - 22) - p.y) < 44 {
+                return tapEgg(atIndex: i)
+            }
+        }
+        return false
+    }
+
+    @discardableResult
+    func tapEgg(atIndex i: Int) -> Bool {
+        guard eggs.indices.contains(i) else { return false }
+        eggs[i].taps += 1
+        eggs[i].lastTap = time
+        eggs[i].wobbleV = eggs[i].taps % 2 == 0 ? -12 : 12
+        let center = CGPoint(x: eggs[i].x, y: eggs[i].y - 24)
+        for k in 0..<4 {
+            let a = CGFloat(k) / 4 * 2 * .pi
+            emitParticle(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: center.x + cos(a) * 18, y: center.y + sin(a) * 18),
+                    v: CGVector(dx: cos(a) * 18, dy: -22),
+                    life: 0.6,
+                    size: 11,
+                    color: ARGB(0xFFF0A8)
+                )
+            )
+            addBubble(CGPoint(x: center.x + CGFloat(k * 6 - 9), y: center.y - 8), r: CGFloat.random(in: 2...4))
+        }
+        if eggs[i].taps < 3 {
+            Sound.shared.play(.crack, volume: 0.65)
+            AquaSound.shared.play(.tink, volume: 0.45, gap: 0.1)
+            if !demo { needsSave = true }
+            return true
+        }
+
+        let hatched = eggs.remove(at: i)
+        if fish.count >= Self.maxFish, let dropIdx = fish.firstIndex(where: { !$0.caught && $0.growthStage >= 2 }) ?? fish.firstIndex(where: { !$0.caught }) {
+            bye(fish[dropIdx].p)
+            fish.remove(at: dropIdx)
+        }
+        let v = AquariumSim.rollVariant((nextID * 5) % max(1, hatched.species.variants))
+        let spawnY = min(AGeo.sand(hatched.x) - 26, hatched.y - 26)
+        let fIdx = spawn(hatched.species, variant: v, at: CGPoint(x: hatched.x, y: spawnY), growthStage: 0, growthBites: 0)
+        fish[fIdx].v = CGVector(dx: CGFloat.random(in: -48...48), dy: -92)
+        fish[fIdx].happy = time
+        fish[fIdx].flipStart = time
+        fish[fIdx].appetite = 5
+        fish[fIdx].snackReadyAt = time + 2.0
+
+        let confetti: [ARGB] = [ARGB(0xFF8FB8), ARGB(0xFFE38A), ARGB(0x9FE3CF), ARGB(0xC9B6FF), ARGB(0xFFFFFF)]
+        for k in 0..<12 {
+            let a = CGFloat(k) / 12 * 2 * .pi
+            emitParticle(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: center.x + cos(a) * 24, y: center.y + sin(a) * 20),
+                    v: CGVector(dx: cos(a) * 44, dy: sin(a) * 32 - 36),
+                    life: 0.9,
+                    size: 14,
+                    color: confetti[k % confetti.count]
+                )
+            )
+        }
+        emitParticle(
+            AquaParticle(
+                kind: .heart,
+                p: CGPoint(x: center.x, y: center.y - 16),
+                v: CGVector(dx: 0, dy: -52),
+                life: 1.3,
+                size: 18,
+                color: ARGB(0xFF7FAE)
+            )
+        )
+        for k in 0..<8 {
+            addBubble(CGPoint(x: center.x + CGFloat(k * 6 - 21), y: center.y - CGFloat(k % 3) * 8), r: CGFloat.random(in: 2.5...5.5))
+        }
+        AquaSound.shared.play(.chime, volume: 0.8)
+        Sound.shared.play(.pop, volume: 0.75)
+        if !demo { needsSave = true }
+        return true
+    }
+
+    private func stepEggs(_ dt: CGFloat) {
+        for i in eggs.indices {
+            var e = eggs[i]
+            e.shimmerPhase += dt * 2.5
+            let ground = AGeo.sand(e.x)
+            if e.falling {
+                let inWater = e.y > surfaceY(e.x)
+                if inWater {
+                    e.vy += (240 - e.vy) * min(1, dt * 3.5)
+                } else {
+                    e.vy += AquariumSim.gravity * dt
+                }
+                e.y += e.vy * dt
+                if e.y >= ground {
+                    e.y = ground
+                    e.vy = 0
+                    e.falling = false
+                    e.wobbleV = 6
+                    emitParticle(
+                        AquaParticle(
+                            kind: .poof,
+                            p: CGPoint(x: e.x, y: ground - 4),
+                            v: CGVector(dx: 0, dy: -8),
+                            life: 1.0,
+                            size: 18,
+                            color: ARGB(0xEADBB8)
+                        )
+                    )
+                    AquaSound.shared.play(.thud, volume: 0.3, gap: 0.15)
+                }
+            } else {
+                e.y = ground
+            }
+            e.wobbleV += (-160 * e.wobble - 9 * e.wobbleV) * dt
+            e.wobble = max(-0.45, min(0.45, e.wobble + e.wobbleV * dt))
+            eggs[i] = e
+        }
+    }
+
+    // MARK: - Interactive Yellow Submarine
+
+    func toggleSubmarine() {
+        submarine.active.toggle()
+        if submarine.active {
+            submarine.p = CGPoint(x: 512, y: 270)
+            submarine.target = CGPoint(x: 512, y: 340)
+            submarine.v = CGVector(dx: 0, dy: 70)
+            splash(at: 512, strength: 0.6)
+            AquaSound.shared.play(.bloop, volume: 0.65)
+            AquaSound.shared.play(.chime, volume: 0.5, gap: 0.25)
+        } else {
+            bye(submarine.p)
+            AquaSound.shared.play(.swish, volume: 0.45)
+        }
+        syncUIStateIfNeeded()
+    }
+
+    func steerSubmarine(to point: CGPoint) {
+        if !submarine.active {
+            submarine.active = true
+            submarine.p = CGPoint(x: max(AGeo.left + 84, min(AGeo.right - 84, point.x)), y: AGeo.waterY + 56)
+            splash(at: submarine.p.x, strength: 0.5)
+        }
+        let cx = max(AGeo.left + 74, min(AGeo.right - 74, point.x))
+        let cy = max(AGeo.waterY + 46, min(AGeo.sand(cx) - 52, point.y))
+        submarine.target = CGPoint(x: cx, y: cy)
+        syncUIStateIfNeeded()
+    }
+
+    private func stepSubmarine(_ dt: CGFloat) {
+        for k in hiddenSpots.indices {
+            let awake = time < hiddenSpots[k].awakeUntil
+            let targetPop: CGFloat = awake ? 1 : 0
+            hiddenSpots[k].pop += (targetPop - hiddenSpots[k].pop) * min(1, dt * (awake ? 7 : 2.5))
+        }
+        guard submarine.active else { return }
+
+        var sub = submarine
+        sub.bobPhase += dt * 2.4
+        let dx = sub.target.x - sub.p.x
+        let dy = sub.target.y - sub.p.y
+        let dist = hypot(dx, dy)
+        let desiredSpeed = min(240, dist * 3.0)
+        let vx = dist > 1 ? dx / dist * desiredSpeed : 0
+        let vy = dist > 1 ? dy / dist * desiredSpeed : 0
+        sub.v.dx += (vx - sub.v.dx) * min(1, dt * 6)
+        sub.v.dy += (vy - sub.v.dy) * min(1, dt * 6)
+        sub.p.x += sub.v.dx * dt
+        sub.p.y += sub.v.dy * dt
+        sub.p.x = max(AGeo.left + 68, min(AGeo.right - 68, sub.p.x))
+        sub.p.y = max(AGeo.waterY + 44, min(AGeo.sand(sub.p.x) - 46, sub.p.y))
+
+        if abs(sub.v.dx) > 10 {
+            sub.facing = sub.v.dx > 0 ? 1 : -1
+        }
+        let speedNow = hypot(sub.v.dx, sub.v.dy)
+        sub.propPhase += dt * (8 + speedNow * 0.08)
+        sub.beamAngle = 0.28 + sin(sub.bobPhase * 0.7) * 0.06
+
+        if time >= sub.nextBubble {
+            sub.nextBubble = time + (speedNow > 40 ? 0.09 : 0.28)
+            addBubble(
+                CGPoint(x: sub.p.x - sub.facing * 58, y: sub.p.y + CGFloat.random(in: -6...6)),
+                r: CGFloat.random(in: 2.2...4.8)
+            )
+        }
+
+        // Spotlight beam illuminates caves/rocks/sand and wakes hidden reef surprises!
+        let lampOrigin = CGPoint(x: sub.p.x + sub.facing * 47, y: sub.p.y + 4)
+        let dirX = sub.facing * cos(sub.beamAngle)
+        let dirY = sin(sub.beamAngle)
+        for k in hiddenSpots.indices {
+            let sp = hiddenSpots[k].p
+            let sx = sp.x - lampOrigin.x
+            let sy = sp.y - lampOrigin.y
+            let d = hypot(sx, sy)
+            let directUnder = hypot(sp.x - sub.p.x, sp.y - sub.p.y) < 110
+            var inBeam = directUnder
+            if !inBeam && d > 1 && d < 220 {
+                let dot = (sx * dirX + sy * dirY) / d
+                if dot > 0.76 { inBeam = true }
+            }
+            if inBeam {
+                let wasSleeping = time > hiddenSpots[k].awakeUntil
+                hiddenSpots[k].awakeUntil = max(hiddenSpots[k].awakeUntil, time + 4.5)
+                if wasSleeping {
+                    for j in 0..<6 {
+                        let a = CGFloat(j) / 6 * 2 * .pi
+                        emitParticle(
+                            AquaParticle(
+                                kind: .sparkle,
+                                p: CGPoint(x: sp.x + cos(a) * 20, y: sp.y - 16 + sin(a) * 16),
+                                v: CGVector(dx: cos(a) * 14, dy: -20),
+                                life: 0.75,
+                                size: 13,
+                                color: ARGB(0xFFE69A)
+                            )
+                        )
+                    }
+                    for j in 0..<4 {
+                        addBubble(CGPoint(x: sp.x + CGFloat(j * 6 - 9), y: sp.y - 12), r: CGFloat.random(in: 2.2...4.4))
+                    }
+                    AquaSound.shared.play(.chime, volume: 0.62, gap: 0.25)
+                    AquaSound.shared.play(.bloop, volume: 0.5, gap: 0.16)
+                    if time - hiddenSpots[k].lastCoinAt >= 8 && time - lastSubCoinAt >= Self.coinCooldown {
+                        hiddenSpots[k].lastCoinAt = time
+                        lastSubCoinAt = time
+                        queueCoin(2, from: CGPoint(x: sp.x, y: sp.y - 24))
+                    }
+                }
+            }
+        }
+        submarine = sub
+    }
+
+    // MARK: - Musical Singing Clams & Fish Ribbon Dance
+
+    @discardableResult
+    func tapClam(_ p: CGPoint) -> Bool {
+        for i in clams.indices {
+            let c = clams[i]
+            if hypot(c.x - p.x, (c.y - 12) - p.y) < 32 {
+                singClam(atIndex: i)
+                return true
+            }
+        }
+        return false
+    }
+
+    func singClam(atIndex i: Int) {
+        guard clams.indices.contains(i) else { return }
+        clams[i].openUntil = time + 1.5
+        clams[i].bounceV = 9
+        let notes: [SFX] = [.note1, .note2, .note3, .note4]
+        let note = notes[clams[i].noteIndex % notes.count]
+        Sound.shared.play(note, volume: 0.78)
+        let origin = CGPoint(x: clams[i].x, y: clams[i].y - 24)
+        let noteColors: [ARGB] = [ARGB(0xFF8FB8), ARGB(0xFFE07D), ARGB(0x88E8CA), ARGB(0xC5A8FF)]
+        for k in 0..<2 {
+            emitParticle(
+                AquaParticle(
+                    kind: .note,
+                    p: CGPoint(x: origin.x + CGFloat(k * 14 - 7), y: origin.y - CGFloat(k) * 8),
+                    v: CGVector(dx: CGFloat(k == 0 ? -12 : 12), dy: -46),
+                    life: 1.4,
+                    size: 16,
+                    color: noteColors[clams[i].noteIndex % noteColors.count]
+                )
+            )
+        }
+        for k in 0..<3 {
+            addBubble(CGPoint(x: origin.x + CGFloat(k * 6 - 6), y: origin.y - 4), r: CGFloat.random(in: 2...4))
+        }
+
+        clamTapTimes.append(time)
+        clamTapTimes.removeAll { time - $0 > 4.0 }
+        if clamTapTimes.count >= 3 && !isRibbonDanceActive {
+            clamTapTimes.removeAll()
+            triggerRibbonDance()
+        }
+    }
+
+    func triggerRibbonDance() {
+        ribbonDanceStart = time
+        ribbonDanceUntil = time + 7.0
+        for i in clams.indices {
+            clams[i].openUntil = max(clams[i].openUntil, time + 2.6)
+            clams[i].bounceV = 8
+        }
+        Sound.shared.play(.sparkle, volume: 0.7)
+        AquaSound.shared.play(.chime, volume: 0.72, gap: 0.25)
+        let rainbow: [ARGB] = [ARGB(0xFF8FB8), ARGB(0xFFD25A), ARGB(0x8CE8CA), ARGB(0x8CD8FF), ARGB(0xC9B6FF)]
+        for k in 0..<10 {
+            let a = CGFloat(k) / 10 * 2 * .pi
+            let sA = sin(a)
+            let hx = 512 + 195 * sA * sA * sA
+            let hy = 368 - (120 * cos(a) - 46 * cos(2 * a) - 18 * cos(3 * a))
+            emitParticle(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: hx, y: hy),
+                    v: CGVector(dx: 0, dy: -12),
+                    life: 1.1,
+                    size: 14,
+                    color: rainbow[k % rainbow.count]
+                )
+            )
+        }
+    }
+
+    private func stepClams(_ dt: CGFloat) {
+        for i in clams.indices {
+            var c = clams[i]
+            let wantOpen: CGFloat = time < c.openUntil ? 1 : 0
+            c.open += (wantOpen - c.open) * min(1, dt * (wantOpen > 0 ? 11 : 4))
+            c.bounceV += (-180 * c.bounce - 11 * c.bounceV) * dt
+            c.bounce = max(-0.5, min(0.6, c.bounce + c.bounceV * dt))
+            clams[i] = c
+        }
+        if isRibbonDanceActive && CGFloat.random(in: 0...1) < dt * 8 {
+            let a = CGFloat(time - ribbonDanceStart) * 2.4 + CGFloat.random(in: 0...(2 * .pi))
+            let sA = sin(a)
+            let hx = 512 + 195 * sA * sA * sA
+            let hy = 368 - (120 * cos(a) - 46 * cos(2 * a) - 18 * cos(3 * a))
+            let rainbow: [ARGB] = [ARGB(0xFF8FB8), ARGB(0xFFE38A), ARGB(0x88E8CA), ARGB(0x90D4FF), ARGB(0xC9B6FF)]
+            emitParticle(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: hx, y: hy),
+                    v: CGVector(dx: CGFloat.random(in: -10...10), dy: -14),
+                    life: 0.75,
+                    size: 12,
+                    color: rainbow[Int.random(in: 0..<rainbow.count)]
+                )
+            )
+        }
+    }
+
     // MARK: - Particles
 
     private func stepParticles(_ dt: CGFloat) {
-        var i = 0
-        while i < particles.count {
-            var q = particles[i]
+        var write = 0
+        for read in 0..<particles.count {
+            var q = particles[read]
             q.age += dt
-            if q.age >= q.life { particles.remove(at: i); continue }
+            if q.age >= q.life { continue }
             switch q.kind {
             case .splash:
                 q.v.dy += AquariumSim.gravity * dt
@@ -1406,7 +2080,6 @@ final class AquariumSim {
                 q.p.y += q.v.dy * dt
                 if q.v.dy > 0 && q.p.y > surfaceY(q.p.x) && q.p.x > AGeo.left && q.p.x < AGeo.right {
                     disturb(q.p.x, 0.4, width: 0)
-                    particles.remove(at: i)
                     continue
                 }
             case .sand:
@@ -1414,31 +2087,35 @@ final class AquariumSim {
                 q.v.dy += (22 - q.v.dy) * min(1, dt * 2.5)
                 q.p.x += q.v.dx * dt
                 q.p.y += q.v.dy * dt
-                if q.p.y > AGeo.sand(q.p.x) { particles.remove(at: i); continue }
+                if q.p.y > AGeo.sand(q.p.x) { continue }
             case .poof:
                 q.v.dx *= exp(-dt * 2)
                 q.p.x += q.v.dx * dt
                 q.p.y += q.v.dy * dt
                 q.size += dt * 22
-            case .heart:
+            case .heart, .note:
                 q.p.x += q.v.dx * dt + sin(q.age * 6) * 12 * dt
                 q.p.y += q.v.dy * dt
             case .moss:
                 q.v.dy += (18 - q.v.dy) * min(1, dt * 2)
                 q.p.x += sin(q.age * 3 + q.size) * 10 * dt
                 q.p.y += q.v.dy * dt
-                if q.p.y > AGeo.sand(q.p.x) { particles.remove(at: i); continue }
+                if q.p.y > AGeo.sand(q.p.x) { continue }
             case .glow:
                 q.p.x += q.v.dx * dt + sin(q.age * 1.3 + q.size * 3) * 6 * dt
                 q.p.y += q.v.dy * dt
             case .ring, .sparkle:
-                break
+                q.p.x += q.v.dx * dt
+                q.p.y += q.v.dy * dt
             }
-            particles[i] = q
-            i += 1
+            particles[write] = q
+            write += 1
         }
-        if night > 0.5 && CGFloat.random(in: 0...1) < dt * 2.5 && particles.count < 260 {
-            particles.append(
+        if write < particles.count {
+            particles.removeSubrange(write..<particles.count)
+        }
+        if night > 0.5 && CGFloat.random(in: 0...1) < dt * 2.5 && particles.count < Self.maxParticles {
+            emitParticle(
                 AquaParticle(
                     kind: .glow,
                     p: CGPoint(x: CGFloat.random(in: 80...950), y: CGFloat.random(in: 200...580)),
@@ -1454,7 +2131,7 @@ final class AquariumSim {
     private func bye(_ p: CGPoint) {
         for k in 0..<8 {
             let a = CGFloat(k) / 8 * 2 * .pi
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .sparkle,
                     p: CGPoint(x: p.x + cos(a) * 24, y: p.y + sin(a) * 24),
@@ -1477,6 +2154,9 @@ final class AquariumSim {
 
     func step(dt: CGFloat) {
         guard dt > 0 else { return }
+        isStepping = true
+        defer { isStepping = false }
+
         time += Double(dt)
         night += ((lightsOn ? 0 : 1) - night) * min(1, dt * 1.6)
         stepHand(dt)
@@ -1484,6 +2164,9 @@ final class AquariumSim {
         stepQuickAction(dt)
         stepSurface(dt)
         stepHoops(dt)
+        stepSubmarine(dt)
+        stepClams(dt)
+        stepEggs(dt)
         stepFish(dt)
         stepFood(dt)
         stepBubbles(dt)
@@ -1493,7 +2176,11 @@ final class AquariumSim {
         stepFinds(dt)
         AquaSound.shared.setLoop(.hum, volume: 0.3)
         AquaSound.shared.setLoop(.pump, volume: pump ? 0.32 : 0)
-        if time - lastSave > 20 { lastSave = time; save() }
+        if time - lastSave > 20 {
+            lastSave = time
+            if !demo { needsSave = true }
+        }
+        syncUIStateIfNeeded()
     }
 
     func setLights(_ on: Bool) {
@@ -1515,7 +2202,9 @@ final class AquariumSim {
         }) { return true }
         if fishAt(p) != nil { return true }
         if hoops.contains(where: { hypot($0.p.x - p.x, $0.p.y - p.y) < $0.radius + 16 }) { return true }
+        if eggs.contains(where: { hypot($0.x - p.x, ($0.y - 22) - p.y) < 44 }) { return true }
         if hypot(p.x - snail.p.x, p.y - snail.p.y) < 38 { return true }
+        if clams.contains(where: { hypot($0.x - p.x, ($0.y - 12) - p.y) < 32 }) { return true }
         return false
     }
 
@@ -1552,13 +2241,14 @@ final class AquariumSim {
                 decor[i].held = true
                 decor[i].falling = false
                 AquaSound.shared.play(.pick, volume: 0.5)
+                syncUIStateIfNeeded()
             }
         case .surface:
             let f = (p.x - AGeo.left) / AGeo.width * CGFloat(AGeo.surfaceNodes - 1)
             let c = max(0, min(AGeo.surfaceNodes - 1, Int(f.rounded())))
             sv[c] += handV.dy * 0.08 + abs(handV.dx) * 0.03
             if hypot(handV.dx, handV.dy) > 500 && CGFloat.random(in: 0...1) < 0.4 {
-                particles.append(
+                emitParticle(
                     AquaParticle(
                         kind: .splash,
                         p: CGPoint(x: p.x, y: surfaceY(p.x) - 2),
@@ -1571,7 +2261,9 @@ final class AquariumSim {
                 AquaSound.shared.play(.splish, volume: 0.35, gap: 0.18)
             }
         case .water:
-            if hypot(handV.dx, handV.dy) > 700 {
+            if submarine.active && AGeo.inWater(p) {
+                steerSubmarine(to: p)
+            } else if hypot(handV.dx, handV.dy) > 700 {
                 for i in fish.indices where !fish[i].caught && hypot(fish[i].p.x - p.x, fish[i].p.y - p.y) < 110 {
                     startle(i, from: p)
                 }
@@ -1603,7 +2295,11 @@ final class AquariumSim {
     }
 
     func handEnded(_ p: CGPoint, tap: Bool) {
-        defer { hand = nil; grab = .none }
+        defer {
+            hand = nil
+            grab = .none
+            syncUIStateIfNeeded()
+        }
         switch grab {
         case .decor(let id):
             guard let i = decorIndex(id) else { return }
@@ -1637,10 +2333,15 @@ final class AquariumSim {
         guard tap else { return }
         if tapForeground(p) { return }
         if let i = decorAt(p) { pokeDecor(i); return }
+        if submarine.active && AGeo.inWater(p) {
+            steerSubmarine(to: p)
+            AquaSound.shared.play(.bloop, volume: 0.45, gap: 0.16)
+            return
+        }
         if AGeo.tank.contains(p) { tapGlass(p) }
     }
 
-    /// Strict foreground tap priority: visitors > fish > bubble hoops > snail > front bubbles (never swallowed by background decor).
+    /// Strict foreground tap priority: visitors > fish > hoops > eggs > snail > singing clams > front bubbles.
     private func tapForeground(_ p: CGPoint) -> Bool {
         if tapVisitor(p) { return true }
         if let i = fishAt(p) {
@@ -1648,6 +2349,7 @@ final class AquariumSim {
             return true
         }
         if tapBubbleHoop(p) { return true }
+        if tapEgg(p) { return true }
         if hypot(p.x - snail.p.x, p.y - snail.p.y) < 38 {
             snail.hideUntil = time + 2.8
             for k in 0..<3 {
@@ -1656,9 +2358,10 @@ final class AquariumSim {
             AquaSound.shared.play(.blub, volume: 0.45)
             return true
         }
+        if tapClam(p) { return true }
         if let b = bubbles.indices.last(where: { hypot(bubbles[$0].p.x - p.x, bubbles[$0].p.y - p.y) < bubbles[$0].r + 18 && !bubbles[$0].back }) {
             let q = bubbles[b].p
-            particles.append(AquaParticle(kind: .ring, p: q, v: .zero, life: 0.3, size: bubbles[b].r * 2, color: ARGB(0xFFFFFF)))
+            emitParticle(AquaParticle(kind: .ring, p: q, v: .zero, life: 0.3, size: bubbles[b].r * 2, color: ARGB(0xFFFFFF)))
             bubbles.remove(at: b)
             AquaSound.shared.play(.pop, volume: 0.6)
             return true
@@ -1690,12 +2393,12 @@ final class AquariumSim {
         } else {
             AquaSound.shared.play(.blub, volume: 0.65)
         }
-        if fish[i].variant >= AquaRare.variant {
-            discover(.rare(fish[i].kind), at: fish[i].p)
+        if fish[i].variant >= AquaRare.variant, let find = AquaFind.rare(fish[i].kind) {
+            discover(find, at: fish[i].p)
         }
         let m = mouth(fish[i])
         for k in 0..<3 { addBubble(CGPoint(x: m.x, y: m.y - CGFloat(k) * 7), r: 2 + CGFloat(k)) }
-        particles.append(
+        emitParticle(
             AquaParticle(
                 kind: .heart,
                 p: CGPoint(x: fish[i].p.x, y: fish[i].p.y - 30),
@@ -1741,7 +2444,7 @@ final class AquariumSim {
             AquaSound.shared.play(.chime, volume: 0.45)
             for k in 0..<5 {
                 let a = CGFloat(k) / 5 * 2 * .pi
-                particles.append(
+                emitParticle(
                     AquaParticle(
                         kind: .sparkle,
                         p: CGPoint(x: decor[i].x + cos(a) * 20, y: decor[i].y - 26 + sin(a) * 14),
@@ -1766,7 +2469,7 @@ final class AquariumSim {
             }
             for k in 0..<4 {
                 let a = CGFloat(k) / 4 * 2 * .pi
-                particles.append(
+                emitParticle(
                     AquaParticle(
                         kind: .sparkle,
                         p: CGPoint(x: decor[i].x + cos(a) * 32, y: decor[i].y - 48 + sin(a) * 14),
@@ -1778,7 +2481,7 @@ final class AquariumSim {
                 )
             }
             AquaSound.shared.play(.chime, volume: 0.45)
-            AquaSound.shared.play(.bloop, volume: 0.5, gap: 0.15)
+            AquaSound.shared.play(.bloop, volume: 0.5, gap: 0.16)
         default:
             AquaSound.shared.play(.boing, volume: 0.4)
         }
@@ -1786,7 +2489,7 @@ final class AquariumSim {
 
     private func tapGlass(_ p: CGPoint) {
         AquaSound.shared.play(.tink, volume: 0.6)
-        particles.append(AquaParticle(kind: .ring, p: p, v: .zero, life: 0.5, size: 34, color: ARGB(0xFFFFFF)))
+        emitParticle(AquaParticle(kind: .ring, p: p, v: .zero, life: 0.5, size: 34, color: ARGB(0xFFFFFF)))
         for i in fish.indices where !fish[i].caught {
             if hypot(fish[i].p.x - p.x, fish[i].p.y - p.y) < 300 { startle(i, from: p) }
         }
@@ -1826,9 +2529,11 @@ final class AquariumSim {
         case .net:
             AquaSound.shared.play(.swish, volume: 0.4)
             if AGeo.inWater(p) { scoop(at: p) }
+        case .egg: AquaSound.shared.play(.pick, volume: 0.55)
         case .fish: AquaSound.shared.play(.bag, volume: 0.6)
         case .decor: AquaSound.shared.play(.pick, volume: 0.5)
         }
+        syncUIStateIfNeeded()
     }
 
     private func scoop(at point: CGPoint) {
@@ -1860,6 +2565,8 @@ final class AquariumSim {
         switch t {
         case .fish(let k) where over:
             addFish(k, x: toolP.x, y: toolP.y)
+        case .egg where over:
+            _ = dropEgg(at: toolP.x, y: toolP.y)
         case .decor(let k) where over:
             let i = addDecor(k, x: toolP.x, falling: true, y: min(toolP.y + k.size.height * 0.5, AGeo.sand(toolP.x)))
             decor[i].rot = tilt
@@ -1890,6 +2597,7 @@ final class AquariumSim {
         }
         caught = nil
         tool = nil
+        syncUIStateIfNeeded()
     }
 
     private func stepTool(_ dt: CGFloat) {
@@ -1934,7 +2642,7 @@ final class AquariumSim {
                 if moved > 0.3 {
                     let off = wipe(at: toolP, radius: 56 * FingerLift.spread, amount: min(0.35, moved * 0.015), sparkle: true)
                     if off > 0.01 && CGFloat.random(in: 0...1) < min(1, off * 4) {
-                        particles.append(
+                        emitParticle(
                             AquaParticle(
                                 kind: .moss,
                                 p: CGPoint(x: toolP.x + CGFloat.random(in: -28...28) * FingerLift.spread, y: toolP.y + 22),
@@ -1971,7 +2679,7 @@ final class AquariumSim {
                     }
                 }
             }
-        case .fish, .decor:
+        case .fish, .decor, .egg:
             target = max(-0.35, min(0.35, toolV.dx * 0.0007))
         }
         tiltV += ((target - tilt) * 70 - tiltV * 11) * dt

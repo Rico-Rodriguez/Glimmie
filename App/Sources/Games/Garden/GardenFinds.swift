@@ -125,6 +125,8 @@ struct GVisitor {
     var plot: Int?
     var decorID: Int?
     var fulfilled = false
+    var wearingCrown = false
+    var crownColors: [GRGB] = []
 
     var pos: CGPoint { p }
     var moving: Bool { state != .staying }
@@ -185,7 +187,8 @@ extension GardenSim {
 
     private func basketHasAnyFlower() -> Bool {
         if !bouquet.isEmpty { return true }
-        return PlantKind.allCases.filter(\.isFlower).contains { basketHas($0) }
+        if PlantKind.allCases.filter(\.isFlower).contains(where: { basketHas($0) }) { return true }
+        return HybridKind.allCases.filter(\.isFlower).contains { h in basket.contains("hybrid:\(h.rawValue)") }
     }
 
     private func spot(for k: GVisitorKind) -> (CGPoint, Int?, Int?)? {
@@ -232,7 +235,7 @@ extension GardenSim {
             guard day, !wet else { return nil }
             let flowers = plots.indices.filter { i in
                 guard let pl = plots[i].plant, pl.growth >= 0.95 else { return false }
-                return pl.kind.isFlower
+                return pl.effectiveIsFlower
             }
             guard let i = flowers.randomElement(), let h = head(plot: i) else { return nil }
             return (CGPoint(x: h.x + 30, y: h.y - 8), i, nil)
@@ -428,6 +431,9 @@ extension GardenSim {
 
     func tapVisitor(_ p: CGPoint) -> Bool {
         guard let i = visitorHit(p) else { return false }
+        if hasCraftedCrown {
+            return placeCrownOnVisitor(at: i)
+        }
         let v = visitors[i]
         if !v.fulfilled {
             if wishSatisfied(v.kind.wish) {
@@ -452,9 +458,92 @@ extension GardenSim {
     }
 }
 
-// MARK: - Drawing visitors, thought bubbles, and twinkles
+// MARK: - Drawing visitors, flower crowns, thought bubbles, and twinkles
 
 enum GardenVisitorPainter {
+    static func drawFlowerCrown(_ ctx: GraphicsContext, at p: CGPoint, colors: [GRGB], scale: CGFloat = 1) {
+        var g = ctx
+        g.translateBy(x: p.x, y: p.y)
+        g.scaleBy(x: scale, y: scale)
+
+        let palette = colors.isEmpty
+            ? [GRGB(0xFF7CB4), GRGB(0xFFD24A), GRGB(0xC89EFF), GRGB(0x7FE3B0), GRGB(0xFF9AC8)]
+            : colors
+
+        // Leafy woven headband arc
+        var vine = Path()
+        vine.move(to: CGPoint(x: -17, y: 3))
+        vine.addQuadCurve(to: CGPoint(x: 17, y: 3), control: CGPoint(x: 0, y: -7))
+        g.stroke(vine, with: .color(GRGB(0x3B7C38).color), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+        g.stroke(vine, with: .color(GRGB(0x63BD52).color), style: StrokeStyle(lineWidth: 3.6, lineCap: .round))
+
+        // Tiny protruding leaves
+        for (lx, ly, ang) in [(-15.0, 2.0, -2.6), (15.0, 2.0, -0.5), (-6.0, -3.5, -2.1), (6.0, -3.5, -1.0)] as [(CGFloat, CGFloat, CGFloat)] {
+            GardenPlants.leaf(g, at: CGPoint(x: lx, y: ly), angle: ang, length: 9, width: 3.6, color: GRGB(0x66BD55))
+        }
+
+        // 5 plump miniature blooms across the crown
+        let spots: [(CGFloat, CGFloat, CGFloat)] = [
+            (-13, 1.5, 4.6), (-6.5, -2.2, 5.2), (0, -3.8, 5.8), (6.5, -2.2, 5.2), (13, 1.5, 4.6)
+        ]
+        for (idx, sp) in spots.enumerated() {
+            let col = palette[idx % palette.count]
+            let r = sp.2
+            for k in 0..<5 {
+                let a = CGFloat(k) / 5 * 2 * .pi
+                let px = sp.0 + cos(a) * r * 0.62
+                let py = sp.1 + sin(a) * r * 0.62
+                let pr = r * 0.56
+                let pet = Path(ellipseIn: CGRect(x: px - pr, y: py - pr, width: pr * 2, height: pr * 2))
+                g.fill(pet, with: .color(col.color))
+                g.stroke(pet, with: .color(col.shade(-0.4).color(0.75)), lineWidth: 0.9)
+            }
+            let centerR = r * 0.44
+            g.fill(
+                Path(ellipseIn: CGRect(x: sp.0 - centerR, y: sp.1 - centerR, width: centerR * 2, height: centerR * 2)),
+                with: .color(Color(hex: 0xFFE266))
+            )
+        }
+    }
+
+    static func drawPicnicCritter(_ g: GraphicsContext, _ pc: PicnicCritter, time t: CGFloat, nowTime: Double) {
+        let munching = pc.state == .munching
+        let moving = pc.state == .hoppingIn || pc.state == .hoppingOut
+        var v = GVisitor(kind: pc.kind, p: pc.p, facing: pc.facing, seed: pc.id * 17)
+        v.state = moving ? .arriving : .staying
+        v.walk = pc.walk
+        v.poked = pc.poked
+        v.wearingCrown = pc.wearingCrown
+        v.crownColors = pc.crownColors
+
+        var cg = g
+        if munching {
+            let chewBob = abs(sin(t * 7.5 + CGFloat(pc.id))) * 4.5
+            cg.translateBy(x: 0, y: -chewBob)
+        }
+        draw(cg, v, time: t, night: 0, nowTime: nil)
+
+        // Animated rosy munching cheeks when eating on the picnic blanket
+        if munching || pc.state == .happy {
+            let glow = 0.72 + 0.25 * sin(t * 9 + CGFloat(pc.id))
+            let cheekY: CGFloat
+            let cheekX: CGFloat
+            switch pc.kind {
+            case .bunny: cheekX = pc.facing * 18; cheekY = -48
+            case .hedgehog: cheekX = pc.facing * 18; cheekY = -14
+            case .frog: cheekX = pc.facing * 6; cheekY = -22
+            case .bluebird: cheekX = pc.facing * 12; cheekY = -24
+            default: cheekX = pc.facing * 10; cheekY = -28
+            }
+            let r: CGFloat = munching ? 6.5 : 5.2
+            cg.fill(
+                Path(ellipseIn: CGRect(x: pc.p.x + cheekX - r, y: pc.p.y + cheekY - r * 0.68, width: r * 2, height: r * 1.36)),
+                with: .color(Color(hex: 0xFF7CA8, alpha: Double(glow)))
+            )
+        }
+        _ = nowTime
+    }
+
     static func draw(_ g: GraphicsContext, _ v: GVisitor, time t: CGFloat, night: CGFloat, nowTime: Double? = nil) {
         let since = nowTime.map { CGFloat($0 - v.poked) } ?? 10
         let react = since >= 0 && since < 0.65 ? sin(since / 0.65 * .pi) : 0
@@ -556,6 +645,9 @@ enum GardenVisitorPainter {
         eye(c, CGPoint(x: 24, y: -55), 3)
         c.fill(Path(ellipseIn: CGRect(x: 30, y: -48 + nibble, width: 6, height: 4.5)), with: .color(GRGB(0xFF8FB0).color))
         c.fill(Path(ellipseIn: CGRect(x: 15, y: -49, width: 7, height: 4)), with: .color(GRGB(0xFFB3C7).color(0.6)))
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: 18, y: -65 + nibble * 0.3), colors: v.crownColors, scale: 0.92)
+        }
     }
 
     private static func frog(_ g: GraphicsContext, _ v: GVisitor, _ t: CGFloat, _ react: CGFloat) {
@@ -579,6 +671,9 @@ enum GardenVisitorPainter {
         mouth.addQuadCurve(to: CGPoint(x: 20, y: -22), control: CGPoint(x: 13, y: -16))
         c.stroke(mouth, with: .color(green.shade(-0.5).color), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
         c.fill(Path(ellipseIn: CGRect(x: 0, y: -22, width: 6, height: 4)), with: .color(GRGB(0xFF9AB5).color(0.6)))
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: 3, y: -41), colors: v.crownColors, scale: 0.88)
+        }
     }
 
     private static func snail(_ g: GraphicsContext, _ v: GVisitor, _ t: CGFloat, _ react: CGFloat) {
@@ -619,6 +714,9 @@ enum GardenVisitorPainter {
             if k == 0 { sp.move(to: pt) } else { sp.addLine(to: pt) }
         }
         c.stroke(sp, with: .color(shell.shade(-0.45).color), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: -5, y: -35), colors: v.crownColors, scale: 0.8)
+        }
     }
 
     private static func hedgehog(_ g: GraphicsContext, _ v: GVisitor, _ t: CGFloat, _ react: CGFloat) {
@@ -654,6 +752,9 @@ enum GardenVisitorPainter {
             for x in [-12.0, 8.0] as [CGFloat] {
                 c.fill(Path(ellipseIn: CGRect(x: x, y: -4, width: 8, height: 5)), with: .color(GRGB(0xC9AE88).color))
             }
+        }
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: 10, y: -38), colors: v.crownColors, scale: 0.9)
         }
     }
 
@@ -691,6 +792,9 @@ enum GardenVisitorPainter {
         w.translateBy(x: -2, y: -18)
         w.rotate(by: .radians(Double(-0.2 - flap * 0.9)))
         oval(w, CGRect(x: -12, y: -5, width: 20, height: 10), blue.shade(-0.25))
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: 11, y: -35), colors: v.crownColors, scale: 0.72)
+        }
     }
 
     private static func owl(_ g: GraphicsContext, _ v: GVisitor, _ t: CGFloat, _ react: CGFloat) {
@@ -748,6 +852,9 @@ enum GardenVisitorPainter {
                 c.fill(Path(roundedRect: CGRect(x: x, y: -4, width: 5, height: 5), cornerRadius: 2), with: .color(GRGB(0xF0A23A).color))
             }
         }
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: 0, y: -56), colors: v.crownColors, scale: 0.96)
+        }
     }
 
     private static func hummingbird(_ g: GraphicsContext, _ v: GVisitor, _ t: CGFloat, _ react: CGFloat) {
@@ -776,5 +883,8 @@ enum GardenVisitorPainter {
         beak.move(to: CGPoint(x: 16, y: -6))
         beak.addLine(to: CGPoint(x: 32, y: -4))
         c.stroke(beak, with: .color(GRGB(0x3A3030).color), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+        if v.wearingCrown {
+            drawFlowerCrown(c, at: CGPoint(x: 10, y: -14), colors: v.crownColors, scale: 0.56)
+        }
     }
 }

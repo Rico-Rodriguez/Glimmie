@@ -14,6 +14,9 @@ enum AquaRare {
         case .betta: return FishColors(body: ARGB(0xFFF6FB), belly: ARGB(0xFFFFFF), fin: ARGB(0xFF7EC8), finEdge: ARGB(0x7FE0FF), finAlpha: 0.85)
         case .guppy: return FishColors(body: ARGB(0xFFD34A), belly: ARGB(0xFFF0B0), fin: ARGB(0x7A4BE0), finEdge: ARGB(0xFF8AD8), finAlpha: 0.88)
         case .seahorse: return FishColors(body: ARGB(0x3FCFC0), belly: ARGB(0xA8F0E6), fin: ARGB(0xD6FFF8), finEdge: ARGB(0xFFFFFF), finAlpha: 0.7)
+        case .axolotl: return FishColors(body: ARGB(0xFFE07D), belly: ARGB(0xFFF9D6), fin: ARGB(0xFF8AD8), finEdge: ARGB(0xFFE8FA), finAlpha: 0.92)
+        case .seaBunny: return FishColors(body: ARGB(0xEFE4FF), belly: ARGB(0xFFFFFF), fin: ARGB(0x7B5EE0), finEdge: ARGB(0xFFE8B8), finAlpha: 0.95)
+        case .narwhal: return FishColors(body: ARGB(0xFF9ED4), belly: ARGB(0xFFF0FA), fin: ARGB(0x8CE2FF), finEdge: ARGB(0xFFF3A8), finAlpha: 0.92)
         }
     }
 }
@@ -22,7 +25,7 @@ enum AquaFind: String, CaseIterable {
     case galaxyGoldfish, blueClownfish, goldenAngelfish, pinkTetra, mintPuffer, opalBetta, goldenGuppy, tealSeahorse
     case crab, octopus, jellyfish, turtle, babyFish, pearl
 
-    static func rare(_ k: FishKind) -> AquaFind {
+    static func rare(_ k: FishKind) -> AquaFind? {
         switch k {
         case .goldfish: return .galaxyGoldfish
         case .clownfish: return .blueClownfish
@@ -32,10 +35,11 @@ enum AquaFind: String, CaseIterable {
         case .betta: return .opalBetta
         case .guppy: return .goldenGuppy
         case .seahorse: return .tealSeahorse
+        case .axolotl, .seaBunny, .narwhal: return nil
         }
     }
 
-    var fish: FishKind? { FishKind.allCases.first { AquaFind.rare($0) == self } }
+    var fish: FishKind? { FishKind.classicCases.first { AquaFind.rare($0) == self } }
     var visitor: AVisitorKind? { AVisitorKind(rawValue: rawValue) }
 
     static var stickers: [Sticker] {
@@ -132,27 +136,30 @@ extension AquariumSim {
 
     func discover(_ f: AquaFind, at p: CGPoint) {
         guard !demo else { return }
-        if StickerBook.shared.find(game: AquariumSim.gameID, id: f.rawValue) {
-            for _ in 0..<8 {
-                particles.append(
-                    AquaParticle(
-                        kind: .sparkle,
-                        p: CGPoint(x: p.x + CGFloat.random(in: -40...40), y: p.y + CGFloat.random(in: -30...30)),
-                        v: .zero,
-                        life: 0.9,
-                        size: 18,
-                        color: ARGB(0xFFFFFF)
-                    )
+        guard !StickerBook.shared.has(game: AquariumSim.gameID, id: f.rawValue) else { return }
+        guard !pendingStickers.contains(f.rawValue) else { return }
+        pendingStickers.append(f.rawValue)
+        for _ in 0..<8 {
+            emitParticle(
+                AquaParticle(
+                    kind: .sparkle,
+                    p: CGPoint(x: p.x + CGFloat.random(in: -40...40), y: p.y + CGFloat.random(in: -30...30)),
+                    v: .zero,
+                    life: 0.9,
+                    size: 18,
+                    color: ARGB(0xFFFFFF)
                 )
-            }
+            )
         }
+        if !isStepping { flushPendingRewards() }
     }
 
     func stepFinds(_ dt: CGFloat) {
         if Int(time * 2) != Int((time - Double(dt)) * 2) {
             for f in fish where f.variant >= AquaRare.variant && !f.caught && AGeo.inWater(f.p) {
-                if !StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.rare(f.kind).rawValue) {
-                    discover(.rare(f.kind), at: f.p)
+                if let find = AquaFind.rare(f.kind),
+                   !StickerBook.shared.has(game: AquariumSim.gameID, id: find.rawValue) {
+                    discover(find, at: f.p)
                 }
             }
         }
@@ -169,7 +176,7 @@ extension AquariumSim {
         Sound.shared.play(.sparkle, volume: 0.55)
         for k in 0..<8 {
             let a = CGFloat(k) / 8 * 2 * .pi
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .sparkle,
                     p: CGPoint(x: origin.x + cos(a) * 28, y: origin.y + sin(a) * 22),
@@ -182,7 +189,7 @@ extension AquariumSim {
         }
         if time - lastChestCoinAt >= AquariumSim.coinCooldown {
             lastChestCoinAt = time
-            Coins.shared.earn(3, game: AquariumSim.gameID, from: origin)
+            queueCoin(3, from: origin)
         }
     }
 
@@ -246,8 +253,9 @@ extension AquariumSim {
             if let o = options.randomElement() { arrive(o.0, at: o.1) }
         }
         let t = CGFloat(time)
-        for i in visitors.indices.reversed() {
-            var v = visitors[i]
+        var write = 0
+        for read in 0..<visitors.count {
+            var v = visitors[read]
             if v.kind.fades {
                 switch v.state {
                 case .arriving:
@@ -262,10 +270,7 @@ extension AquariumSim {
                     if gone { v.state = .leaving }
                 case .leaving:
                     v.appear -= dt * 0.9
-                    if v.appear <= 0 {
-                        visitors.remove(at: i)
-                        continue
-                    }
+                    if v.appear <= 0 { continue }
                 }
                 if v.kind == .jellyfish {
                     let dx = v.target.x - v.p.x
@@ -290,10 +295,7 @@ extension AquariumSim {
                     let stepLen = v.kind.speed * dt
                     if d <= stepLen {
                         v.p.x = v.target.x
-                        if v.state == .leaving || v.kind.passesBy {
-                            visitors.remove(at: i)
-                            continue
-                        }
+                        if v.state == .leaving || v.kind.passesBy { continue }
                         stay(&v)
                     } else {
                         v.p.x += dx / d * stepLen
@@ -309,6 +311,22 @@ extension AquariumSim {
                         }
                     }
                 case .staying:
+                    if v.kind == .crab,
+                       let pelletIdx = food.indices.first(where: { food[$0].kind == .pearls && food[$0].state == .settled && abs(food[$0].p.x - v.p.x) < 42 }) {
+                        let fp = food[pelletIdx].p
+                        food.remove(at: pelletIdx)
+                        v.poked = time
+                        emitParticle(
+                            AquaParticle(
+                                kind: .heart,
+                                p: CGPoint(x: fp.x, y: fp.y - 22),
+                                v: CGVector(dx: 0, dy: -42),
+                                life: 1.1,
+                                size: 14,
+                                color: ARGB(0xFF8FB8)
+                            )
+                        )
+                    }
                     if time > v.stayUntil || (v.kind == .crab && night < 0.3) {
                         v.state = .leaving
                         let right = v.p.x > 512
@@ -316,7 +334,11 @@ extension AquariumSim {
                     }
                 }
             }
-            visitors[i] = v
+            visitors[write] = v
+            write += 1
+        }
+        if write < visitors.count {
+            visitors.removeSubrange(write..<visitors.count)
         }
     }
 
@@ -370,7 +392,7 @@ extension AquariumSim {
             for k in 0..<5 {
                 addBubble(CGPoint(x: mid.x + CGFloat(k * 6 - 12), y: mid.y - 18 - CGFloat(k) * 6), r: 2.5 + CGFloat(k % 3))
             }
-            particles.append(
+            emitParticle(
                 AquaParticle(
                     kind: .heart,
                     p: CGPoint(x: mid.x, y: mid.y - 28),

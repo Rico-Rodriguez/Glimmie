@@ -20,7 +20,8 @@ enum GardenPlants {
     static func stemHeight(_ p: Plant) -> CGFloat {
         let g = CGFloat(p.growth)
         let sprout = 16 * gdClamp(g / 0.12)
-        let main = p.kind.height * gdEase((g - 0.06) / 0.74)
+        let targetH = p.hybrid?.height ?? p.kind.height
+        let main = targetH * gdEase((g - 0.06) / 0.74)
         return max(sprout, main)
     }
 
@@ -108,12 +109,16 @@ enum GardenPlants {
         g.translateBy(x: base.x, y: base.y)
         g.scaleBy(x: sX, y: sY)
         g.translateBy(x: -base.x, y: -base.y)
-        shadow(g, at: base, width: 18 + plant.kind.reach * CGFloat(plant.growth))
+        shadow(g, at: base, width: 18 + plant.effectiveReach * CGFloat(plant.growth))
         let lift = CGPoint(x: base.x, y: base.y - pull * 42)
         // Thirsty droop softly leans the stem and bows the leaves downward.
         let sagDir: CGFloat = bend >= 0 ? 1 : -1
         let bendEff = max(-0.95, min(0.95, bend + (droop ? sagDir * 0.24 : 0)))
         let leafSag: CGFloat = droop ? 0.34 : 0
+        if let hybrid = plant.hybrid {
+            drawHybrid(g, hybrid: hybrid, plant: plant, base: lift, bend: bendEff, time: time, leafSag: leafSag)
+            return
+        }
         switch plant.kind {
         case .sunflower: sunflower(g, plant, lift, bendEff, time, leafSag: leafSag)
         case .tulip: tulip(g, plant, lift, bendEff, leafSag: leafSag)
@@ -780,15 +785,450 @@ enum GardenPlants {
         ctx.stroke(root, with: .color(GRGB(0xD9C29A).color(0.85)), style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
     }
 
+    // MARK: Hybrid Super-Blooms
+
+    static func drawHybrid(
+        _ ctx: GraphicsContext,
+        hybrid: HybridKind,
+        plant p: Plant,
+        base: CGPoint,
+        bend: CGFloat,
+        time: CGFloat,
+        leafSag: CGFloat
+    ) {
+        switch hybrid {
+        case .starlightRose:
+            starlightRose(ctx, p, base, bend, time, leafSag: leafSag)
+        case .cottonSunflower:
+            cottonSunflower(ctx, p, base, bend, time, leafSag: leafSag)
+        case .moonberryTulip:
+            moonberryTulip(ctx, p, base, bend, time, leafSag: leafSag)
+        case .rainbowLavender:
+            rainbowLavender(ctx, p, base, bend, time, leafSag: leafSag)
+        case .crystalPumpkin:
+            crystalPumpkin(ctx, p, base, bend, time, leafSag: leafSag)
+        case .sparkleBerryVine:
+            sparkleBerryVine(ctx, p, base, bend, time, leafSag: leafSag)
+        }
+    }
+
+    private static func starlightRoseHead(_ ctx: GraphicsContext, at top: CGPoint, angle: CGFloat, scale: CGFloat, time: CGFloat) {
+        var g = ctx
+        g.translateBy(x: top.x, y: top.y)
+        g.rotate(by: .radians(Double(angle)))
+        g.scaleBy(x: scale, y: scale)
+
+        let pulse = 0.92 + 0.08 * sin(time * 3.4)
+        g.fill(
+            Path(ellipseIn: CGRect(x: -44, y: -44, width: 88, height: 88)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFE38A, alpha: 0.45 * Double(pulse)), Color(hex: 0xFF88BE, alpha: 0.22), Color(hex: 0xFF88BE, alpha: 0)]),
+                center: .zero, startRadius: 6, endRadius: 44
+            )
+        )
+
+        // Outer star-pointed shimmering pink-gold petals
+        for i in 0..<7 {
+            var pg = g
+            pg.rotate(by: .radians(Double(CGFloat(i) / 7 * 2 * .pi) + Double(sin(time * 1.4 + CGFloat(i)) * 0.03)))
+            var petal = Path()
+            petal.move(to: .zero)
+            petal.addCurve(to: CGPoint(x: 0, y: -35), control1: CGPoint(x: 18, y: -10), control2: CGPoint(x: 14, y: -27))
+            petal.addCurve(to: .zero, control1: CGPoint(x: -14, y: -27), control2: CGPoint(x: -18, y: -10))
+            petal.closeSubpath()
+            let grad = Gradient(colors: [Color(hex: 0xFF5FA2), Color(hex: 0xFF9AC8), Color(hex: 0xFFE58A)])
+            pg.fill(petal, with: .linearGradient(grad, startPoint: .zero, endPoint: CGPoint(x: 0, y: -35)))
+            pg.stroke(petal, with: .color(StorybookArt.outline(for: 0xFF6BA8)), lineWidth: 1.5)
+        }
+
+        // Inner swirling rose cup
+        for i in 0..<5 {
+            var pg = g
+            pg.rotate(by: .radians(Double(CGFloat(i) / 5 * 2 * .pi + 0.35)))
+            var inner = Path()
+            inner.move(to: .zero)
+            inner.addCurve(to: CGPoint(x: 0, y: -21), control1: CGPoint(x: 13, y: -5), control2: CGPoint(x: 11, y: -18))
+            inner.addCurve(to: .zero, control1: CGPoint(x: -11, y: -18), control2: CGPoint(x: -13, y: -5))
+            inner.closeSubpath()
+            let grad = Gradient(colors: [Color(hex: 0xFF85B8), Color(hex: 0xFFE8A4)])
+            pg.fill(inner, with: .linearGradient(grad, startPoint: .zero, endPoint: CGPoint(x: 0, y: -21)))
+            pg.stroke(inner, with: .color(StorybookArt.outline(for: 0xFF9AC8)), lineWidth: 1.3)
+        }
+
+        // Golden starlight center jewel
+        let core = Path(ellipseIn: CGRect(x: -8.5, y: -8.5, width: 17, height: 17))
+        StorybookArt.fillAndStroke(g, core, fill: Color(hex: 0xFFF3A8), stroke: StorybookArt.outline(for: 0xFFC93C), width: 1.8)
+        StorybookArt.sparkle(g, at: .zero, radius: 9.5 * pulse, color: .white, opacity: 0.96)
+        StorybookArt.sparkle(g, at: CGPoint(x: -22, y: -20), radius: 5.5 * pulse, color: Theme.lemon, opacity: 0.9)
+        StorybookArt.sparkle(g, at: CGPoint(x: 24, y: -14), radius: 4.8 * pulse, color: .white, opacity: 0.9)
+    }
+
+    private static func starlightRose(_ ctx: GraphicsContext, _ p: Plant, _ base: CGPoint, _ bend: CGFloat, _ time: CGFloat, leafSag: CGFloat) {
+        let hgt = stemHeight(p)
+        let st = stem(base: base, height: hgt, bend: bend)
+        drawStem(ctx, st, width: 4.4, color: GRGB(0x418E4F))
+        for (j, t) in ([0.28, 0.56, 0.76] as [CGFloat]).enumerated() {
+            let side: CGFloat = j % 2 == 0 ? -1 : 1
+            leaf(ctx, at: st.at(t), angle: st.angle(t) + side * (1.2 + leafSag), length: 34 - CGFloat(j) * 4, width: 13, color: GRGB(0x3F9654), curl: side * 5)
+        }
+        let open = gdEase((CGFloat(p.growth) - 0.5) / 0.5)
+        starlightRoseHead(ctx, at: st.top, angle: bend * 0.7, scale: 0.65 + 0.45 * open, time: time)
+    }
+
+    private static func cottonSunflowerHead(_ ctx: GraphicsContext, at top: CGPoint, angle: CGFloat, scale: CGFloat, time: CGFloat) {
+        var g = ctx
+        g.translateBy(x: top.x, y: top.y)
+        g.rotate(by: .radians(Double(angle)))
+        g.scaleBy(x: scale, y: scale)
+
+        let pastelHexes: [UInt32] = [0xFFA8D6, 0xFFC59E, 0xFFF099, 0xA8F0D6, 0xA6D8FF, 0xD3B8FF]
+        let ringCount = 12
+        let haloR: CGFloat = 26
+        for i in 0..<ringCount {
+            let a = CGFloat(i) / CGFloat(ringCount) * 2 * .pi + sin(time * 1.1 + CGFloat(i)) * 0.04
+            let cx = cos(a) * haloR
+            let cy = sin(a) * haloR
+            let pr: CGFloat = 13.5 + (i % 2 == 0 ? 2.0 : 0)
+            let hex = pastelHexes[i % pastelHexes.count]
+            let puff = Path(ellipseIn: CGRect(x: cx - pr, y: cy - pr, width: pr * 2, height: pr * 2))
+            g.fill(
+                puff,
+                with: .radialGradient(
+                    Gradient(colors: [.white.opacity(0.95), StorybookArt.color(hex)]),
+                    center: CGPoint(x: cx - 3, y: cy - 3), startRadius: 1, endRadius: pr * 1.2
+                )
+            )
+            g.stroke(puff, with: .color(StorybookArt.outline(for: hex, factor: 0.74).opacity(0.7)), lineWidth: 1.5)
+        }
+        // Soft creamy cotton inner wreath
+        let innerWreath = Path(ellipseIn: CGRect(x: -22, y: -22, width: 44, height: 44))
+        g.fill(innerWreath, with: .color(Color(hex: 0xFFF9EE, alpha: 0.9)))
+
+        // Happy warm golden-caramel center with cute rosy cheeks
+        let diskR: CGFloat = 17.5
+        let disk = Path(ellipseIn: CGRect(x: -diskR, y: -diskR, width: diskR * 2, height: diskR * 2))
+        g.fill(
+            disk,
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFE38A), Color(hex: 0xF5B54A), Color(hex: 0xD68830)]),
+                center: CGPoint(x: -5, y: -5), startRadius: 0, endRadius: diskR * 1.2
+            )
+        )
+        g.stroke(disk, with: .color(StorybookArt.outline(for: 0xD68830)), lineWidth: 1.8)
+        for sx in [-5.5, 5.5] as [CGFloat] {
+            g.fill(Path(ellipseIn: CGRect(x: sx - 1.8, y: -4.2, width: 3.6, height: 4.2)), with: .color(Color(hex: 0x4A2E20)))
+            g.fill(Path(ellipseIn: CGRect(x: sx - 0.6, y: -3.8, width: 1.4, height: 1.4)), with: .color(.white))
+        }
+        var smile = Path()
+        smile.move(to: CGPoint(x: -4, y: 3))
+        smile.addQuadCurve(to: CGPoint(x: 4, y: 3), control: CGPoint(x: 0, y: 7.5))
+        g.stroke(smile, with: .color(Color(hex: 0x6A3A20)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+        g.fill(Path(ellipseIn: CGRect(x: -11.5, y: 0.5, width: 5, height: 3.2)), with: .color(Theme.pink.opacity(0.65)))
+        g.fill(Path(ellipseIn: CGRect(x: 6.5, y: 0.5, width: 5, height: 3.2)), with: .color(Theme.pink.opacity(0.65)))
+        StorybookArt.sparkle(g, at: CGPoint(x: -26, y: -26), radius: 5.5, color: .white, opacity: 0.95)
+        StorybookArt.sparkle(g, at: CGPoint(x: 28, y: -18), radius: 5, color: Theme.lemon, opacity: 0.92)
+    }
+
+    private static func cottonSunflower(_ ctx: GraphicsContext, _ p: Plant, _ base: CGPoint, _ bend: CGFloat, _ time: CGFloat, leafSag: CGFloat) {
+        let hgt = stemHeight(p)
+        let st = stem(base: base, height: hgt, bend: bend)
+        drawStem(ctx, st, width: 7.4, color: GRGB(0x5EB676))
+        for (j, t) in ([0.24, 0.44, 0.64, 0.80] as [CGFloat]).enumerated() {
+            let side: CGFloat = j % 2 == 0 ? -1 : 1
+            let a = st.angle(t) + side * (1.3 + leafSag)
+            leaf(ctx, at: st.at(t), angle: a, length: 44 - CGFloat(j) * 4, width: 19, color: GRGB(0x69C286), curl: side * 6)
+        }
+        cottonSunflowerHead(ctx, at: st.top, angle: bend * 0.55, scale: 1.05, time: time)
+    }
+
+    private static func moonberryTulipHead(_ ctx: GraphicsContext, at top: CGPoint, angle: CGFloat, scale: CGFloat, time: CGFloat) {
+        var g = ctx
+        g.translateBy(x: top.x, y: top.y)
+        g.rotate(by: .radians(Double(angle)))
+        g.scaleBy(x: scale, y: scale)
+
+        let glowR: CGFloat = 38
+        g.fill(
+            Path(ellipseIn: CGRect(x: -glowR, y: -glowR - 14, width: glowR * 2, height: glowR * 2)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xC69CFF, alpha: 0.48), Color(hex: 0x7A4BE8, alpha: 0)]),
+                center: CGPoint(x: 0, y: -16), startRadius: 4, endRadius: glowR
+            )
+        )
+
+        let violet = GRGB(0x8852E8)
+        let berry = GRGB(0xC854B8)
+        tulipPetal(g, at: .zero, angle: 0, height: 42, width: 20, color: violet.shade(-0.14))
+        tulipPetal(g, at: .zero, angle: -0.34, height: 39, width: 17, color: berry)
+        tulipPetal(g, at: .zero, angle: 0.34, height: 39, width: 17, color: violet.shade(0.14))
+
+        // Glowing golden crescent moon crest nestled in the chalice
+        var moon = Path(ellipseIn: CGRect(x: -8, y: -33, width: 16, height: 16))
+        moon.addEllipse(in: CGRect(x: -2.5, y: -36, width: 16, height: 16))
+        g.fill(moon, with: .color(Color(hex: 0xFFF4B2)), style: FillStyle(eoFill: true))
+
+        // Dripping starlight dew drops
+        let dropBob = sin(time * 3.2) * 3
+        for (dx, dy) in [(-18.0, -8.0), (18.0, -6.0), (0.0, 4.0)] as [(CGFloat, CGFloat)] {
+            let dp = CGPoint(x: dx, y: dy + dropBob * (dx == 0 ? 1 : -0.7))
+            var drop = Path()
+            drop.move(to: CGPoint(x: dp.x, y: dp.y - 6))
+            drop.addCurve(to: CGPoint(x: dp.x, y: dp.y + 5), control1: CGPoint(x: dp.x + 5, y: dp.y), control2: CGPoint(x: dp.x + 5, y: dp.y + 5))
+            drop.addCurve(to: CGPoint(x: dp.x, y: dp.y - 6), control1: CGPoint(x: dp.x - 5, y: dp.y + 5), control2: CGPoint(x: dp.x - 5, y: dp.y))
+            g.fill(drop, with: .color(Color(hex: 0xE6F6FF, alpha: 0.92)))
+            StorybookArt.sparkle(g, at: dp, radius: 4.5, color: Theme.lemon, opacity: 0.95)
+        }
+    }
+
+    private static func moonberryTulip(_ ctx: GraphicsContext, _ p: Plant, _ base: CGPoint, _ bend: CGFloat, _ time: CGFloat, leafSag: CGFloat) {
+        let hgt = stemHeight(p)
+        let st = stem(base: base, height: hgt, bend: bend)
+        leaf(ctx, at: CGPoint(x: base.x - 2, y: base.y), angle: -.pi / 2 - 0.42 - leafSag + bend * 0.5, length: 74, width: 13, color: GRGB(0x529A7C), curl: -9)
+        drawStem(ctx, st, width: 4.5, color: GRGB(0x4E8E78))
+        leaf(ctx, at: CGPoint(x: base.x + 2, y: base.y), angle: -.pi / 2 + 0.4 + leafSag + bend * 0.5, length: 68, width: 12, color: GRGB(0x4B8B72), curl: 9)
+        moonberryTulipHead(ctx, at: st.top, angle: bend * 0.75, scale: 1.05, time: time)
+    }
+
+    private static func rainbowLavender(_ ctx: GraphicsContext, _ p: Plant, _ base: CGPoint, _ bend: CGFloat, _ time: CGFloat, leafSag: CGFloat) {
+        let hgt = stemHeight(p)
+        let offs: [CGFloat] = [-0.36, -0.18, 0, 0.18, 0.36]
+        let hs: [CGFloat] = [0.78, 0.92, 1.0, 0.92, 0.78]
+        let prism: [GRGB] = [
+            GRGB(0xFF7CA8), GRGB(0xFFB36B), GRGB(0xFFE36E), GRGB(0x7FE3A8),
+            GRGB(0x78C8FF), GRGB(0xB398FF), GRGB(0xF098FF)
+        ]
+
+        // Soft miniature shimmering rainbow arc hovering above the prism stalks
+        let arcCenter = CGPoint(x: base.x + sin(bend) * hgt * 0.8, y: base.y - hgt * 0.88)
+        let arcAlpha = 0.55 + 0.18 * Double(sin(time * 2.6))
+        for (k, col) in prism.prefix(5).enumerated() {
+            let rad: CGFloat = 42 - CGFloat(k) * 4.5
+            var arc = Path()
+            arc.addArc(center: arcCenter, radius: rad, startAngle: .degrees(205), endAngle: .degrees(335), clockwise: false)
+            ctx.stroke(arc, with: .color(col.color(arcAlpha)), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+        }
+
+        for j in [0, 4, 1, 3] {
+            leaf(ctx, at: base, angle: -.pi / 2 + offs[j] * 2.4, length: 30, width: 4.8, color: GRGB(0x7EC0A2))
+        }
+        for j in 0..<5 {
+            let st = stem(base: base, height: hgt * hs[j], bend: bend * 0.85 + offs[j] + (j < 2 ? -leafSag * 0.2 : leafSag * 0.2))
+            drawStem(ctx, st, width: 2.5, color: GRGB(0x6FA888))
+            for b in 0..<8 {
+                let t = 0.55 + CGFloat(b) * 0.056
+                let q = st.at(min(1, t))
+                let r = (4.6 - CGFloat(b) * 0.24)
+                let col = prism[(b + j) % prism.count]
+                for side in [-1.0, 1.0] as [CGFloat] {
+                    let cx = q.x + side * r * 0.58
+                    let bud = Path(ellipseIn: CGRect(x: cx - r, y: q.y - r, width: r * 2, height: r * 2.15))
+                    ctx.fill(bud, with: .color(col.color))
+                    ctx.stroke(bud, with: .color(col.shade(-0.38).color(0.55)), lineWidth: 0.9)
+                }
+            }
+        }
+        StorybookArt.sparkle(ctx, at: CGPoint(x: arcCenter.x - 28, y: arcCenter.y - 26), radius: 6, color: .white, opacity: 0.95)
+        StorybookArt.sparkle(ctx, at: CGPoint(x: arcCenter.x + 26, y: arcCenter.y - 28), radius: 5.5, color: Theme.lemon, opacity: 0.92)
+    }
+
+    private static func crystalPumpkinCarriage(_ ctx: GraphicsContext, at p: CGPoint, w: CGFloat, time: CGFloat) {
+        let hgt = w * 0.78
+        let pulse = 0.9 + 0.1 * sin(time * 3.5)
+
+        // Magical icy fairy aura
+        let glowR = w * 0.78
+        ctx.fill(
+            Path(ellipseIn: CGRect(x: p.x - glowR, y: p.y - hgt * 0.55 - glowR * 0.7, width: glowR * 2, height: glowR * 1.4)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xB8F0FF, alpha: 0.45 * Double(pulse)), Color(hex: 0xD8C6FF, alpha: 0.22), Color(hex: 0xD8C6FF, alpha: 0)]),
+                center: CGPoint(x: p.x, y: p.y - hgt * 0.52), startRadius: 6, endRadius: glowR
+            )
+        )
+
+        // Ornate golden fairytale carriage wheels beneath the crystal pumpkin
+        for side in [-1.0, 1.0] as [CGFloat] {
+            let wc = CGPoint(x: p.x + side * w * 0.34, y: p.y - w * 0.08)
+            let wr = w * 0.19
+            let wheel = Path(ellipseIn: CGRect(x: wc.x - wr, y: wc.y - wr, width: wr * 2, height: wr * 2))
+            ctx.stroke(wheel, with: .color(Color(hex: 0xF4BE42)), lineWidth: max(2.2, w * 0.04))
+            ctx.stroke(wheel, with: .color(StorybookArt.outline(for: 0xF4BE42).opacity(0.65)), lineWidth: 1.0)
+            for k in 0..<4 {
+                let a = CGFloat(k) * .pi / 4 + time * 0.4
+                var sp = Path()
+                sp.move(to: CGPoint(x: wc.x - cos(a) * wr, y: wc.y - sin(a) * wr))
+                sp.addLine(to: CGPoint(x: wc.x + cos(a) * wr, y: wc.y + sin(a) * wr))
+                ctx.stroke(sp, with: .color(Color(hex: 0xFFE38A)), lineWidth: 1.4)
+            }
+            ctx.fill(Path(ellipseIn: CGRect(x: wc.x - 3, y: wc.y - 3, width: 6, height: 6)), with: .color(Color(hex: 0xFFF3B8)))
+        }
+
+        // Faceted crystalline sky-blue & pearl-lavender pumpkin lobes
+        let lobes: [CGFloat] = [-0.36, 0.36, -0.15, 0.15, 0]
+        let widths: [CGFloat] = [0.48, 0.48, 0.50, 0.50, 0.45]
+        let crystalCols: [GRGB] = [GRGB(0x90DCFF), GRGB(0xB8C6FF), GRGB(0xB0ECFF), GRGB(0xD8CCFF), GRGB(0xDCF8FF)]
+        for (k, o) in lobes.enumerated() {
+            let lw = w * widths[k]
+            let rect = CGRect(x: p.x + o * w - lw / 2, y: p.y - hgt - w * 0.06, width: lw, height: hgt)
+            let lc = crystalCols[k]
+            let grad = Gradient(colors: [.white.opacity(0.92), lc.color(0.92), lc.shade(-0.18).color(0.95)])
+            ctx.fill(Path(ellipseIn: rect), with: .linearGradient(grad, startPoint: CGPoint(x: rect.minX, y: rect.minY), endPoint: CGPoint(x: rect.maxX, y: rect.maxY)))
+            ctx.stroke(Path(ellipseIn: rect), with: .color(Color(hex: 0x62A8E0, alpha: 0.85)), lineWidth: 1.5)
+        }
+
+        // Golden carriage arched window
+        let win = Path(roundedRect: CGRect(x: p.x - w * 0.13, y: p.y - hgt * 0.72 - w * 0.06, width: w * 0.26, height: hgt * 0.42), cornerRadius: w * 0.13)
+        StorybookArt.fillAndStroke(ctx, win, fill: Color(hex: 0xFFF8D6, alpha: 0.95), stroke: Color(hex: 0xF2B830), width: 2.2)
+
+        // Golden fairytale crown finial on top
+        let crownY = p.y - hgt - w * 0.05
+        var tiara = Path()
+        tiara.move(to: CGPoint(x: p.x - w * 0.16, y: crownY + 2))
+        tiara.addLine(to: CGPoint(x: p.x - w * 0.19, y: crownY - w * 0.14))
+        tiara.addLine(to: CGPoint(x: p.x - w * 0.06, y: crownY - w * 0.06))
+        tiara.addLine(to: CGPoint(x: p.x, y: crownY - w * 0.21))
+        tiara.addLine(to: CGPoint(x: p.x + w * 0.06, y: crownY - w * 0.06))
+        tiara.addLine(to: CGPoint(x: p.x + w * 0.19, y: crownY - w * 0.14))
+        tiara.addLine(to: CGPoint(x: p.x + w * 0.16, y: crownY + 2))
+        tiara.closeSubpath()
+        StorybookArt.shape(ctx, tiara, hex: 0xFFD95A, width: 1.8)
+
+        StorybookArt.sparkle(ctx, at: CGPoint(x: p.x - w * 0.36, y: p.y - hgt - 2), radius: 7.5 * pulse, color: .white, opacity: 0.96)
+        StorybookArt.sparkle(ctx, at: CGPoint(x: p.x + w * 0.34, y: p.y - hgt * 0.78), radius: 6 * pulse, color: Theme.lemon, opacity: 0.95)
+    }
+
+    private static func crystalPumpkin(_ ctx: GraphicsContext, _ p: Plant, _ base: CGPoint, _ bend: CGFloat, _ time: CGFloat, leafSag: CGFloat) {
+        let hgt = stemHeight(p)
+        let leaves: [(CGFloat, CGFloat, CGFloat)] = [(-0.55 - leafSag * 0.3, 0.92, 23), (0.45 + leafSag * 0.3, 0.74, 20), (-0.12, 0.98, 25)]
+        for (j, l) in leaves.enumerated() {
+            let st = stem(base: base, height: hgt * l.1, bend: bend + l.0)
+            drawStem(ctx, st, width: 2.2, color: GRGB(0x69B8A4))
+            lobedLeaf(ctx, at: st.top, r: l.2, angle: bend * 0.5 + CGFloat(j), color: GRGB(0x6AC2B2))
+        }
+        if !(p.growth >= 1 && p.left == 0) {
+            let w: CGFloat = 76 * (p.giant ? 1.24 : 1.0)
+            crystalPumpkinCarriage(ctx, at: CGPoint(x: base.x + 8, y: base.y + 4), w: w, time: time)
+        }
+    }
+
+    private static func goldenHeartBerry(_ ctx: GraphicsContext, at p: CGPoint, size: CGFloat, time: CGFloat) {
+        var g = ctx
+        g.translateBy(x: p.x, y: p.y)
+        let r = size
+        var heart = Path()
+        heart.move(to: CGPoint(x: 0, y: -r * 0.35))
+        heart.addCurve(to: CGPoint(x: r, y: -r * 0.2), control1: CGPoint(x: r * 0.35, y: -r * 1.15), control2: CGPoint(x: r * 1.1, y: -r * 0.85))
+        heart.addCurve(to: CGPoint(x: 0, y: r * 1.05), control1: CGPoint(x: r * 0.95, y: r * 0.4), control2: CGPoint(x: r * 0.32, y: r * 0.72))
+        heart.addCurve(to: CGPoint(x: -r, y: -r * 0.2), control1: CGPoint(x: -r * 0.32, y: r * 0.72), control2: CGPoint(x: -r * 0.95, y: r * 0.4))
+        heart.addCurve(to: CGPoint(x: 0, y: -r * 0.35), control1: CGPoint(x: -r * 1.1, y: -r * 0.85), control2: CGPoint(x: -r * 0.35, y: -r * 1.15))
+        heart.closeSubpath()
+
+        let grad = Gradient(colors: [Color(hex: 0xFFF4B8), Color(hex: 0xFFD052), Color(hex: 0xFF7FA8)])
+        g.fill(heart, with: .radialGradient(grad, center: CGPoint(x: -r * 0.28, y: -r * 0.32), startRadius: 1, endRadius: r * 1.5))
+        g.stroke(heart, with: .color(StorybookArt.outline(for: 0xE68646)), lineWidth: 1.5)
+        StorybookArt.highlight(g, in: CGRect(x: -r * 0.56, y: -r * 0.55, width: r * 0.36, height: r * 0.28), opacity: 0.7)
+
+        // Starry leaf cap
+        var cap = Path()
+        for i in 0..<10 {
+            let a = CGFloat(i) / 10 * 2 * .pi
+            let rr = i % 2 == 0 ? r * 0.62 : r * 0.22
+            let pt = CGPoint(x: cos(a) * rr, y: -r * 0.68 + sin(a) * rr * 0.35)
+            if i == 0 { cap.move(to: pt) } else { cap.addLine(to: pt) }
+        }
+        cap.closeSubpath()
+        g.fill(cap, with: .color(GRGB(0x52B256).color))
+        let tw = 0.7 + 0.3 * sin(time * 4 + p.x)
+        StorybookArt.sparkle(g, at: CGPoint(x: r * 0.55, y: -r * 0.55), radius: r * 0.45 * tw, color: .white, opacity: 0.95)
+    }
+
+    private static func sparkleBerryVine(_ ctx: GraphicsContext, _ p: Plant, _ base: CGPoint, _ bend: CGFloat, _ time: CGFloat, leafSag: CGFloat) {
+        let hgt = stemHeight(p)
+        let stake = CGRect(x: base.x + 12, y: base.y - 188, width: 7, height: 192)
+        StorybookArt.shape(ctx, Path(roundedRect: stake, cornerRadius: 3), hex: 0xE2B67A, width: 1.4)
+        let st = stem(base: base, height: hgt, bend: bend * 0.6)
+        drawStem(ctx, st, width: 4.5, color: GRGB(0x4EA854))
+
+        for (j, t) in ([0.22, 0.42, 0.62, 0.80] as [CGFloat]).enumerated() {
+            let side: CGFloat = j % 2 == 0 ? -1 : 1
+            let q = st.at(t)
+            leaf(ctx, at: q, angle: (side < 0 ? .pi + 0.4 - leafSag : -0.4 + leafSag), length: 30, width: 13, color: GRGB(0x52B45C), curl: side * 5)
+        }
+
+        let vineSpots: [CGPoint] = [
+            CGPoint(x: -26, y: 126),
+            CGPoint(x: 24, y: 98),
+            CGPoint(x: -14, y: 66),
+        ]
+        let picked = p.growth >= 1 ? max(0, HybridKind.sparkleBerryVine.crop - p.left) : 0
+        for (j, s) in vineSpots.enumerated() where j >= picked {
+            let fp = CGPoint(x: base.x + s.x + sin(bend) * s.y, y: base.y - s.y)
+            var tendril = Path()
+            tendril.move(to: CGPoint(x: base.x + sin(bend) * s.y * 0.6, y: fp.y - 16))
+            tendril.addQuadCurve(to: CGPoint(x: fp.x, y: fp.y - 8), control: CGPoint(x: fp.x, y: fp.y - 18))
+            ctx.stroke(tendril, with: .color(GRGB(0x52B256).color), lineWidth: 1.8)
+            goldenHeartBerry(ctx, at: fp, size: 15, time: time + CGFloat(j))
+        }
+    }
+
+    static func drawHybridIcon(_ ctx: GraphicsContext, hybrid: HybridKind, at p: CGPoint, size s: CGFloat, rot: CGFloat = 0, time: CGFloat = 0) {
+        var g = ctx
+        g.translateBy(x: p.x, y: p.y)
+        g.rotate(by: .radians(Double(rot)))
+        g.scaleBy(x: s, y: s)
+        switch hybrid {
+        case .starlightRose:
+            starlightRoseHead(g, at: .zero, angle: 0, scale: 0.72, time: time)
+        case .cottonSunflower:
+            cottonSunflowerHead(g, at: .zero, angle: 0, scale: 0.64, time: time)
+        case .moonberryTulip:
+            moonberryTulipHead(g, at: CGPoint(x: 0, y: 18), angle: 0, scale: 0.85, time: time)
+        case .rainbowLavender:
+            let prism: [GRGB] = [GRGB(0xFF7CA8), GRGB(0xFFB36B), GRGB(0xFFE36E), GRGB(0x7FE3A8), GRGB(0x78C8FF), GRGB(0xB398FF)]
+            for (k, col) in prism.prefix(4).enumerated() {
+                var arc = Path()
+                arc.addArc(center: CGPoint(x: 0, y: -4), radius: 24 - CGFloat(k) * 3.5, startAngle: .degrees(205), endAngle: .degrees(335), clockwise: false)
+                g.stroke(arc, with: .color(col.color(0.85)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+            }
+            for b in 0..<6 {
+                let y = 10 - CGFloat(b) * 5.2
+                let r: CGFloat = 4.2 - CGFloat(b) * 0.25
+                let col = prism[b % prism.count]
+                for side in [-1.0, 1.0] as [CGFloat] {
+                    g.fill(Path(ellipseIn: CGRect(x: side * r * 0.55 - r, y: y - r, width: r * 2, height: r * 2.1)), with: .color(col.color))
+                }
+            }
+            var st = Path()
+            st.move(to: CGPoint(x: 0, y: 12))
+            st.addLine(to: CGPoint(x: 0, y: 24))
+            g.stroke(st, with: .color(GRGB(0x6FA888).color), lineWidth: 2.2)
+        case .crystalPumpkin:
+            crystalPumpkinCarriage(g, at: CGPoint(x: 0, y: 18), w: 46, time: time)
+        case .sparkleBerryVine:
+            goldenHeartBerry(g, at: CGPoint(x: 0, y: 2), size: 17, time: time)
+        }
+    }
+
     // MARK: Picked crops & bouquet flowers
 
-    static func drawBouquetStem(_ ctx: GraphicsContext, kind: PlantKind, variant: Int, angle: CGFloat, stemLength: CGFloat) {
+    static func drawBouquetStem(
+        _ ctx: GraphicsContext,
+        kind: PlantKind,
+        variant: Int,
+        angle: CGFloat,
+        stemLength: CGFloat,
+        hybrid: HybridKind? = nil,
+        time: CGFloat = 0
+    ) {
         var g = ctx
         g.rotate(by: .radians(Double(angle)))
         let st = stem(base: .zero, height: stemLength, bend: angle * 0.18)
         drawStem(g, st, width: 3.2, color: stemGreen)
         leaf(g, at: st.at(0.45), angle: -.pi / 2 + (angle >= 0 ? 0.65 : -0.65), length: 18, width: 6, color: leafGreen)
         let head = st.top
+        if let hybrid {
+            drawHybridIcon(g, hybrid: hybrid, at: head, size: 0.72, rot: 0, time: time)
+            return
+        }
         switch kind {
         case .sunflower:
             var hg = g
@@ -852,5 +1292,17 @@ enum GardenPlants {
             st.addLine(to: CGPoint(x: 0, y: 20 * s))
             g.stroke(st, with: .color(GRGB(0x7E9F6E).color), lineWidth: 2)
         }
+    }
+
+    static func drawBasketItem(_ ctx: GraphicsContext, entry: String, at p: CGPoint, size s: CGFloat, rot: CGFloat, time: CGFloat = 0) {
+        let parts = entry.split(separator: ":")
+        guard let head = parts.first else { return }
+        if head == "hybrid", parts.count > 1, let h = HybridKind(rawValue: String(parts[1])) {
+            drawHybridIcon(ctx, hybrid: h, at: p, size: s, rot: rot, time: time)
+            return
+        }
+        guard let kind = PlantKind(rawValue: String(head)) else { return }
+        let v = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        drawCrop(ctx, kind: kind, variant: v, at: p, size: s, rot: rot)
     }
 }

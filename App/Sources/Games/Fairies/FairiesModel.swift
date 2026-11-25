@@ -22,6 +22,59 @@ struct FairyPalette: Equatable {
     let eye: UInt32
 }
 
+enum FairyEncounterKind: String, CaseIterable, Codable, Equatable, Hashable {
+    case flutterDash
+    case bubblePop
+    case chimeEcho
+    case treatLure
+}
+
+enum MeadowTreatKind: String, CaseIterable, Codable, Identifiable, Hashable {
+    case strawberry
+    case honeyDrop
+    case bungeoppang
+    case silkSwirl
+
+    var id: String { rawValue }
+
+    var accentHex: UInt32 {
+        switch self {
+        case .strawberry: return 0xFF6B92
+        case .honeyDrop: return 0xFFC53D
+        case .bungeoppang: return 0xF5B54D
+        case .silkSwirl: return 0x9EE3CB
+        }
+    }
+}
+
+enum FairyWish: String, CaseIterable, Codable, Identifiable, Hashable {
+    case snack
+    case bubbles
+    case swing
+    case dance
+    case sleep
+    case carousel
+
+    var id: String { rawValue }
+
+    var matchingSpot: CompactSpot? {
+        switch self {
+        case .snack: return .treatTable
+        case .bubbles: return .teacupBath
+        case .swing: return .rainbowSwing
+        case .dance: return .danceStage
+        case .sleep: return .cloudBed
+        case .carousel: return nil
+        }
+    }
+}
+
+enum CompactTableTreatKind: String, CaseIterable, Equatable {
+    case macaron
+    case bungeoppang
+    case celadonTea
+}
+
 enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
     case heart
     case star
@@ -48,6 +101,15 @@ enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
         case .star, .moon: return .curls
         case .berry, .dewdrop, .blossom: return .bob
         case .silk: return .braidCrown
+        }
+    }
+
+    var encounterKind: FairyEncounterKind {
+        switch self {
+        case .heart, .ribbon, .blossom: return .flutterDash
+        case .dewdrop, .cloud: return .bubblePop
+        case .melody, .star, .moon: return .chimeEcho
+        case .berry, .peach, .honey, .silk: return .treatLure
         }
     }
 
@@ -251,7 +313,7 @@ enum MeadowChime: Int, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var hitRadius: CGFloat { 46 }
+    var hitRadius: CGFloat { 50 }
 }
 
 enum CompactSpot: String, CaseIterable, Codable, Identifiable, Hashable {
@@ -265,11 +327,11 @@ enum CompactSpot: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var center: CGPoint {
         switch self {
-        case .cloudBed: return CGPoint(x: 288, y: 320)
-        case .rainbowSwing: return CGPoint(x: 736, y: 314)
-        case .danceStage: return CGPoint(x: 512, y: 416)
-        case .teacupBath: return CGPoint(x: 300, y: 508)
-        case .treatTable: return CGPoint(x: 724, y: 508)
+        case .cloudBed: return CGPoint(x: 288, y: 306)
+        case .rainbowSwing: return CGPoint(x: 736, y: 302)
+        case .danceStage: return CGPoint(x: 512, y: 404)
+        case .teacupBath: return CGPoint(x: 300, y: 492)
+        case .treatTable: return CGPoint(x: 724, y: 492)
         }
     }
 
@@ -279,7 +341,7 @@ enum CompactSpot: String, CaseIterable, Codable, Identifiable, Hashable {
         case .rainbowSwing: return CGPoint(x: 0, y: 8)
         case .danceStage: return CGPoint(x: 0, y: -32)
         case .teacupBath: return CGPoint(x: 0, y: -18)
-        case .treatTable: return CGPoint(x: 0, y: -24)
+        case .treatTable: return CGPoint(x: 0, y: -26)
         }
     }
 
@@ -325,11 +387,43 @@ enum FairyMood: Equatable {
 }
 
 struct FairiesSave: Equatable {
+    static let maxCompactFairies = 8
+
     var befriended: [FairyKind]
     var spotOccupants: [CompactSpot: FairyKind]
     var accessories: [FairyKind: FairyAccessory]
     var pinnedFairy: FairyKind?
     var totalCatches: Int
+    var roamingFairies: [FairyKind]
+
+    init(
+        befriended: [FairyKind],
+        spotOccupants: [CompactSpot: FairyKind],
+        accessories: [FairyKind: FairyAccessory],
+        pinnedFairy: FairyKind?,
+        totalCatches: Int,
+        roamingFairies: [FairyKind]? = nil
+    ) {
+        self.befriended = befriended
+        self.spotOccupants = spotOccupants
+        self.accessories = accessories
+        self.pinnedFairy = pinnedFairy
+        self.totalCatches = totalCatches
+        if let roaming = roamingFairies {
+            var unique: [FairyKind] = []
+            for kind in roaming where befriended.contains(kind) && !unique.contains(kind) && unique.count < Self.maxCompactFairies {
+                unique.append(kind)
+            }
+            for spot in CompactSpot.allCases {
+                if let kind = spotOccupants[spot], befriended.contains(kind), !unique.contains(kind), unique.count < Self.maxCompactFairies {
+                    unique.append(kind)
+                }
+            }
+            self.roamingFairies = unique
+        } else {
+            self.roamingFairies = CompactSpot.allCases.compactMap { spotOccupants[$0] }
+        }
+    }
 
     static var starter: FairiesSave {
         FairiesSave(
@@ -349,6 +443,7 @@ extension FairiesSave: Codable {
         case accessories
         case pinnedFairy
         case totalCatches
+        case roamingFairies
     }
 
     init(from decoder: Decoder) throws {
@@ -383,6 +478,23 @@ extension FairiesSave: Codable {
         let rawPinned = try? c.decodeIfPresent(FairyKind.self, forKey: .pinnedFairy)
         self.pinnedFairy = rawPinned.flatMap { unique.contains($0) ? $0 : nil }
         self.totalCatches = max(0, (try? c.decode(Int.self, forKey: .totalCatches)) ?? 0)
+
+        let decodedRoaming = try? c.decodeIfPresent([FairyKind].self, forKey: .roamingFairies)
+        if let decodedRoaming {
+            var uniqueRoaming: [FairyKind] = []
+            for kind in decodedRoaming where unique.contains(kind) && !uniqueRoaming.contains(kind) && uniqueRoaming.count < Self.maxCompactFairies {
+                uniqueRoaming.append(kind)
+            }
+            for spot in CompactSpot.allCases {
+                if let kind = spots[spot], !uniqueRoaming.contains(kind), uniqueRoaming.count < Self.maxCompactFairies {
+                    uniqueRoaming.append(kind)
+                }
+            }
+            self.roamingFairies = uniqueRoaming
+        } else {
+            // Backward compatibility with legacy saves that only persisted spotOccupants.
+            self.roamingFairies = CompactSpot.allCases.compactMap { spots[$0] }
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -400,15 +512,39 @@ extension FairiesSave: Codable {
         try c.encode(accDict, forKey: .accessories)
         try c.encodeIfPresent(pinnedFairy, forKey: .pinnedFairy)
         try c.encode(totalCatches, forKey: .totalCatches)
+        try c.encode(roamingFairies, forKey: .roamingFairies)
     }
 }
 
 enum FGeo {
-    static let compactCenter = CGPoint(x: 512, y: 422)
+    static let compactCenter = CGPoint(x: 512, y: 406)
     static let compactWidth: CGFloat = 824
-    static let compactHeight: CGFloat = 574
+    static let compactHeight: CGFloat = 556
     static let meadowHorizonY: CGFloat = 456
-    static let returnDropY: CGFloat = 684
-    static let returnBadgeCenter = CGPoint(x: 512, y: 668)
-    static let wandHomeCenter = CGPoint(x: 118, y: 768)
+    static let treatMatCenter = CGPoint(x: 512, y: 506)
+    static let treatMatRadius: CGFloat = 104
+    static let catchCenter = CGPoint(x: 512, y: 332)
+    static let carouselCenter = CGPoint(x: 398, y: 444)
+    static let chandelierCenter = CGPoint(x: 512, y: 244)
+    static let returnDropY: CGFloat = 656
+    static let returnBadgeCenter = CGPoint(x: 512, y: 644)
+    static let wandHomeCenter = CGPoint(x: 118, y: GameChromeLayout.dockY)
+
+    static let flutterPerches: [CGPoint] = [
+        CGPoint(x: 204, y: 404),
+        CGPoint(x: 312, y: 246),
+        CGPoint(x: 472, y: 342),
+        CGPoint(x: 716, y: 244),
+        CGPoint(x: 816, y: 402),
+    ]
+
+    static func clampToCompactInterior(_ point: CGPoint) -> CGPoint {
+        let cy = compactCenter.y
+        let y = max(258, min(556, point.y))
+        // Taper horizontal bounds gently near the pointed bottom of the heart compact.
+        let lowerRatio = max(0, (y - (cy + 30)) / 140)
+        let halfW: CGFloat = 296 - lowerRatio * 124
+        let x = max(compactCenter.x - halfW, min(compactCenter.x + halfW, point.x))
+        return CGPoint(x: x, y: y)
+    }
 }

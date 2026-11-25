@@ -59,15 +59,94 @@ struct AquariumRoomBackdrop: View {
     }
 }
 
+struct AquaStaticTankBackdrop: View {
+    let isNight: Bool
+
+    var body: some View {
+        Canvas { ctx, _ in
+            AquaPainter.drawStaticBackdrop(ctx, night: isNight ? 1 : 0)
+        }
+        .drawingGroup()
+        .allowsHitTesting(false)
+    }
+}
+
 enum AquaPainter {
-    // MARK: - Slow layer (30 fps)
+    // MARK: - Cached static backdrop (rendered once per day/night mode)
+
+    static func drawStaticBackdrop(_ ctx: GraphicsContext, night n: CGFloat) {
+        cabinet(ctx, n)
+        waterBase(ctx, n)
+        sandStatic(ctx, n)
+    }
 
     static func drawBackdrop(_ ctx: GraphicsContext, sim: AquariumSim) {
         let t = CGFloat(sim.time)
         let n = sim.night
-        cabinet(ctx, n)
-        water(ctx, n, t)
-        sand(ctx, n, t)
+        drawStaticBackdrop(ctx, night: n)
+        drawWaterShimmer(ctx, sim: sim, time: t)
+    }
+
+    static func drawWaterShimmer(_ ctx: GraphicsContext, sim: AquariumSim, time t: CGFloat) {
+        let n = sim.night
+        var clipped = ctx
+        clipped.clip(to: Path(AGeo.tank))
+
+        // Soft translucent diagonal light-shimmer ribbons descending from the hood light bar.
+        let day = Double(1 - n)
+        let ribbonColor = day > 0.25 ? ARGB(0xFFFDF0) : ARGB(0xB8CCFF)
+        let ribbonAlpha = day > 0.25 ? 0.20 * day : 0.14 * Double(n)
+        for k in 0..<5 {
+            let xTop = 138 + CGFloat(k) * 182 + sin(t * 0.25 + CGFloat(k) * 1.6) * 26
+            let halfW: CGFloat = 24 + 8 * sin(t * 0.45 + CGFloat(k))
+            let lean: CGFloat = 78
+            var ribbon = Path()
+            ribbon.move(to: CGPoint(x: xTop - halfW, y: AGeo.rimY))
+            ribbon.addLine(to: CGPoint(x: xTop + halfW, y: AGeo.rimY))
+            ribbon.addQuadCurve(
+                to: CGPoint(x: xTop + lean + halfW * 2.4, y: 632),
+                control: CGPoint(x: xTop + lean * 0.5 + halfW * 1.8 + sin(t * 0.7 + CGFloat(k)) * 12, y: 390)
+            )
+            ribbon.addLine(to: CGPoint(x: xTop + lean - halfW * 2.1, y: 632))
+            ribbon.addQuadCurve(
+                to: CGPoint(x: xTop - halfW, y: AGeo.rimY),
+                control: CGPoint(x: xTop + lean * 0.5 - halfW * 1.4 + sin(t * 0.7 + CGFloat(k)) * 12, y: 390)
+            )
+            ribbon.closeSubpath()
+            clipped.fill(
+                ribbon,
+                with: .linearGradient(
+                    Gradient(colors: [
+                        ribbonColor.color(ribbonAlpha * 0.85),
+                        ribbonColor.color(ribbonAlpha * 0.45),
+                        ribbonColor.color(0),
+                    ]),
+                    startPoint: CGPoint(x: xTop, y: AGeo.rimY),
+                    endPoint: CGPoint(x: xTop + lean, y: 632)
+                )
+            )
+        }
+
+        // Soft undulating sunlit shimmer bands pooled gently along the sand crest.
+        var sandClip = ctx
+        sandClip.clip(to: AquaPainter.sandPath)
+        let shimmerAlpha = Double(1 - n * 0.75) * 0.24
+        for row in 0..<2 {
+            var band = Path()
+            let yOff = CGFloat(row) * 20 + 10
+            var x = AGeo.left
+            band.move(to: CGPoint(x: x, y: AGeo.sand(x) + yOff))
+            while x <= AGeo.right {
+                let wave = sin(x * 0.022 + t * (0.9 + CGFloat(row) * 0.35) + CGFloat(row) * 2.1) * 5
+                band.addLine(to: CGPoint(x: x, y: AGeo.sand(x) + yOff + wave))
+                x += 24
+            }
+            sandClip.stroke(
+                band,
+                with: .color(ARGB(0xFFFBE6).color(shimmerAlpha * (row == 0 ? 1 : 0.6))),
+                style: StrokeStyle(lineWidth: row == 0 ? 10 : 7, lineCap: .round, lineJoin: .round)
+            )
+        }
     }
 
     private static func cabinet(_ g: GraphicsContext, _ n: CGFloat) {
@@ -128,7 +207,7 @@ enum AquaPainter {
         g.stroke(edge, with: .color(trim.color(0.7)), lineWidth: 2)
     }
 
-    private static func water(_ g: GraphicsContext, _ n: CGFloat, _ t: CGFloat) {
+    private static func waterBase(_ g: GraphicsContext, _ n: CGFloat) {
         let tank = AGeo.tank
         let top = ARGB(0x8EE2F4).mix(ARGB(0x183E72), n)
         let mid = ARGB(0x45B5DC).mix(ARGB(0x102D5A), n)
@@ -148,48 +227,13 @@ enum AquaPainter {
         // Distant soft hazy reef silhouettes in the background.
         clipped.fill(AquaPainter.backPlants, with: .color(deep.mix(ARGB(0x2F8A6A), 0.5).color(0.42)))
 
-        // Soft translucent diagonal light-shimmer ribbons descending straight from the hood's integrated light bar.
-        let day = Double(1 - n)
-        let ribbonColor = day > 0.25 ? ARGB(0xFFFDF0) : ARGB(0xB8CCFF)
-        let ribbonAlpha = day > 0.25 ? 0.21 * day : 0.14 * Double(n)
-        for k in 0..<5 {
-            let xTop = 138 + CGFloat(k) * 182 + sin(t * 0.25 + CGFloat(k) * 1.6) * 26
-            let halfW: CGFloat = 24 + 8 * sin(t * 0.45 + CGFloat(k))
-            let lean: CGFloat = 78
-            var ribbon = Path()
-            ribbon.move(to: CGPoint(x: xTop - halfW, y: AGeo.rimY))
-            ribbon.addLine(to: CGPoint(x: xTop + halfW, y: AGeo.rimY))
-            ribbon.addQuadCurve(
-                to: CGPoint(x: xTop + lean + halfW * 2.4, y: 632),
-                control: CGPoint(x: xTop + lean * 0.5 + halfW * 1.8 + sin(t * 0.7 + CGFloat(k)) * 12, y: 390)
-            )
-            ribbon.addLine(to: CGPoint(x: xTop + lean - halfW * 2.1, y: 632))
-            ribbon.addQuadCurve(
-                to: CGPoint(x: xTop - halfW, y: AGeo.rimY),
-                control: CGPoint(x: xTop + lean * 0.5 - halfW * 1.4 + sin(t * 0.7 + CGFloat(k)) * 12, y: 390)
-            )
-            ribbon.closeSubpath()
-            clipped.fill(
-                ribbon,
-                with: .linearGradient(
-                    Gradient(colors: [
-                        ribbonColor.color(ribbonAlpha * 0.85),
-                        ribbonColor.color(ribbonAlpha * 0.45),
-                        ribbonColor.color(0),
-                    ]),
-                    startPoint: CGPoint(x: xTop, y: AGeo.rimY),
-                    endPoint: CGPoint(x: xTop + lean, y: 632)
-                )
-            )
-        }
-
         // Pump air line tucked down the back right corner.
         let tube = Path(roundedRect: CGRect(x: 932, y: AGeo.rimY - 2, width: 8, height: AGeo.sand(936) - AGeo.rimY), cornerRadius: 4)
         clipped.fill(tube, with: .color(.white.opacity(0.22)))
         clipped.stroke(tube, with: .color(.white.opacity(0.35)), lineWidth: 1)
     }
 
-    private static func sand(_ g: GraphicsContext, _ n: CGFloat, _ t: CGFloat) {
+    private static func sandStatic(_ g: GraphicsContext, _ n: CGFloat) {
         let light = ARGB(0xF6E3BC).mix(ARGB(0x3B4C6D), n * 0.78)
         let dark = ARGB(0xD8B786).mix(ARGB(0x273452), n * 0.78)
         g.fill(
@@ -206,27 +250,6 @@ enum AquaPainter {
             g.fill(pebbles[i], with: .color(tints[i].mix(ARGB(0x2A3350), n * 0.7).color(0.85)))
         }
         g.fill(AquaPainter.grains, with: .color(dark.shade(-0.2).color(0.38)))
-
-        // Soft undulating sunlit shimmer bands pooled gently along the sand crest (no harsh white ovals).
-        var sandClip = g
-        sandClip.clip(to: AquaPainter.sandPath)
-        let shimmerAlpha = Double(1 - n * 0.75) * 0.24
-        for row in 0..<2 {
-            var band = Path()
-            let yOff = CGFloat(row) * 20 + 10
-            var x = AGeo.left
-            band.move(to: CGPoint(x: x, y: AGeo.sand(x) + yOff))
-            while x <= AGeo.right {
-                let wave = sin(x * 0.022 + t * (0.9 + CGFloat(row) * 0.35) + CGFloat(row) * 2.1) * 5
-                band.addLine(to: CGPoint(x: x, y: AGeo.sand(x) + yOff + wave))
-                x += 18
-            }
-            sandClip.stroke(
-                band,
-                with: .color(ARGB(0xFFFBE6).color(shimmerAlpha * (row == 0 ? 1 : 0.6))),
-                style: StrokeStyle(lineWidth: row == 0 ? 10 : 7, lineCap: .round, lineJoin: .round)
-            )
-        }
     }
 
     static let sandPath: Path = {
@@ -286,14 +309,20 @@ enum AquaPainter {
     static func draw(_ g: GraphicsContext, sim: AquariumSim) {
         let t = CGFloat(sim.time)
 
+        drawWaterShimmer(g, sim: sim, time: t)
+
         var w = g
         w.clip(to: Path(AGeo.tank))
 
         updraftColumns(w, sim, t)
+        clams(w, sim, t)
         for d in sim.decor where !d.held { AquaDecorPainter.draw(w, d, time: t) }
+        hiddenSurprises(w, sim, t)
+        eggs(w, sim, t)
         finds(w, sim, t, layer: 0)
         food(w, sim, under: true)
         bubbles(w, sim, back: true)
+        ribbonDanceHalo(w, sim, t)
 
         // Back half of drifting bubble hoops sits behind swimming fish.
         for h in sim.hoops {
@@ -309,6 +338,8 @@ enum AquaPainter {
             let f = sim.fish[i]
             AquaFishPainter.draw(w, f, time: t, pitch: sim.fishPitch(f))
         }
+
+        submarine(w, sim, t)
 
         // Front half of drifting bubble hoops overlaps fish so they visibly pass through the ring.
         for h in sim.hoops {
@@ -338,6 +369,82 @@ enum AquaPainter {
         for d in sim.decor where d.held { AquaDecorPainter.draw(g, d, time: t) }
         tool(g, sim, t)
         drawQuickAction(g, sim, t)
+    }
+
+    private static func clams(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        for c in sim.clams {
+            var cg = g
+            cg.translateBy(x: c.x, y: c.y)
+            AquaDecorPainter.singingClam(cg, shellHex: c.shellHex, open: c.open, bounce: c.bounce, time: t)
+        }
+    }
+
+    private static func hiddenSurprises(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        for spot in sim.hiddenSpots where spot.pop > 0.02 {
+            var sg = g
+            sg.translateBy(x: spot.p.x, y: spot.p.y)
+            AquaDecorPainter.hiddenSurprise(sg, kind: spot.kind, pop: spot.pop, time: t, night: sim.night)
+        }
+    }
+
+    private static func eggs(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        for e in sim.eggs {
+            var eg = g
+            eg.translateBy(x: e.x, y: e.y)
+            eg.rotate(by: .radians(Double(e.wobble)))
+            AquaDecorPainter.egg(eg, palette: e.palette, taps: e.taps, time: t + e.shimmerPhase)
+        }
+    }
+
+    private static func submarine(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        guard sim.submarine.active else { return }
+        let sub = sim.submarine
+        var sg = g
+        let bob = sin(sub.bobPhase) * 3.5
+        sg.translateBy(x: sub.p.x, y: sub.p.y + bob)
+        let tilt = max(-0.18, min(0.18, sub.v.dy * 0.0011))
+        sg.rotate(by: .radians(Double(tilt)))
+        AquaDecorPainter.submarine(
+            sg,
+            propPhase: sub.propPhase,
+            facing: sub.facing,
+            beamAngle: sub.beamAngle,
+            night: sim.night,
+            time: t
+        )
+    }
+
+    private static func ribbonDanceHalo(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
+        guard sim.isRibbonDanceActive else { return }
+        let remain = CGFloat(sim.ribbonDanceUntil - sim.time)
+        let fade = min(1, CGFloat(sim.time - sim.ribbonDanceStart) / 0.5, remain / 0.8)
+        guard fade > 0.02 else { return }
+        var heartLoop = Path()
+        let steps = 40
+        for k in 0...steps {
+            let a = CGFloat(k) / CGFloat(steps) * 2 * .pi
+            let sA = sin(a)
+            let pt = CGPoint(x: 512 + 195 * sA * sA * sA, y: 368 - (120 * cos(a) - 46 * cos(2 * a) - 18 * cos(3 * a)))
+            if k == 0 { heartLoop.move(to: pt) } else { heartLoop.addLine(to: pt) }
+        }
+        heartLoop.closeSubpath()
+        let grad = Gradient(colors: [
+            ARGB(0xFF9EC6).color(Double(0.28 * fade)),
+            ARGB(0xFFE88A).color(Double(0.28 * fade)),
+            ARGB(0x98F0D6).color(Double(0.28 * fade)),
+            ARGB(0xB8C6FF).color(Double(0.28 * fade)),
+            ARGB(0xFF9EC6).color(Double(0.28 * fade)),
+        ])
+        g.stroke(
+            heartLoop,
+            with: .linearGradient(grad, startPoint: CGPoint(x: 320, y: 240), endPoint: CGPoint(x: 704, y: 500)),
+            style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round)
+        )
+        g.stroke(
+            heartLoop,
+            with: .color(.white.opacity(Double(0.32 * fade))),
+            style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+        )
     }
 
     private static func updraftColumns(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
@@ -385,22 +492,39 @@ enum AquaPainter {
 
     private static func food(_ g: GraphicsContext, _ sim: AquariumSim, under: Bool) {
         var paths = [Path(), Path(), Path(), Path()]
-        var any = false
+        var pearlHalos = Path(), pearlCores = Path(), pearlGlints = Path()
+        var anyFlake = false
+        var anyPearl = false
         for f in sim.food {
             let low = f.state == .sinking || f.state == .settled
             guard low == under else { continue }
-            any = true
-            let c = cos(f.rot), s = sin(f.rot)
-            let w: CGFloat = 4.7, h: CGFloat = 3.3
-            paths[f.hue].move(to: CGPoint(x: f.p.x + c * w - s * h, y: f.p.y + s * w + c * h))
-            paths[f.hue].addLine(to: CGPoint(x: f.p.x - c * w - s * h, y: f.p.y - s * w + c * h))
-            paths[f.hue].addLine(to: CGPoint(x: f.p.x - c * w + s * h, y: f.p.y - s * w - c * h))
-            paths[f.hue].addLine(to: CGPoint(x: f.p.x + c * w + s * h * 0.6, y: f.p.y + s * w - c * h))
-            paths[f.hue].closeSubpath()
+            if f.kind == .pearls {
+                anyPearl = true
+                let r: CGFloat = 5.0
+                pearlHalos.addEllipse(in: CGRect(x: f.p.x - r * 1.8, y: f.p.y - r * 1.8, width: r * 3.6, height: r * 3.6))
+                pearlCores.addEllipse(in: CGRect(x: f.p.x - r, y: f.p.y - r, width: r * 2, height: r * 2))
+                pearlGlints.addEllipse(in: CGRect(x: f.p.x - r * 0.45, y: f.p.y - r * 0.55, width: r * 0.7, height: r * 0.55))
+            } else {
+                anyFlake = true
+                let c = cos(f.rot), s = sin(f.rot)
+                let w: CGFloat = 4.7, h: CGFloat = 3.3
+                paths[f.hue].move(to: CGPoint(x: f.p.x + c * w - s * h, y: f.p.y + s * w + c * h))
+                paths[f.hue].addLine(to: CGPoint(x: f.p.x - c * w - s * h, y: f.p.y - s * w + c * h))
+                paths[f.hue].addLine(to: CGPoint(x: f.p.x - c * w + s * h, y: f.p.y - s * w - c * h))
+                paths[f.hue].addLine(to: CGPoint(x: f.p.x + c * w + s * h * 0.6, y: f.p.y + s * w - c * h))
+                paths[f.hue].closeSubpath()
+            }
         }
-        guard any else { return }
-        let colors: [UInt32] = [0xFF6A4A, 0xFFC94A, 0x7AC25A, 0xE8823A]
-        for i in 0..<4 { g.fill(paths[i], with: .color(ARGB(colors[i]).color(0.95))) }
+        if anyFlake {
+            let colors: [UInt32] = [0xFF6A4A, 0xFFC94A, 0x7AC25A, 0xE8823A]
+            for i in 0..<4 { g.fill(paths[i], with: .color(ARGB(colors[i]).color(0.95))) }
+        }
+        if anyPearl {
+            g.fill(pearlHalos, with: .color(ARGB(0xFFF3B8).color(0.35)))
+            g.fill(pearlCores, with: .color(ARGB(0xFFF6DC).color(0.96)))
+            g.stroke(pearlCores, with: .color(ARGB(0xC9A8FF).color(0.8)), lineWidth: 1.2)
+            g.fill(pearlGlints, with: .color(.white.opacity(0.95)))
+        }
     }
 
     private static func bubbles(_ g: GraphicsContext, _ sim: AquariumSim, back: Bool) {
@@ -539,6 +663,30 @@ enum AquaPainter {
                 )
             )
         }
+
+        // Extra luminous submarine spotlight beam boost in Night Mode.
+        if sim.submarine.active {
+            let sub = sim.submarine
+            let bob = sin(sub.bobPhase) * 3.5
+            let origin = CGPoint(x: sub.p.x + sub.facing * 47, y: sub.p.y + bob + 4)
+            let len: CGFloat = 195
+            let spread: CGFloat = 0.4
+            let a1 = sub.beamAngle - spread
+            let a2 = sub.beamAngle + spread
+            var beam = Path()
+            beam.move(to: origin)
+            beam.addLine(to: CGPoint(x: origin.x + sub.facing * cos(a1) * len, y: origin.y + sin(a1) * len))
+            beam.addLine(to: CGPoint(x: origin.x + sub.facing * cos(a2) * len, y: origin.y + sin(a2) * len))
+            beam.closeSubpath()
+            glow.fill(
+                beam,
+                with: .linearGradient(
+                    Gradient(colors: [ARGB(0xFFF6B8).color(0.45 * Double(n)), ARGB(0xFFE68A).color(0)]),
+                    startPoint: origin,
+                    endPoint: CGPoint(x: origin.x + sub.facing * cos(sub.beamAngle) * len, y: origin.y + sin(sub.beamAngle) * len)
+                )
+            )
+        }
     }
 
     private static func snail(_ g: GraphicsContext, _ sim: AquariumSim, _ t: CGFloat) {
@@ -584,47 +732,40 @@ enum AquaPainter {
         c.stroke(shell, with: .color(ARGB(0x9A5A2E).color(0.8)), lineWidth: 1.6)
     }
 
-    /// Soft organic translucent pastel sea-moss clouds hugging the tank edges (replaces polka-dot algae grid).
+    /// Precomputed scalloped organic blob in normalized -1...1 coordinates so moss draws with <= 10 flat fills total.
+    private static let unitMossBlob: Path = {
+        let pts: [CGPoint] = [
+            CGPoint(x: 0.0, y: -0.92), CGPoint(x: 0.48, y: -0.78), CGPoint(x: 0.88, y: -0.44),
+            CGPoint(x: 0.98, y: 0.06), CGPoint(x: 0.78, y: 0.56), CGPoint(x: 0.34, y: 0.88),
+            CGPoint(x: -0.22, y: 0.92), CGPoint(x: -0.72, y: 0.64), CGPoint(x: -0.96, y: 0.14),
+            CGPoint(x: -0.84, y: -0.42), CGPoint(x: -0.46, y: -0.82),
+        ]
+        return AquaShape.smoothClosed(pts)
+    }()
+
+    /// Lightweight flat translucent organic sea-moss blobs (<= 10 simple fills total, zero per-frame radial gradients).
     private static func mossClouds(_ g: GraphicsContext, _ sim: AquariumSim) {
-        let mint = ARGB(0x88D4A6)
-        let sage = ARGB(0x63B58E)
+        let mint = ARGB(0x7FD1A2)
+        let sage = ARGB(0x5CAE86)
         for patch in sim.moss where patch.opacity > 0.02 {
             let alpha = Double(patch.opacity)
             var c = g
             c.translateBy(x: patch.center.x, y: patch.center.y)
             c.rotate(by: .radians(Double(patch.rotation)))
 
-            // Layered feathered watercolor clouds for soft organic sea-moss smudges.
-            let lobes: [(CGFloat, CGFloat, CGFloat, CGFloat, Double)] = [
-                (0, 0, patch.rx * 1.12, patch.ry * 1.08, 0.32),
-                (-patch.rx * 0.34, -patch.ry * 0.2, patch.rx * 0.72, patch.ry * 0.74, 0.26),
-                (patch.rx * 0.32, patch.ry * 0.18, patch.rx * 0.68, patch.ry * 0.66, 0.24),
-                (patch.rx * 0.08, -patch.ry * 0.32, patch.rx * 0.56, patch.ry * 0.52, 0.20),
-            ]
-            for (idx, lobe) in lobes.enumerated() {
-                let col = idx % 2 == 0 ? mint : sage
-                let rect = CGRect(x: lobe.0 - lobe.2, y: lobe.1 - lobe.3, width: lobe.2 * 2, height: lobe.3 * 2)
-                c.fill(
-                    Path(ellipseIn: rect),
-                    with: .radialGradient(
-                        Gradient(colors: [col.color(lobe.4 * alpha), col.color(lobe.4 * 0.45 * alpha), col.color(0)]),
-                        center: CGPoint(x: lobe.0, y: lobe.1),
-                        startRadius: 2,
-                        endRadius: max(lobe.2, lobe.3)
-                    )
-                )
-            }
+            var blobCtx = c
+            blobCtx.scaleBy(x: patch.rx, y: patch.ry)
+            blobCtx.fill(unitMossBlob, with: .color(mint.color(0.32 * alpha)))
 
-            // Delicate translucent sea-moss wisps inside the cloud.
             var wisps = Path()
-            for k in 0..<4 {
-                let wx = (aqRand(patch.seed + k, 1) - 0.5) * patch.rx * 0.9
-                let wy = (aqRand(patch.seed + k, 2) - 0.5) * patch.ry * 0.7
-                let len = 14 + aqRand(patch.seed + k, 3) * 14
+            for k in 0..<3 {
+                let wx = (aqRand(patch.seed + k, 1) - 0.5) * patch.rx * 0.85
+                let wy = (aqRand(patch.seed + k, 2) - 0.5) * patch.ry * 0.65
+                let len = 14 + aqRand(patch.seed + k, 3) * 12
                 wisps.move(to: CGPoint(x: wx, y: wy + len * 0.4))
-                wisps.addQuadCurve(to: CGPoint(x: wx + 8, y: wy - len * 0.6), control: CGPoint(x: wx - 6, y: wy))
+                wisps.addQuadCurve(to: CGPoint(x: wx + 7, y: wy - len * 0.6), control: CGPoint(x: wx - 5, y: wy))
             }
-            c.stroke(wisps, with: .color(sage.color(0.24 * alpha)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+            c.stroke(wisps, with: .color(sage.color(0.24 * alpha)), style: StrokeStyle(lineWidth: 2.0, lineCap: .round))
         }
     }
 
@@ -647,6 +788,18 @@ enum AquaPainter {
                 let k = Double(1 - q.age / q.life)
                 g.fill(AquaShape.heart(q.p, q.size), with: .color(q.color.color(0.95 * k)))
                 g.stroke(AquaShape.heart(q.p, q.size), with: .color(.white.opacity(0.8 * k)), lineWidth: 1.4)
+            case .note:
+                let k = Double(1 - q.age / q.life)
+                let s = q.size * 0.5
+                let head = Path(ellipseIn: CGRect(x: q.p.x - s * 0.7, y: q.p.y - s * 0.1, width: s * 1.1, height: s * 0.85))
+                var stem = Path()
+                stem.move(to: CGPoint(x: q.p.x + s * 0.3, y: q.p.y + s * 0.2))
+                stem.addLine(to: CGPoint(x: q.p.x + s * 0.3, y: q.p.y - s * 1.5))
+                stem.addQuadCurve(to: CGPoint(x: q.p.x + s * 1.15, y: q.p.y - s * 0.9), control: CGPoint(x: q.p.x + s * 1.15, y: q.p.y - s * 1.45))
+                g.fill(head, with: .color(q.color.color(0.95 * k)))
+                g.stroke(head, with: .color(.white.opacity(0.85 * k)), lineWidth: 1.2)
+                g.stroke(stem, with: .color(.white.opacity(0.85 * k)), style: StrokeStyle(lineWidth: 3.4, lineCap: .round, lineJoin: .round))
+                g.stroke(stem, with: .color(q.color.color(0.95 * k)), style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
             case .sparkle:
                 let k = q.age / q.life
                 let s = q.size * sin(k * .pi)
@@ -747,7 +900,7 @@ enum AquaPainter {
                 let p = CGPoint(x: r.from.x + (r.to.x - r.from.x) * k, y: r.from.y + (r.to.y - r.from.y) * k - 60 * sin(k * .pi))
                 var sg = g
                 sg.opacity = Double(1 - k * 0.3)
-                drawTool(sg, nil, r.tool, at: p, tilt: r.tilt * (1 - k), t: t)
+                drawTool(sg, r.tool == .food ? sim : nil, r.tool, at: p, tilt: r.tilt * (1 - k), t: t)
             }
         }
     }
@@ -764,7 +917,7 @@ enum AquaPainter {
                 y: q.from.y + (q.target.y - q.from.y) * arc - 34 * arc
             )
             let tilt = 1.9 * arc + sin(u * .pi * 6) * 0.16 * arc
-            drawTool(g, nil, .food, at: pos, tilt: tilt, t: t)
+            drawTool(g, sim, .food, at: pos, tilt: tilt, t: t)
         case .wiper:
             let sweepX = q.target.x + sin(u * .pi * 3) * 44
             let sweepY = q.target.y + cos(u * .pi * 2) * 28
@@ -790,7 +943,7 @@ enum AquaPainter {
         switch tool {
         case .food:
             c.rotate(by: .radians(Double(tilt)))
-            AquaDecorPainter.shaker(c)
+            AquaDecorPainter.shaker(c, mode: sim?.treatMode ?? .flakes)
         case .wiper:
             c.rotate(by: .radians(Double(tilt)))
             if sim != nil { c.scaleBy(x: AquariumSim.wiperScale, y: AquariumSim.wiperScale) }
@@ -808,9 +961,13 @@ enum AquaPainter {
                 var fc = c
                 fc.translateBy(x: 0, y: 14)
                 fc.scaleBy(x: 0.8 * f.dir, y: 0.8)
-                AquaFishPainter.drawLocal(fc, kind: f.kind, variant: f.variant, phase: f.phase, amp: 0.5, gulp: 0.6, puff: f.puff, time: t)
+                AquaFishPainter.drawLocal(fc, kind: f.kind, variant: f.variant, phase: f.phase, amp: 0.5, gulp: 0.6, puff: f.puff, time: t, baby: f.growthStage == 0)
             }
             AquaDecorPainter.netFront(c)
+        case .egg:
+            c.rotate(by: .radians(Double(tilt)))
+            c.translateBy(x: 0, y: 22)
+            AquaDecorPainter.egg(c, palette: .pinkSpeckle, taps: 0, time: t)
         case .fish(let k):
             c.rotate(by: .radians(Double(tilt)))
             AquaDecorPainter.bag(c, kind: k, time: t)
