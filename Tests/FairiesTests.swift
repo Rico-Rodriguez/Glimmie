@@ -234,6 +234,9 @@ final class FairiesTests: XCTestCase {
 
         sim.selectStation(.teaTable)
         sim.startNextTeaOrder(for: .heart)
+        for i in sim.compactActors.indices where sim.compactActors[i].kind == .heart {
+            sim.compactActors[i].wish = nil
+        }
         let heartWish = sim.teaSession.wish
         let wrongNectar = TeaNectar.allCases.first { $0 != heartWish.nectar }!
         let wrongStar = SugarStarKind.allCases.first { $0 != heartWish.sugarStar }!
