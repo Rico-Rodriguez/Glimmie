@@ -15,11 +15,11 @@ Build iPad app) runs this before building the app, so nothing generated is commi
     python3 tools/build_my_pages.py [--jobs N]
 
 Writes into App/Resources/Games/Coloring/:
-  my_<folder>_<file>.png / _t.png   line art and thumbnail (crisp: line weight is kept)
+  my_<folder>_<file>.webp / _t.png  line art and thumbnail (crisp: line weight is kept)
   mypages.json                      the tabs, plus a hash per page so unchanged files are skipped
 Pages that were removed from art/coloring/mine are removed from the output too.
 """
-import hashlib, io, json, os, re, sys
+import hashlib, json, os, re, sys
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
@@ -35,7 +35,7 @@ INDEX = os.path.join(OUT, "mypages.json")
 EXTS = (".svg", ".png", ".jpg", ".jpeg")
 # Bump when the generated image or its encoding changes. The Actions cache
 # restores an older mypages.json by prefix; a matching file hash would otherwise skip the rebuild.
-PIPELINE = 3
+PIPELINE = 4
 
 
 def slug(s):
@@ -63,19 +63,6 @@ def raster_ink(path, long_side=2400):
     return d[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
 
 
-def save_page_png(image, path, *, ink):
-    # Four bits retain antialiased edges. Rounding to the nearest multiple of 17
-    # keeps values 0..144 below the fill threshold and 145..255 above it.
-    levels = bytes(range(0, 256, 17))
-    indexed = image.point([(v + 8) // 17 for v in range(256)], mode="P")
-    if ink:
-        indexed.putpalette(bytes(3 * len(levels)))  # black ink at each opacity
-        indexed.info["transparency"] = levels
-    else:
-        indexed.putpalette(bytes(v for v in levels for _ in range(3)))
-    indexed.save(path, format="PNG", bits=4, optimize=True)
-
-
 def build_one(job):
     pid, path = job
     try:
@@ -89,9 +76,8 @@ def build_one(job):
             finally:
                 ic.ink_of = orig
         a = Image.fromarray(alpha)
-        save_page_png(a, os.path.join(OUT, f"{pid}.png"), ink=True)
-        thumb = Image.fromarray(255 - alpha).resize((400, 300), Image.LANCZOS)
-        save_page_png(thumb, os.path.join(OUT, f"{pid}_t.png"), ink=False)
+        ic.save_page_webp(a, os.path.join(OUT, f"{pid}.webp"))
+        ic.save_thumb_png(Image.fromarray(255 - alpha), os.path.join(OUT, f"{pid}_t.png"))
         return pid, None
     except Exception as e:  # a broken file shouldn't stop the other 899
         return pid, str(e)
@@ -126,7 +112,7 @@ def main():
             ids.append(pid)
             if old.get(pid) != h or any(
                 not os.path.isfile(os.path.join(OUT, pid + suffix))
-                for suffix in (".png", "_t.png")
+                for suffix in (".webp", "_t.png")
             ):
                 todo.append((pid, path))
         if ids:
@@ -149,12 +135,20 @@ def main():
     cats = [c for c in cats if c["pages"]]
     for c in cats:
         c["cover"] = c["pages"][0]
-    # Drop pages that were deleted or renamed.
+    # Drop deleted, renamed, or legacy full-PNG my_* pages.
     for name in os.listdir(OUT):
-        if name.startswith("my_") and name.endswith(".png"):
-            keep = name[:-4] in hashes or (name.endswith("_t.png") and name[:-6] in hashes)
-            if not keep:
-                os.remove(os.path.join(OUT, name))
+        if not name.startswith("my_"):
+            continue
+        if name.endswith(".webp"):
+            keep = name[:-5] in hashes
+        elif name.endswith("_t.png"):
+            keep = name[:-6] in hashes
+        elif name.endswith(".png"):
+            keep = False
+        else:
+            continue
+        if not keep:
+            os.remove(os.path.join(OUT, name))
     with open(INDEX, "w") as f:
         json.dump({"pipeline": PIPELINE, "categories": cats, "hashes": hashes}, f, indent=1)
     if failed:

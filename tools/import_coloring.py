@@ -13,8 +13,8 @@ Every source is CC0 / public domain (Openclipart releases everything under CC0).
 Source SVGs are cached in art/coloring/svg-cache/ (not committed).
 
 Each page becomes, in App/Resources/Games/Coloring/:
-  <id>.png     2048x1536 line art: black, with the lines in the alpha channel
-  <id>_t.png   400x300 thumbnail on white, for the page picker
+  <id>.webp    1600x1200 line art: black, with the lines in the alpha channel
+  <id>_t.png   240x180 thumbnail on white, for the page picker
 and pages.json lists the categories in order.
 
 The drawing is cropped to its ink, letterboxed to 4:3 with a margin, light grey shading is
@@ -23,7 +23,6 @@ can't leak through them.
 """
 import io, json, os, random, sys, urllib.request
 
-import cairosvg
 import numpy as np
 from PIL import Image
 from scipy import ndimage
@@ -34,11 +33,34 @@ CACHE = os.path.join(ROOT, "art", "coloring", "svg-cache")
 OUT = os.path.join(ROOT, "App", "Resources", "Games", "Coloring")
 PREVIEW = os.path.join(ROOT, "art", "coloring", "preview")
 
-W, H = 2048, 1536
+W, H = 1600, 1200
 MARGIN = 0.06
-MIN_LINE = 9.0      # px at 2048 wide (~7 px at the app's 1600)
+MIN_LINE = 7.0      # px at 1600 wide
 LINE_ALPHA = 145    # the app's line threshold
-GAP = 10            # px at 2048: outline gaps narrower than ~2*GAP get closed
+GAP = 8             # px at 1600: outline gaps narrower than ~2*GAP get closed
+
+_ALPHA_LUT = [((v + 8) // 17) * 17 for v in range(256)]
+_INDEX_LUT = [(v + 8) // 17 for v in range(256)]
+_GRAY_PALETTE = bytes(v for v in range(0, 256, 17) for _ in range(3))
+
+
+def save_page_webp(alpha_image, path):
+    # Quantizing alpha to multiples of 17 keeps 0..144 below LINE_ALPHA and 145..255 above it.
+    a = alpha_image if alpha_image.mode == "L" else alpha_image.convert("L")
+    q = a.point(_ALPHA_LUT)
+    black = Image.new("L", q.size, 0)
+    Image.merge("RGBA", (black, black, black, q)).save(
+        path, format="WEBP", lossless=True, quality=80, method=4
+    )
+
+
+def save_thumb_png(gray_image, path):
+    g = gray_image if gray_image.mode == "L" else gray_image.convert("L")
+    if g.size != (240, 180):
+        g = g.resize((240, 180), Image.LANCZOS)
+    indexed = g.point(_INDEX_LUT, mode="P")
+    indexed.putpalette(_GRAY_PALETTE)
+    indexed.save(path, format="PNG", bits=4, optimize=True)
 
 
 def fetch(src):
@@ -57,6 +79,8 @@ def fetch(src):
 
 def ink_of(svg_path, long_side):
     """Darkness 0..255 (255 = black), cropped to the drawing."""
+    import cairosvg
+
     png = cairosvg.svg2png(url=svg_path, output_width=long_side, background_color="white")
     im = Image.open(io.BytesIO(png)).convert("L")
     if im.height > im.width:  # keep the long side at long_side
@@ -141,11 +165,10 @@ def main():
                 continue
             alpha = build(fetch(p["src"]))
             a = Image.fromarray(alpha)
-            Image.merge("LA", (Image.new("L", a.size, 0), a)).save(os.path.join(OUT, f"{pid}.png"), optimize=True)
-            thumb = Image.fromarray(255 - alpha).resize((400, 300), Image.LANCZOS)
-            thumb.save(os.path.join(OUT, f"{pid}_t.png"), optimize=True)
+            save_page_webp(a, os.path.join(OUT, f"{pid}.webp"))
+            save_thumb_png(Image.fromarray(255 - alpha), os.path.join(OUT, f"{pid}_t.png"))
             if check:
-                work = np.asarray(a.resize((1600, 1200), Image.LANCZOS))
+                work = np.asarray(a) if a.size == (1600, 1200) else np.asarray(a.resize((1600, 1200), Image.LANCZOS))
                 lab, n = regions(work)
                 rng = random.Random(pid)
                 pal = np.array([[255, 255, 255]] + [[rng.randint(60, 255) for _ in range(3)] for _ in range(n)], dtype=np.uint8)
@@ -158,10 +181,12 @@ def main():
                 print(f"{cat['id']:10s} {pid:24s}")
         catalog["categories"].append({"id": cat["id"], "icon": cat["icon"], "color": cat["color"], "pages": ids})
     if not only:
-        # Remove pages that are no longer in the manifest.
-        keep = {f"{i}.png" for i in seen} | {f"{i}_t.png" for i in seen} | {"pages.json"}
+        # Remove built-in pages that are no longer in the manifest (leave my_* alone).
+        keep = {f"{i}.webp" for i in seen} | {f"{i}_t.png" for i in seen} | {"pages.json"}
         for name in os.listdir(OUT):
-            if name.endswith(".png") and name not in keep:
+            if name.startswith("my_"):
+                continue
+            if (name.endswith(".png") or name.endswith(".webp")) and name not in keep:
                 os.remove(os.path.join(OUT, name))
         with open(os.path.join(OUT, "pages.json"), "w") as f:
             json.dump(catalog, f, indent=1)
