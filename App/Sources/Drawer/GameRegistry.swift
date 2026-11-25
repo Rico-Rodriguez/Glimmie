@@ -22,7 +22,7 @@ struct GameEntry: Identifiable {
     let icon: () -> AnyView
     /// The game's root view. Call `exit` to go back to the drawer.
     let play: (_ exit: @escaping () -> Void) -> AnyView
-    /// Surprises she can find in the game, for the sticker book (see `StickerBook`). Most games have none yet.
+    /// Surprises she can find in the game, for the sticker book (see `StickerBook`). Every game provides its own finds for the sticker book.
     var stickers: [Sticker] = []
 }
 
@@ -39,5 +39,6 @@ enum GameRegistry {
         PotionGame.entry,
         SalonGame.entry,
         TidyGame.entry,
+        FairiesGame.entry,
     ]
 }
