@@ -9,7 +9,6 @@ enum GardenPlants {
         CGPoint(x: -26, y: 100),
         CGPoint(x: 24, y: 128),
         CGPoint(x: -18, y: 150),
-        CGPoint(x: 26, y: 78),
     ]
     static let berrySpots: [CGPoint] = [
         CGPoint(x: -32, y: 16),
@@ -384,7 +383,7 @@ enum GardenPlants {
         let g = gdEase(CGFloat(p.growth))
         let len = 14 + 54 * g
         let w = 5 + 16 * g
-        carrotShape(ctx, top: base, length: len, width: w, angle: 0, tint: p.specialTint)
+        carrotShape(ctx, top: base, length: len, width: w, angle: 0, tint: p.kind.bloom(p.variant))
     }
 
     static func carrotShape(_ ctx: GraphicsContext, top: CGPoint, length len: CGFloat, width w: CGFloat, angle: CGFloat, tint: GRGB? = nil) {
@@ -489,12 +488,12 @@ enum GardenPlants {
                 vine.move(to: hang)
                 vine.addQuadCurve(to: CGPoint(x: fp.x, y: fp.y - 8), control: CGPoint(x: fp.x, y: hang.y))
                 ctx.stroke(vine, with: .color(GRGB(0x5C9A3C).color), lineWidth: 1.6)
-                tomatoFruit(ctx, at: fp, r: 4.5 + 8.5 * fruitK, ripe: ripe, tint: p.specialTint)
+                tomatoFruit(ctx, at: fp, r: 4.5 + 8.5 * fruitK, ripe: ripe, tint: p.kind.bloom(p.variant))
             }
         }
     }
 
-    static func strawberryFruit(_ ctx: GraphicsContext, at p: CGPoint, r: CGFloat, ripe: CGFloat, angle: CGFloat = 0, tint: GRGB? = nil) {
+    static func strawberryFruit(_ ctx: GraphicsContext, at p: CGPoint, r: CGFloat, ripe: CGFloat, angle: CGFloat = 0, tint: GRGB? = nil, specialSeeds: Bool = false) {
         var g = ctx
         g.translateBy(x: p.x, y: p.y)
         g.rotate(by: .radians(Double(angle)))
@@ -506,7 +505,7 @@ enum GardenPlants {
         let grad = Gradient(colors: [c.shade(0.28).color, c.color, c.shade(-0.32).color])
         g.fill(path, with: .radialGradient(grad, center: CGPoint(x: -r * 0.3, y: -r * 0.2), startRadius: 0, endRadius: r * 1.6))
         g.stroke(path, with: .color(c.shade(-0.46).color(0.7)), lineWidth: 1.2)
-        let seedColor = tint == nil ? GRGB(0xFFE9A0).mix(GRGB(0xF6D35B), ripe) : GRGB(0xFFE9A0).mix(GRGB(0xE8263F), ripe)
+        let seedColor = specialSeeds ? GRGB(0xFFE9A0).mix(GRGB(0xE8263F), ripe) : GRGB(0xFFE9A0).mix(GRGB(0xF6D35B), ripe)
         for i in 0..<9 {
             let sx = (gdRand(i, 3) - 0.5) * r * 1.2
             let sy = (gdRand(i, 7) - 0.25) * r * 1.3
@@ -543,7 +542,7 @@ enum GardenPlants {
             vine.move(to: CGPoint(x: base.x, y: base.y - 20))
             vine.addQuadCurve(to: CGPoint(x: fp.x, y: fp.y - 6), control: CGPoint(x: fp.x * 0.6 + base.x * 0.4, y: base.y - 44))
             ctx.stroke(vine, with: .color(GRGB(0x5C9A3C).color), lineWidth: 1.6)
-            strawberryFruit(ctx, at: fp, r: 3.5 + 7 * fruitK, ripe: ripe, angle: s.x > 0 ? -0.25 : 0.25, tint: p.specialTint)
+            strawberryFruit(ctx, at: fp, r: 3.5 + 7 * fruitK, ripe: ripe, angle: s.x > 0 ? -0.25 : 0.25, tint: p.kind.bloom(p.variant), specialSeeds: p.isSpecial)
         }
         let angles: [CGFloat] = [-1.0 - leafSag * 0.3, -0.42 - leafSag * 0.2, 0.12, 0.62 + leafSag * 0.2, 1.05 + leafSag * 0.3]
         let hs: [CGFloat] = [0.66, 0.94, 1, 0.86, 0.6]
@@ -669,7 +668,7 @@ enum GardenPlants {
             let isGiant = p.giant || p.isSpecial
             let giantScale: CGFloat = isGiant ? (1.52 + 0.03 * sin(time * 4)) : 1.0
             let w = (14 + 54 * fruitK) * giantScale
-            pumpkinFruit(ctx, at: CGPoint(x: base.x + 12, y: base.y + 2), w: w, ripe: ripe, tint: p.specialTint, prizeGlow: p.giant)
+            pumpkinFruit(ctx, at: CGPoint(x: base.x + 12, y: base.y + 2), w: w, ripe: ripe, tint: p.kind.bloom(p.variant), prizeGlow: p.giant)
         }
     }
 
@@ -1253,38 +1252,38 @@ enum GardenPlants {
         var g = ctx
         g.translateBy(x: p.x, y: p.y)
         g.rotate(by: .radians(Double(rot)))
-        let tint: GRGB? = variant >= Plant.specialVariant ? kind.specialColor : nil
+        let isSpecial = variant >= Plant.specialVariant
+        let col = kind.bloom(variant)
         switch kind {
         case .tomato:
-            tomatoFruit(g, at: .zero, r: 13 * s, ripe: 1, tint: tint)
+            tomatoFruit(g, at: .zero, r: 13 * s, ripe: 1, tint: col)
         case .strawberry:
-            strawberryFruit(g, at: .zero, r: 11 * s, ripe: 1, tint: tint)
+            strawberryFruit(g, at: .zero, r: 11 * s, ripe: 1, tint: col, specialSeeds: isSpecial)
         case .pumpkin:
-            let gScale: CGFloat = (giant || tint != nil) ? 1.32 : 1
-            pumpkinFruit(g, at: CGPoint(x: 0, y: 20 * s * gScale), w: 48 * s * gScale, ripe: 1, tint: tint, prizeGlow: giant)
+            let gScale: CGFloat = (giant || isSpecial) ? 1.32 : 1
+            pumpkinFruit(g, at: CGPoint(x: 0, y: 20 * s * gScale), w: 48 * s * gScale, ripe: 1, tint: col, prizeGlow: giant)
         case .carrot:
             for o in [-0.4, 0, 0.4] as [CGFloat] {
                 leaf(g, at: CGPoint(x: 0, y: -18 * s), angle: -.pi / 2 + o, length: 18 * s, width: 4 * s, color: GRGB(0x6DB548))
             }
-            carrotShape(g, top: CGPoint(x: 0, y: -18 * s), length: 46 * s, width: 15 * s, angle: 0, tint: tint)
+            carrotShape(g, top: CGPoint(x: 0, y: -18 * s), length: 46 * s, width: 15 * s, angle: 0, tint: col)
         case .sunflower:
             var hg = g
             hg.scaleBy(x: s * 0.62, y: s * 0.62)
-            sunflowerHead(hg, at: .zero, angle: 0, budK: 1, open: 1, petal: kind.bloom(variant), time: 0)
+            sunflowerHead(hg, at: .zero, angle: 0, budK: 1, open: 1, petal: col, time: 0)
         case .tulip:
-            let c = kind.bloom(variant)
-            tulipPetal(g, at: CGPoint(x: 0, y: 14 * s), angle: 0, height: 34 * s, width: 18 * s, color: c.shade(-0.18))
-            tulipPetal(g, at: CGPoint(x: 0, y: 14 * s), angle: -0.3, height: 32 * s, width: 15 * s, color: c)
-            tulipPetal(g, at: CGPoint(x: 0, y: 14 * s), angle: 0.3, height: 32 * s, width: 15 * s, color: c.shade(0.04))
+            tulipPetal(g, at: CGPoint(x: 0, y: 14 * s), angle: 0, height: 34 * s, width: 18 * s, color: col.shade(-0.18))
+            tulipPetal(g, at: CGPoint(x: 0, y: 14 * s), angle: -0.3, height: 32 * s, width: 15 * s, color: col)
+            tulipPetal(g, at: CGPoint(x: 0, y: 14 * s), angle: 0.3, height: 32 * s, width: 15 * s, color: col.shade(0.04))
         case .daisy:
-            daisyHead(g, at: .zero, open: 1, color: kind.bloom(variant), size: 1.1 * s, spin: 0)
+            daisyHead(g, at: .zero, open: 1, color: col, size: 1.1 * s, spin: 0)
         case .lavender:
             for b in 0..<7 {
                 let y = -CGFloat(b) * 5 * s
                 let r = 3.6 * s * (1 - CGFloat(b) * 0.06)
                 for side in [-1.0, 1.0] as [CGFloat] {
                     g.fill(Path(ellipseIn: CGRect(x: side * r * 0.5 - r, y: y - r, width: r * 2, height: r * 2.2)),
-                           with: .color(kind.bloom(variant).shade(b % 2 == 0 ? -0.1 : 0.08).color))
+                           with: .color(col.shade(b % 2 == 0 ? -0.1 : 0.08).color))
                 }
             }
             var st = Path()
@@ -1294,15 +1293,51 @@ enum GardenPlants {
         }
     }
 
-    static func drawBasketItem(_ ctx: GraphicsContext, entry: String, at p: CGPoint, size s: CGFloat, rot: CGFloat, time: CGFloat = 0) {
-        let parts = entry.split(separator: ":")
-        guard let head = parts.first else { return }
-        if head == "hybrid", parts.count > 1, let h = HybridKind(rawValue: String(parts[1])) {
-            drawHybridIcon(ctx, hybrid: h, at: p, size: s, rot: rot, time: time)
-            return
+    static func drawHarvestItem(_ ctx: GraphicsContext, item: HarvestItem, at p: CGPoint, size s: CGFloat, rot: CGFloat = 0, time: CGFloat = 0) {
+        switch item.source {
+        case .plant(let kind, let variant, let isGiant):
+            drawCrop(ctx, kind: kind, variant: variant, at: p, size: s, rot: rot, giant: isGiant)
+        case .hybrid(let hybrid, let isGiant):
+            let scale = s * (isGiant ? 1.16 : 1.0)
+            if isGiant {
+                let r = 28 * scale
+                ctx.fill(
+                    Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)),
+                    with: .radialGradient(
+                        Gradient(colors: [Theme.lemon.opacity(0.45), Theme.lemon.opacity(0)]),
+                        center: p,
+                        startRadius: 4,
+                        endRadius: r
+                    )
+                )
+            }
+            drawHybridIcon(ctx, hybrid: hybrid, at: p, size: scale, rot: rot, time: time)
         }
-        guard let kind = PlantKind(rawValue: String(head)) else { return }
-        let v = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
-        drawCrop(ctx, kind: kind, variant: v, at: p, size: s, rot: rot)
+    }
+
+    static func drawBouquetItem(_ ctx: GraphicsContext, item: HarvestItem, angle: CGFloat, stemLength: CGFloat, time: CGFloat = 0) {
+        switch item.source {
+        case .plant(let kind, let variant, _):
+            drawBouquetStem(ctx, kind: kind, variant: variant, angle: angle, stemLength: stemLength, hybrid: nil, time: time)
+        case .hybrid(let hybrid, _):
+            drawBouquetStem(ctx, kind: hybrid.parents.0, variant: 0, angle: angle, stemLength: stemLength, hybrid: hybrid, time: time)
+        }
+    }
+
+    static func drawRequirement(_ ctx: GraphicsContext, requirement: HarvestRequirement, at p: CGPoint, size s: CGFloat, time: CGFloat = 0) {
+        switch requirement {
+        case .species(let kind):
+            let scale: CGFloat = kind == .pumpkin ? 0.56 * s : 0.78 * s
+            drawCrop(ctx, kind: kind, variant: 0, at: p, size: scale, rot: kind == .carrot ? 0.3 : 0)
+        case .anyFlower:
+            drawCrop(ctx, kind: .daisy, variant: 1, at: CGPoint(x: p.x - 6 * s, y: p.y + 3 * s), size: 0.62 * s, rot: -0.2)
+            drawCrop(ctx, kind: .tulip, variant: 0, at: CGPoint(x: p.x + 7 * s, y: p.y - 2 * s), size: 0.64 * s, rot: 0.2)
+        case .anyFruitOrVeggie:
+            drawCrop(ctx, kind: .strawberry, variant: 0, at: CGPoint(x: p.x - 7 * s, y: p.y + 3 * s), size: 0.72 * s, rot: -0.18)
+            drawCrop(ctx, kind: .tomato, variant: 0, at: CGPoint(x: p.x + 8 * s, y: p.y - 1 * s), size: 0.64 * s, rot: 0)
+        case .anyHybrid:
+            drawHybridIcon(ctx, hybrid: .starlightRose, at: p, size: 0.72 * s, rot: 0, time: time)
+            StorybookArt.sparkle(ctx, at: CGPoint(x: p.x + 12 * s, y: p.y - 12 * s), radius: 5 * s, color: Theme.lemon, opacity: 0.95)
+        }
     }
 }

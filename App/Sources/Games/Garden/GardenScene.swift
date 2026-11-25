@@ -21,7 +21,15 @@ enum GardenPainter {
         backdropAtmosphere(g, r, sim, t)
     }
 
-    /// Interactive 1024 x 834 world drawn every frame over the backdrop.
+    static func drawScene(_ ctx: GraphicsContext, sim: GardenSim) {
+        switch sim.station {
+        case .bed:
+            drawWorld(ctx, sim: sim)
+        case .farmstand:
+            drawFarmstand(ctx, sim: sim)
+        }
+    }
+
     static func drawWorld(_ ctx: GraphicsContext, sim: GardenSim) {
         let g = ctx
         let t = CGFloat(sim.time)
@@ -699,8 +707,7 @@ enum GardenPainter {
 
         GardenPlants.shadow(vg, at: CGPoint(x: 0, y: 2), width: 66)
 
-        // Picked flowers (including hybrids!) fanned out of the vase neck
-        let flowers = sim.bouquet
+        let flowers = sim.vaseFlowers
         let count = flowers.count
         for (idx, flower) in flowers.enumerated() {
             let spread: CGFloat = count <= 1 ? 0 : (CGFloat(idx) / CGFloat(count - 1) - 0.5) * 0.92
@@ -708,7 +715,7 @@ enum GardenPainter {
             let stemLen: CGFloat = 56 + (idx % 2 == 0 ? 12 : 0) - abs(spread) * 14
             var fg = vg
             fg.translateBy(x: spread * 14, y: -54)
-            GardenPlants.drawBouquetStem(fg, kind: flower.kind, variant: flower.variant, angle: spread + sway, stemLength: stemLen, hybrid: flower.hybrid, time: t)
+            GardenPlants.drawBouquetItem(fg, item: flower, angle: spread + sway, stemLength: stemLen, time: t)
         }
 
         // Glazed pastel ceramic vase body
@@ -731,7 +738,7 @@ enum GardenPainter {
         StorybookArt.heart(vg, at: CGPoint(x: 0, y: -26), size: 16, color: Theme.pink, opacity: 0.85)
 
         // Gentle sparkle invitation when >= 3 flowers are ready to weave into a Flower Crown!
-        if sim.bouquet.count >= 3 && !sim.hasCraftedCrown {
+        if sim.vaseFlowers.count >= 3 && !sim.hasCraftedCrown {
             let glowP = 0.6 + 0.4 * sin(t * 3.6)
             vg.fill(
                 Path(ellipseIn: CGRect(x: -44, y: -116, width: 88, height: 88)),
@@ -1121,7 +1128,7 @@ enum GardenPainter {
             let local = CGPoint(x: snack.pos.x - c.x, y: snack.pos.y - c.y)
             let plate = Path(ellipseIn: CGRect(x: local.x - 19, y: local.y - 11, width: 38, height: 22))
             StorybookArt.fillAndStroke(pg, plate, fill: .white, stroke: Theme.blush, width: 2)
-            GardenPlants.drawBasketItem(pg, entry: snack.item, at: CGPoint(x: local.x, y: local.y - 4), size: 0.65, rot: 0, time: t)
+            GardenPlants.drawHarvestItem(pg, item: snack.item, at: CGPoint(x: local.x, y: local.y - 4), size: 0.65, rot: 0, time: t)
         }
 
         // Hopping & munching picnic critters right on the blanket!
@@ -1273,18 +1280,12 @@ enum GardenPainter {
             let k = CGFloat(sim.time - f.start)
             let rot = f.spin * k
             switch f.kind {
-            case .crop(let kind, let v, let giant):
+            case .crop(let item), .flowerToVase(let item):
                 let s = 1 + 0.25 * sin(min(1, k / CGFloat(f.dur)) * .pi)
-                GardenPlants.drawCrop(g, kind: kind, variant: v, at: p, size: s, rot: rot, giant: giant)
-            case .flowerToVase(let kind, let v):
-                let s = 1 + 0.25 * sin(min(1, k / CGFloat(f.dur)) * .pi)
-                GardenPlants.drawCrop(g, kind: kind, variant: v, at: p, size: s, rot: rot)
-            case .hybridCrop(let h), .hybridFlowerToVase(let h):
-                let s = 1 + 0.28 * sin(min(1, k / CGFloat(f.dur)) * .pi)
-                GardenPlants.drawHybridIcon(g, hybrid: h, at: p, size: s * 0.95, rot: rot, time: CGFloat(sim.time))
+                GardenPlants.drawHarvestItem(g, item: item, at: p, size: s, rot: rot, time: CGFloat(sim.time))
             case .picnicSnack(let item):
                 let s = 0.85 + 0.22 * sin(min(1, k / CGFloat(f.dur)) * .pi)
-                GardenPlants.drawBasketItem(g, entry: item, at: p, size: s, rot: rot, time: CGFloat(sim.time))
+                GardenPlants.drawHarvestItem(g, item: item, at: p, size: s, rot: rot, time: CGFloat(sim.time))
             case .caughtFirefly:
                 g.fill(Path(ellipseIn: CGRect(x: p.x - 16, y: p.y - 16, width: 32, height: 32)),
                        with: .radialGradient(Gradient(colors: [Color(hex: 0xF5FF8A, alpha: 0.9), Color(hex: 0xE6FF7A, alpha: 0)]),
@@ -1459,8 +1460,7 @@ enum GardenPainter {
             face.translateBy(x: bee.p.x, y: bee.p.y)
             face.scaleBy(x: bee.v.dx < 0 ? -1 : 1, y: 1)
             face.fill(Path(ellipseIn: CGRect(x: 6, y: -3.5, width: 2.6, height: 3)), with: .color(GRGB(0x2A2020).color))
-            // Glowing golden pollen orb visibly carried beneath the buzzing bee!
-            if bee.carryingPollenFrom != nil {
+            if sim.time <= bee.flourishUntil {
                 drawPollenOrb(g, at: CGPoint(x: bee.p.x, y: bee.p.y + 11), time: t * 1.4, scale: 0.72)
             }
         }
@@ -1483,13 +1483,13 @@ enum GardenPainter {
         b.stroke(handle, with: .color(wicker.color), style: StrokeStyle(lineWidth: 6.5, lineCap: .round))
         b.fill(Path(ellipseIn: CGRect(x: -56, y: -20, width: 112, height: 20)), with: .color(wicker.shade(-0.42).color))
 
-        let items = sim.basket.suffix(12)
-        for (k, name) in items.enumerated() {
+        let items = sim.inventory.suffix(12)
+        for (k, item) in items.enumerated() {
             let row = k / 4
             let col = k % 4
             let x = -34 + CGFloat(col) * 22 + (row % 2 == 0 ? 0 : 9)
             let y = -11 - CGFloat(row) * 12
-            GardenPlants.drawBasketItem(b, entry: name, at: CGPoint(x: x, y: y), size: 0.58, rot: (gdRand(k, 9) - 0.5) * 0.8, time: CGFloat(sim.time))
+            GardenPlants.drawHarvestItem(b, item: item, at: CGPoint(x: x, y: y), size: 0.58, rot: (gdRand(k, 9) - 0.5) * 0.8, time: CGFloat(sim.time))
         }
 
         var front = Path()
@@ -1596,16 +1596,22 @@ enum GardenPainter {
     // MARK: Active Bare-Hand Drag Overlays (Pollen, Flower Crown, Basket Snack)
 
     private static func dragOverlays(_ g: GraphicsContext, _ sim: GardenSim, _ t: CGFloat) {
-        if let pp = sim.dragPollenPos, let fromIdx = sim.dragPollenFromPlot, let donor = sim.dragPollenKind {
-            // Soft golden aim rings over eligible different ripe plots
+        if case .carrying(let fromIdx, let donor, let pp, let tapMode) = sim.pollination {
             let pulse = 0.75 + 0.25 * sin(t * 6)
             for i in sim.plots.indices where i != fromIdx && sim.pollinatable(i) && sim.plots[i].plant?.kind != donor {
                 if let anc = sim.pollenAnchor(plot: i) {
                     let ring = Path(ellipseIn: CGRect(x: anc.x - 36, y: anc.y - 36, width: 72, height: 72))
-                    g.stroke(ring, with: .color(Theme.lemon.opacity(0.95 * Double(pulse))), style: StrokeStyle(lineWidth: 4, dash: [8, 6]))
+                    g.stroke(ring, with: .color(Theme.lemon.opacity(0.95 * Double(pulse))), style: StrokeStyle(lineWidth: 4.5, dash: [8, 6]))
+                    StorybookArt.sparkle(g, at: CGPoint(x: anc.x + 26, y: anc.y - 26), radius: 8 * pulse, color: .white, opacity: 0.95)
                 }
             }
-            drawPollenOrb(g, at: pp, time: t * 2, scale: 1.35)
+            if tapMode {
+                let halo = Path(ellipseIn: CGRect(x: pp.x - 24, y: pp.y - 24, width: 48, height: 48))
+                g.stroke(halo, with: .color(Theme.lemon.opacity(0.95)), lineWidth: 3.5)
+                drawPollenOrb(g, at: pp, time: t * 2.2, scale: 1.25)
+            } else {
+                drawPollenOrb(g, at: pp, time: t * 2, scale: 1.35)
+            }
         }
         if let cp = sim.dragCrownPos {
             // Soft inviting rings over any visiting or picnic critter
@@ -1625,7 +1631,7 @@ enum GardenPainter {
         if let bp = sim.dragBasketPos, let item = sim.dragBasketPreview {
             let bubble = Path(ellipseIn: CGRect(x: bp.x - 28, y: bp.y - 28, width: 56, height: 56))
             StorybookArt.fillAndStroke(g, bubble, fill: .white.opacity(0.9), stroke: Theme.lemon, width: 3)
-            GardenPlants.drawBasketItem(g, entry: item, at: bp, size: 0.9, rot: sin(t * 8) * 0.12, time: t)
+            GardenPlants.drawHarvestItem(g, item: item, at: bp, size: 0.9, rot: sin(t * 8) * 0.12, time: t)
         }
     }
 
@@ -1664,18 +1670,35 @@ enum GardenPainter {
                 g.fill(drop, with: .linearGradient(Gradient(colors: [Color(hex: 0x9FD8FF, alpha: a), Color(hex: 0x3F8FE0, alpha: a)]),
                                                    startPoint: CGPoint(x: c.x, y: c.y - 12), endPoint: CGPoint(x: c.x, y: c.y + 10)))
                 g.fill(Path(ellipseIn: CGRect(x: c.x - 4, y: c.y, width: 3.2, height: 4.8)), with: .color(.white.opacity(0.85 * a)))
-            } else if p.growth >= 1 && p.left > 0 && sim.tool == nil {
+            } else if case .ripe(let ripe) = sim.plots[i].stage, sim.tool == nil {
                 let tw = max(0, sin(t * 2.5 + CGFloat(i) * 1.7))
                 if tw > 0.12 {
                     StorybookArt.sparkle(g, at: CGPoint(x: x + 22, y: top - 6), radius: 9 * tw, color: .white, opacity: 0.95)
                 }
-                if p.kind == .carrot && !sim.plots[i].held {
+                switch ripe.harvestMechanic {
+                case .pullUp where !sim.plots[i].held:
                     let liftY = top - 20 - sin(t * 3.6 + CGFloat(i)) * 5
                     var arrow = Path()
                     arrow.move(to: CGPoint(x: x - 8, y: liftY + 6))
                     arrow.addLine(to: CGPoint(x: x, y: liftY - 4))
                     arrow.addLine(to: CGPoint(x: x + 8, y: liftY + 6))
-                    g.stroke(arrow, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+                    g.stroke(arrow, with: .color(.white.opacity(0.88)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+                case .shakeVine:
+                    let wig = sin(t * 5.2 + CGFloat(i)) * 4
+                    var arc = Path()
+                    arc.move(to: CGPoint(x: x - 14 + wig, y: top - 14))
+                    arc.addQuadCurve(to: CGPoint(x: x + 14 + wig, y: top - 14), control: CGPoint(x: x + wig, y: top - 22))
+                    g.stroke(arc, with: .color(.white.opacity(0.7)), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+                case .waterPuff where !ripe.isGiant:
+                    let dropY = sim.surface(x) - 66 + sin(t * 3.2 + CGFloat(i)) * 4
+                    let dropC = CGPoint(x: x - 26, y: dropY)
+                    var d = Path()
+                    d.move(to: CGPoint(x: dropC.x, y: dropC.y - 8))
+                    d.addCurve(to: CGPoint(x: dropC.x, y: dropC.y + 6), control1: CGPoint(x: dropC.x + 4, y: dropC.y - 2), control2: CGPoint(x: dropC.x + 7, y: dropC.y + 6))
+                    d.addCurve(to: CGPoint(x: dropC.x, y: dropC.y - 8), control1: CGPoint(x: dropC.x - 7, y: dropC.y + 6), control2: CGPoint(x: dropC.x - 4, y: dropC.y - 2))
+                    g.fill(d, with: .color(Color(hex: 0x7ED8FF, alpha: 0.85)))
+                default:
+                    break
                 }
             }
         }
@@ -1816,6 +1839,615 @@ enum GardenPainter {
         for k in 0..<3 {
             let r = CGRect(x: -12 + CGFloat(k) * 9, y: 26.5, width: 5, height: 4)
             c.fill(Path(ellipseIn: r), with: .color(kind.seedColor.shade(0.1).color))
+        }
+    }
+
+    // MARK: Critter Farmstand & Bouquet/Jam Studio
+
+    static func drawFarmstand(_ g: GraphicsContext, sim: GardenSim) {
+        let t = CGFloat(sim.time)
+        farmstandStallBack(g, t: t)
+
+        switch sim.farmstandPhase {
+        case .crafting(let order, let draft):
+            GardenVisitorPainter.drawSeatedCustomer(g, kind: order.customer, at: GGeo.Farmstand.customerSeat, time: t, cheering: false)
+            farmstandCounter(g)
+            farmstandOrderCloud(g, order: order, draft: draft, t: t)
+            farmstandCraftStation(g, order: order, draft: draft, sim: sim, t: t)
+            let match = FarmstandMatcher.match(requirements: order.requirements, items: draft.items)
+            farmstandServeBell(g, active: !draft.items.isEmpty, readyGlow: match.allMatched, bounce: sim.farmstandBellBounce, t: t)
+        case .celebrating(let cel):
+            GardenVisitorPainter.drawSeatedCustomer(g, kind: cel.customer, at: GGeo.Farmstand.customerSeat, time: t, cheering: true)
+            farmstandCounter(g)
+            farmstandCelebrationShowcase(g, cel: cel, t: t)
+            farmstandServeBell(g, active: false, readyGlow: false, bounce: sim.farmstandBellBounce, t: t)
+        }
+
+        farmstandAwning(g)
+
+        if let dragged = sim.draggedStockItem {
+            let p = sim.draggedStockPos
+            let bubble = Path(ellipseIn: CGRect(x: p.x - 36, y: p.y - 36, width: 72, height: 72))
+            StorybookArt.fillAndStroke(g, bubble, fill: .white.opacity(0.95), stroke: Theme.lemon, width: 3.5)
+            GardenPlants.drawHarvestItem(g, item: dragged, at: p, size: 1.0, rot: sin(t * 8) * 0.1, time: t)
+        }
+
+        drawFarmstandParticles(g, sim: sim)
+    }
+
+    private static func farmstandStallBack(_ g: GraphicsContext, t: CGFloat) {
+        let postHex: UInt32 = 0xC68650
+        for px in [92.0, 908.0] as [CGFloat] {
+            let post = Path(roundedRect: CGRect(x: px, y: 144, width: 24, height: 356), cornerRadius: 6)
+            StorybookArt.shape(g, post, hex: postHex, width: 2.6)
+            StorybookArt.highlight(g, in: CGRect(x: px + 4, y: 158, width: 5, height: 320), opacity: 0.25)
+        }
+        var buntingRope = Path()
+        buntingRope.move(to: CGPoint(x: 112, y: 170))
+        buntingRope.addQuadCurve(to: CGPoint(x: 912, y: 170), control: CGPoint(x: 512, y: 204))
+        g.stroke(buntingRope, with: .color(Color(hex: 0xFFF4E6)), lineWidth: 2.2)
+        let flagHexes: [UInt32] = [0xFF9AC0, 0xFFE37A, 0x8CE3B8, 0x9CCBFF, 0xD2BCFF]
+        for i in 0..<11 {
+            let u = CGFloat(i + 1) / 12
+            let pt = GardenPlants.quad(CGPoint(x: 112, y: 170), CGPoint(x: 512, y: 204), CGPoint(x: 912, y: 170), u)
+            let sway = sin(t * 2.2 + CGFloat(i)) * 1.5
+            var tri = Path()
+            tri.move(to: CGPoint(x: pt.x - 11, y: pt.y))
+            tri.addLine(to: CGPoint(x: pt.x + 11, y: pt.y))
+            tri.addLine(to: CGPoint(x: pt.x + sway, y: pt.y + 20))
+            tri.closeSubpath()
+            StorybookArt.shape(g, tri, hex: flagHexes[i % flagHexes.count], width: 1.6)
+        }
+    }
+
+    private static func farmstandAwning(_ g: GraphicsContext) {
+        let awningRect = CGRect(x: 74, y: 96, width: 876, height: 64)
+        let stripeCount = 12
+        let stripeW = awningRect.width / CGFloat(stripeCount)
+        let pinkHex: UInt32 = 0xFF94B8
+        let creamHex: UInt32 = 0xFFF8EE
+        for i in 0..<stripeCount {
+            let sx = awningRect.minX + CGFloat(i) * stripeW
+            let hex = i % 2 == 0 ? pinkHex : creamHex
+            let body = Path(CGRect(x: sx, y: awningRect.minY, width: stripeW + 0.5, height: 48))
+            g.fill(body, with: .color(StorybookArt.color(hex)))
+            let scallop = Path(ellipseIn: CGRect(x: sx, y: awningRect.minY + 34, width: stripeW, height: 28))
+            g.fill(scallop, with: .color(StorybookArt.color(hex)))
+            g.stroke(scallop, with: .color(StorybookArt.outline(for: pinkHex).opacity(0.65)), lineWidth: 2)
+        }
+        let topRail = Path(roundedRect: CGRect(x: awningRect.minX - 6, y: awningRect.minY - 4, width: awningRect.width + 12, height: 12), cornerRadius: 6)
+        StorybookArt.shape(g, topRail, hex: 0xDC9E64, width: 2.2)
+        StorybookArt.highlight(g, in: CGRect(x: awningRect.minX + 18, y: awningRect.minY + 12, width: awningRect.width - 36, height: 8), opacity: 0.25)
+    }
+
+    private static func farmstandCounter(_ g: GraphicsContext) {
+        let r = GGeo.Farmstand.counterRect
+        let apron = Path(roundedRect: CGRect(x: r.minX + 14, y: r.minY + 18, width: r.width - 28, height: r.height + 16), cornerRadius: 16)
+        StorybookArt.shape(g, apron, hex: 0xD4955C, width: 2.8)
+        for panelIdx in 0..<4 {
+            let pw = (r.width - 76) / 4
+            let px = r.minX + 26 + CGFloat(panelIdx) * (pw + 8)
+            let panel = Path(roundedRect: CGRect(x: px, y: r.minY + 36, width: pw, height: r.height - 22), cornerRadius: 12)
+            StorybookArt.fillAndStroke(g, panel, fill: Color(hex: 0xE6B07A, alpha: 0.48), stroke: StorybookArt.outline(for: 0xC6884E).opacity(0.55), width: 2)
+        }
+        let topSlab = Path(roundedRect: CGRect(x: r.minX - 8, y: r.minY - 6, width: r.width + 16, height: 34), cornerRadius: 14)
+        StorybookArt.shape(g, topSlab, hex: 0xE8B47E, width: 2.8)
+        StorybookArt.highlight(g, in: CGRect(x: r.minX + 12, y: r.minY - 1, width: r.width - 24, height: 7), opacity: 0.38)
+    }
+
+    private static func farmstandOrderCloud(_ g: GraphicsContext, order: FarmstandOrder, draft: FarmstandDraft, t: CGFloat) {
+        let c = GGeo.Farmstand.orderBubbleCenter
+        let match = FarmstandMatcher.match(requirements: order.requirements, items: draft.items)
+        let bob = sin(t * 2.5) * 3
+        let center = CGPoint(x: c.x, y: c.y + bob)
+
+        let cardW: CGFloat = order.requirements.count >= 3 ? 218 : 170
+        let cardH: CGFloat = 104
+        let cardRect = CGRect(x: center.x - cardW / 2, y: center.y - cardH / 2, width: cardW, height: cardH)
+        let card = Path(roundedRect: cardRect, cornerRadius: 34)
+        StorybookArt.fillAndStroke(g, card, fill: .white.opacity(0.97), stroke: match.allMatched ? Color(hex: 0x5FD49A) : Theme.blush, width: match.allMatched ? 4.5 : 3.5)
+
+        let dot1 = Path(ellipseIn: CGRect(x: center.x - 16, y: cardRect.maxY + 6, width: 16, height: 16))
+        let dot2 = Path(ellipseIn: CGRect(x: center.x - 12, y: cardRect.maxY + 26, width: 10, height: 10))
+        StorybookArt.fillAndStroke(g, dot1, fill: .white, stroke: Theme.blush, width: 2.5)
+        StorybookArt.fillAndStroke(g, dot2, fill: .white, stroke: Theme.blush, width: 2.0)
+
+        let badgeC = CGPoint(x: center.x, y: cardRect.minY - 4)
+        let badge = Path(ellipseIn: CGRect(x: badgeC.x - 20, y: badgeC.y - 20, width: 40, height: 40))
+        StorybookArt.fillAndStroke(g, badge, fill: Theme.cream, stroke: Theme.lemon, width: 2.8)
+        drawOrderKindBadgeIcon(g, kind: order.kind, at: badgeC, scale: 0.72)
+
+        let count = order.requirements.count
+        let spacing: CGFloat = 62
+        let startX = center.x - CGFloat(count - 1) * spacing * 0.5
+        for (idx, req) in order.requirements.enumerated() {
+            let sc = CGPoint(x: startX + CGFloat(idx) * spacing, y: center.y + 8)
+            let ok = idx < match.slotMatched.count && match.slotMatched[idx]
+            let circle = Path(ellipseIn: CGRect(x: sc.x - 26, y: sc.y - 26, width: 52, height: 52))
+            StorybookArt.fillAndStroke(g, circle, fill: ok ? Color(hex: 0xE8FFF2) : Theme.cream, stroke: ok ? Color(hex: 0x45C486) : Theme.blush, width: ok ? 3.2 : 2.2)
+            GardenPlants.drawRequirement(g, requirement: req, at: sc, size: 0.88, time: t)
+            if ok {
+                let ckC = CGPoint(x: sc.x + 17, y: sc.y - 17)
+                let ckBg = Path(ellipseIn: CGRect(x: ckC.x - 10, y: ckC.y - 10, width: 20, height: 20))
+                StorybookArt.fillAndStroke(g, ckBg, fill: Color(hex: 0x3CC48A), stroke: .white, width: 2.2)
+                var ck = Path()
+                ck.move(to: CGPoint(x: ckC.x - 4.5, y: ckC.y + 0.5))
+                ck.addLine(to: CGPoint(x: ckC.x - 1, y: ckC.y + 4))
+                ck.addLine(to: CGPoint(x: ckC.x + 5, y: ckC.y - 3.5))
+                g.stroke(ck, with: .color(.white), style: StrokeStyle(lineWidth: 2.6, lineCap: .round, lineJoin: .round))
+            }
+        }
+    }
+
+    static func drawOrderKindBadgeIcon(_ g: GraphicsContext, kind: FarmstandOrderKind, at p: CGPoint, scale s: CGFloat) {
+        var c = g
+        c.translateBy(x: p.x, y: p.y)
+        c.scaleBy(x: s, y: s)
+        switch kind {
+        case .bouquet:
+            var cone = Path()
+            cone.move(to: CGPoint(x: -11, y: -2))
+            cone.addLine(to: CGPoint(x: 11, y: -2))
+            cone.addLine(to: CGPoint(x: 0, y: 17))
+            cone.closeSubpath()
+            StorybookArt.shape(c, cone, hex: 0xFFD0E2, width: 1.8)
+            GardenPlants.drawCrop(c, kind: .tulip, variant: 0, at: CGPoint(x: -5, y: -8), size: 0.34, rot: -0.25)
+            GardenPlants.drawCrop(c, kind: .daisy, variant: 1, at: CGPoint(x: 5, y: -9), size: 0.34, rot: 0.2)
+        case .jamJar:
+            let jar = Path(roundedRect: CGRect(x: -11, y: -8, width: 22, height: 24), cornerRadius: 6)
+            StorybookArt.fillAndStroke(c, jar, fill: Color(hex: 0xFF7FA4), stroke: StorybookArt.outline(for: 0xFF7FA4), width: 2)
+            let lid = Path(roundedRect: CGRect(x: -13, y: -14, width: 26, height: 8), cornerRadius: 4)
+            StorybookArt.shape(c, lid, hex: 0xFF5D8E, width: 1.8)
+        case .farmBasket:
+            let body = Path(roundedRect: CGRect(x: -14, y: -2, width: 28, height: 17), cornerRadius: 5)
+            StorybookArt.shape(c, body, hex: 0xDAA05C, width: 2)
+            var handle = Path()
+            handle.move(to: CGPoint(x: -10, y: -2))
+            handle.addCurve(to: CGPoint(x: 10, y: -2), control1: CGPoint(x: -8, y: -16), control2: CGPoint(x: 8, y: -16))
+            c.stroke(handle, with: .color(StorybookArt.outline(for: 0xDAA05C)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+        }
+    }
+
+    private static func farmstandCraftStation(_ g: GraphicsContext, order: FarmstandOrder, draft: FarmstandDraft, sim: GardenSim, t: CGFloat) {
+        let c = GGeo.Farmstand.craftCenter
+        var cg = g
+        cg.translateBy(x: c.x, y: c.y)
+        cg.scaleBy(x: 1 - sim.farmstandCraftBounce * 0.015, y: 1 + sim.farmstandCraftBounce * 0.022)
+        cg.translateBy(x: -c.x, y: -c.y)
+
+        switch order.kind {
+        case .bouquet:
+            drawBouquetStudio(cg, draft: draft, sim: sim, t: t)
+        case .jamJar:
+            drawJamPressStudio(cg, draft: draft, t: t)
+        case .farmBasket:
+            drawFarmBasketStudio(cg, draft: draft, t: t)
+        }
+    }
+
+    private static func drawBouquetWrapCone(_ g: GraphicsContext, at center: CGPoint, wrap: WrapPaperStyle, ribbon: BouquetRibbonColor, items: [HarvestItem], dewSpritzed: Bool, scale: CGFloat, t: CGFloat) {
+        var cg = g
+        cg.translateBy(x: center.x, y: center.y)
+        cg.scaleBy(x: scale, y: scale)
+
+        var back = Path()
+        back.move(to: CGPoint(x: -76, y: -56))
+        back.addQuadCurve(to: CGPoint(x: 76, y: -56), control: CGPoint(x: 0, y: -84))
+        back.addLine(to: CGPoint(x: 24, y: 58))
+        back.addLine(to: CGPoint(x: -24, y: 58))
+        back.closeSubpath()
+        StorybookArt.fillAndStroke(cg, back, fill: StorybookArt.color(wrap.primaryHex), stroke: StorybookArt.outline(for: wrap.accentHex), width: 2.8)
+
+        for idx in 0..<FarmstandDraft.maxItems where idx >= items.count {
+            let off = GGeo.Farmstand.bouquetSlotOffsets[idx]
+            let ring = Path(ellipseIn: CGRect(x: off.x - 24, y: off.y - 24, width: 48, height: 48))
+            cg.stroke(ring, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 2.6, dash: [6, 5]))
+        }
+
+        let angles: [CGFloat] = [-0.34, 0, 0.34]
+        let lengths: [CGFloat] = [84, 98, 84]
+        for (idx, item) in items.enumerated() where idx < 3 {
+            var fg = cg
+            let xOff = CGFloat(idx - 1) * 14
+            fg.translateBy(x: items.count == 1 ? 0 : xOff, y: -12)
+            let ang = items.count == 1 ? 0 : angles[idx]
+            let sway = sin(t * 2.1 + CGFloat(idx)) * 0.03
+            GardenPlants.drawBouquetItem(fg, item: item, angle: ang + sway, stemLength: lengths[idx], time: t)
+        }
+
+        var front = Path()
+        front.move(to: CGPoint(x: -66, y: -22))
+        front.addQuadCurve(to: CGPoint(x: 66, y: -22), control: CGPoint(x: 0, y: 4))
+        front.addLine(to: CGPoint(x: 22, y: 66))
+        front.addQuadCurve(to: CGPoint(x: -22, y: 66), control: CGPoint(x: 0, y: 74))
+        front.closeSubpath()
+        cg.fill(front, with: .color(StorybookArt.color(wrap.primaryHex)))
+        var pat = cg
+        pat.clip(to: front)
+        drawWrapPattern(pat, style: wrap, in: CGRect(x: -70, y: -30, width: 140, height: 108))
+        cg.stroke(front, with: .color(StorybookArt.outline(for: wrap.accentHex)), style: StrokeStyle(lineWidth: 2.8, lineJoin: .round))
+
+        let band = Path(roundedRect: CGRect(x: -34, y: 26, width: 68, height: 14), cornerRadius: 7)
+        StorybookArt.shape(cg, band, hex: ribbon.hex, width: 2.2)
+        TreasureArt.ribbonBow(cg, cx: 0, cy: 33, scale: 1.05, fill: StorybookArt.color(ribbon.hex), stroke: StorybookArt.outline(for: ribbon.hex))
+
+        if dewSpritzed {
+            let spots: [(CGFloat, CGFloat)] = [(-44, -84), (42, -88), (0, -112), (-22, -60), (26, -54)]
+            for (k, sp) in spots.enumerated() {
+                let tw = 0.65 + 0.35 * sin(t * 4.5 + CGFloat(k) * 1.4)
+                StorybookArt.sparkle(cg, at: CGPoint(x: sp.0, y: sp.1), radius: 8.5 * tw, color: k % 2 == 0 ? Color(hex: 0xBFF0FF) : Theme.lemon, opacity: 0.95)
+            }
+        }
+    }
+
+    private static func drawWrapPattern(_ g: GraphicsContext, style: WrapPaperStyle, in rect: CGRect) {
+        let accent = StorybookArt.color(style.accentHex, alpha: 0.45)
+        switch style {
+        case .kraft:
+            for k in 0..<5 {
+                var line = Path()
+                let y = rect.minY + CGFloat(k) * 20
+                line.move(to: CGPoint(x: rect.minX, y: y))
+                line.addQuadCurve(to: CGPoint(x: rect.maxX, y: y + 6), control: CGPoint(x: rect.midX, y: y - 4))
+                g.stroke(line, with: .color(accent), lineWidth: 1.6)
+            }
+        case .blushGingham:
+            var x = rect.minX
+            while x < rect.maxX {
+                g.fill(Path(CGRect(x: x, y: rect.minY, width: 12, height: rect.height)), with: .color(accent))
+                x += 24
+            }
+            var y = rect.minY
+            while y < rect.maxY {
+                g.fill(Path(CGRect(x: rect.minX, y: y, width: rect.width, height: 12)), with: .color(accent))
+                y += 24
+            }
+        case .mintStripes:
+            for k in -4...8 {
+                var stripe = Path()
+                stripe.move(to: CGPoint(x: rect.minX + CGFloat(k) * 20, y: rect.minY))
+                stripe.addLine(to: CGPoint(x: rect.minX + CGFloat(k) * 20 - 30, y: rect.maxY))
+                g.stroke(stripe, with: .color(accent), lineWidth: 7)
+            }
+        case .starryLavender:
+            for k in 0..<8 {
+                let sx = rect.minX + 16 + gdRand(k, 81) * (rect.width - 32)
+                let sy = rect.minY + 14 + gdRand(k, 82) * (rect.height - 28)
+                StorybookArt.sparkle(g, at: CGPoint(x: sx, y: sy), radius: 6.5, color: .white, opacity: 0.85)
+            }
+        case .buttercupDots:
+            for row in 0..<5 {
+                for col in 0..<7 {
+                    let dx = rect.minX + 10 + CGFloat(col) * 22 + (row % 2 == 0 ? 0 : 10)
+                    let dy = rect.minY + 10 + CGFloat(row) * 22
+                    g.fill(Path(ellipseIn: CGRect(x: dx - 4.5, y: dy - 4.5, width: 9, height: 9)), with: .color(accent))
+                }
+            }
+        }
+    }
+
+    private static func drawBouquetStudio(_ g: GraphicsContext, draft: FarmstandDraft, sim: GardenSim, t: CGFloat) {
+        let c = GGeo.Farmstand.craftCenter
+        GardenPlants.shadow(g, at: CGPoint(x: c.x, y: c.y + 68), width: 120)
+        drawBouquetWrapCone(g, at: c, wrap: draft.wrap, ribbon: draft.ribbon, items: draft.items, dewSpritzed: draft.dewSpritzed, scale: 1.0, t: t)
+
+        var sg = g
+        sg.translateBy(x: sim.farmstandSpritzPos.x, y: sim.farmstandSpritzPos.y)
+        sg.rotate(by: .radians(Double(sim.farmstandSpritzTilt)))
+        let bottle = Path(roundedRect: CGRect(x: -22, y: -12, width: 44, height: 54), cornerRadius: 16)
+        StorybookArt.fillAndStroke(sg, bottle, fill: Color(hex: 0xB8ECFF, alpha: 0.92), stroke: StorybookArt.outline(for: 0x68BFE8), width: 2.6)
+        let neck = Path(roundedRect: CGRect(x: -10, y: -28, width: 20, height: 18), cornerRadius: 4)
+        StorybookArt.shape(sg, neck, hex: 0xFF9AC0, width: 2.2)
+        let nozzle = Path(roundedRect: CGRect(x: -26, y: -36, width: 38, height: 12), cornerRadius: 5)
+        StorybookArt.shape(sg, nozzle, hex: 0xFFE37A, width: 2.2)
+        StorybookArt.sparkle(sg, at: CGPoint(x: 0, y: 14), radius: 11, color: .white, opacity: 0.92)
+        if !draft.dewSpritzed && !draft.items.isEmpty && !sim.farmstandSpritzHeld {
+            let pulse = 0.75 + 0.25 * sin(t * 5)
+            StorybookArt.sparkle(sg, at: CGPoint(x: -28, y: -32), radius: 10 * pulse, color: Theme.lemon, opacity: 0.95)
+        }
+
+        for (idx, style) in WrapPaperStyle.allCases.enumerated() {
+            let pt = GGeo.Farmstand.wrapSwatchCenters[idx]
+            let selected = draft.wrap == style
+            let circle = Path(ellipseIn: CGRect(x: pt.x - 19, y: pt.y - 19, width: 38, height: 38))
+            g.fill(circle, with: .color(StorybookArt.color(style.primaryHex)))
+            var clip = g
+            clip.clip(to: circle)
+            drawWrapPattern(clip, style: style, in: CGRect(x: pt.x - 20, y: pt.y - 20, width: 40, height: 40))
+            g.stroke(circle, with: .color(selected ? Theme.lemon : .white), lineWidth: selected ? 4.5 : 2.8)
+        }
+
+        for (idx, col) in BouquetRibbonColor.allCases.enumerated() {
+            let pt = GGeo.Farmstand.ribbonSwatchCenters[idx]
+            let selected = draft.ribbon == col
+            let circle = Path(ellipseIn: CGRect(x: pt.x - 19, y: pt.y - 19, width: 38, height: 38))
+            StorybookArt.fillAndStroke(g, circle, fill: .white, stroke: selected ? Theme.lemon : Theme.blush, width: selected ? 4.5 : 2.6)
+            TreasureArt.ribbonBow(g, cx: pt.x, cy: pt.y, scale: 0.56, fill: StorybookArt.color(col.hex), stroke: StorybookArt.outline(for: col.hex))
+        }
+    }
+
+    private static func drawJamJar(_ g: GraphicsContext, at center: CGPoint, draft: FarmstandDraft, scale: CGFloat, t: CGFloat) {
+        var cg = g
+        cg.translateBy(x: center.x, y: center.y)
+        cg.scaleBy(x: scale, y: scale)
+
+        let jarRect = CGRect(x: -54, y: -50, width: 108, height: 114)
+        let jarPath = Path(roundedRect: jarRect, cornerRadius: 24)
+        StorybookArt.fillAndStroke(cg, jarPath, fill: Color(hex: 0xEBF9FF, alpha: 0.62), stroke: Color(hex: 0x8EBAD2), width: 3)
+
+        var inner = cg
+        inner.clip(to: Path(roundedRect: jarRect.insetBy(dx: 5, dy: 5), cornerRadius: 19))
+
+        let press = draft.pressProgress
+        let jamCol = draft.jamColor
+        if !draft.items.isEmpty && press > 0.02 {
+            let fillH = max(16, press * 94)
+            let waveY = jarRect.maxY - fillH
+            var jam = Path()
+            jam.move(to: CGPoint(x: jarRect.minX, y: jarRect.maxY))
+            jam.addLine(to: CGPoint(x: jarRect.minX, y: waveY))
+            jam.addQuadCurve(to: CGPoint(x: jarRect.maxX, y: waveY), control: CGPoint(x: 0, y: waveY - sin(t * 4) * 5))
+            jam.addLine(to: CGPoint(x: jarRect.maxX, y: jarRect.maxY))
+            jam.closeSubpath()
+            let grad = Gradient(colors: [jamCol.shade(0.16).color, jamCol.color, jamCol.shade(-0.22).color])
+            inner.fill(jam, with: .linearGradient(grad, startPoint: CGPoint(x: 0, y: waveY), endPoint: CGPoint(x: 0, y: jarRect.maxY)))
+            for k in 0..<7 {
+                let sx = -36 + gdRand(k, 45) * 72
+                let sy = waveY + 10 + gdRand(k, 46) * max(8, fillH - 16)
+                inner.fill(Path(ellipseIn: CGRect(x: sx - 2.5, y: sy - 2, width: 5, height: 4)), with: .color(jamCol.shade(-0.35).color(0.55)))
+            }
+        }
+
+        if press < 0.96 {
+            let squishY = max(0.28, 1 - press * 0.72)
+            let sinkY = press * 34
+            for (idx, item) in draft.items.enumerated() {
+                let ox: CGFloat = idx == 0 ? -24 : (idx == 1 ? 22 : 0)
+                let oy: CGFloat = idx == 2 ? -10 : 18
+                var ig = inner
+                ig.translateBy(x: ox, y: oy + sinkY)
+                ig.scaleBy(x: 1 + press * 0.25, y: squishY)
+                GardenPlants.drawHarvestItem(ig, item: item, at: .zero, size: 0.76, rot: CGFloat(idx - 1) * 0.25, time: t)
+            }
+        }
+
+        StorybookArt.highlight(cg, in: CGRect(x: -42, y: -34, width: 14, height: 68), opacity: 0.58)
+        let rim = Path(roundedRect: CGRect(x: -46, y: -62, width: 92, height: 15), cornerRadius: 7)
+        StorybookArt.fillAndStroke(cg, rim, fill: Color(hex: 0xDDF4FF, alpha: 0.85), stroke: Color(hex: 0x8EBAD2), width: 2.5)
+
+        if press >= 0.5 {
+            let lbl = Path(roundedRect: CGRect(x: -30, y: -6, width: 60, height: 34), cornerRadius: 10)
+            StorybookArt.fillAndStroke(cg, lbl, fill: Color(hex: 0xFFFDF8), stroke: Theme.blush, width: 2)
+            StorybookArt.heart(cg, at: CGPoint(x: 0, y: 11), size: 18, color: jamCol.color)
+        }
+
+        if press >= 0.99 {
+            var cloth = Path()
+            cloth.move(to: CGPoint(x: -54, y: -46))
+            cloth.addQuadCurve(to: CGPoint(x: -48, y: -68), control: CGPoint(x: -54, y: -62))
+            cloth.addQuadCurve(to: CGPoint(x: 48, y: -68), control: CGPoint(x: 0, y: -76))
+            cloth.addQuadCurve(to: CGPoint(x: 54, y: -46), control: CGPoint(x: 54, y: -62))
+            for k in 0..<5 {
+                let x1 = 54 - CGFloat(k + 1) * (108.0 / 5)
+                let xm = x1 + (108.0 / 10)
+                cloth.addQuadCurve(to: CGPoint(x: x1, y: -46), control: CGPoint(x: xm, y: -38))
+            }
+            cloth.closeSubpath()
+            cg.fill(cloth, with: .color(StorybookArt.color(draft.lid.primaryHex)))
+            var lidClip = cg
+            lidClip.clip(to: cloth)
+            var gx: CGFloat = -58
+            while gx < 58 {
+                lidClip.fill(Path(CGRect(x: gx, y: -78, width: 9, height: 46)), with: .color(StorybookArt.color(draft.lid.stripeHex, alpha: 0.45)))
+                gx += 18
+            }
+            var gy: CGFloat = -76
+            while gy < -34 {
+                lidClip.fill(Path(CGRect(x: -58, y: gy, width: 116, height: 9)), with: .color(StorybookArt.color(draft.lid.stripeHex, alpha: 0.45)))
+                gy += 18
+            }
+            cg.stroke(cloth, with: .color(StorybookArt.outline(for: draft.lid.stripeHex)), lineWidth: 2.4)
+            var twine = Path()
+            twine.move(to: CGPoint(x: -48, y: -50))
+            twine.addQuadCurve(to: CGPoint(x: 48, y: -50), control: CGPoint(x: 0, y: -44))
+            cg.stroke(twine, with: .color(Color(hex: 0xE6C280)), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+            StorybookArt.sparkle(cg, at: CGPoint(x: 40, y: -74), radius: 9, color: Theme.lemon, opacity: 0.95)
+        }
+    }
+
+    private static func drawJamPressStudio(_ g: GraphicsContext, draft: FarmstandDraft, t: CGFloat) {
+        let c = GGeo.Farmstand.craftCenter
+        GardenPlants.shadow(g, at: CGPoint(x: c.x, y: c.y + 66), width: 122)
+        drawJamJar(g, at: c, draft: draft, scale: 1.0, t: t)
+
+        if !draft.items.isEmpty && draft.pressProgress < 0.99 {
+            let py = GGeo.Farmstand.plungerTopY + draft.pressProgress * GGeo.Farmstand.plungerTravelY
+            let shaft = Path(roundedRect: CGRect(x: c.x - 8, y: py - 24, width: 16, height: 68), cornerRadius: 6)
+            StorybookArt.shape(g, shaft, hex: 0xD4955C, width: 2.2)
+            let handle = Path(roundedRect: CGRect(x: c.x - 42, y: py - 42, width: 84, height: 22), cornerRadius: 11)
+            StorybookArt.shape(g, handle, hex: 0xFF8FB8, width: 2.6)
+            let disc = Path(roundedRect: CGRect(x: c.x - 36, y: py + 38, width: 72, height: 14), cornerRadius: 7)
+            StorybookArt.shape(g, disc, hex: 0xE2AA72, width: 2.2)
+            let bob = sin(t * 5.2) * 5
+            var arrow = Path()
+            arrow.move(to: CGPoint(x: c.x - 10, y: py - 58 + bob))
+            arrow.addLine(to: CGPoint(x: c.x, y: py - 47 + bob))
+            arrow.addLine(to: CGPoint(x: c.x + 10, y: py - 58 + bob))
+            g.stroke(arrow, with: .color(Theme.lemon), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+        }
+
+        for (idx, lid) in JamLidColor.allCases.enumerated() {
+            let pt = GGeo.Farmstand.lidSwatchCenters[idx]
+            let selected = draft.lid == lid
+            let circle = Path(ellipseIn: CGRect(x: pt.x - 21, y: pt.y - 21, width: 42, height: 42))
+            g.fill(circle, with: .color(StorybookArt.color(lid.primaryHex)))
+            var lc = g
+            lc.clip(to: circle)
+            lc.fill(Path(CGRect(x: pt.x - 6, y: pt.y - 22, width: 12, height: 44)), with: .color(StorybookArt.color(lid.stripeHex, alpha: 0.45)))
+            lc.fill(Path(CGRect(x: pt.x - 22, y: pt.y - 6, width: 44, height: 12)), with: .color(StorybookArt.color(lid.stripeHex, alpha: 0.45)))
+            g.stroke(circle, with: .color(selected ? Theme.lemon : .white), lineWidth: selected ? 4.5 : 2.8)
+        }
+    }
+
+    private static func drawFarmBasketCrate(_ g: GraphicsContext, at center: CGPoint, draft: FarmstandDraft, scale: CGFloat, t: CGFloat) {
+        var cg = g
+        cg.translateBy(x: center.x, y: center.y)
+        cg.scaleBy(x: scale, y: scale)
+
+        var handle = Path()
+        handle.move(to: CGPoint(x: -96, y: -12))
+        handle.addCurve(to: CGPoint(x: 96, y: -12), control1: CGPoint(x: -88, y: -102), control2: CGPoint(x: 88, y: -102))
+        cg.stroke(handle, with: .color(StorybookArt.outline(for: 0xDAA05C)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+        cg.stroke(handle, with: .color(Color(hex: 0xE2AA66)), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+
+        cg.fill(Path(ellipseIn: CGRect(x: -108, y: -28, width: 216, height: 34)), with: .color(Color(hex: 0x8F5E34)))
+
+        let arranged = draft.arrangedBasketSlots()
+        for (slotIdx, itemOpt) in arranged.enumerated() {
+            let off = GGeo.Farmstand.basketSlotOffsets[slotIdx]
+            if let item = itemOpt {
+                let itemScale: CGFloat = item.isGiant ? 1.15 : (slotIdx == 1 ? 0.95 : 0.86)
+                GardenPlants.drawHarvestItem(cg, item: item, at: off, size: itemScale, rot: CGFloat(slotIdx - 1) * 0.14, time: t)
+            } else {
+                let ring = Path(ellipseIn: CGRect(x: off.x - 24, y: off.y - 24, width: 48, height: 48))
+                cg.stroke(ring, with: .color(.white.opacity(0.8)), style: StrokeStyle(lineWidth: 2.5, dash: [6, 5]))
+            }
+        }
+
+        var front = Path()
+        front.move(to: CGPoint(x: -108, y: -10))
+        front.addQuadCurve(to: CGPoint(x: 108, y: -10), control: CGPoint(x: 0, y: 12))
+        front.addLine(to: CGPoint(x: 86, y: 62))
+        front.addQuadCurve(to: CGPoint(x: -86, y: 62), control: CGPoint(x: 0, y: 76))
+        front.closeSubpath()
+        let wicker = GRGB(0xDAA05C)
+        cg.fill(front, with: .linearGradient(Gradient(colors: [wicker.shade(0.16).color, wicker.shade(-0.2).color]),
+                                             startPoint: CGPoint(x: 0, y: -10), endPoint: CGPoint(x: 0, y: 70)))
+        var weave = cg
+        weave.clip(to: front)
+        for row in 0..<5 {
+            let y = 4 + CGFloat(row) * 14
+            var line = Path()
+            line.move(to: CGPoint(x: -112, y: y))
+            var x: CGFloat = -112
+            while x < 112 {
+                line.addQuadCurve(to: CGPoint(x: x + 22, y: y), control: CGPoint(x: x + 11, y: y + (row % 2 == 0 ? 5 : -5)))
+                x += 22
+            }
+            weave.stroke(line, with: .color(wicker.shade(-0.38).color(0.5)), lineWidth: 2.2)
+        }
+        cg.stroke(front, with: .color(StorybookArt.outline(for: 0xDAA05C)), style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+        let rim = Path(roundedRect: CGRect(x: -114, y: -18, width: 228, height: 14), cornerRadius: 7)
+        StorybookArt.shape(cg, rim, hex: 0xE6B270, width: 2.4)
+    }
+
+    private static func drawFarmBasketStudio(_ g: GraphicsContext, draft: FarmstandDraft, t: CGFloat) {
+        let c = GGeo.Farmstand.craftCenter
+        GardenPlants.shadow(g, at: CGPoint(x: c.x, y: c.y + 68), width: 210)
+        drawFarmBasketCrate(g, at: c, draft: draft, scale: 1.0, t: t)
+    }
+
+    private static func farmstandServeBell(_ g: GraphicsContext, active: Bool, readyGlow: Bool, bounce: CGFloat, t: CGFloat) {
+        let c = GGeo.Farmstand.serveBell
+        var bg = g
+        bg.translateBy(x: c.x, y: c.y)
+        let pulse: CGFloat = active ? 1 + 0.05 * sin(t * 5.2) : 1
+        bg.scaleBy(x: (1 - bounce * 0.02) * pulse, y: (1 + bounce * 0.03) * pulse)
+
+        if active {
+            let glowR: CGFloat = readyGlow ? 72 : 58
+            bg.fill(
+                Path(ellipseIn: CGRect(x: -glowR, y: -glowR, width: glowR * 2, height: glowR * 2)),
+                with: .radialGradient(
+                    Gradient(colors: [Color(hex: readyGlow ? 0xFFE37A : 0xFFB8D4, alpha: readyGlow ? 0.65 : 0.4), Color.white.opacity(0)]),
+                    center: .zero, startRadius: 10, endRadius: glowR
+                )
+            )
+        }
+
+        GardenPlants.shadow(bg, at: CGPoint(x: 0, y: 40), width: 92)
+        let base = Path(roundedRect: CGRect(x: -44, y: 24, width: 88, height: 16), cornerRadius: 8)
+        StorybookArt.shape(bg, base, hex: 0xC68650, width: 2.4)
+
+        let knob = Path(roundedRect: CGRect(x: -11, y: -44, width: 22, height: 12), cornerRadius: 6)
+        StorybookArt.shape(bg, knob, hex: 0xFFE68A, width: 2.2)
+
+        var dome = Path()
+        dome.move(to: CGPoint(x: -40, y: 26))
+        dome.addCurve(to: CGPoint(x: 40, y: 26), control1: CGPoint(x: -42, y: -44), control2: CGPoint(x: 42, y: -44))
+        dome.closeSubpath()
+        let domeHex: UInt32 = active ? 0xFFD452 : 0xE8D8C4
+        bg.fill(dome, with: .radialGradient(
+            Gradient(colors: [StorybookArt.tint(for: domeHex, amount: 0.45), StorybookArt.color(domeHex), StorybookArt.shade(for: domeHex, factor: 0.86)]),
+            center: CGPoint(x: -14, y: -12), startRadius: 4, endRadius: 56
+        ))
+        bg.stroke(dome, with: .color(StorybookArt.outline(for: domeHex)), style: StrokeStyle(lineWidth: 2.8, lineJoin: .round))
+        StorybookArt.highlight(bg, in: CGRect(x: -24, y: -22, width: 16, height: 22), opacity: 0.45)
+        StorybookArt.heart(bg, at: CGPoint(x: 0, y: 4), size: 22, color: active ? Theme.pink : Color(hex: 0xC8B8A8))
+
+        if readyGlow {
+            StorybookArt.sparkle(bg, at: CGPoint(x: -44, y: -28), radius: 10, color: Theme.lemon, opacity: 0.95)
+            StorybookArt.sparkle(bg, at: CGPoint(x: 44, y: -20), radius: 8.5, color: .white, opacity: 0.95)
+        }
+    }
+
+    private static func farmstandCelebrationShowcase(_ g: GraphicsContext, cel: FarmstandCelebration, t: CGFloat) {
+        let elapsed = t - CGFloat(cel.startedAt)
+        let lift = sin(elapsed * 5.5) * 6
+        let giftPos = CGPoint(x: 378, y: 432 + lift)
+        let previewDraft = FarmstandDraft(
+            items: cel.servedItems,
+            wrap: cel.wrap,
+            ribbon: cel.ribbon,
+            lid: cel.lid,
+            dewSpritzed: true,
+            pressProgress: 1.0
+        )
+        switch cel.orderKind {
+        case .bouquet:
+            drawBouquetWrapCone(g, at: giftPos, wrap: cel.wrap, ribbon: cel.ribbon, items: cel.servedItems, dewSpritzed: true, scale: 0.85, t: t)
+        case .jamJar:
+            drawJamJar(g, at: giftPos, draft: previewDraft, scale: 0.88, t: t)
+        case .farmBasket:
+            drawFarmBasketCrate(g, at: giftPos, draft: previewDraft, scale: 0.78, t: t)
+        }
+
+        let starCenter = CGPoint(x: GGeo.Farmstand.customerSeat.x + 12, y: 242)
+        for i in 0..<cel.stars {
+            let spread = cel.stars == 1 ? 0 : (CGFloat(i) - CGFloat(cel.stars - 1) * 0.5) * 58
+            let arch = -abs(spread) * 0.24 + sin(t * 7 + CGFloat(i)) * 5
+            let pt = CGPoint(x: starCenter.x + spread, y: starCenter.y + arch)
+            let pop = min(1, max(0.2, (elapsed - CGFloat(i) * 0.12) / 0.28))
+            let r: CGFloat = 24 * pop
+            let star = TreasureArt.starPath(cx: pt.x, cy: pt.y, outer: r, inner: r * 0.48)
+            StorybookArt.fillAndStroke(g, star, fill: Color(hex: 0xFFD94A), stroke: StorybookArt.outline(for: 0xF0A820), width: 2.6)
+            StorybookArt.sparkle(g, at: CGPoint(x: pt.x - r * 0.35, y: pt.y - r * 0.35), radius: 5.5, color: .white, opacity: 0.9)
+        }
+    }
+
+    private static func drawFarmstandParticles(_ g: GraphicsContext, sim: GardenSim) {
+        for q in sim.farmstandParticles {
+            let life = Double(max(0, 1 - q.age / q.life))
+            switch q.kind {
+            case .sparkle:
+                let s = q.size * CGFloat(0.4 + 0.6 * life)
+                StorybookArt.sparkle(g, at: q.p, radius: s, color: q.color.color, opacity: life)
+            case .heart:
+                let s = q.size * CGFloat(0.65 + 0.35 * sin(CGFloat(1 - life) * .pi))
+                StorybookArt.heart(g, at: q.p, size: s, color: q.color.color, opacity: min(1, life * 1.5))
+            case .splash:
+                let r = CGRect(x: q.p.x - q.size, y: q.p.y - q.size, width: q.size * 2, height: q.size * 2)
+                g.fill(Path(ellipseIn: r), with: .color(q.color.color(min(1, life * 1.4))))
+            case .confetti:
+                var cg = g
+                cg.translateBy(x: q.p.x, y: q.p.y)
+                cg.rotate(by: .radians(Double(q.rot)))
+                let flip = max(0.25, abs(cos(q.rot * 2.2)))
+                let r = CGRect(x: -q.size * 0.55, y: -q.size * 0.32 * flip, width: q.size * 1.1, height: q.size * 0.64 * flip)
+                cg.fill(Path(roundedRect: r, cornerRadius: 2), with: .color(q.color.color(min(1, life * 2))))
+            default:
+                continue
+            }
         }
     }
 }

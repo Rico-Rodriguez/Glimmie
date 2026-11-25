@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 func gdRand(_ i: Int, _ salt: Int) -> CGFloat {
@@ -47,8 +48,164 @@ struct GRGB: Equatable {
     func color(_ a: Double) -> Color { Color(.sRGB, red: r, green: g, blue: b, opacity: a) }
 }
 
-enum PlantKind: String, Codable, CaseIterable {
+enum GardenStation: String, Codable, Equatable, CaseIterable {
+    case bed
+    case farmstand
+}
+
+enum HarvestMechanic: String, Codable, Equatable, CaseIterable {
+    case pullUp
+    case snipStem
+    case shakeVine
+    case waterPuff
+}
+
+enum HarvestSpecies: Codable, Equatable, Hashable {
+    case classic(PlantKind)
+    case hybrid(HybridKind)
+
+    var isFlower: Bool {
+        switch self {
+        case .classic(let kind): return kind.isFlower
+        case .hybrid(let hybrid): return hybrid.isFlower
+        }
+    }
+
+    var spec: SpeciesSpec {
+        SpeciesCatalog.spec(for: self)
+    }
+}
+
+struct SpeciesSpec: Equatable {
+    let growthDuration: Double
+    let yieldCount: Int
+    let harvestMechanic: HarvestMechanic
+    let normalPalette: [GRGB]
+}
+
+enum SpeciesCatalog {
+    static func spec(for species: HarvestSpecies) -> SpeciesSpec {
+        switch species {
+        case .classic(let kind):
+            return classicSpec(kind)
+        case .hybrid(let hybrid):
+            return hybridSpec(hybrid)
+        }
+    }
+
+    static func classicSpec(_ kind: PlantKind) -> SpeciesSpec {
+        switch kind {
+        case .carrot:
+            return SpeciesSpec(
+                growthDuration: 2.6,
+                yieldCount: 1,
+                harvestMechanic: .pullUp,
+                normalPalette: [GRGB(0xFF8A2A), GRGB(0xFF7224), GRGB(0xFFA63B), GRGB(0xF0662E)]
+            )
+        case .daisy:
+            return SpeciesSpec(
+                growthDuration: 3.0,
+                yieldCount: 2,
+                harvestMechanic: .snipStem,
+                normalPalette: [GRGB(0xFFFFFF), GRGB(0xFFC2DA), GRGB(0xFFF0A0), GRGB(0xE8D8FF)]
+            )
+        case .tulip:
+            return SpeciesSpec(
+                growthDuration: 3.4,
+                yieldCount: 1,
+                harvestMechanic: .snipStem,
+                normalPalette: [GRGB(0xFF4F7B), GRGB(0xFF9A3D), GRGB(0xC86BFF), GRGB(0xFFD23F)]
+            )
+        case .strawberry:
+            return SpeciesSpec(
+                growthDuration: 3.8,
+                yieldCount: 3,
+                harvestMechanic: .shakeVine,
+                normalPalette: [GRGB(0xE8263F), GRGB(0xFF4262), GRGB(0xD9204A), GRGB(0xFF5C74)]
+            )
+        case .lavender:
+            return SpeciesSpec(
+                growthDuration: 4.2,
+                yieldCount: 2,
+                harvestMechanic: .snipStem,
+                normalPalette: [GRGB(0x9C7BEA), GRGB(0xB894FF), GRGB(0x7C6CE6), GRGB(0xC7A6FF)]
+            )
+        case .tomato:
+            return SpeciesSpec(
+                growthDuration: 4.8,
+                yieldCount: 3,
+                harvestMechanic: .shakeVine,
+                normalPalette: [GRGB(0xF2392C), GRGB(0xFF5638), GRGB(0xE63046), GRGB(0xFF6B42)]
+            )
+        case .sunflower:
+            return SpeciesSpec(
+                growthDuration: 5.4,
+                yieldCount: 1,
+                harvestMechanic: .snipStem,
+                normalPalette: [GRGB(0xFFC928), GRGB(0xFFAE2B), GRGB(0xFFE052), GRGB(0xF59624)]
+            )
+        case .pumpkin:
+            return SpeciesSpec(
+                growthDuration: 6.0,
+                yieldCount: 1,
+                harvestMechanic: .waterPuff,
+                normalPalette: [GRGB(0xF78A1E), GRGB(0xFF9E32), GRGB(0xE6741A), GRGB(0xF2B138)]
+            )
+        }
+    }
+
+    static func hybridSpec(_ hybrid: HybridKind) -> SpeciesSpec {
+        switch hybrid {
+        case .starlightRose:
+            return SpeciesSpec(
+                growthDuration: 4.0,
+                yieldCount: 1,
+                harvestMechanic: .snipStem,
+                normalPalette: [hybrid.primaryColor, hybrid.accentColor]
+            )
+        case .cottonSunflower:
+            return SpeciesSpec(
+                growthDuration: 5.4,
+                yieldCount: 1,
+                harvestMechanic: .snipStem,
+                normalPalette: [hybrid.primaryColor, hybrid.accentColor]
+            )
+        case .moonberryTulip:
+            return SpeciesSpec(
+                growthDuration: 3.6,
+                yieldCount: 1,
+                harvestMechanic: .snipStem,
+                normalPalette: [hybrid.primaryColor, hybrid.accentColor]
+            )
+        case .rainbowLavender:
+            return SpeciesSpec(
+                growthDuration: 4.2,
+                yieldCount: 2,
+                harvestMechanic: .snipStem,
+                normalPalette: [hybrid.primaryColor, hybrid.accentColor]
+            )
+        case .crystalPumpkin:
+            return SpeciesSpec(
+                growthDuration: 6.0,
+                yieldCount: 1,
+                harvestMechanic: .waterPuff,
+                normalPalette: [hybrid.primaryColor, hybrid.accentColor]
+            )
+        case .sparkleBerryVine:
+            return SpeciesSpec(
+                growthDuration: 4.6,
+                yieldCount: 3,
+                harvestMechanic: .shakeVine,
+                normalPalette: [hybrid.primaryColor, hybrid.accentColor]
+            )
+        }
+    }
+}
+
+enum PlantKind: String, Codable, CaseIterable, Hashable {
     case sunflower, tulip, daisy, lavender, carrot, tomato, strawberry, pumpkin
+
+    var spec: SpeciesSpec { SpeciesCatalog.classicSpec(self) }
 
     var isFlower: Bool {
         switch self {
@@ -79,17 +236,10 @@ enum PlantKind: String, Codable, CaseIterable {
         }
     }
 
-    var pulled: Bool { self == .carrot }
-
-    var crop: Int {
-        switch self {
-        case .tomato: return 4
-        case .strawberry: return 3
-        case .pumpkin, .carrot: return 1
-        case .daisy, .lavender: return 2
-        case .sunflower, .tulip: return 1
-        }
-    }
+    var pulled: Bool { spec.harvestMechanic == .pullUp }
+    var crop: Int { spec.yieldCount }
+    var growthDuration: Double { spec.growthDuration }
+    var harvestMechanic: HarvestMechanic { spec.harvestMechanic }
 
     var packet: (GRGB, GRGB) {
         switch self {
@@ -116,16 +266,8 @@ enum PlantKind: String, Codable, CaseIterable {
 
     func bloom(_ v: Int) -> GRGB {
         if v >= Plant.specialVariant { return specialColor }
-        switch self {
-        case .sunflower: return GRGB(0xFFC928)
-        case .tulip: return [GRGB(0xFF4F7B), GRGB(0xFF9A3D), GRGB(0xC86BFF), GRGB(0xFFD23F)][abs(v) % 4]
-        case .daisy: return [GRGB(0xFFFFFF), GRGB(0xFFC2DA), GRGB(0xFFF0A0)][abs(v) % 3]
-        case .lavender: return GRGB(0x9C7BEA)
-        case .carrot: return GRGB(0xFF8A2A)
-        case .tomato: return GRGB(0xF2392C)
-        case .strawberry: return GRGB(0xE8263F)
-        case .pumpkin: return GRGB(0xF78A1E)
-        }
+        let pal = spec.normalPalette
+        return pal[abs(v) % pal.count]
     }
 
     var specialColor: GRGB {
@@ -142,13 +284,15 @@ enum PlantKind: String, Codable, CaseIterable {
     }
 }
 
-enum HybridKind: String, CaseIterable, Codable, Equatable {
+enum HybridKind: String, CaseIterable, Codable, Equatable, Hashable {
     case starlightRose
     case cottonSunflower
     case moonberryTulip
     case rainbowLavender
     case crystalPumpkin
     case sparkleBerryVine
+
+    var spec: SpeciesSpec { SpeciesCatalog.hybridSpec(self) }
 
     var parents: (PlantKind, PlantKind) {
         switch self {
@@ -187,13 +331,8 @@ enum HybridKind: String, CaseIterable, Codable, Equatable {
         }
     }
 
-    var crop: Int {
-        switch self {
-        case .sparkleBerryVine: return 3
-        case .rainbowLavender: return 2
-        default: return 1
-        }
-    }
+    var crop: Int { spec.yieldCount }
+    var harvestMechanic: HarvestMechanic { spec.harvestMechanic }
 
     var primaryColor: GRGB {
         switch self {
@@ -235,7 +374,6 @@ enum HybridKind: String, CaseIterable, Codable, Equatable {
         default:
             break
         }
-        // Any two distinct ripe species cross-breed into a matching hybrid so exploration always delights.
         if target == .pumpkin || donor == .pumpkin { return .crystalPumpkin }
         switch target {
         case .sunflower: return .cottonSunflower
@@ -318,6 +456,65 @@ struct Plant: Codable, Equatable {
     }
 }
 
+struct GrowingPlant: Codable, Equatable {
+    var kind: PlantKind
+    var growth: Double
+    var variant: Int
+    var hybrid: HybridKind? = nil
+
+    init(kind: PlantKind, growth: Double = 0.08, variant: Int = 0, hybrid: HybridKind? = nil) {
+        self.kind = kind
+        self.growth = max(0, min(0.9999, growth))
+        self.variant = variant
+        self.hybrid = hybrid
+    }
+
+    var species: HarvestSpecies { hybrid.map { .hybrid($0) } ?? .classic(kind) }
+    var isSpecial: Bool { variant >= Plant.specialVariant }
+    var effectiveIsFlower: Bool { hybrid?.isFlower ?? kind.isFlower }
+    var effectiveReach: CGFloat { hybrid?.reach ?? kind.reach }
+    var growthDuration: Double { species.spec.growthDuration }
+}
+
+struct RipePlant: Codable, Equatable {
+    var kind: PlantKind
+    var variant: Int
+    var yieldLeft: Int
+    var isGiant: Bool = false
+    var hybrid: HybridKind? = nil
+    var rainbowCharged: Bool = false
+    var waterPuffProgress: CGFloat = 0
+    var shakeProgress: CGFloat = 0
+
+    init(
+        kind: PlantKind,
+        variant: Int = 0,
+        yieldLeft: Int? = nil,
+        isGiant: Bool = false,
+        hybrid: HybridKind? = nil,
+        rainbowCharged: Bool = false,
+        waterPuffProgress: CGFloat = 0,
+        shakeProgress: CGFloat = 0
+    ) {
+        self.kind = kind
+        self.variant = variant
+        let defaultYield = hybrid?.crop ?? kind.crop
+        self.yieldLeft = max(1, yieldLeft ?? defaultYield)
+        self.isGiant = isGiant
+        self.hybrid = hybrid
+        self.rainbowCharged = rainbowCharged
+        self.waterPuffProgress = waterPuffProgress
+        self.shakeProgress = shakeProgress
+    }
+
+    var species: HarvestSpecies { hybrid.map { .hybrid($0) } ?? .classic(kind) }
+    var isSpecial: Bool { variant >= Plant.specialVariant }
+    var effectiveIsFlower: Bool { hybrid?.isFlower ?? kind.isFlower }
+    var effectiveReach: CGFloat { hybrid?.reach ?? kind.reach }
+    var maxYield: Int { species.spec.yieldCount }
+    var harvestMechanic: HarvestMechanic { species.spec.harvestMechanic }
+}
+
 enum BuriedSurprise: String, Codable, Equatable, CaseIterable {
     case worm, ladybug, mysteryBulb, coins
 
@@ -326,10 +523,75 @@ enum BuriedSurprise: String, Codable, Equatable, CaseIterable {
     }
 }
 
-enum GardenPlotState: Equatable {
-    case empty(surprise: BuriedSurprise)
-    case growing(Plant)
-    case ripe(Plant)
+enum PlotStage: Equatable {
+    case empty(surprise: BuriedSurprise, surpriseReady: Bool)
+    case growing(GrowingPlant)
+    case ripe(RipePlant)
+}
+
+enum PollinationState: Equatable {
+    case idle
+    case carrying(donorPlot: Int, donorKind: PlantKind, point: CGPoint, tapMode: Bool)
+}
+
+enum HarvestSource: Codable, Equatable, Hashable {
+    case plant(kind: PlantKind, variant: Int, isGiant: Bool)
+    case hybrid(kind: HybridKind, isGiant: Bool)
+
+    var species: HarvestSpecies {
+        switch self {
+        case .plant(let kind, _, _): return .classic(kind)
+        case .hybrid(let kind, _): return .hybrid(kind)
+        }
+    }
+
+    var isFlower: Bool { species.isFlower }
+
+    var isGiant: Bool {
+        switch self {
+        case .plant(_, _, let giant): return giant
+        case .hybrid(_, let giant): return giant
+        }
+    }
+
+    var isSpecial: Bool {
+        switch self {
+        case .plant(_, let variant, _): return variant >= Plant.specialVariant
+        case .hybrid: return true
+        }
+    }
+
+    var displayColor: GRGB {
+        switch self {
+        case .plant(let kind, let variant, _): return kind.bloom(variant)
+        case .hybrid(let kind, _): return kind.primaryColor
+        }
+    }
+}
+
+struct HarvestItem: Identifiable, Codable, Equatable, Hashable {
+    var id: UUID
+    var source: HarvestSource
+
+    init(id: UUID = UUID(), source: HarvestSource) {
+        self.id = id
+        self.source = source
+    }
+
+    var species: HarvestSpecies { source.species }
+    var isFlower: Bool { source.isFlower }
+    var isGiant: Bool { source.isGiant }
+    var isSpecial: Bool { source.isSpecial }
+    var isEdibleProduce: Bool { !source.isFlower }
+
+    var isJamProduce: Bool {
+        switch source {
+        case .plant(let kind, _, _):
+            return kind == .strawberry || kind == .tomato || kind == .carrot || kind == .pumpkin
+        case .hybrid(let kind, _):
+            return kind == .sparkleBerryVine || kind == .crystalPumpkin
+        }
+    }
 }
 
 struct BouquetFlower: Codable, Equatable {
@@ -436,6 +698,9 @@ struct GardenSave: Codable, Equatable {
     var picnicFeedCount: Int? = nil
     var season: GardenSeason? = nil
     var caughtFireflies: Int? = nil
+    var harvestInventory: [HarvestItem]? = nil
+    var farmstandServedCount: Int? = nil
+    var activeOrder: FarmstandOrder? = nil
 
     init(
         plots: [Plant?],
@@ -450,7 +715,10 @@ struct GardenSave: Codable, Equatable {
         treehouseStage: Int? = nil,
         picnicFeedCount: Int? = nil,
         season: GardenSeason? = nil,
-        caughtFireflies: Int? = nil
+        caughtFireflies: Int? = nil,
+        harvestInventory: [HarvestItem]? = nil,
+        farmstandServedCount: Int? = nil,
+        activeOrder: FarmstandOrder? = nil
     ) {
         self.plots = plots
         self.soil = soil
@@ -465,11 +733,15 @@ struct GardenSave: Codable, Equatable {
         self.picnicFeedCount = picnicFeedCount
         self.season = season
         self.caughtFireflies = caughtFireflies
+        self.harvestInventory = harvestInventory
+        self.farmstandServedCount = farmstandServedCount
+        self.activeOrder = activeOrder
     }
 
     private enum CodingKeys: String, CodingKey {
         case plots, soil, wet, weeds, decor, basket, weather, bouquet
         case discoveredHybrids, treehouseStage, picnicFeedCount, season, caughtFireflies
+        case harvestInventory, farmstandServedCount, activeOrder
     }
 
     init(from decoder: Decoder) throws {
@@ -487,6 +759,116 @@ struct GardenSave: Codable, Equatable {
         picnicFeedCount = try c.decodeIfPresent(Int.self, forKey: .picnicFeedCount)
         season = try c.decodeIfPresent(GardenSeason.self, forKey: .season)
         caughtFireflies = try c.decodeIfPresent(Int.self, forKey: .caughtFireflies)
+        harvestInventory = try c.decodeIfPresent([HarvestItem].self, forKey: .harvestInventory)
+        farmstandServedCount = try c.decodeIfPresent(Int.self, forKey: .farmstandServedCount)
+        activeOrder = try c.decodeIfPresent(FarmstandOrder.self, forKey: .activeOrder)
+    }
+
+    private struct LegacyFlowerKey: Hashable {
+        var kind: PlantKind?
+        var variant: Int
+        var hybrid: HybridKind?
+    }
+
+    func resolvedInventory(maxCount: Int = 60) -> [HarvestItem] {
+        if let typed = harvestInventory {
+            return Array(typed.suffix(maxCount))
+        }
+        var items: [HarvestItem] = []
+        var flowerCounts: [LegacyFlowerKey: Int] = [:]
+
+        for entry in basket {
+            guard let source = GardenSave.decodeLegacyBasketEntry(entry) else { continue }
+            items.append(HarvestItem(source: source))
+            if source.isFlower {
+                let key = GardenSave.flowerKey(for: source)
+                flowerCounts[key, default: 0] += 1
+            }
+        }
+
+        for flower in bouquet ?? [] {
+            let key = LegacyFlowerKey(
+                kind: flower.hybrid == nil ? flower.kind : nil,
+                variant: flower.hybrid == nil ? flower.variant : 0,
+                hybrid: flower.hybrid
+            )
+            if let remaining = flowerCounts[key], remaining > 0 {
+                flowerCounts[key] = remaining - 1
+                continue
+            }
+            if let hybrid = flower.hybrid {
+                items.append(HarvestItem(source: .hybrid(kind: hybrid, isGiant: false)))
+            } else {
+                items.append(HarvestItem(source: .plant(kind: flower.kind, variant: flower.variant, isGiant: false)))
+            }
+        }
+        return Array(items.suffix(maxCount))
+    }
+
+    static func encodeLegacyBasket(_ items: [HarvestItem]) -> [String] {
+        items.suffix(40).map { item in
+            switch item.source {
+            case .plant(let kind, let variant, _):
+                return "\(kind.rawValue):\(variant)"
+            case .hybrid(let kind, _):
+                return "hybrid:\(kind.rawValue)"
+            }
+        }
+    }
+
+    static func encodeLegacyBouquet(_ items: [HarvestItem], maxCount: Int) -> [BouquetFlower]? {
+        let flowers: [BouquetFlower] = items.filter(\.isFlower).suffix(maxCount).map { item in
+            switch item.source {
+            case .plant(let kind, let variant, _):
+                return BouquetFlower(kind: kind, variant: variant)
+            case .hybrid(let hybrid, _):
+                return BouquetFlower(kind: hybrid.parents.0, variant: 0, hybrid: hybrid)
+            }
+        }
+        return flowers.isEmpty ? nil : flowers
+    }
+
+    static func stage(from legacyPlant: Plant?, defaultSurprise: BuriedSurprise) -> PlotStage {
+        guard let p = legacyPlant else {
+            return .empty(surprise: defaultSurprise, surpriseReady: true)
+        }
+        if p.growth >= 1 {
+            // Self-heal broken legacy plots that saved ripe growth with zero remaining yield.
+            guard p.left > 0 else {
+                return .empty(surprise: defaultSurprise, surpriseReady: true)
+            }
+            return .ripe(
+                RipePlant(
+                    kind: p.kind,
+                    variant: p.variant,
+                    yieldLeft: p.left,
+                    isGiant: p.giant,
+                    hybrid: p.hybrid,
+                    rainbowCharged: p.rainbowCharged
+                )
+            )
+        }
+        return .growing(GrowingPlant(kind: p.kind, growth: p.growth, variant: p.variant, hybrid: p.hybrid))
+    }
+
+    private static func decodeLegacyBasketEntry(_ entry: String) -> HarvestSource? {
+        let parts = entry.split(separator: ":")
+        guard let head = parts.first else { return nil }
+        if head == "hybrid", parts.count > 1, let hybrid = HybridKind(rawValue: String(parts[1])) {
+            return .hybrid(kind: hybrid, isGiant: false)
+        }
+        guard let kind = PlantKind(rawValue: String(head)) else { return nil }
+        let variant = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        return .plant(kind: kind, variant: variant, isGiant: false)
+    }
+
+    private static func flowerKey(for source: HarvestSource) -> LegacyFlowerKey {
+        switch source {
+        case .plant(let kind, let variant, _):
+            return LegacyFlowerKey(kind: kind, variant: variant, hybrid: nil)
+        case .hybrid(let hybrid, _):
+            return LegacyFlowerKey(kind: nil, variant: 0, hybrid: hybrid)
+        }
     }
 }
 
@@ -521,6 +903,44 @@ enum GGeo {
     static let returnBadge = CGPoint(x: 932, y: 740)
     static let dockY: CGFloat = GameChromeLayout.dockY
     static let trayY: CGFloat = 636
+
+    enum Farmstand {
+        static let counterTopY: CGFloat = 486
+        static let counterRect = CGRect(x: 78, y: 486, width: 868, height: 146)
+        static let customerSeat = CGPoint(x: 236, y: 468)
+        static let orderBubbleCenter = CGPoint(x: 242, y: 246)
+        static let craftCenter = CGPoint(x: 548, y: 438)
+        static let craftDropZone = CGRect(x: 408, y: 230, width: 280, height: 266)
+        static let spritzHome = CGPoint(x: 734, y: 392)
+        static let plungerTopY: CGFloat = 292
+        static let plungerTravelY: CGFloat = 92
+        static let serveBell = CGPoint(x: 854, y: 428)
+        static let serveBellRadius: CGFloat = 52
+
+        static let bouquetSlotOffsets: [CGPoint] = [
+            CGPoint(x: -44, y: -74),
+            CGPoint(x: 0, y: -92),
+            CGPoint(x: 44, y: -74),
+        ]
+
+        static let basketSlotOffsets: [CGPoint] = [
+            CGPoint(x: -60, y: -16),
+            CGPoint(x: 0, y: -26),
+            CGPoint(x: 60, y: -16),
+        ]
+
+        static let wrapSwatchCenters: [CGPoint] = (0..<5).map { i in
+            CGPoint(x: 344 + CGFloat(i) * 48, y: 562)
+        }
+
+        static let ribbonSwatchCenters: [CGPoint] = (0..<5).map { i in
+            CGPoint(x: 612 + CGFloat(i) * 48, y: 562)
+        }
+
+        static let lidSwatchCenters: [CGPoint] = (0..<5).map { i in
+            CGPoint(x: 436 + CGFloat(i) * 56, y: 562)
+        }
+    }
 
     static func colX(_ i: Int) -> CGFloat { bedLeft + col * CGFloat(i) + col / 2 }
     static func column(_ x: CGFloat) -> Int { Int(((x - bedLeft) / col).rounded(.down)) }
