@@ -337,7 +337,7 @@ final class PotionSim: ObservableObject {
         let hitX = PotionGeometry.cauldronCenter.x + rand(-28, 28)
         let hitY = max(level + 14, PotionGeometry.joinY + 12)
         let hit = CGPoint(x: hitX, y: hitY)
-        inject(hit, color: kind.color, amount: 14, radius: 4.0)
+        inject(hit, color: kind.color, amount: 34, radius: 5.5)
         push(hit, CGVector(dx: rand(-70, 70), dy: 210), radius: 42)
         let col = Int((hitX - PotionGeometry.gx0) / PotionGeometry.cell)
         if col >= 0 && col < PotionSim.NX { waveV[col] += 2.2 }

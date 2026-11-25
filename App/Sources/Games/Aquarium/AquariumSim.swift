@@ -1184,7 +1184,7 @@ final class AquariumSim {
             }
         }
         snail = s
-        checkCleanTankReward()
+        if dirtiness > 0.14 { wasDirty = true }
     }
 
     private func dirtiestMossSpot() -> CGPoint {
@@ -1225,7 +1225,7 @@ final class AquariumSim {
                 }
             }
         }
-        if off > 0 { checkCleanTankReward() }
+        if sparkle && off > 0 { checkCleanTankReward() }
         return off
     }
 

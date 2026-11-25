@@ -219,6 +219,7 @@ final class GardenTests: XCTestCase {
     func testVisitorWishTapUnlocksStickerAndAwardsThreeCoinsOnce() {
         let sim = freshSim()
         sim.decor = []
+        for i in sim.plots.indices { sim.plots[i].plant = nil }
         sim.plots[1].plant = Plant(kind: .carrot, growth: 1, left: 1, variant: 0)
         sim.nextVisit = 0
         run(sim, seconds: 10)
