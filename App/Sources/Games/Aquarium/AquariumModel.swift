@@ -206,6 +206,8 @@ struct AquaHiddenSpot: Identifiable, Equatable {
     var awakeUntil: Double = -10
     var lastCoinAt: Double = -100
     var pop: CGFloat = 0
+    var celebrateUntil: Double = -10
+    var lastTapCoinAt: Double = -100
 }
 
 struct AquaSingingClam: Identifiable, Equatable {
@@ -360,16 +362,18 @@ struct AquaFishSave: Codable, Equatable {
     var variant: Int
     var growthStage: Int
     var growthBites: Int
+    var grewUp: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case kind, variant, growthStage, growthBites
+        case kind, variant, growthStage, growthBites, grewUp
     }
 
-    init(kind: FishKind, variant: Int, growthStage: Int = 2, growthBites: Int = 0) {
+    init(kind: FishKind, variant: Int, growthStage: Int = 2, growthBites: Int = 0, grewUp: Bool = false) {
         self.kind = kind
         self.variant = variant
         self.growthStage = max(0, min(2, growthStage))
         self.growthBites = max(0, growthBites)
+        self.grewUp = grewUp
     }
 
     init(from decoder: Decoder) throws {
@@ -378,6 +382,7 @@ struct AquaFishSave: Codable, Equatable {
         variant = try c.decode(Int.self, forKey: .variant)
         growthStage = max(0, min(2, try c.decodeIfPresent(Int.self, forKey: .growthStage) ?? 2))
         growthBites = max(0, try c.decodeIfPresent(Int.self, forKey: .growthBites) ?? 0)
+        grewUp = try c.decodeIfPresent(Bool.self, forKey: .grewUp) ?? false
     }
 }
 

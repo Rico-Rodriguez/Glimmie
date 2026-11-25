@@ -23,9 +23,10 @@ enum AquaRare {
 
 enum AquaFind: String, CaseIterable {
     case galaxyGoldfish, blueClownfish, goldenAngelfish, pinkTetra, mintPuffer, opalBetta, goldenGuppy, tealSeahorse
+    case starlightAxolotl, lavenderSeaBunny, pastelNarwhal
     case crab, octopus, jellyfish, turtle, babyFish, pearl
 
-    static func rare(_ k: FishKind) -> AquaFind? {
+    static func rare(_ k: FishKind) -> AquaFind {
         switch k {
         case .goldfish: return .galaxyGoldfish
         case .clownfish: return .blueClownfish
@@ -35,11 +36,13 @@ enum AquaFind: String, CaseIterable {
         case .betta: return .opalBetta
         case .guppy: return .goldenGuppy
         case .seahorse: return .tealSeahorse
-        case .axolotl, .seaBunny, .narwhal: return nil
+        case .axolotl: return .starlightAxolotl
+        case .seaBunny: return .lavenderSeaBunny
+        case .narwhal: return .pastelNarwhal
         }
     }
 
-    var fish: FishKind? { FishKind.classicCases.first { AquaFind.rare($0) == self } }
+    var fish: FishKind? { FishKind.allCases.first { AquaFind.rare($0) == self } }
     var visitor: AVisitorKind? { AVisitorKind(rawValue: rawValue) }
 
     static var stickers: [Sticker] {
@@ -47,22 +50,78 @@ enum AquaFind: String, CaseIterable {
     }
 
     func drawSticker(_ g: GraphicsContext) {
-        if let k = fish {
+        switch self {
+        case .galaxyGoldfish, .blueClownfish, .goldenAngelfish, .pinkTetra, .mintPuffer, .opalBetta, .goldenGuppy, .tealSeahorse:
+            if let k = fish {
+                var s = g
+                let span = max(k.length + k.tailLength, k.height * 1.15)
+                let sc = 84 / span
+                s.translateBy(x: k.tailLength * 0.5 * sc, y: 0)
+                s.scaleBy(x: sc, y: sc)
+                AquaFishPainter.drawLocal(s, kind: k, variant: AquaRare.variant, phase: 0.6, amp: 0.15, gulp: 0, puff: 0, time: 0)
+                Twinkles.draw(g, around: .zero, radius: 40, time: 0.6, count: 3, alpha: 1)
+            }
+        case .starlightAxolotl:
+            g.fill(
+                AquaShape.circle(.zero, 42),
+                with: .radialGradient(
+                    Gradient(colors: [ARGB(0xFFF6C2).color(0.45), ARGB(0xFFE07D).color(0)]),
+                    center: .zero,
+                    startRadius: 4,
+                    endRadius: 42
+                )
+            )
             var s = g
-            let span = max(k.length + k.tailLength, k.height * 1.15)
-            let sc = 84 / span
-            s.translateBy(x: k.tailLength * 0.5 * sc, y: 0)
+            let sc: CGFloat = 84 / 96
+            s.translateBy(x: 13 * sc, y: 3)
             s.scaleBy(x: sc, y: sc)
-            AquaFishPainter.drawLocal(s, kind: k, variant: AquaRare.variant, phase: 0.6, amp: 0.15, gulp: 0, puff: 0, time: 0)
-            Twinkles.draw(g, around: .zero, radius: 40, time: 0.6, count: 3, alpha: 1)
-        } else if self == .pearl {
+            AquaFishPainter.drawLocal(s, kind: .axolotl, variant: AquaRare.variant, phase: 0.6, amp: 0.15, gulp: 0, puff: 0, time: 0.4)
+            StorybookArt.sparkle(g, at: CGPoint(x: -28, y: -28), radius: 8, color: Theme.lemon, opacity: 1)
+            Twinkles.draw(g, around: .zero, radius: 40, time: 0.8, count: 4, alpha: 1)
+        case .lavenderSeaBunny:
+            g.fill(
+                AquaShape.circle(.zero, 40),
+                with: .radialGradient(
+                    Gradient(colors: [ARGB(0xE8D8FF).color(0.5), ARGB(0xC9B6FF).color(0)]),
+                    center: .zero,
+                    startRadius: 4,
+                    endRadius: 40
+                )
+            )
+            var s = g
+            let sc: CGFloat = 82 / 58
+            s.translateBy(x: 4, y: 7)
+            s.scaleBy(x: sc, y: sc)
+            AquaFishPainter.drawLocal(s, kind: .seaBunny, variant: AquaRare.variant, phase: 0.5, amp: 0.12, gulp: 0, puff: 0, time: 0.3)
+            StorybookArt.sparkle(g, at: CGPoint(x: 28, y: -26), radius: 7.5, color: Theme.lilac, opacity: 1)
+            Twinkles.draw(g, around: .zero, radius: 38, time: 0.4, count: 3, alpha: 1)
+        case .pastelNarwhal:
+            g.fill(
+                AquaShape.circle(.zero, 42),
+                with: .radialGradient(
+                    Gradient(colors: [ARGB(0xFFD6EE).color(0.45), ARGB(0xA6ECFF).color(0)]),
+                    center: .zero,
+                    startRadius: 4,
+                    endRadius: 42
+                )
+            )
+            var s = g
+            let sc: CGFloat = 80 / 120
+            s.translateBy(x: -4, y: 3)
+            s.scaleBy(x: sc, y: sc)
+            AquaFishPainter.drawLocal(s, kind: .narwhal, variant: AquaRare.variant, phase: 0.5, amp: 0.14, gulp: 0, puff: 0, time: 0.5)
+            StorybookArt.sparkle(g, at: CGPoint(x: 34, y: -12), radius: 7, color: .white, opacity: 1)
+            Twinkles.draw(g, around: .zero, radius: 40, time: 1.1, count: 4, alpha: 1)
+        case .pearl:
             AquaVisitorPainter.pearl(g, at: .zero, r: 30, glow: 1)
             Twinkles.draw(g, around: .zero, radius: 40, time: 0.6, count: 3, alpha: 1)
-        } else if let v = visitor {
-            var s = g
-            s.translateBy(x: 0, y: v.stickerOffset)
-            s.scaleBy(x: v.stickerScale, y: v.stickerScale)
-            AquaVisitorPainter.draw(s, AVisitor(kind: v, p: .zero, facing: 1, seed: 0), time: 0.4, night: 1)
+        case .crab, .octopus, .jellyfish, .turtle, .babyFish:
+            if let v = visitor {
+                var s = g
+                s.translateBy(x: 0, y: v.stickerOffset)
+                s.scaleBy(x: v.stickerScale, y: v.stickerScale)
+                AquaVisitorPainter.draw(s, AVisitor(kind: v, p: .zero, facing: 1, seed: 0), time: 0.4, night: 1)
+            }
         }
     }
 }
@@ -134,20 +193,45 @@ extension AquariumSim {
         Double.random(in: 0..<1) < AquaRare.chance ? AquaRare.variant + v : v
     }
 
+    func isFindClaimed(_ f: AquaFind) -> Bool {
+        StickerBook.shared.has(game: AquariumSim.gameID, id: f.rawValue)
+            || pendingStickers.contains(f.rawValue)
+    }
+
+    func needsDiscoveryTap(for f: AquaFish) -> Bool {
+        f.variant >= AquaRare.variant && !f.caught && !isFindClaimed(AquaFind.rare(f.kind))
+    }
+
+    func needsDiscoveryTap(for v: AVisitor) -> Bool {
+        guard !v.found, let find = AquaFind(rawValue: v.kind.rawValue) else { return false }
+        return !isFindClaimed(find)
+    }
+
+    var chestPearlNeedsDiscoveryTap: Bool {
+        pearl != nil && !isFindClaimed(.pearl)
+    }
+
+    func needsDiscoveryTap(for gift: AquaFloatingGift) -> Bool {
+        gift.kind == .pearl && !isFindClaimed(.pearl)
+    }
+
     func discover(_ f: AquaFind, at p: CGPoint) {
         guard !demo else { return }
         guard !StickerBook.shared.has(game: AquariumSim.gameID, id: f.rawValue) else { return }
         guard !pendingStickers.contains(f.rawValue) else { return }
         pendingStickers.append(f.rawValue)
-        for _ in 0..<8 {
+        AquaSound.shared.play(.chime, volume: 0.72, gap: 0.12)
+        Sound.shared.play(.sparkle, volume: 0.65)
+        for k in 0..<10 {
+            let a = CGFloat(k) / 10 * 2 * .pi
             emitParticle(
                 AquaParticle(
                     kind: .sparkle,
-                    p: CGPoint(x: p.x + CGFloat.random(in: -40...40), y: p.y + CGFloat.random(in: -30...30)),
-                    v: .zero,
+                    p: CGPoint(x: p.x + cos(a) * CGFloat.random(in: 14...42), y: p.y + sin(a) * CGFloat.random(in: 12...32)),
+                    v: CGVector(dx: cos(a) * 18, dy: sin(a) * 14 - 16),
                     life: 0.9,
                     size: 18,
-                    color: ARGB(0xFFFFFF)
+                    color: k.isMultiple(of: 2) ? ARGB(0xFFE69A) : ARGB(0xFFFFFF)
                 )
             )
         }
@@ -155,14 +239,6 @@ extension AquariumSim {
     }
 
     func stepFinds(_ dt: CGFloat) {
-        if Int(time * 2) != Int((time - Double(dt)) * 2) {
-            for f in fish where f.variant >= AquaRare.variant && !f.caught && AGeo.inWater(f.p) {
-                if let find = AquaFind.rare(f.kind),
-                   !StickerBook.shared.has(game: AquariumSim.gameID, id: find.rawValue) {
-                    discover(find, at: f.p)
-                }
-            }
-        }
         stepVisitors(dt)
         if let pl = pearl, time > pl.until { pearl = nil }
     }
@@ -171,8 +247,10 @@ extension AquariumSim {
         guard decor.indices.contains(i) else { return }
         let d = decor[i]
         let origin = CGPoint(x: d.x, y: d.y - 44)
-        pearl = (d.id, time + 2.4)
-        discover(.pearl, at: origin)
+        pearl = (d.id, time + 5.5)
+        if !floatingGifts.contains(where: { $0.kind == .pearl }) {
+            spawnFloatingGift(.pearl, at: CGPoint(x: origin.x, y: origin.y - 16))
+        }
         Sound.shared.play(.sparkle, volume: 0.55)
         for k in 0..<8 {
             let a = CGFloat(k) / 8 * 2 * .pi
@@ -191,6 +269,18 @@ extension AquariumSim {
             lastChestCoinAt = time
             queueCoin(3, from: origin)
         }
+    }
+
+    func tapChestPearl(_ p: CGPoint) -> Bool {
+        guard !demo,
+              let pl = pearl,
+              let d = decor.first(where: { $0.id == pl.id }),
+              d.open > 0.15 else { return false }
+        let origin = CGPoint(x: d.x, y: d.y - 42 - 8 * d.open)
+        guard hypot(p.x - origin.x, p.y - origin.y) < 38 else { return false }
+        guard !isFindClaimed(.pearl) else { return false }
+        discover(.pearl, at: origin)
+        return true
     }
 
     func inviteTurtle() {
@@ -305,10 +395,6 @@ extension AquariumSim {
                     if v.kind == .crab { v.p.y = AGeo.sand(v.p.x) }
                     if v.kind.passesBy {
                         v.p.y = v.target.y + sin(v.walk / 60) * 14
-                        if !v.found && v.p.x > 220 && v.p.x < 800 {
-                            v.found = true
-                            if let f = AquaFind(rawValue: v.kind.rawValue) { discover(f, at: v.p) }
-                        }
                     }
                 case .staying:
                     if v.kind == .crab,
@@ -345,10 +431,6 @@ extension AquariumSim {
     private func stay(_ v: inout AVisitor) {
         v.state = .staying
         v.stayUntil = time + Double.random(in: 10...18)
-        if !v.found {
-            v.found = true
-            if let f = AquaFind(rawValue: v.kind.rawValue) { discover(f, at: CGPoint(x: v.p.x, y: v.p.y - 30)) }
-        }
     }
 
     private func arrive(_ k: AVisitorKind, at s: (CGPoint, Int?)) {

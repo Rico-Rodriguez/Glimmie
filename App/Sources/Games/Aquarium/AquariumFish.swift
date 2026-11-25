@@ -335,6 +335,12 @@ enum AquaFishPainter {
         g.rotate(by: .radians(Double(pitch * side + wiggle + flipSpin)))
         let s = f.scale * flipPop
         g.scaleBy(x: sx * s, y: s)
+        let sleeping: Bool
+        if case .sleeping = f.activity {
+            sleeping = true
+        } else {
+            sleeping = false
+        }
         drawLocal(
             g,
             kind: f.kind,
@@ -345,7 +351,8 @@ enum AquaFishPainter {
             puff: f.puff,
             time: time,
             turning: 1 - abs(sx),
-            baby: f.growthStage == 0
+            baby: f.growthStage == 0,
+            sleeping: sleeping
         )
 
         if Double(time) < f.stardustUntil {
@@ -410,21 +417,22 @@ enum AquaFishPainter {
         puff: CGFloat,
         time: CGFloat,
         turning: CGFloat = 0,
-        baby: Bool = false
+        baby: Bool = false,
+        sleeping: Bool = false
     ) {
         let c = colors(kind, variant)
         switch kind {
-        case .goldfish: goldfish(g, c, phase, amp, gulp, time, baby: baby)
-        case .clownfish: clownfish(g, c, phase, amp, gulp, time, baby: baby)
-        case .angelfish: angelfish(g, c, phase, amp, gulp, time, baby: baby)
-        case .tetra: tetra(g, c, phase, amp, gulp, baby: baby)
-        case .puffer: puffer(g, c, phase, amp, gulp, puff, time, baby: baby)
-        case .betta: betta(g, c, phase, amp, gulp, time, baby: baby)
-        case .guppy: guppy(g, c, phase, amp, gulp, time, baby: baby)
-        case .seahorse: seahorse(g, c, phase, amp, gulp, time, baby: baby)
-        case .axolotl: axolotl(g, c, phase, amp, gulp, time, baby: baby)
-        case .seaBunny: seaBunny(g, c, phase, amp, gulp, time, baby: baby)
-        case .narwhal: narwhal(g, c, phase, amp, gulp, time, baby: baby)
+        case .goldfish: goldfish(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .clownfish: clownfish(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .angelfish: angelfish(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .tetra: tetra(g, c, phase, amp, gulp, baby: baby, sleeping: sleeping)
+        case .puffer: puffer(g, c, phase, amp, gulp, puff, time, baby: baby, sleeping: sleeping)
+        case .betta: betta(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .guppy: guppy(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .seahorse: seahorse(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .axolotl: axolotl(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .seaBunny: seaBunny(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
+        case .narwhal: narwhal(g, c, phase, amp, gulp, time, baby: baby, sleeping: sleeping)
         }
     }
 
@@ -464,11 +472,24 @@ enum AquaFishPainter {
         f: CGFloat = -0.22,
         size: CGFloat? = nil,
         iris: ARGB? = nil,
-        baby: Bool = false
+        baby: Bool = false,
+        sleeping: Bool = false
     ) {
         let c = b.at(u, f)
         let baseR = size ?? max(2.4, b.H * 0.12)
         let r = baby ? baseR * 1.38 : baseR
+        if sleeping {
+            var lid = Path()
+            lid.move(to: CGPoint(x: c.x - r * 0.78, y: c.y - r * 0.05))
+            lid.addQuadCurve(to: CGPoint(x: c.x + r * 0.78, y: c.y - r * 0.05), control: CGPoint(x: c.x, y: c.y + r * 0.72))
+            g.stroke(lid, with: .color(aqInk.color(0.84)), style: StrokeStyle(lineWidth: max(1.4, r * 0.34), lineCap: .round))
+            if baby {
+                let blush = CGPoint(x: c.x - r * 0.3, y: c.y + r * 0.95)
+                g.fill(Path(ellipseIn: CGRect(x: blush.x - r * 0.6, y: blush.y - r * 0.3, width: r * 1.2, height: r * 0.6)),
+                       with: .color(ARGB(0xFF8DB8).color(0.45)))
+            }
+            return
+        }
         g.fill(AquaShape.circle(c, r), with: .color(.white))
         if let ir = iris { g.fill(AquaShape.circle(CGPoint(x: c.x + r * 0.12, y: c.y), r * 0.78), with: .color(ir.color)) }
         g.fill(AquaShape.circle(CGPoint(x: c.x + r * 0.16, y: c.y + r * 0.02), r * (baby ? 0.68 : 0.58)), with: .color(aqInk.color))
@@ -565,7 +586,7 @@ enum AquaFishPainter {
 
     // MARK: Kinds
 
-    private static func goldfish(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func goldfish(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 70, H: 46, a: 0.85, b: 0.5, bend: sin(phase) * amp * 0.5)
         let tg = tailContext(g, b, phase: phase, amp: amp)
         let tp = flowing(48, 34, phase: phase, waves: 3)
@@ -591,11 +612,11 @@ enum AquaFishPainter {
         gill(g, b, c)
         outlineBody(g, b, c)
         pectoral(g, b, c, phase: phase, len: 15)
-        eye(g, b, size: 6, iris: ARGB(0xFFD86B), baby: baby)
+        eye(g, b, size: 6, iris: ARGB(0xFFD86B), baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 
-    private static func clownfish(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func clownfish(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 60, H: 32, a: 0.9, b: 0.6, bend: sin(phase) * amp * 0.55)
         let tg = tailContext(g, b, phase: phase, amp: amp)
         let tp = tail(20, 15, notch: 0, round: true, ripple: 1.5, phase: phase)
@@ -615,11 +636,11 @@ enum AquaFishPainter {
         }
         outlineBody(g, b, c)
         pectoral(g, b, c, phase: phase, len: 11, at: 0.6)
-        eye(g, b, at: 0.86, size: 4.4, iris: ARGB(0xFFB15C), baby: baby)
+        eye(g, b, at: 0.86, size: 4.4, iris: ARGB(0xFFB15C), baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 
-    private static func angelfish(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func angelfish(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 52, H: 58, a: 1.05, b: 0.95, bend: sin(phase) * amp * 0.35)
         let tg = tailContext(g, b, phase: phase, amp: amp * 0.7)
         let tp = tail(28, 20, notch: 0.45, round: false, ripple: 1.2, phase: phase)
@@ -639,11 +660,11 @@ enum AquaFishPainter {
         }
         outlineBody(g, b, c)
         pectoral(g, b, c, phase: phase, len: 10, at: 0.64)
-        eye(g, b, at: 0.83, f: -0.18, size: 4.6, iris: ARGB(0xE0503C), baby: baby)
+        eye(g, b, at: 0.83, f: -0.18, size: 4.6, iris: ARGB(0xE0503C), baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 
-    private static func tetra(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, baby: Bool) {
+    private static func tetra(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 30, H: 12, a: 0.8, b: 0.5, bend: sin(phase) * amp * 0.6)
         let tg = tailContext(g, b, phase: phase, amp: amp)
         fillFin(tg, tail(11, 7, notch: 0.5, round: false, ripple: 0.4, phase: phase), c)
@@ -652,7 +673,7 @@ enum AquaFishPainter {
         fillBody(g, b, c)
         neon(g, b)
         g.stroke(b.outlinePath, with: .color(c.body.shade(-0.4).color(0.5)), lineWidth: 0.7)
-        eye(g, b, at: 0.86, f: -0.15, size: 2.6, iris: ARGB(0x7FC8FF), baby: baby)
+        eye(g, b, at: 0.86, f: -0.15, size: 2.6, iris: ARGB(0x7FC8FF), baby: baby, sleeping: sleeping)
     }
 
     /// The neon tetra's stripes (drawn again glowing at night).
@@ -666,7 +687,7 @@ enum AquaFishPainter {
         AquaBody(L: 30, H: 12, a: 0.8, b: 0.5, bend: sin(phase) * amp * 0.6)
     }
 
-    private static func puffer(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ puff: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func puffer(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ puff: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let p = max(0, min(1.1, puff))
         let b = AquaBody(L: 52 * (1 + 0.18 * p), H: 42, a: 0.9, b: 0.55, bend: sin(phase) * amp * 0.3 * (1 - p), round: min(1, p))
         let tg = tailContext(g, b, phase: phase * 1.4, amp: amp)
@@ -699,11 +720,11 @@ enum AquaFishPainter {
         g.fill(spots, with: .color(ARGB(0x9A7032).color(0.6)))
         outlineBody(g, b, c)
         pectoral(g, b, c, phase: phase * 2.2, len: 10, at: 0.62)
-        eye(g, b, at: 0.8, f: -0.32, size: 7, iris: ARGB(0x5ED1B8), baby: baby)
+        eye(g, b, at: 0.8, f: -0.32, size: 7, iris: ARGB(0x5ED1B8), baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: max(gulp, p * 0.6))
     }
 
-    private static func betta(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func betta(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 50, H: 22, a: 0.8, b: 0.55, bend: sin(phase) * amp * 0.4)
         let grad = Gradient(colors: [c.fin.color(0.9), c.finEdge.color(0.65)])
         let tg = tailContext(g, b, phase: phase * 0.6, amp: amp * 0.6)
@@ -721,11 +742,11 @@ enum AquaFishPainter {
         g.fill(b.strip(0.2, 0.8, -0.6, 0.1), with: .color(ARGB(0x9EE8FF).color(0.18)))
         outlineBody(g, b, c)
         pectoral(g, b, c, phase: phase * 1.4, len: 9, at: 0.66)
-        eye(g, b, at: 0.85, size: 3.8, iris: ARGB(0xFFB15C), baby: baby)
+        eye(g, b, at: 0.85, size: 3.8, iris: ARGB(0xFFB15C), baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 
-    private static func guppy(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func guppy(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 32, H: 13, a: 0.8, b: 0.5, bend: sin(phase) * amp * 0.6)
         let tg = tailContext(g, b, phase: phase, amp: amp * 0.9)
         let tp = flowing(30, 18, phase: phase, waves: 2)
@@ -741,12 +762,12 @@ enum AquaFishPainter {
         fillBody(g, b, c)
         g.fill(b.strip(0.05, 0.45, -0.3, 0.6), with: .color(c.fin.color(0.45)))
         g.stroke(b.outlinePath, with: .color(c.body.shade(-0.4).color(0.55)), lineWidth: 0.8)
-        eye(g, b, at: 0.85, f: -0.15, size: 2.8, baby: baby)
+        eye(g, b, at: 0.85, f: -0.15, size: 2.8, baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 
     /// Upright, snout to the right, curled tail below; the little back fin flutters fast.
-    private static func seahorse(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func seahorse(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let bob = sin(t * 1.4 + phase * 0.05) * 1.2
         var h = g
         h.translateBy(x: 0, y: bob)
@@ -802,15 +823,22 @@ enum AquaFishPainter {
         h.stroke(sheen, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
         let e = CGPoint(x: 1, y: -27)
         let er: CGFloat = baby ? 5.6 : 4.2
-        h.fill(AquaShape.circle(e, er), with: .color(.white))
-        h.fill(AquaShape.circle(CGPoint(x: e.x + 0.8, y: e.y), er * 0.65), with: .color(aqInk.color))
-        h.fill(AquaShape.circle(CGPoint(x: e.x + er * 0.38, y: e.y - er * 0.28), er * 0.26), with: .color(.white))
+        if sleeping {
+            var lid = Path()
+            lid.move(to: CGPoint(x: e.x - er * 0.72, y: e.y))
+            lid.addQuadCurve(to: CGPoint(x: e.x + er * 0.72, y: e.y), control: CGPoint(x: e.x, y: e.y + er * 0.65))
+            h.stroke(lid, with: .color(aqInk.color(0.84)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+        } else {
+            h.fill(AquaShape.circle(e, er), with: .color(.white))
+            h.fill(AquaShape.circle(CGPoint(x: e.x + 0.8, y: e.y), er * 0.65), with: .color(aqInk.color))
+            h.fill(AquaShape.circle(CGPoint(x: e.x + er * 0.38, y: e.y - er * 0.28), er * 0.26), with: .color(.white))
+        }
     }
 
     // MARK: Hatchable Reef Baby Species
 
     /// Smiling pastel axolotl with frilly swaying pink gill branches and long translucent tail fin.
-    private static func axolotl(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func axolotl(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 62, H: 28, a: 0.75, b: 0.6, bend: sin(phase) * amp * 0.55)
 
         // Long salamander tail with translucent ribbon crest
@@ -879,7 +907,7 @@ enum AquaFishPainter {
         // Cute wide axolotl smile & rosy cheek
         let cheek = b.at(0.84, 0.25)
         g.fill(Path(ellipseIn: CGRect(x: cheek.x - 4.5, y: cheek.y - 2.6, width: 9, height: 5.2)), with: .color(c.fin.color(0.45)))
-        eye(g, b, at: 0.85, f: -0.22, size: 4.8, baby: baby)
+        eye(g, b, at: 0.85, f: -0.22, size: 4.8, baby: baby, sleeping: sleeping)
         let n = b.at(0.97, 0.14)
         if gulp > 0.08 {
             mouth(g, b, c, gulp: gulp)
@@ -892,7 +920,7 @@ enum AquaFishPainter {
     }
 
     /// Fluffy white-and-polka-dot sea bunny slug with dark-tipped bunny ears and tiny flower tail tuft.
-    private static func seaBunny(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func seaBunny(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 44, H: 25, a: 0.65, b: 0.7, bend: sin(phase) * amp * 0.22, belly: 0.78)
 
         // Fluffy flower-tuft tail gill rosette at the rear
@@ -937,12 +965,12 @@ enum AquaFishPainter {
         // Rosy blush & shiny baby eye
         let blush = b.at(0.86, 0.25)
         g.fill(Path(ellipseIn: CGRect(x: blush.x - 3.6, y: blush.y - 2.1, width: 7.2, height: 4.2)), with: .color(ARGB(0xFF9AC0).color(0.55)))
-        eye(g, b, at: 0.87, f: -0.14, size: 3.4, baby: baby)
+        eye(g, b, at: 0.87, f: -0.14, size: 3.4, baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 
     /// Pastel unicorn whale with a gleaming spiral golden horn and graceful flukes.
-    private static func narwhal(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool) {
+    private static func narwhal(_ g: GraphicsContext, _ c: FishColors, _ phase: CGFloat, _ amp: CGFloat, _ gulp: CGFloat, _ t: CGFloat, baby: Bool, sleeping: Bool) {
         let b = AquaBody(L: 70, H: 34, a: 0.78, b: 0.58, bend: sin(phase) * amp * 0.45)
 
         // Graceful sweeping whale tail flukes
@@ -999,7 +1027,7 @@ enum AquaFishPainter {
 
         let blush = b.at(0.82, 0.22)
         g.fill(Path(ellipseIn: CGRect(x: blush.x - 4, y: blush.y - 2.2, width: 8, height: 4.4)), with: .color(ARGB(0xFF9AC4).color(0.5)))
-        eye(g, b, at: 0.84, f: -0.15, size: 4.6, iris: ARGB(0x6BA6FF), baby: baby)
+        eye(g, b, at: 0.84, f: -0.15, size: 4.6, iris: ARGB(0x6BA6FF), baby: baby, sleeping: sleeping)
         mouth(g, b, c, gulp: gulp)
     }
 }

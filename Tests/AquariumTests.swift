@@ -5,6 +5,7 @@ final class AquariumTests: XCTestCase {
     override func setUp() {
         super.setUp()
         Coins.shared.resetForTests()
+        StickerBook.shared.resetForTests()
     }
 
     private func freshSim() -> AquariumSim {
@@ -16,10 +17,14 @@ final class AquariumTests: XCTestCase {
         sim.hoops = []
         sim.decor = []
         sim.eggs = []
+        sim.floatingGifts = []
+        sim.activeWish = nil
+        sim.nextWishAt = 10_000
         sim.visitors = []
         sim.submarine.active = false
         sim.moss = AquaMossPatch.makeDefault()
         sim.pump = false
+        sim.resolveSandLayout()
         return sim
     }
 
@@ -383,7 +388,7 @@ final class AquariumTests: XCTestCase {
         XCTAssertEqual(AquaDecorKind.available.count, 13)
         XCTAssertTrue(AquaDecorKind.available.contains(.rainbowCoral))
 
-        XCTAssertTrue(Coins.shared.buy("aquarium/koiBridge", price: 14))
+        XCTAssertTrue(Coins.shared.buy("aquarium/koiBridge", price: 12))
         XCTAssertEqual(AquaDecorKind.available.count, 14)
         XCTAssertTrue(AquaDecorKind.available.contains(.koiBridge))
         XCTAssertTrue(AquaDecorKind.koiBridge.bubbles)
@@ -463,9 +468,9 @@ final class AquariumTests: XCTestCase {
 
     func testEveryAquariumSurpriseHasAStickerAndTapCelebratesVisitor() {
         let entry = GameRegistry.all.first { $0.id == AquariumSim.gameID }
-        XCTAssertEqual(entry?.stickers.count, 14)
+        XCTAssertEqual(entry?.stickers.count, 17)
         XCTAssertEqual(entry?.stickers.map(\.id), AquaFind.allCases.map(\.rawValue))
-        for k in FishKind.classicCases { XCTAssertEqual(AquaFind.rare(k)?.fish, k) }
+        for k in FishKind.allCases { XCTAssertEqual(AquaFind.rare(k).fish, k) }
         for v in AVisitorKind.allCases { XCTAssertEqual(AquaFind(rawValue: v.rawValue)?.visitor, v) }
 
         let sim = freshSim()
@@ -681,5 +686,340 @@ final class AquariumTests: XCTestCase {
         XCTAssertEqual(restored.eggs.count, 1)
         XCTAssertEqual(restored.eggs[0].species, .seaBunny)
         XCTAssertEqual(restored.eggs[0].taps, 2)
+    }
+
+    // MARK: - Aquarium A1: Agency Fixes, Living Decor, Active Discovery & Play Wishes
+
+    func testSubmarineHullOnlyDragUsesFingerLiftAndLeavesOpenWaterTapsAndHoldsIntact() {
+        let sim = freshSim()
+        sim.toggleSubmarine()
+        sim.submarine.p = CGPoint(x: 300, y: 360)
+        sim.submarine.target = CGPoint(x: 300, y: 360)
+
+        let fIdx = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 730, y: 380))
+
+        let openTap = CGPoint(x: 680, y: 380)
+        sim.handBegan(openTap)
+        XCTAssertFalse(sim.isGrabbingSubmarine)
+        sim.handEnded(openTap, tap: true)
+        XCTAssertEqual(sim.submarine.target, CGPoint(x: 300, y: 360), "open water tap must never hijack submarine")
+        XCTAssertTrue(sim.particles.contains { $0.kind == .ring }, "open water tap triggers glass ring")
+        XCTAssertGreaterThan(sim.fish[fIdx].fleeUntil, sim.time, "open water tap startles nearby fish")
+
+        sim.fish[fIdx].fleeUntil = -10
+        let holdSpot = CGPoint(x: 700, y: 400)
+        sim.handBegan(holdSpot)
+        XCTAssertFalse(sim.isGrabbingSubmarine)
+        run(sim, seconds: 0.6)
+        XCTAssertEqual(sim.fish[fIdx].curious, holdSpot, "holding open water attracts curious fish even with active sub")
+        XCTAssertEqual(sim.submarine.target, CGPoint(x: 300, y: 360))
+        sim.handEnded(holdSpot, tap: false)
+
+        let hullTouch = CGPoint(x: 312, y: 365)
+        let dragFinger = CGPoint(x: 540, y: 490)
+        sim.handBegan(hullTouch)
+        XCTAssertTrue(sim.isGrabbingSubmarine)
+        sim.handMoved(dragFinger, dt: 1.0 / 60)
+        let expected = sim.liftedSubmarineTarget(for: dragFinger)
+        XCTAssertEqual(sim.submarine.target.x, expected.x, accuracy: 2.0)
+        XCTAssertEqual(sim.submarine.target.y, expected.y, accuracy: 2.0)
+        XCTAssertLessThan(sim.submarine.target.y, dragFinger.y - 40, "FingerLift lifts submarine above finger")
+        sim.handEnded(dragFinger, tap: false)
+        XCTAssertFalse(sim.isGrabbingSubmarine)
+    }
+
+    func testDynamicSandLayoutDodgesPlacedDecorAndPreservesState() {
+        let sim = freshSim()
+        sim.clams[1].openUntil = 42
+        sim.hiddenSpots[2].awakeUntil = 55
+
+        let castleIdx = sim.addDecor(.castle, x: 396)
+        let shipIdx = sim.addDecor(.ship, x: 695)
+        let castle = sim.decor[castleIdx]
+        let ship = sim.decor[shipIdx]
+
+        for clam in sim.clams {
+            XCTAssertGreaterThanOrEqual(abs(clam.x - castle.x), castle.kind.size.width * 0.5 - 1, "clam dodges castle footprint")
+            XCTAssertGreaterThanOrEqual(abs(clam.x - ship.x), ship.kind.size.width * 0.5 - 1, "clam dodges ship footprint")
+            XCTAssertEqual(clam.y, AGeo.sand(clam.x) - 8, accuracy: 0.5)
+        }
+        for spot in sim.hiddenSpots {
+            XCTAssertGreaterThanOrEqual(abs(spot.p.x - castle.x), castle.kind.size.width * 0.5 - 1, "hidden spot dodges castle")
+            XCTAssertGreaterThanOrEqual(abs(spot.p.x - ship.x), ship.kind.size.width * 0.5 - 1, "hidden spot dodges ship")
+            let expectedY = AGeo.sand(spot.p.x) + (spot.kind == .glowSeahorse ? -18 : 0)
+            XCTAssertEqual(spot.p.y, expectedY, accuracy: 0.5)
+        }
+        XCTAssertEqual(sim.clams[1].openUntil, 42, "sand layout preserves clam state")
+        XCTAssertEqual(sim.hiddenSpots[2].awakeUntil, 55, "sand layout preserves hidden spot state")
+    }
+
+    func testAwakenedHiddenSpotTapCelebratesAndEnforcesCoinCooldown() {
+        let sim = freshSim()
+        let spotPos = CGPoint(x: sim.hiddenSpots[0].p.x, y: sim.hiddenSpots[0].p.y - 16)
+
+        XCTAssertFalse(sim.tapHiddenSpot(spotPos))
+        XCTAssertEqual(Coins.shared.balance, 0)
+
+        sim.hiddenSpots[0].awakeUntil = sim.time + 5
+        sim.hiddenSpots[0].pop = 0.85
+        sim.handBegan(spotPos)
+        sim.handEnded(spotPos, tap: true)
+        XCTAssertGreaterThan(sim.hiddenSpots[0].celebrateUntil, sim.time)
+        XCTAssertTrue(sim.particles.contains { $0.kind == .heart })
+        XCTAssertEqual(Coins.shared.balance, 1, "tapping awakened hidden spot awards 1 Play Coin")
+
+        sim.handBegan(spotPos)
+        sim.handEnded(spotPos, tap: true)
+        XCTAssertEqual(Coins.shared.balance, 1)
+    }
+
+    func testActiveDiscoveryRequiresTapForRareReefBabiesVisitorsAndChestPearl() {
+        let sim = freshSim()
+        sim.demo = false
+
+        let axIdx = sim.spawn(.axolotl, variant: AquaRare.variant, at: CGPoint(x: 240, y: 360))
+        let sbIdx = sim.spawn(.seaBunny, variant: AquaRare.variant, at: CGPoint(x: 420, y: 360))
+        let nwIdx = sim.spawn(.narwhal, variant: AquaRare.variant, at: CGPoint(x: 600, y: 360))
+        for idx in [axIdx, sbIdx, nwIdx] {
+            sim.fish[idx].restUntil = 100
+        }
+
+        sim.visitors.append(AVisitor(kind: .turtle, p: CGPoint(x: 340, y: 260), target: CGPoint(x: 820, y: 260), state: .arriving, facing: 1))
+        var octo = AVisitor(kind: .octopus, p: CGPoint(x: 780, y: AGeo.sand(780)), facing: -1)
+        octo.state = .staying
+        octo.stayUntil = 30
+        sim.visitors.append(octo)
+
+        let chestIdx = sim.addDecor(.chest, x: 512)
+        sim.decor[chestIdx].open = 1
+        sim.decor[chestIdx].openUntil = 20
+        sim.revealChestPearl(chestIdx)
+
+        run(sim, seconds: 3.0)
+        XCTAssertEqual(StickerBook.shared.count(game: AquariumSim.gameID), 0, "stickers must never passively auto-unlock")
+        XCTAssertTrue(sim.needsDiscoveryTap(for: sim.fish[axIdx]))
+        XCTAssertTrue(sim.needsDiscoveryTap(for: sim.fish[sbIdx]))
+        XCTAssertTrue(sim.needsDiscoveryTap(for: sim.fish[nwIdx]))
+        XCTAssertTrue(sim.chestPearlNeedsDiscoveryTap)
+
+        sim.tapFish(axIdx)
+        sim.tapFish(sbIdx)
+        sim.tapFish(nwIdx)
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.starlightAxolotl.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.lavenderSeaBunny.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pastelNarwhal.rawValue))
+        XCTAssertFalse(sim.needsDiscoveryTap(for: sim.fish[axIdx]))
+
+        for v in sim.visitors {
+            let tapPt = v.kind == .octopus ? CGPoint(x: v.p.x, y: v.p.y - 24) : v.p
+            XCTAssertTrue(sim.tapVisitor(tapPt))
+        }
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.turtle.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.octopus.rawValue))
+
+        let pearlPt = CGPoint(x: sim.decor[chestIdx].x, y: sim.decor[chestIdx].y - 50)
+        XCTAssertTrue(sim.tapChestPearl(pearlPt))
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pearl.rawValue))
+        XCTAssertFalse(sim.chestPearlNeedsDiscoveryTap)
+    }
+
+    func testNightModeSleepingUsesSleepBedsAndRestUntilAndWakesOnTapFoodOrLights() {
+        let sim = freshSim()
+        let shellIdx = sim.addDecor(.shell, x: 340)
+        _ = sim.addDecor(.castle, x: 640)
+        let f0 = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 345, y: 550))
+        let f1 = sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 610, y: 550))
+        let f2 = sim.spawn(.puffer, variant: 0, at: CGPoint(x: 490, y: 550))
+
+        sim.setLights(false)
+        run(sim, seconds: 6.0)
+
+        XCTAssertTrue(sim.isFishSleeping(sim.fish[f0]), "fish settles to sleep in Night Mode")
+        XCTAssertTrue(sim.isFishSleeping(sim.fish[f1]), "second fish settles to sleep in Night Mode")
+        XCTAssertTrue(sim.isFishSleeping(sim.fish[f2]), "third fish settles to sleep in Night Mode")
+        XCTAssertGreaterThan(sim.fish[f0].restUntil, sim.time, "Night Mode wires AquaFish.restUntil")
+        if case .sleeping(let bedID, _, _) = sim.fish[f0].activity {
+            XCTAssertEqual(bedID, sim.decor[shellIdx].id, "nearby fish curls into available sleepBed decor anchor")
+        } else {
+            XCTFail("expected fish to be sleeping in shell bed")
+        }
+        XCTAssertTrue(sim.particles.contains { $0.kind == .sleepZ }, "sleeping fish emits gentle sleep Z-bubbles")
+
+        sim.tapFish(f0)
+        XCTAssertFalse(sim.isFishSleeping(sim.fish[f0]))
+        XCTAssertLessThan(sim.fish[f0].restUntil, sim.time)
+
+        sim.fish[f2].appetite = 5
+        sim.addFlake(at: CGPoint(x: sim.fish[f2].p.x + 24, y: sim.fish[f2].p.y - 12), v: .zero)
+        run(sim, seconds: 0.4)
+        XCTAssertFalse(sim.isFishSleeping(sim.fish[f2]), "nearby food wakes sleeping fish")
+
+        sim.setLights(true)
+        XCTAssertFalse(sim.isFishSleeping(sim.fish[f1]))
+        XCTAssertLessThan(sim.fish[f1].restUntil, sim.time)
+    }
+
+    func testLivingDecorAnchorsKoiBridgeSwimThroughAndCastleHideoutPopOut() {
+        XCTAssertTrue(AquaDecorKind.koiBridge.anchorSpecs.contains { $0.role == .swimThrough })
+        XCTAssertTrue(AquaDecorKind.castle.anchorSpecs.contains { $0.role == .hideout })
+        XCTAssertTrue(AquaDecorKind.castle.anchorSpecs.contains { $0.role == .sleepBed })
+        XCTAssertTrue(AquaDecorKind.ship.anchorSpecs.contains { $0.role == .hideout })
+        XCTAssertTrue(AquaDecorKind.ship.anchorSpecs.contains { $0.role == .swimThrough })
+        XCTAssertTrue(AquaDecorKind.rock.anchorSpecs.contains { $0.role == .hideout })
+        for bedKind in [AquaDecorKind.shell, .anemone, .coral, .rainbowCoral] {
+            XCTAssertTrue(bedKind.anchorSpecs.contains { $0.role == .sleepBed })
+        }
+
+        let sim = freshSim()
+        let bridgeIdx = sim.addDecor(.koiBridge, x: 512)
+        let fIdx = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 380, y: sim.decor[bridgeIdx].y - 34))
+        XCTAssertTrue(sim.sendFish(fIdx, toDecor: bridgeIdx, role: .swimThrough))
+        var completed = false
+        for _ in 0..<240 {
+            sim.step(dt: 1.0 / 60)
+            if sim.fish[fIdx].activity == .cruising {
+                completed = true
+                break
+            }
+        }
+        sim.flushPendingRewards()
+        XCTAssertTrue(completed, "fish completes koi bridge swim-through")
+        XCTAssertGreaterThan(sim.fish[fIdx].p.x, 512, "fish glided across to the far side of the koi bridge")
+        XCTAssertGreaterThanOrEqual(sim.fish[fIdx].happy, 0)
+
+        let castleIdx = sim.addDecor(.castle, x: 300)
+        let hideFish = sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 300, y: sim.decor[castleIdx].y - 30))
+        XCTAssertTrue(sim.sendFish(hideFish, toDecor: castleIdx, role: .hideout))
+        run(sim, seconds: 1.0)
+        if case .hiding(let did, _, _) = sim.fish[hideFish].activity {
+            XCTAssertEqual(did, sim.decor[castleIdx].id)
+        } else {
+            XCTFail("expected fish to be hiding inside castle doorway")
+        }
+
+        let castleTap = CGPoint(x: 300, y: sim.decor[castleIdx].y - 110)
+        sim.handBegan(castleTap)
+        sim.handEnded(castleTap, tap: true)
+        XCTAssertEqual(sim.fish[hideFish].activity, .cruising, "tapping castle pops hidden fish out")
+        XCTAssertGreaterThanOrEqual(sim.fish[hideFish].flipStart, 0)
+        XCTAssertTrue(sim.particles.contains { $0.kind == .heart })
+    }
+
+    func testDockNetAndDraggedNetScoopFloatingGiftsAndDiscoverPearlWithoutDeletingFish() {
+        let sim = freshSim()
+        sim.demo = false
+        let fIdx = sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 420, y: 360))
+        sim.fish[fIdx].restUntil = 100
+        sim.spawnFloatingGift(.pearl, at: CGPoint(x: 420, y: 360))
+
+        sim.pickUp(.net, at: CGPoint(x: 420, y: 360))
+        XCTAssertTrue(sim.floatingGifts.isEmpty)
+        XCTAssertNil(sim.caught, "scooping a floating gift must not catch nearby fish")
+        XCTAssertEqual(sim.fish.count, 1)
+        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pearl.rawValue))
+        XCTAssertEqual(Coins.shared.balance, 2)
+        sim.release(home: CGPoint(x: 608, y: AGeo.dockY))
+
+        run(sim, seconds: AquariumSim.coinCooldown + 0.3)
+        sim.tapDockNet()
+        XCTAssertTrue(sim.floatingGifts.isEmpty)
+        XCTAssertEqual(Coins.shared.balance, 4)
+        XCTAssertEqual(sim.fish.count, 1)
+        XCTAssertFalse(sim.fish[0].caught)
+    }
+
+    func testSpeciesDistinctEggPatternsCoverAllElevenSpecies() {
+        let patterns = FishKind.allCases.map { AquaEggPattern.forSpecies($0) }
+        XCTAssertEqual(patterns.count, 11)
+        for i in patterns.indices {
+            for j in (i + 1)..<patterns.count {
+                XCTAssertNotEqual(patterns[i], patterns[j], "every species has its own distinct egg pattern")
+            }
+        }
+    }
+
+    func testPictorialPlayWishesFulfillViaPlayAndDrainEffectsDeterministically() {
+        let sim = freshSim()
+        let fIdx = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 420, y: 360))
+        sim.fish[fIdx].dir = 1
+        sim.fish[fIdx].facing = 1
+
+        let w1 = sim.spawnPlayWish(kind: .nightGlow)
+        XCTAssertNotNil(w1)
+        XCTAssertEqual(sim.activeWish?.kind, .nightGlow)
+        XCTAssertEqual(sim.spawnPlayWish(kind: .hoopTrick)?.id, w1?.id)
+        sim.setLights(false)
+        XCTAssertNil(sim.activeWish)
+        XCTAssertEqual(Coins.shared.balance, 3)
+
+        sim.setLights(true)
+        run(sim, seconds: AquariumSim.coinCooldown + 0.3)
+        sim.lastFeedRewardAt = 1000
+        sim.fish[fIdx].appetite = 5
+        sim.fish[fIdx].dir = 1
+        sim.fish[fIdx].facing = 1
+        _ = sim.spawnPlayWish(kind: .pearlPellet)
+        sim.addFlake(at: CGPoint(x: sim.fish[fIdx].p.x + 12, y: sim.fish[fIdx].p.y), v: .zero, kind: .pearls)
+        for _ in 0..<120 { sim.step(dt: 1.0 / 60) }
+        XCTAssertNil(sim.activeWish, "eating pearl pellet fulfills .pearlPellet wish")
+        let drained = sim.drainEffectsForTesting()
+        XCTAssertEqual(drained.coins, 3, "wish payout queues cleanly in deferred outbox")
+        XCTAssertEqual(Coins.shared.balance, 6)
+
+        run(sim, seconds: AquariumSim.coinCooldown + 0.3)
+        sim.fish[fIdx].p = CGPoint(x: 200, y: 260)
+        let bridgeIdx = sim.addDecor(.koiBridge, x: 512)
+        _ = sim.spawnPlayWish(kind: .decorPlay(.koiBridge, .swimThrough))
+        let bridgeTap = CGPoint(x: 512, y: sim.decor[bridgeIdx].y - 30)
+        sim.handBegan(bridgeTap)
+        sim.handEnded(bridgeTap, tap: true)
+        XCTAssertNil(sim.activeWish)
+        XCTAssertEqual(Coins.shared.balance, 9)
+    }
+
+    func testSmartEvictionSparesRareAndGrownFromEggFish() {
+        let sim = freshSim()
+        var rareIDs: Set<Int> = []
+        var grownIDs: Set<Int> = []
+        for k in 0..<12 {
+            let idx = sim.spawn(.axolotl, variant: AquaRare.variant, at: CGPoint(x: 200 + CGFloat(k * 20), y: 360))
+            rareIDs.insert(sim.fish[idx].id)
+        }
+        for k in 0..<10 {
+            let idx = sim.spawn(.narwhal, variant: 0, at: CGPoint(x: 460 + CGFloat(k * 20), y: 360), growthStage: 2, grewUp: true)
+            grownIDs.insert(sim.fish[idx].id)
+        }
+        let ord0 = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 300, y: 300))
+        let ord1 = sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 350, y: 300))
+        let ordIDs = Set([sim.fish[ord0].id, sim.fish[ord1].id])
+        XCTAssertEqual(sim.fish.count, AquariumSim.maxFish)
+
+        sim.addFish(.puffer, x: 500, y: 300)
+        sim.addFish(.betta, x: 550, y: 300)
+        XCTAssertEqual(sim.fish.count, AquariumSim.maxFish)
+        let survivingIDs = Set(sim.fish.map(\.id))
+        XCTAssertTrue(rareIDs.isSubset(of: survivingIDs), "all original rare fish survive eviction")
+        XCTAssertTrue(grownIDs.isSubset(of: survivingIDs), "all original grown-from-egg fish survive eviction")
+        XCTAssertTrue(survivingIDs.isDisjoint(with: ordIDs), "oldest ordinary fish are evicted first")
+
+        for i in sim.fish.indices { sim.fish[i].grewUp = true }
+        let protectedIDs = Set(sim.fish.map(\.id))
+        sim.addFish(.goldfish, x: 500, y: 300)
+        XCTAssertEqual(Set(sim.fish.map(\.id)), protectedIDs, "rare/raised fish must never be silently evicted")
+    }
+
+    func testLegacyFishSaveDefaultsGrewUpFalseAndRoundTripsRaisedFish() throws {
+        let legacy = """
+        {"fish":[{"kind":"goldfish","variant":0}],"decor":[],"moss":[0,0,0,0,0,0,0,0,0,0],"night":false,"pump":true}
+        """
+        let decoded = try JSONDecoder().decode(AquaSave.self, from: Data(legacy.utf8))
+        XCTAssertEqual(decoded.fish.first?.grewUp, false)
+
+        let sim = freshSim()
+        sim.spawn(.axolotl, variant: AquaRare.variant, growthStage: 2, grewUp: true)
+        let data = try JSONEncoder().encode(sim.makeSave())
+        let back = AquariumSim(save: try JSONDecoder().decode(AquaSave.self, from: data))
+        XCTAssertEqual(back.fish.first?.grewUp, true)
+        XCTAssertEqual(back.fish.first?.variant, AquaRare.variant)
     }
 }

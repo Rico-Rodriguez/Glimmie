@@ -953,26 +953,38 @@ enum AquaDecorPainter {
 
     // MARK: - Mystery Reef Egg, Singing Clams, Yellow Glass Submarine & Treat Toggle
 
-    static func egg(_ g: GraphicsContext, palette: AquaEggPalette, taps: Int, time t: CGFloat) {
+    static func egg(
+        _ g: GraphicsContext,
+        palette: AquaEggPalette,
+        taps: Int,
+        time t: CGFloat,
+        species: FishKind? = nil
+    ) {
+        let pattern = species.map { AquaEggPattern.forSpecies($0) }
         let baseHex: UInt32
         let spotHex: UInt32
         let accentHex: UInt32
-        switch palette {
-        case .pinkSpeckle:
-            baseHex = 0xFFD4E6
-            spotHex = 0xFF8AB8
-            accentHex = 0xFFF3A8
-        case .mintSwirl:
-            baseHex = 0xC9F7E8
-            spotHex = 0x6FD4B8
-            accentHex = 0xFFE39E
-        case .lilacStar:
-            baseHex = 0xDFD0FF
-            spotHex = 0xA488F2
-            accentHex = 0xFFF0A6
+        if let pat = pattern {
+            baseHex = pat.shellHex
+            spotHex = pat.markHex
+            accentHex = pat.accentHex
+        } else {
+            switch palette {
+            case .pinkSpeckle:
+                baseHex = 0xFFD4E6
+                spotHex = 0xFF8AB8
+                accentHex = 0xFFF3A8
+            case .mintSwirl:
+                baseHex = 0xC9F7E8
+                spotHex = 0x6FD4B8
+                accentHex = 0xFFE39E
+            case .lilacStar:
+                baseHex = 0xDFD0FF
+                spotHex = 0xA488F2
+                accentHex = 0xFFF0A6
+            }
         }
 
-        // Gentle soft aura on sand
         let glowAlpha = 0.24 + 0.14 * Double(sin(t * 2.8)) + Double(taps) * 0.12
         g.fill(
             Path(ellipseIn: CGRect(x: -24, y: -10, width: 48, height: 16)),
@@ -989,19 +1001,24 @@ enum AquaDecorPainter {
 
         shaded(g, shellPath, hex: baseHex, top: -44, bottom: 0, line: 2.5)
 
-        // Pastel speckles
-        let dots: [(CGFloat, CGFloat, CGFloat)] = [
-            (-8, -28, 3.4), (7, -30, 2.8), (-10, -14, 3.8),
-            (6, -16, 4.2), (0, -22, 3.0), (10, -8, 2.5), (-3, -8, 2.6),
-        ]
-        var spotPath = Path()
-        for (dx, dy, r) in dots {
-            spotPath.addEllipse(in: CGRect(x: dx - r, y: dy - r, width: r * 2, height: r * 2))
+        var clipped = g
+        clipped.clip(to: shellPath)
+        if let pat = pattern {
+            drawEggPattern(clipped, pat)
+        } else {
+            let dots: [(CGFloat, CGFloat, CGFloat)] = [
+                (-8, -28, 3.4), (7, -30, 2.8), (-10, -14, 3.8),
+                (6, -16, 4.2), (0, -22, 3.0), (10, -8, 2.5), (-3, -8, 2.6),
+            ]
+            var spotPath = Path()
+            for (dx, dy, r) in dots {
+                spotPath.addEllipse(in: CGRect(x: dx - r, y: dy - r, width: r * 2, height: r * 2))
+            }
+            clipped.fill(spotPath, with: .color(StorybookArt.color(spotHex, alpha: 0.72)))
         }
-        g.fill(spotPath, with: .color(StorybookArt.color(spotHex, alpha: 0.72)))
+        g.stroke(shellPath, with: .color(StorybookArt.outline(for: baseHex, factor: 0.58)), style: strokeStyle(2.5))
         StorybookArt.highlight(g, in: CGRect(x: -10, y: -36, width: 7, height: 13), opacity: 0.58)
 
-        // Cute zig-zag cracks as she taps the egg
         if taps >= 1 {
             var crack = Path()
             crack.move(to: CGPoint(x: -9, y: -25))
@@ -1021,6 +1038,102 @@ enum AquaDecorPainter {
 
         let sp = 4.2 + 2.0 * sin(t * 4.2) + CGFloat(taps) * 1.4
         StorybookArt.sparkle(g, at: CGPoint(x: 14, y: -38), radius: sp, color: Theme.lemon, opacity: 0.95)
+    }
+
+    private static func drawEggPattern(_ g: GraphicsContext, _ pattern: AquaEggPattern) {
+        let mark = StorybookArt.color(pattern.markHex)
+        let accent = StorybookArt.color(pattern.accentHex)
+        switch pattern {
+        case .axolotlFrills:
+            for side in [-1.0, 1.0] as [CGFloat] {
+                for k in 0..<3 {
+                    let y = -30 + CGFloat(k) * 7
+                    let x = side * (11 + CGFloat(k == 1 ? 2 : 0))
+                    g.fill(AquaShape.circle(CGPoint(x: x, y: y), 3.3), with: .color(mark.opacity(0.85)))
+                }
+            }
+            for (dx, dy, r) in [(-4.0, -14.0, 2.5), (5.0, -18.0, 2.3), (0.0, -9.0, 2.2)] as [(CGFloat, CGFloat, CGFloat)] {
+                g.fill(AquaShape.circle(CGPoint(x: dx, y: dy), r), with: .color(mark.opacity(0.6)))
+            }
+        case .seaBunnyDots:
+            for side in [-1.0, 1.0] as [CGFloat] {
+                let ear = Path(ellipseIn: CGRect(x: side * 6 - 3, y: -39, width: 6, height: 11))
+                g.fill(ear, with: .color(mark.opacity(0.85)))
+            }
+            for (dx, dy, r) in [(-9.0, -21.0, 2.8), (2.0, -24.0, 2.4), (10.0, -17.0, 3.0), (-4.0, -10.0, 2.6), (6.0, -9.0, 2.4)] as [(CGFloat, CGFloat, CGFloat)] {
+                g.fill(AquaShape.circle(CGPoint(x: dx, y: dy), r), with: .color(mark.opacity(0.82)))
+            }
+        case .narwhalSwirl:
+            var swirl = Path()
+            swirl.move(to: CGPoint(x: -14, y: -8))
+            swirl.addCurve(to: CGPoint(x: 13, y: -22), control1: CGPoint(x: -4, y: -12), control2: CGPoint(x: 4, y: -24))
+            swirl.move(to: CGPoint(x: -11, y: -22))
+            swirl.addCurve(to: CGPoint(x: 9, y: -35), control1: CGPoint(x: -2, y: -25), control2: CGPoint(x: 3, y: -34))
+            g.stroke(swirl, with: .color(mark.opacity(0.9)), style: strokeStyle(4.2))
+            StorybookArt.sparkle(g, at: CGPoint(x: -4, y: -31), radius: 4.0, color: .white, opacity: 0.92)
+            StorybookArt.sparkle(g, at: CGPoint(x: 6, y: -13), radius: 3.6, color: accent, opacity: 0.92)
+        case .clownStripes:
+            for y in [-29.0, -13.0] as [CGFloat] {
+                let stripe = Path(CGRect(x: -22, y: y, width: 44, height: 7.5))
+                g.fill(stripe, with: .color(mark.opacity(0.95)))
+                g.stroke(stripe, with: .color(accent.opacity(0.75)), lineWidth: 1.5)
+            }
+        case .pufferPolka:
+            for (dx, dy, r) in [(-9.0, -28.0, 3.6), (8.0, -27.0, 3.2), (0.0, -21.0, 4.0), (-11.0, -13.0, 3.8), (7.0, -12.0, 3.6), (-1.0, -6.0, 3.0)] as [(CGFloat, CGFloat, CGFloat)] {
+                g.fill(AquaShape.circle(CGPoint(x: dx, y: dy), r), with: .color(mark.opacity(0.72)))
+            }
+        case .seahorseRings:
+            var rings = Path()
+            for k in 0..<4 {
+                let y = -33 + CGFloat(k) * 8.5
+                rings.move(to: CGPoint(x: -20, y: y))
+                rings.addQuadCurve(to: CGPoint(x: 20, y: y), control: CGPoint(x: 0, y: y + 5))
+            }
+            g.stroke(rings, with: .color(mark.opacity(0.78)), style: strokeStyle(2.6))
+        case .bettaVeil:
+            var waveA = Path()
+            waveA.move(to: CGPoint(x: -20, y: -16))
+            waveA.addCurve(to: CGPoint(x: 20, y: -24), control1: CGPoint(x: -6, y: -32), control2: CGPoint(x: 6, y: -8))
+            var waveB = Path()
+            waveB.move(to: CGPoint(x: -20, y: -8))
+            waveB.addCurve(to: CGPoint(x: 20, y: -14), control1: CGPoint(x: -5, y: -20), control2: CGPoint(x: 8, y: -2))
+            g.stroke(waveA, with: .color(mark.opacity(0.8)), style: strokeStyle(4.2))
+            g.stroke(waveB, with: .color(accent.opacity(0.75)), style: strokeStyle(3.4))
+        case .goldfishScales:
+            var scales = Path()
+            for row in 0..<3 {
+                let y = -30 + CGFloat(row) * 9.5
+                for col in -1...1 {
+                    let x = CGFloat(col) * 10 + (row % 2 == 1 ? 5 : 0)
+                    scales.move(to: CGPoint(x: x - 4.5, y: y))
+                    scales.addQuadCurve(to: CGPoint(x: x + 4.5, y: y), control: CGPoint(x: x, y: y + 5.5))
+                }
+            }
+            g.stroke(scales, with: .color(mark.opacity(0.78)), style: strokeStyle(2.2))
+        case .angelBands:
+            for x in [-10.0, 0.0, 10.0] as [CGFloat] {
+                let band = Path(CGRect(x: x - 2.3, y: -44, width: 4.6, height: 44))
+                g.fill(band, with: .color(mark.opacity(0.5)))
+            }
+            g.fill(Path(ellipseIn: CGRect(x: -10, y: -44, width: 20, height: 14)), with: .color(accent.opacity(0.55)))
+        case .tetraNeon:
+            var neonTop = Path()
+            neonTop.move(to: CGPoint(x: -20, y: -16))
+            neonTop.addLine(to: CGPoint(x: 20, y: -30))
+            var neonBot = Path()
+            neonBot.move(to: CGPoint(x: -18, y: -8))
+            neonBot.addLine(to: CGPoint(x: 18, y: -20))
+            g.stroke(neonTop, with: .color(mark.opacity(0.92)), style: strokeStyle(4.6))
+            g.stroke(neonBot, with: .color(accent.opacity(0.88)), style: strokeStyle(4.0))
+        case .guppyConfetti:
+            let confetti: [(CGFloat, CGFloat, CGFloat, UInt32)] = [
+                (-9, -29, 3.2, 0xFF7FA8), (7, -28, 3.0, 0x46A6FF), (0, -21, 3.5, 0xFFE066),
+                (-10, -14, 3.4, 0x46A6FF), (9, -15, 3.2, 0xFF8A3D), (-2, -8, 3.0, 0xFF7FA8),
+            ]
+            for (dx, dy, r, hex) in confetti {
+                g.fill(AquaShape.circle(CGPoint(x: dx, y: dy), r), with: .color(StorybookArt.color(hex, alpha: 0.85)))
+            }
+        }
     }
 
     static func singingClam(_ g: GraphicsContext, shellHex: UInt32, open: CGFloat, bounce: CGFloat, time t: CGFloat) {
@@ -1206,29 +1319,97 @@ enum AquaDecorPainter {
         submarine(c, propPhase: 0.9, facing: 1, beamAngle: 0.25, night: 0, time: 0, drawBeam: false)
     }
 
-    static func hiddenSurprise(_ g: GraphicsContext, kind: AquaHiddenSpotKind, pop: CGFloat, time t: CGFloat, night: CGFloat) {
+    static func hiddenSandClue(
+        _ g: GraphicsContext,
+        kind: AquaHiddenSpotKind,
+        pop: CGFloat,
+        seed: Int,
+        time t: CGFloat,
+        night: CGFloat
+    ) {
+        let fade = aqClamp(1 - pop * 1.35)
+        guard fade > 0.02 else { return }
+
+        var c = g
+        c.opacity = Double(fade)
+
+        let mound = Path(ellipseIn: CGRect(x: -16, y: -6, width: 32, height: 11))
+        let moundHex: UInt32 = night > 0.5 ? 0x4E6082 : 0xE5C694
+        c.fill(mound, with: .color(StorybookArt.color(moundHex, alpha: 0.85)))
+        let shadow = Path(ellipseIn: CGRect(x: -10, y: -4, width: 20, height: 6))
+        c.fill(shadow, with: .color(StorybookArt.color(0x4A3A50, alpha: 0.32)))
+
+        if kind == .sunkenPearl {
+            let pulse = 0.55 + 0.45 * sin(t * 2.8 + CGFloat(seed))
+            c.fill(
+                AquaShape.circle(CGPoint(x: 0, y: -4), 6 + 2 * pulse),
+                with: .color(StorybookArt.color(0xFFF6C8, alpha: Double(0.38 * pulse)))
+            )
+            StorybookArt.sparkle(c, at: CGPoint(x: 0, y: -6), radius: 3.5 + 1.8 * pulse, color: Theme.lemon, opacity: Double(0.85 * pulse))
+        } else {
+            let cycle = (t + CGFloat(seed) * 1.13).truncatingRemainder(dividingBy: 3.2)
+            let blinking = cycle > 2.95
+            let peekBob = sin(t * 1.9 + CGFloat(seed)) * 1.2
+            for ex in [-4.8, 4.8] as [CGFloat] {
+                let ey = -4.2 + peekBob
+                if blinking {
+                    var lid = Path()
+                    lid.move(to: CGPoint(x: ex - 2.2, y: ey))
+                    lid.addLine(to: CGPoint(x: ex + 2.2, y: ey))
+                    c.stroke(lid, with: .color(StorybookArt.color(0x3B2A48, alpha: 0.75)), style: strokeStyle(1.3))
+                } else {
+                    c.fill(AquaShape.circle(CGPoint(x: ex, y: ey), 2.7), with: .color(.white.opacity(0.95)))
+                    c.fill(AquaShape.circle(CGPoint(x: ex + 0.4, y: ey), 1.45), with: .color(StorybookArt.color(0x2A2238)))
+                }
+            }
+        }
+
+        for k in 0..<2 {
+            let u = (t * 0.45 + CGFloat(seed) * 0.37 + CGFloat(k) * 0.5).truncatingRemainder(dividingBy: 1)
+            let bx = (k == 0 ? -4 : 5) + sin(u * 5 + CGFloat(seed)) * 2.5
+            let by = -8 - u * 22
+            let br: CGFloat = k == 0 ? 2.2 : 1.6
+            let ba = Double(sin(u * .pi)) * 0.72
+            if ba > 0.05 {
+                let bubble = AquaShape.circle(CGPoint(x: bx, y: by), br)
+                c.fill(bubble, with: .color(.white.opacity(0.28 * ba)))
+                c.stroke(bubble, with: .color(.white.opacity(0.85 * ba)), lineWidth: 1.0)
+            }
+        }
+    }
+
+    static func hiddenSurprise(
+        _ g: GraphicsContext,
+        kind: AquaHiddenSpotKind,
+        pop: CGFloat,
+        time t: CGFloat,
+        night: CGFloat,
+        celebrating: Bool = false
+    ) {
         guard pop > 0.02 else { return }
         var c = g
         let ease = aqEase(pop)
+        let joyBounce: CGFloat = celebrating ? abs(sin(t * 16)) * 10 : 0
+        let joyWiggle: CGFloat = celebrating ? sin(t * 22) * 0.16 : 0
         c.opacity = Double(ease)
-        c.translateBy(x: 0, y: (1 - ease) * 16 - sin(t * 5) * 2.5)
-        c.scaleBy(x: 0.75 + 0.25 * ease, y: 0.75 + 0.25 * ease)
+        c.translateBy(x: 0, y: (1 - ease) * 16 - sin(t * 5) * 2.5 - joyBounce)
+        c.rotate(by: .radians(Double(joyWiggle)))
+        let sc = (0.75 + 0.25 * ease) * (celebrating ? 1.12 : 1)
+        c.scaleBy(x: sc, y: sc)
 
-        // Subtle luminous spotlight halo around awakened surprise
-        let haloR: CGFloat = 28
+        let haloR: CGFloat = celebrating ? 34 : 28
         c.fill(
             AquaShape.circle(CGPoint(x: 0, y: -14), haloR),
-            with: .color(StorybookArt.color(0xFFF4B8, alpha: Double(0.24 + 0.22 * night) * Double(ease)))
+            with: .color(StorybookArt.color(0xFFF4B8, alpha: Double((celebrating ? 0.42 : 0.24) + 0.22 * night) * Double(ease)))
         )
 
         switch kind {
         case .hermitCrab:
-            // Spiral pastel snail-shell home + peeking rosy claws & eyestalks
             let spiralShell = Path(ellipseIn: CGRect(x: -18, y: -28, width: 28, height: 24))
             shaded(c, spiralShell, hex: 0xD8A8F5, top: -28, bottom: -4, line: 2.2)
             let body = Path(ellipseIn: CGRect(x: -2, y: -18, width: 20, height: 15))
             shaded(c, body, hex: 0xFF7B5C, top: -18, bottom: -3, line: 2.0)
-            let wave = sin(t * 9) * 3
+            let wave = sin(t * (celebrating ? 18 : 9)) * (celebrating ? 5 : 3)
             let claw = AquaShape.circle(CGPoint(x: 19, y: -16 - wave), 5.5)
             StorybookArt.shape(c, claw, hex: 0xFF7B5C, width: 1.8)
             for ex in [6.0, 13.0] as [CGFloat] {
@@ -1251,6 +1432,133 @@ enum AquaDecorPainter {
         case .sunkenPearl:
             AquaVisitorPainter.pearl(c, at: CGPoint(x: 0, y: -16), r: 12, glow: ease)
             StorybookArt.sparkle(c, at: CGPoint(x: 12, y: -28), radius: 6 * ease, color: Theme.lemon, opacity: Double(ease))
+        }
+    }
+
+    static func floatingGift(_ g: GraphicsContext, kind: AquaFloatingGiftKind, time t: CGFloat) {
+        let pulse = 1 + 0.06 * sin(t * 4.2)
+        var c = g
+        c.scaleBy(x: pulse, y: pulse)
+
+        let outer = AquaShape.circle(.zero, 20)
+        c.fill(
+            outer,
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xFFF6D6, alpha: 0.38), StorybookArt.color(0xA6EEFF, alpha: 0.16), .clear]),
+                center: .zero,
+                startRadius: 4,
+                endRadius: 20
+            )
+        )
+        c.stroke(outer, with: .color(.white.opacity(0.88)), style: strokeStyle(2.0))
+        StorybookArt.highlight(c, in: CGRect(x: -12, y: -14, width: 8, height: 5), opacity: 0.85)
+
+        switch kind {
+        case .pearl:
+            AquaVisitorPainter.pearl(c, at: .zero, r: 10.5, glow: 0.9)
+        case .bubbleGift:
+            let box = Path(roundedRect: CGRect(x: -9, y: -7, width: 18, height: 15), cornerRadius: 4.5)
+            StorybookArt.shape(c, box, hex: 0xFF9AC4, width: 1.8)
+            let vRibbon = Path(CGRect(x: -2, y: -7, width: 4, height: 15))
+            let hRibbon = Path(CGRect(x: -9, y: -1, width: 18, height: 4))
+            c.fill(vRibbon, with: .color(Theme.lemon))
+            c.fill(hRibbon, with: .color(Theme.lemon))
+            StorybookArt.sparkle(c, at: CGPoint(x: 0, y: -10), radius: 5.5, color: Theme.lemon, opacity: 1)
+        case .starShell:
+            var s = c
+            s.translateBy(x: 0, y: 12)
+            s.scaleBy(x: 0.56, y: 0.56)
+            shell(s)
+            StorybookArt.sparkle(c, at: CGPoint(x: 8, y: -10), radius: 5.5, color: Theme.lemon, opacity: 1)
+        }
+    }
+
+    static func discoveryHalo(_ g: GraphicsContext, around center: CGPoint, radius: CGFloat, time t: CGFloat) {
+        let pulse = 0.85 + 0.15 * sin(t * 4.5)
+        let r = radius * pulse
+        let ring = AquaShape.circle(center, r)
+        g.fill(
+            ring,
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xFFF3A8, alpha: 0.24), StorybookArt.color(0xFFE07D, alpha: 0.08), .clear]),
+                center: center,
+                startRadius: r * 0.3,
+                endRadius: r
+            )
+        )
+        g.stroke(ring, with: .color(StorybookArt.color(0xFFE884, alpha: 0.72)), style: StrokeStyle(lineWidth: 2.2, dash: [6, 6]))
+        for k in 0..<3 {
+            let a = t * 1.9 + CGFloat(k) * (2 * .pi / 3)
+            let pt = CGPoint(x: center.x + cos(a) * r, y: center.y + sin(a) * r * 0.86)
+            let sp = 5.0 + 2.2 * sin(t * 6 + CGFloat(k) * 1.7)
+            StorybookArt.sparkle(g, at: pt, radius: sp, color: k == 1 ? .white : Theme.lemon, opacity: 0.95)
+        }
+    }
+
+    static func playWishBubble(
+        _ g: GraphicsContext,
+        kind: AquaPlayWishKind,
+        at center: CGPoint,
+        tailToward: CGPoint,
+        time t: CGFloat
+    ) {
+        let bob = sin(t * 2.8) * 3.5
+        let cx = max(AGeo.left + 48, min(AGeo.right - 48, center.x))
+        let cy = max(AGeo.waterY + 42, min(AGeo.sand(cx) - 70, center.y + bob))
+        let sc: CGFloat = 0.78
+        let tailOffset = CGPoint(
+            x: (tailToward.x - cx) / sc,
+            y: (tailToward.y - cy) / sc
+        )
+
+        var bg = g
+        bg.translateBy(x: cx, y: cy)
+        bg.scaleBy(x: sc, y: sc)
+        StorybookArt.thoughtBubble(bg, center: .zero, radius: 32, tailToward: tailOffset)
+
+        switch kind {
+        case .hoopTrick:
+            var ic = bg
+            ic.scaleBy(x: 0.64, y: 0.64)
+            hoopIcon(ic, time: t)
+        case .pearlPellet:
+            var ic = bg
+            ic.scaleBy(x: 1.15, y: 1.15)
+            treatToggleIcon(ic, mode: .pearls, time: t)
+        case .nightGlow:
+            bg.fill(AquaShape.circle(.zero, 20), with: .color(StorybookArt.color(0x5A4BC4)))
+            var moon = Path()
+            moon.move(to: CGPoint(x: 4, y: -12))
+            moon.addCurve(to: CGPoint(x: 10, y: 10), control1: CGPoint(x: -8, y: -8), control2: CGPoint(x: -6, y: 12))
+            moon.addCurve(to: CGPoint(x: 4, y: -12), control1: CGPoint(x: -16, y: 14), control2: CGPoint(x: -16, y: -14))
+            moon.closeSubpath()
+            bg.fill(moon, with: .color(Theme.lemon))
+            StorybookArt.sparkle(bg, at: CGPoint(x: 9, y: -7), radius: 5, color: .white, opacity: 1)
+            StorybookArt.sparkle(bg, at: CGPoint(x: -10, y: 7), radius: 3.5, color: Theme.lemon, opacity: 0.95)
+        case .glassPolish:
+            var ic = bg
+            ic.rotate(by: .radians(-0.18))
+            ic.scaleBy(x: 0.48, y: 0.48)
+            wiper(ic)
+        case .ribbonDance:
+            var scCtx = bg
+            scCtx.translateBy(x: -4, y: 12)
+            scCtx.scaleBy(x: 0.68, y: 0.68)
+            singingClam(scCtx, shellHex: 0xFFB0C8, open: 0.8, bounce: 0, time: t)
+            let noteHead = Path(ellipseIn: CGRect(x: 6, y: -10, width: 7, height: 5.5))
+            bg.fill(noteHead, with: .color(Theme.pink))
+            var stem = Path()
+            stem.move(to: CGPoint(x: 12.5, y: -8))
+            stem.addLine(to: CGPoint(x: 12.5, y: -20))
+            stem.addQuadCurve(to: CGPoint(x: 18, y: -15), control: CGPoint(x: 18, y: -20))
+            bg.stroke(stem, with: .color(Theme.pink), style: strokeStyle(2.2))
+        case .decorPlay(let decorKind, _):
+            var dc = bg
+            let span = max(decorKind.size.width, decorKind.size.height)
+            let dScale = min(0.42, 42 / max(1, span))
+            dc.translateBy(x: 0, y: decorKind.size.height * dScale * 0.48)
+            dc.scaleBy(x: dScale, y: dScale)
+            drawKind(dc, decorKind, time: t, sway: 0, open: 0, seed: 1)
         }
     }
 

@@ -533,7 +533,7 @@ struct AquariumView: View {
                     if drawerOpen {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { drawerOpen = false }
                     }
-                    sim.steerSubmarine(to: v.location)
+                    sim.steerSubmarineFromFinger(v.location)
                     subActive = sim.submarine.active
                     return
                 }
@@ -1092,5 +1092,6 @@ extension AquariumSim {
         for k in 0..<28 {
             addBubble(CGPoint(x: 470 + CGFloat.random(in: -10...10), y: 600 - CGFloat(k) * 15), r: CGFloat.random(in: 2...5))
         }
+        resolveSandLayout()
     }
 }
