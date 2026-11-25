@@ -188,17 +188,57 @@ enum AquaFishPainter {
     /// Draws a fish where it is in the tank.
     static func draw(_ ctx: GraphicsContext, _ f: AquaFish, time: CGFloat, pitch: CGFloat) {
         var g = ctx
-        g.translateBy(x: f.p.x, y: f.p.y)
         let side: CGFloat = f.facing < 0 ? -1 : 1
+        let flipAge = CGFloat(Double(time) - f.flipStart)
+        let flipDur: CGFloat = 0.85
+        let flipU: CGFloat = flipAge >= 0 && flipAge < flipDur ? flipAge / flipDur : 0
+        let flipSpin: CGFloat = flipU > 0 ? side * aqEase(flipU) * 2 * .pi : 0
+        let flipPop: CGFloat = flipU > 0 ? 1 + 0.16 * sin(flipU * .pi) : 1
+        let flipArcY: CGFloat = flipU > 0 ? -16 * sin(flipU * .pi) : 0
+
+        g.translateBy(x: f.p.x, y: f.p.y + flipArcY)
         var sx = f.facing
         if abs(sx) < 0.14 { sx = 0.14 * side }
-        // a happy wiggle after a tap
         let since = CGFloat(Double(time) - f.happy)
-        let wiggle = since < 0.9 ? sin(since * 26) * 0.18 * (1 - since / 0.9) : 0
-        g.rotate(by: .radians(Double(pitch * side + wiggle)))
-        let s = f.scale
+        let wiggle = since >= 0 && since < 0.9 ? sin(since * 26) * 0.18 * (1 - since / 0.9) : 0
+        g.rotate(by: .radians(Double(pitch * side + wiggle + flipSpin)))
+        let s = f.scale * flipPop
         g.scaleBy(x: sx * s, y: s)
         drawLocal(g, kind: f.kind, variant: f.variant, phase: f.phase, amp: f.amp, gulp: f.gulp, puff: f.puff, time: time, turning: 1 - abs(sx))
+    }
+
+    /// Playful upright snack crumb bubble floating above a fish that is ready for flakes.
+    static func drawCrumbBubble(_ ctx: GraphicsContext, for f: AquaFish, time: CGFloat) {
+        let cue = aqEase(f.hungryCue)
+        guard cue > 0.04 else { return }
+        let bob = sin(time * 3.2 + CGFloat(f.id)) * 3
+        let side: CGFloat = f.facing < 0 ? -1 : 1
+        let cx = max(AGeo.left + 34, min(AGeo.right - 34, f.p.x + side * (f.kind.length * 0.24 * f.scale + 12)))
+        let cy = max(AGeo.waterY + 28, f.p.y - f.kind.height * 0.55 * f.scale - 28 + bob)
+        let sc = 0.62 * (0.72 + 0.28 * cue)
+        let tailOffset = CGPoint(
+            x: (f.p.x + side * f.kind.length * 0.3 * f.scale - cx) / max(0.01, sc),
+            y: (f.p.y - f.kind.height * 0.15 * f.scale - cy) / max(0.01, sc)
+        )
+
+        var g = ctx
+        g.opacity = Double(cue)
+        g.translateBy(x: cx, y: cy)
+        g.scaleBy(x: sc, y: sc)
+        StorybookArt.thoughtBubble(g, center: .zero, radius: 28, tailToward: tailOffset)
+
+        let flakes: [(CGFloat, CGFloat, CGFloat, UInt32)] = [
+            (-9, -4, -0.35, 0xFF7B54),
+            (8, -6, 0.42, 0xFFC94A),
+            (0, 8, -0.15, 0x6BCB7A),
+        ]
+        for (dx, dy, rot, hex) in flakes {
+            var fc = g
+            fc.translateBy(x: dx, y: dy)
+            fc.rotate(by: .radians(Double(rot)))
+            let p = Path(roundedRect: CGRect(x: -7, y: -4.2, width: 14, height: 8.4), cornerRadius: 3.5)
+            StorybookArt.shape(fc, p, hex: hex, width: 2.0)
+        }
     }
 
     /// The fish in its own space, facing right. `turning` (0 ... 1) dims the far fins while it turns.
