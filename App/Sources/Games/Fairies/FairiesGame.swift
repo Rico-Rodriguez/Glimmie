@@ -158,6 +158,8 @@ struct FairiesView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase != .active {
+                resetLocalDrags()
+                sim.cancelTransientGestures()
                 sim.save()
                 sim.resetClock()
             }
@@ -190,6 +192,7 @@ struct FairiesView: View {
     private func stationButton(target: FairyStation, current: FairiesUIState, tint: Color, label: String) -> some View {
         let isSelected = current.station == target
         return Button {
+            resetLocalDrags()
             withAnimation(.spring(response: 0.3, dampingFraction: 0.74)) {
                 sim.selectStation(target)
             }
@@ -291,6 +294,7 @@ struct FairiesView: View {
                     .padding(.vertical, 4)
                     .padding(.horizontal, 4)
                 }
+                .scrollDisabled(trayDragFairy != nil)
                 .frame(width: 472, height: 74)
 
                 dockDivider
@@ -677,8 +681,8 @@ struct FairiesView: View {
     // MARK: - Pixie Tea Table Dock
 
     private func teaDock(_ current: FairiesUIState) -> some View {
-        let isTransformed: Bool
-        if case .transformed = current.teaPhase { isTransformed = true } else { isTransformed = false }
+        let isTransformed = current.tea.stage == .transformed
+        let canTapServe = current.tea.canServe || isTransformed
 
         return GameTrayCard(cornerRadius: 34, paddingH: 14, paddingV: 10) {
             HStack(spacing: 12) {
@@ -707,9 +711,9 @@ struct FairiesView: View {
                 } label: {
                     GameDockTile(
                         size: 66,
-                        selected: current.teaCanServe || isTransformed,
-                        pulsing: current.teaCanServe || isTransformed,
-                        tint: (current.teaCanServe || isTransformed) ? Theme.lemon : .white,
+                        selected: canTapServe,
+                        pulsing: canTapServe,
+                        tint: canTapServe ? Theme.lemon : .white,
                         cornerRadius: 22
                     ) {
                         Canvas { ctx, sz in
@@ -726,7 +730,7 @@ struct FairiesView: View {
                     }
                 }
                 .buttonStyle(Squish())
-                .opacity((current.teaCanServe || isTransformed) ? 1 : 0.48)
+                .opacity(canTapServe ? 1 : 0.48)
                 .accessibilityLabel("Serve Tea")
 
                 starPinButton(current, size: 58)
@@ -735,7 +739,7 @@ struct FairiesView: View {
     }
 
     private func teaSugarTile(_ star: SugarStarKind, current: FairiesUIState) -> some View {
-        let wished = current.teaPhase.wish.sugarStar == star && !(current.teaPhase.draft?.sugarStars.contains(star) ?? false)
+        let wished = current.tea.wish.sugarStar == star && !current.tea.sugarStars.contains(star)
         return GameDockTile(
             size: 62,
             selected: wished,
@@ -755,7 +759,7 @@ struct FairiesView: View {
     }
 
     private func teaTreatTile(_ treat: FairyTeaTreatKind, current: FairiesUIState) -> some View {
-        let wished = current.teaPhase.wish.treat == treat && current.teaPhase.draft?.platedTreat != treat
+        let wished = current.tea.wish.treat == treat && current.tea.platedTreat != treat
         return GameDockTile(
             size: 62,
             selected: wished,
@@ -823,6 +827,14 @@ struct FairiesView: View {
         .allowsHitTesting(false)
     }
 
+    private func resetLocalDrags() {
+        trayDragFairy = nil
+        dockSugarDrag = nil
+        dockSugarStarted = false
+        dockTreatDrag = nil
+        dockTreatStarted = false
+    }
+
     // MARK: - Gestures
 
     private var sceneGesture: some Gesture {
@@ -832,7 +844,7 @@ struct FairiesView: View {
             }
             .onEnded { v in
                 let moved = hypot(v.translation.width, v.translation.height)
-                sim.handleSceneDragEnded(at: v.location, isTap: moved < 14)
+                sim.handleSceneDragEnded(at: v.location, isTap: moved < 12)
             }
     }
 

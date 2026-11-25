@@ -257,10 +257,9 @@ enum FairiesArt {
             g.stroke(notes, with: .color(col), style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
             StorybookArt.sparkle(g, at: CGPoint(x: -13, y: -11), radius: 5.5, color: Theme.lemon)
         case .sleep:
-            var crescent = Path(ellipseIn: CGRect(x: -12, y: -12, width: 24, height: 24))
-            crescent.addEllipse(in: CGRect(x: -4, y: -15, width: 22, height: 22))
-            g.fill(crescent, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
-            StorybookArt.sparkle(g, at: CGPoint(x: 10, y: -8), radius: 6, color: Theme.lilac)
+            let crescent = FairyWingPainter.crescentPath(center: CGPoint(x: -1, y: 0), radius: 13)
+            StorybookArt.fillAndStroke(g, crescent, fill: Theme.lemon, stroke: StorybookArt.outline(for: 0xE6A93B), width: 1.8)
+            StorybookArt.sparkle(g, at: CGPoint(x: 10, y: -7), radius: 6, color: Theme.lilac)
         case .carousel:
             var tent = Path()
             tent.move(to: CGPoint(x: -16, y: -2))
@@ -1149,9 +1148,8 @@ enum FairiesArt {
             width: 2
         )
         if night {
-            var moon = Path(ellipseIn: CGRect(x: claspCenter.x - 6, y: claspCenter.y - 6, width: 12, height: 12))
-            moon.addEllipse(in: CGRect(x: claspCenter.x - 2, y: claspCenter.y - 8, width: 11, height: 11))
-            g.fill(moon, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
+            let moon = FairyWingPainter.crescentPath(center: CGPoint(x: claspCenter.x - 1, y: claspCenter.y), radius: 7)
+            g.fill(moon, with: .color(Theme.lemon))
         } else {
             StorybookArt.sparkle(g, at: claspCenter, radius: 7, color: .white)
         }
@@ -1933,9 +1931,8 @@ enum FairiesArt {
             }
             StorybookArt.fillAndStroke(g, Path(ellipseIn: CGRect(x: -5.5, y: top.y - 5.5, width: 11, height: 11)), fill: accent, stroke: outline, width: 2)
         case .moon:
-            var crescent = Path(ellipseIn: CGRect(x: -11, y: top.y - 11, width: 22, height: 22))
-            crescent.addEllipse(in: CGRect(x: -4, y: top.y - 14, width: 20, height: 20))
-            g.fill(crescent, with: .color(fill), style: FillStyle(eoFill: true))
+            let crescent = FairyWingPainter.crescentPath(center: CGPoint(x: -1, y: top.y), radius: 11.5)
+            StorybookArt.fillAndStroke(g, crescent, fill: fill, stroke: outline, width: 1.8)
             StorybookArt.sparkle(g, at: CGPoint(x: 8, y: top.y - 4), radius: 5, color: .white)
         case .melody:
             StorybookArt.fillAndStroke(g, Path(ellipseIn: CGRect(x: -9, y: top.y - 2, width: 10, height: 8)), fill: fill, stroke: outline, width: 2)

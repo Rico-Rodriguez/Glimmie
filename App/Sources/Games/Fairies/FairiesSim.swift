@@ -94,8 +94,7 @@ struct FairiesUIState: Equatable {
     var canUndoWingStroke: Bool
     var wingDesignVersion: Int
     var currentWand: FairyWandDesign
-    var teaPhase: TeaSessionPhase
-    var teaCanServe: Bool
+    var tea: FairiesTeaUIState
     var activeTransforms: [FairyKind: TeaTransformKind]
     var hasHanbokTea: Bool
 }
@@ -207,6 +206,8 @@ final class FairiesSim {
     private var wingUndoStacks: [FairyKind: [FairyWingDesign]] = [:]
     private var salonStrokeActive = false
     private var salonGestureUndoPushed = false
+    private var salonDragActivated = false
+    private var pendingGlitterUndo = false
     private var wingDesignVersion = 0
     private var sceneDragActor: CompactFairyActor?
     private var sceneDragStarted = false
@@ -269,14 +270,83 @@ final class FairiesSim {
     }
 
     func currentUIState() -> FairiesUIState {
-        let canServe: Bool
+        let teaUI: FairiesTeaUIState
         switch teaSession {
-        case .ready:
-            canServe = true
-        case .awaitingPour(_, _, let draft), .pouring(_, _, let draft, _):
-            canServe = draft.isReadyToServe
-        case .sipping, .transformed:
-            canServe = false
+        case .awaitingPour(_, let wish, let draft):
+            teaUI = FairiesTeaUIState(
+                wish: wish,
+                stage: .awaitingPour,
+                selectedNectar: draft.nectar ?? wish.nectar,
+                cupHasLiquid: draft.fillLevel > 0.02,
+                cupFilled: draft.hasNectar,
+                sugarCount: draft.sugarStars.count,
+                sugarStars: draft.sugarStars,
+                platedTreat: draft.platedTreat,
+                hasTreat: draft.platedTreat != nil,
+                canServe: draft.isReadyToServe,
+                transformedEffect: nil,
+                earnedStars: nil
+            )
+        case .pouring(_, let wish, let draft, let activeNectar):
+            teaUI = FairiesTeaUIState(
+                wish: wish,
+                stage: .pouring,
+                selectedNectar: activeNectar,
+                cupHasLiquid: draft.fillLevel > 0.02,
+                cupFilled: draft.hasNectar,
+                sugarCount: draft.sugarStars.count,
+                sugarStars: draft.sugarStars,
+                platedTreat: draft.platedTreat,
+                hasTreat: draft.platedTreat != nil,
+                canServe: draft.isReadyToServe,
+                transformedEffect: nil,
+                earnedStars: nil
+            )
+        case .ready(_, let wish, let draft):
+            teaUI = FairiesTeaUIState(
+                wish: wish,
+                stage: .ready,
+                selectedNectar: draft.nectar ?? wish.nectar,
+                cupHasLiquid: true,
+                cupFilled: true,
+                sugarCount: draft.sugarStars.count,
+                sugarStars: draft.sugarStars,
+                platedTreat: draft.platedTreat,
+                hasTreat: draft.platedTreat != nil,
+                canServe: true,
+                transformedEffect: nil,
+                earnedStars: nil
+            )
+        case .sipping(_, let wish, let draft, _):
+            teaUI = FairiesTeaUIState(
+                wish: wish,
+                stage: .sipping,
+                selectedNectar: draft.nectar ?? wish.nectar,
+                cupHasLiquid: true,
+                cupFilled: true,
+                sugarCount: draft.sugarStars.count,
+                sugarStars: draft.sugarStars,
+                platedTreat: draft.platedTreat,
+                hasTreat: draft.platedTreat != nil,
+                canServe: false,
+                transformedEffect: nil,
+                earnedStars: nil
+            )
+        case .transformed(_, let wish, let transform, _):
+            teaUI = FairiesTeaUIState(
+                wish: wish,
+                stage: .transformed,
+                selectedNectar: wish.nectar,
+                cupHasLiquid: false,
+                cupFilled: false,
+                sugarCount: 0,
+                sugarStars: [],
+                platedTreat: nil,
+                hasTreat: false,
+                canServe: false,
+                transformedEffect: transform,
+                earnedStars: lastTeaStars
+            )
         }
         let transformMap = activeTransforms.mapValues(\.kind)
         return FairiesUIState(
@@ -293,8 +363,7 @@ final class FairiesSim {
             canUndoWingStroke: canUndoWingAction(),
             wingDesignVersion: wingDesignVersion,
             currentWand: currentWand(),
-            teaPhase: teaSession,
-            teaCanServe: canServe,
+            tea: teaUI,
             activeTransforms: transformMap,
             hasHanbokTea: hasHanbokTea
         )
@@ -366,7 +435,7 @@ final class FairiesSim {
             case .syncPinned(let fairyID, let look):
                 PinnedFairyCodec.write(fairyID: fairyID, look: look, to: userDefaults)
             case .save:
-                save()
+                saveAsync()
             case .uiState(let state):
                 onUIStateChange?(state)
             }
@@ -406,6 +475,11 @@ final class FairiesSim {
     func save() {
         guard persist, !demo else { return }
         GameStorage.save(currentSave(), game: storageGameID, file: Self.saveFile)
+    }
+
+    private func saveAsync() {
+        guard persist, !demo else { return }
+        GameStorage.saveAsync(currentSave(), game: storageGameID, file: Self.saveFile)
     }
 
     func buildPinnedLook(for fairy: FairyKind) -> PinnedFairyLook {
@@ -516,10 +590,14 @@ final class FairiesSim {
         finishDirectInteraction()
     }
 
-    private func cancelTransientGestures() {
+    func cancelTransientGestures() {
         cancelCompactDrag()
         salonStrokeActive = false
         salonGestureUndoPushed = false
+        salonDragActivated = false
+        pendingGlitterUndo = false
+        glitterShakeAccumulator = 0
+        fallingGlitter.removeAll()
         salonToolPos = nil
         salonFingerPos = nil
         draggingTeapot = nil
@@ -527,6 +605,7 @@ final class FairiesSim {
         draggingTeaTreat = nil
         sceneDragActor = nil
         sceneDragStarted = false
+        enqueueUIStateIfChanged()
     }
 
     // MARK: - Simulation Loop
@@ -607,9 +686,9 @@ final class FairiesSim {
                 }
                 guard moved >= 12, let actor = sceneDragActor else { return }
                 sceneDragStarted = true
-                beginCompactDrag(fairy: actor.kind, fromSpot: actor.currentSpot, at: lift(current, by: FingerLift.item), fromRoom: true)
+                beginCompactDrag(fairy: actor.kind, fromSpot: actor.currentSpot, at: lift(current, by: FingerLift.item), finger: current, fromRoom: true)
             } else {
-                updateCompactDrag(to: lift(current, by: FingerLift.item))
+                updateCompactDrag(to: lift(current, by: FingerLift.item), finger: current)
             }
 
         case .salon:
@@ -624,7 +703,7 @@ final class FairiesSim {
         switch station {
         case .stage:
             if sceneDragStarted {
-                endCompactDrag(at: lift(current, by: FingerLift.item))
+                endCompactDrag(at: lift(current, by: FingerLift.item), finger: current)
             } else {
                 tapCompact(at: current)
             }
@@ -639,18 +718,16 @@ final class FairiesSim {
         }
     }
 
-    // MARK: - Dock Drag Entry Points (FingerLift Owned Inside Sim)
-
     func beginDockFairyDrag(_ fairy: FairyKind, finger: CGPoint) {
-        beginCompactDrag(fairy: fairy, fromSpot: nil, at: lift(finger, by: FingerLift.item), fromRoom: false)
+        beginCompactDrag(fairy: fairy, fromSpot: nil, at: lift(finger, by: FingerLift.item), finger: finger, fromRoom: false)
     }
 
     func updateDockFairyDrag(finger: CGPoint) {
-        updateCompactDrag(to: lift(finger, by: FingerLift.item))
+        updateCompactDrag(to: lift(finger, by: FingerLift.item), finger: finger)
     }
 
     func endDockFairyDrag(finger: CGPoint) {
-        endCompactDrag(at: lift(finger, by: FingerLift.item))
+        endCompactDrag(at: lift(finger, by: FingerLift.item), finger: finger)
     }
 
     func beginDockSugarDrag(_ star: SugarStarKind, finger: CGPoint) {
@@ -704,6 +781,8 @@ final class FairiesSim {
     func selectSalonTool(_ tool: FairySalonTool) {
         salonStrokeActive = false
         salonGestureUndoPushed = false
+        salonDragActivated = false
+        glitterShakeAccumulator = 0
         salonToolPos = nil
         salonFingerPos = nil
         salonTool = tool
@@ -726,6 +805,9 @@ final class FairiesSim {
         guard var stack = wingUndoStacks[selectedFairy], let previous = stack.popLast() else {
             return false
         }
+        fallingGlitter.removeAll()
+        glitterShakeAccumulator = 0
+        pendingGlitterUndo = false
         wingUndoStacks[selectedFairy] = stack
         if previous.isEmpty {
             wingDesigns.removeValue(forKey: selectedFairy)
@@ -752,6 +834,8 @@ final class FairiesSim {
             enqueue(.save)
         }
         fallingGlitter.removeAll()
+        glitterShakeAccumulator = 0
+        pendingGlitterUndo = false
         play(.bubble, volume: 0.7)
         hapticTap()
         emitBurst(.bubble, at: FGeo.salonWingCenter, count: 14, colorHex: 0xBEE8FF)
@@ -898,7 +982,7 @@ final class FairiesSim {
     }
 
     @discardableResult
-    func eraseWingArt(at stagePoint: CGPoint) -> Bool {
+    func eraseWingArt(at stagePoint: CGPoint, radius: Float = 0.16) -> Bool {
         guard let wp = FairyWingPainter.toCanonical(
             stagePoint: stagePoint,
             wingCenter: FGeo.salonWingCenter,
@@ -907,17 +991,29 @@ final class FairiesSim {
             return false
         }
         guard var design = wingDesigns[selectedFairy], !design.isEmpty else { return false }
-        let radius: Float = 0.16
         let before = design
 
         design.glitter.removeAll { hypot($0.point.u - wp.u, $0.point.v - wp.v) <= radius }
         design.stamps.removeAll { hypot($0.point.u - wp.u, $0.point.v - wp.v) <= radius }
-        for idx in design.strokes.indices.reversed() {
-            design.strokes[idx].points.removeAll { hypot($0.u - wp.u, $0.v - wp.v) <= radius }
-            if design.strokes[idx].points.isEmpty {
-                design.strokes.remove(at: idx)
+
+        var splitStrokes: [WingBrushStroke] = []
+        for stroke in design.strokes {
+            var segment: [WingPoint] = []
+            for pt in stroke.points {
+                if hypot(pt.u - wp.u, pt.v - wp.v) <= radius {
+                    if !segment.isEmpty {
+                        splitStrokes.append(WingBrushStroke(color: stroke.color, width: stroke.width, points: segment))
+                        segment.removeAll(keepingCapacity: true)
+                    }
+                } else {
+                    segment.append(pt)
+                }
+            }
+            if !segment.isEmpty {
+                splitStrokes.append(WingBrushStroke(color: stroke.color, width: stroke.width, points: segment))
             }
         }
+        design.strokes = splitStrokes
 
         guard design != before else { return false }
         if !salonGestureUndoPushed {
@@ -981,7 +1077,7 @@ final class FairiesSim {
             finishDirectInteraction()
 
         case .glitter(let hex):
-            pushWingUndoSnapshot(for: selectedFairy)
+            pendingGlitterUndo = true
             let targets: [WingPoint] = [
                 WingPoint(u: 0.36, v: -0.34),
                 WingPoint(u: 0.56, v: -0.52),
@@ -1028,7 +1124,24 @@ final class FairiesSim {
             _ = placeWingStamp(kind, at: stagePt)
 
         case .wipe:
-            clearCurrentWings()
+            let target = point ?? FairyWingPainter.toStagePoint(
+                WingPoint(u: 0.55, v: -0.35),
+                side: 1,
+                wingCenter: FGeo.salonWingCenter,
+                wingHalfSpan: FGeo.salonWingHalfSpan
+            )
+            if eraseWingArt(at: target, radius: 0.22) {
+                salonGestureUndoPushed = false
+                wingDesignVersion += 1
+                play(.bubble, volume: 0.65)
+                hapticTap()
+                enqueuePinnedSyncIfNeeded(for: selectedFairy)
+                enqueue(.save)
+            } else {
+                play(.tap, volume: 0.4)
+                emitBurst(.bubble, at: target, count: 4, colorHex: 0xBEE8FF)
+            }
+            finishDirectInteraction()
 
         case .wandBuilder:
             waveCustomWand(at: point ?? FGeo.salonWandCenter)
@@ -1036,11 +1149,24 @@ final class FairiesSim {
     }
 
     private func handleSalonDragChanged(start: CGPoint, current: CGPoint) {
+        let moved = hypot(current.x - start.x, current.y - start.y)
+        if !salonDragActivated {
+            guard moved >= 12 else { return }
+            salonDragActivated = true
+        }
         salonFingerPos = current
         switch salonTool {
         case .brush(let color):
             let tip = lift(current, by: FingerLift.tool)
             salonToolPos = tip
+            if FairyWingPainter.toCanonical(
+                stagePoint: tip,
+                wingCenter: FGeo.salonWingCenter,
+                wingHalfSpan: FGeo.salonWingHalfSpan
+            ) == nil {
+                salonStrokeActive = false
+                return
+            }
             let started = !salonStrokeActive
             if applyWingBrushPoint(at: tip, color: color, startNewStroke: started) {
                 if !salonStrokeActive {
@@ -1053,13 +1179,13 @@ final class FairiesSim {
         case .glitter(let hex):
             let shaker = lift(current, by: FingerLift.pour)
             salonToolPos = shaker
-            if !salonGestureUndoPushed {
-                pushWingUndoSnapshot(for: selectedFairy)
-                salonGestureUndoPushed = true
-            }
             glitterShakeAccumulator += 1
             if glitterShakeAccumulator >= 3 {
                 glitterShakeAccumulator = 0
+                if !salonGestureUndoPushed {
+                    pendingGlitterUndo = true
+                    salonGestureUndoPushed = true
+                }
                 shakeGlitter(at: shaker, colorHex: hex, count: 2)
             }
 
@@ -1088,16 +1214,18 @@ final class FairiesSim {
     }
 
     private func handleSalonDragEnded(at current: CGPoint, isTap: Bool) {
+        let wasDrag = salonDragActivated
         let hadStroke = salonStrokeActive
         let hadUndo = salonGestureUndoPushed
         let toolPos = salonToolPos
+        salonDragActivated = false
         salonStrokeActive = false
         salonGestureUndoPushed = false
         salonToolPos = nil
         salonFingerPos = nil
         glitterShakeAccumulator = 0
 
-        if isTap {
+        if isTap && !wasDrag {
             switch salonTool {
             case .stamp(let kind):
                 if !placeWingStamp(kind, at: current) {
@@ -1160,6 +1288,10 @@ final class FairiesSim {
                     wingCenter: FGeo.salonWingCenter,
                     wingHalfSpan: FGeo.salonWingHalfSpan
                 ) {
+                    if pendingGlitterUndo {
+                        pushWingUndoSnapshot(for: selectedFairy)
+                        pendingGlitterUndo = false
+                    }
                     var design = wingDesigns[selectedFairy] ?? FairyWingDesign()
                     design.glitter.append(WingGlitterFleck(
                         point: wp,
@@ -1176,6 +1308,10 @@ final class FairiesSim {
             } else if grain.age >= grain.maxAge {
                 fallingGlitter.remove(at: i)
             }
+        }
+
+        if fallingGlitter.isEmpty {
+            pendingGlitterUndo = false
         }
 
         if stuckAnyGlitter {
@@ -1405,6 +1541,12 @@ final class FairiesSim {
             case .awaitingPour(let fairy, let wish, var draft),
                  .pouring(let fairy, let wish, var draft, _),
                  .ready(let fairy, let wish, var draft):
+                if draft.nectar == nectar && draft.fillLevel >= 1.0 {
+                    break
+                }
+                if draft.nectar != nectar && draft.fillLevel >= 0.98 {
+                    draft.fillLevel = 0.25
+                }
                 draft.nectar = nectar
                 draft.liquidHex = draft.sugarStars.last?.fizzHex ?? nectar.liquidHex
                 teaSession = .pouring(fairy: fairy, wish: wish, draft: draft, activeNectar: nectar)
@@ -1539,7 +1681,7 @@ final class FairiesSim {
 
     private func completeTeaServing(fairy: FairyKind, wish: PixieTeaWish, draft: TeaCupDraft) {
         let stars = Self.teaStars(draft: draft, wish: wish)
-        let reward = Coins.reward(stars: stars)
+        var totalReward = Coins.reward(stars: stars)
         let transform = draft.dominantTransform
 
         lastTeaStars = stars
@@ -1554,7 +1696,6 @@ final class FairiesSim {
         play(.fanfare, volume: 0.72)
         play(.cheer, volume: 0.5)
         hapticTap()
-        earnCoins(reward, from: FGeo.teaCupCenter)
 
         emitBurst(.star, at: FGeo.teaFairyCenter, count: 16, colorHex: transform.accentHex)
         emitBurst(.heart, at: FGeo.teaFairyCenter, count: 12, colorHex: fairy.palette.emblem)
@@ -1564,8 +1705,13 @@ final class FairiesSim {
             discover(.silkFairy, at: FGeo.teaFairyCenter)
         }
         if let idx = compactActors.firstIndex(where: { $0.kind == fairy && $0.wish == .pixieTea }) {
-            _ = fulfillWish(for: compactActors[idx].kind)
+            let fulfilled = fulfillWish(for: compactActors[idx].kind, awardCoins: false)
+            if fulfilled && time - lastWishCoinTime >= Self.wishCoinCooldown {
+                lastWishCoinTime = time
+                totalReward += Self.wishCoinReward
+            }
         }
+        earnCoins(totalReward, from: FGeo.teaCupCenter)
         enqueue(.save)
     }
 
@@ -1906,7 +2052,7 @@ final class FairiesSim {
     }
 
     @discardableResult
-    func fulfillWish(for kind: FairyKind) -> Bool {
+    func fulfillWish(for kind: FairyKind, awardCoins: Bool = true) -> Bool {
         guard let idx = compactActors.firstIndex(where: { $0.kind == kind }),
               compactActors[idx].wish != nil else { return false }
 
@@ -1923,7 +2069,7 @@ final class FairiesSim {
         emitBurst(.heart, at: pos, count: 14, colorHex: kind.palette.emblem)
         emitBurst(.star, at: pos, count: 12, colorHex: 0xFFE38A)
 
-        if time - lastWishCoinTime >= Self.wishCoinCooldown {
+        if awardCoins && time - lastWishCoinTime >= Self.wishCoinCooldown {
             lastWishCoinTime = time
             earnCoins(Self.wishCoinReward, from: pos)
         }
@@ -2015,6 +2161,8 @@ final class FairiesSim {
 
         if station == .salon {
             fallingGlitter.removeAll()
+            glitterShakeAccumulator = 0
+            pendingGlitterUndo = false
             emitBurst(.star, at: FGeo.salonWingCenter, count: 10, colorHex: fairy.palette.emblem)
             finishDirectInteraction()
             return
@@ -2180,13 +2328,8 @@ final class FairiesSim {
             compactBubbles.removeFirst(compactBubbles.count - 14)
         }
 
-        if let idx = compactActors.firstIndex(where: { $0.wish == .bubbles }) {
-            let bathPos = CGPoint(x: base.x + CompactSpot.teacupBath.fairyOffset.x, y: base.y + CompactSpot.teacupBath.fairyOffset.y)
-            compactActors[idx].currentSpot = .teacupBath
-            compactActors[idx].target = bathPos
-            compactActors[idx].ridingCarousel = false
-            compactActors[idx].idleTimer = 5.5
-            _ = fulfillWish(for: compactActors[idx].kind)
+        if let wishKind = compactActors.first(where: { $0.wish == .bubbles })?.kind {
+            _ = placeFairy(wishKind, at: .teacupBath)
         }
         emitBurst(.bubble, at: CGPoint(x: base.x, y: base.y - 16), count: 8, colorHex: 0xA8E4FF)
         finishDirectInteraction()
@@ -2214,22 +2357,12 @@ final class FairiesSim {
         hapticTap()
 
         let base = CompactSpot.rainbowSwing.center
-        let swingPos = CGPoint(x: base.x + CompactSpot.rainbowSwing.fairyOffset.x, y: base.y + CompactSpot.rainbowSwing.fairyOffset.y)
 
-        if let wishIdx = compactActors.firstIndex(where: { $0.wish == .swing }) {
-            compactActors[wishIdx].currentSpot = .rainbowSwing
-            compactActors[wishIdx].target = swingPos
-            compactActors[wishIdx].ridingCarousel = false
-            compactActors[wishIdx].mood = .giggle
-            compactActors[wishIdx].idleTimer = 6.0
-            _ = fulfillWish(for: compactActors[wishIdx].kind)
+        if let wishKind = compactActors.first(where: { $0.wish == .swing })?.kind {
+            _ = placeFairy(wishKind, at: .rainbowSwing)
         } else if !compactActors.contains(where: { $0.currentSpot == .rainbowSwing }),
-                  let riderIdx = compactActors.firstIndex(where: { $0.kind == selectedFairy }) ?? compactActors.indices.first {
-            compactActors[riderIdx].currentSpot = .rainbowSwing
-            compactActors[riderIdx].target = swingPos
-            compactActors[riderIdx].ridingCarousel = false
-            compactActors[riderIdx].mood = .giggle
-            compactActors[riderIdx].idleTimer = 6.0
+                  let riderKind = compactActors.first(where: { $0.kind == selectedFairy })?.kind ?? compactActors.first?.kind {
+            _ = placeFairy(riderKind, at: .rainbowSwing)
         }
 
         emitBurst(.star, at: base, count: 10, colorHex: 0xFFE38A)
@@ -2496,14 +2629,28 @@ final class FairiesSim {
         finishDirectInteraction()
     }
 
-    func beginCompactDrag(fairy: FairyKind, fromSpot: CompactSpot?, at liftedPoint: CGPoint, fromRoom: Bool? = nil) {
+    private func isReturnDropTarget(liftedPoint: CGPoint, finger: CGPoint?) -> Bool {
+        if let finger,
+           hypot(finger.x - FGeo.returnBadgeCenter.x, finger.y - FGeo.returnBadgeCenter.y) < 58 {
+            return true
+        }
+        return liftedPoint.y >= FGeo.returnDropY - 36
+    }
+
+    func beginCompactDrag(
+        fairy: FairyKind,
+        fromSpot: CompactSpot?,
+        at liftedPoint: CGPoint,
+        finger: CGPoint? = nil,
+        fromRoom: Bool? = nil
+    ) {
         let startedInRoom = fromRoom ?? (fromSpot != nil || isFairyInCompact(fairy))
         draggingCompactFairy = fairy
         compactDragOriginSpot = fromSpot
         compactDragStartedInRoom = startedInRoom
         compactDragPos = liftedPoint
-        compactHoverSpot = nearestCompactSpot(to: liftedPoint, maxRadius: 108)
-        compactReturnHovered = startedInRoom && liftedPoint.y >= FGeo.returnDropY - 36
+        compactReturnHovered = startedInRoom && isReturnDropTarget(liftedPoint: liftedPoint, finger: finger)
+        compactHoverSpot = compactReturnHovered ? nil : nearestCompactSpot(to: liftedPoint, maxRadius: 108)
         selectedFairy = fairy
         pendingPlacementFairy = nil
         play(.pop, volume: 0.5)
@@ -2511,10 +2658,10 @@ final class FairiesSim {
         finishDirectInteraction()
     }
 
-    func updateCompactDrag(to liftedPoint: CGPoint) {
+    func updateCompactDrag(to liftedPoint: CGPoint, finger: CGPoint? = nil) {
         guard draggingCompactFairy != nil else { return }
         compactDragPos = liftedPoint
-        let nextHoverReturn = compactDragStartedInRoom && liftedPoint.y >= FGeo.returnDropY - 36
+        let nextHoverReturn = compactDragStartedInRoom && isReturnDropTarget(liftedPoint: liftedPoint, finger: finger)
         let returnChanged = nextHoverReturn != compactReturnHovered
         compactReturnHovered = nextHoverReturn
         compactHoverSpot = compactReturnHovered ? nil : nearestCompactSpot(to: liftedPoint, maxRadius: 108)
@@ -2523,14 +2670,14 @@ final class FairiesSim {
         }
     }
 
-    func endCompactDrag(at liftedPoint: CGPoint) {
+    func endCompactDrag(at liftedPoint: CGPoint, finger: CGPoint? = nil) {
         guard let fairy = draggingCompactFairy else { return }
         let startedInRoom = compactDragStartedInRoom
         draggingCompactFairy = nil
         compactDragOriginSpot = nil
         compactDragStartedInRoom = false
         compactHoverSpot = nil
-        let returning = startedInRoom && liftedPoint.y >= FGeo.returnDropY - 36
+        let returning = startedInRoom && isReturnDropTarget(liftedPoint: liftedPoint, finger: finger)
         compactReturnHovered = false
 
         if returning {
@@ -2541,10 +2688,22 @@ final class FairiesSim {
         if hasCarousel && hypot(liftedPoint.x - FGeo.carouselCenter.x, liftedPoint.y - FGeo.carouselCenter.y + 20) <= 68 {
             _ = inviteFairyToCompact(fairy, at: FGeo.carouselCenter)
             if let idx = compactActors.firstIndex(where: { $0.kind == fairy }) {
+                let takenSeats = Set(compactActors.filter { $0.ridingCarousel && $0.kind != fairy }.map(\.carouselSeatIndex))
+                let chosenSeat: Int
+                if let openSeat = (0..<4).first(where: { !takenSeats.contains($0) }) {
+                    chosenSeat = openSeat
+                } else {
+                    chosenSeat = 0
+                    if let evictIdx = compactActors.firstIndex(where: { $0.ridingCarousel && $0.kind != fairy && $0.carouselSeatIndex == 0 }) {
+                        compactActors[evictIdx].ridingCarousel = false
+                        compactActors[evictIdx].target = pickRoamingDestination(excluding: compactActors[evictIdx].kind)
+                    }
+                }
                 compactActors[idx].ridingCarousel = true
                 compactActors[idx].currentSpot = nil
-                compactActors[idx].carouselSeatIndex = 0
+                compactActors[idx].carouselSeatIndex = chosenSeat
                 compactActors[idx].idleTimer = 6.0
+                syncSpotOccupantsFromActors()
                 if compactActors[idx].wish == .carousel {
                     _ = fulfillWish(for: fairy)
                 }

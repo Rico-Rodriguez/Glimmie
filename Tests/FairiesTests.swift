@@ -467,4 +467,145 @@ final class FairiesTests: XCTestCase {
         XCTAssertEqual(GameRegistry.all.count, 13)
         XCTAssertEqual(GameRegistry.all.last?.id, "fairies")
     }
+
+    func testIdleTeaTableEmitsZeroUIStateCallbacksAcrossSixtyFrames() {
+        let sim = freshSim()
+        sim.selectStation(.teaTable)
+        sim.flushPendingEffects()
+
+        var uiUpdates = 0
+        sim.onUIStateChange = { _ in uiUpdates += 1 }
+
+        for _ in 0..<60 {
+            sim.step(dt: 1.0 / 60)
+            sim.flushPendingEffects()
+        }
+        XCTAssertEqual(uiUpdates, 0)
+
+        let wish = sim.teaSession.wish
+        XCTAssertTrue(sim.pourTeapot(wish.nectar))
+        advance(sim, seconds: 0.9)
+        XCTAssertTrue(sim.addSugarStar(wish.sugarStar))
+        XCTAssertTrue(sim.plateTreat(wish.treat))
+        sim.flushPendingEffects()
+        XCTAssertEqual(sim.currentUIState().tea.stage, .ready)
+
+        uiUpdates = 0
+        for _ in 0..<60 {
+            sim.step(dt: 1.0 / 60)
+            sim.flushPendingEffects()
+        }
+        XCTAssertEqual(uiUpdates, 0)
+
+        sim.selectStation(.stage)
+        _ = sim.spawnCompactWish(for: sim.selectedFairy, wish: .pixieTea)
+        sim.selectStation(.teaTable)
+        let activeWish = sim.teaSession.wish
+        _ = sim.pourTeapot(activeWish.nectar)
+        advance(sim, seconds: 0.9)
+        _ = sim.addSugarStar(activeWish.sugarStar)
+        _ = sim.plateTreat(activeWish.treat)
+        sim.deferAllEffectsForTesting = true
+        _ = sim.serveTea()
+        advance(sim, seconds: 1.1, flush: false)
+        let effects = sim.drainEffectsForTesting()
+        let coinEffects = effects.compactMap { effect -> Int? in
+            if case .coins(let amount, _) = effect { return amount }
+            return nil
+        }
+        XCTAssertEqual(coinEffects.count, 1)
+        XCTAssertEqual(coinEffects.first, Coins.reward(stars: 3) + FairiesSim.wishCoinReward)
+    }
+
+    func testReturnDropBadgeMatchesRawFingerDespiteFingerLiftOffset() throws {
+        let sim = freshSim()
+        XCTAssertTrue(sim.placeFairy(.star, at: .danceStage))
+        let actorPos = try XCTUnwrap(sim.compactActor(for: .star)?.position)
+
+        sim.handleSceneDragChanged(start: actorPos, current: CGPoint(x: actorPos.x, y: actorPos.y + 20))
+        sim.handleSceneDragChanged(start: actorPos, current: FGeo.returnBadgeCenter)
+        XCTAssertTrue(sim.compactReturnHovered)
+
+        sim.handleSceneDragEnded(at: FGeo.returnBadgeCenter, isTap: false)
+        XCTAssertFalse(sim.isFairyInCompact(.star))
+    }
+
+    func testSalonTapSingleUndoLocalWipePreservesArtAndOffWingOrEraseSplitsStrokes() {
+        let sim = freshSim()
+        sim.selectStation(.salon)
+        sim.selectFairy(.heart)
+        sim.selectSalonTool(.brush(.rosePearl))
+
+        let tapPt = FairyWingPainter.toStagePoint(
+            WingPoint(u: 0.55, v: -0.35),
+            side: 1,
+            wingCenter: FGeo.salonWingCenter,
+            wingHalfSpan: FGeo.salonWingHalfSpan
+        )
+        sim.handleSceneDragChanged(start: tapPt, current: tapPt)
+        sim.handleSceneDragEnded(at: tapPt, isTap: true)
+        XCTAssertEqual(sim.wingDesign(for: .heart).strokes.count, 1)
+        XCTAssertTrue(sim.undoSalonAction())
+        XCTAssertTrue(sim.wingDesign(for: .heart).isEmpty)
+
+        let upperWing = FairyWingPainter.toStagePoint(WingPoint(u: 0.52, v: -0.36), side: 1, wingCenter: FGeo.salonWingCenter, wingHalfSpan: FGeo.salonWingHalfSpan)
+        let spineOffWing = FGeo.salonWingCenter
+        let lowerWing = FairyWingPainter.toStagePoint(WingPoint(u: 0.42, v: 0.46), side: 1, wingCenter: FGeo.salonWingCenter, wingHalfSpan: FGeo.salonWingHalfSpan)
+
+        let startFinger = FingerLift.finger(for: upperWing, lift: FingerLift.tool, bottom: GameChromeLayout.height, width: GameChromeLayout.width)
+        let f1 = CGPoint(x: startFinger.x + 14, y: startFinger.y)
+        let fOff = FingerLift.finger(for: spineOffWing, lift: FingerLift.tool, bottom: GameChromeLayout.height, width: GameChromeLayout.width)
+        let f2 = FingerLift.finger(for: lowerWing, lift: FingerLift.tool, bottom: GameChromeLayout.height, width: GameChromeLayout.width)
+        sim.handleSceneDragChanged(start: startFinger, current: f1)
+        sim.handleSceneDragChanged(start: startFinger, current: fOff)
+        sim.handleSceneDragChanged(start: startFinger, current: f2)
+        sim.handleSceneDragEnded(at: f2, isTap: false)
+        XCTAssertEqual(sim.wingDesign(for: .heart).strokes.count, 2)
+
+        sim.clearCurrentWings()
+        let lineUs: [Float] = [0.22, 0.36, 0.50, 0.64, 0.78]
+        for (idx, u) in lineUs.enumerated() {
+            let p = FairyWingPainter.toStagePoint(WingPoint(u: u, v: -0.32), side: 1, wingCenter: FGeo.salonWingCenter, wingHalfSpan: FGeo.salonWingHalfSpan)
+            XCTAssertTrue(sim.applyWingBrushPoint(at: p, color: .skyOpal, startNewStroke: idx == 0))
+        }
+        XCTAssertEqual(sim.wingDesign(for: .heart).strokes.count, 1)
+        let midPt = FairyWingPainter.toStagePoint(WingPoint(u: 0.50, v: -0.32), side: 1, wingCenter: FGeo.salonWingCenter, wingHalfSpan: FGeo.salonWingHalfSpan)
+        XCTAssertTrue(sim.eraseWingArt(at: midPt, radius: 0.12))
+        XCTAssertEqual(sim.wingDesign(for: .heart).strokes.count, 2)
+
+        sim.clearCurrentWings()
+        XCTAssertTrue(sim.placeWingStamp(.dewdrop, at: upperWing))
+        XCTAssertTrue(sim.placeWingStamp(.heart, at: lowerWing))
+        sim.selectSalonTool(.wipe)
+        sim.tapSalonQuickApply(near: upperWing)
+        XCTAssertEqual(sim.wingDesign(for: .heart).stamps.count, 1)
+        XCTAssertEqual(sim.wingDesign(for: .heart).stamps.first?.kind, .heart)
+    }
+
+    func testCarouselDropAssignsDistinctSeatsAndEvictsSeatZeroWhenFull() {
+        let sim = freshSim()
+        Coins.shared.resetForTests(balance: 80)
+        XCTAssertTrue(Coins.shared.buy("fairies/carousel", price: 14))
+
+        let firstFour: [FairyKind] = [.heart, .star, .berry, .cloud]
+        for fairy in firstFour {
+            sim.beginCompactDrag(fairy: fairy, fromSpot: nil, at: FGeo.carouselCenter, fromRoom: false)
+            sim.endCompactDrag(at: FGeo.carouselCenter)
+        }
+        let riders = sim.compactActors.filter(\.ridingCarousel)
+        XCTAssertEqual(riders.count, 4)
+        XCTAssertEqual(Set(riders.map(\.carouselSeatIndex)), Set([0, 1, 2, 3]))
+
+        let originalSeatZero = riders.first { $0.carouselSeatIndex == 0 }?.kind
+        sim.beginCompactDrag(fairy: .ribbon, fromSpot: nil, at: FGeo.carouselCenter, fromRoom: false)
+        sim.endCompactDrag(at: FGeo.carouselCenter)
+
+        let updatedRiders = sim.compactActors.filter(\.ridingCarousel)
+        XCTAssertEqual(updatedRiders.count, 4)
+        XCTAssertEqual(Set(updatedRiders.map(\.carouselSeatIndex)), Set([0, 1, 2, 3]))
+        XCTAssertEqual(sim.compactActor(for: .ribbon)?.carouselSeatIndex, 0)
+        if let evicted = originalSeatZero {
+            XCTAssertFalse(sim.compactActor(for: evicted)?.ridingCarousel ?? true)
+        }
+    }
 }

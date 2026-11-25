@@ -675,10 +675,9 @@ enum FairyWingPainter {
             )
 
         case .crescent:
-            var moon = Path(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2))
-            moon.addEllipse(in: CGRect(x: -r * 0.32, y: -r * 1.15, width: r * 1.72, height: r * 1.72))
-            g.fill(moon, with: .color(fill), style: FillStyle(eoFill: true))
-            StorybookArt.sparkle(g, at: CGPoint(x: r * 0.52, y: -r * 0.36), radius: r * 0.42, color: Theme.lemon)
+            let moon = crescentPath(center: .zero, radius: r)
+            StorybookArt.fillAndStroke(g, moon, fill: fill, stroke: outline, width: lineW)
+            StorybookArt.sparkle(g, at: CGPoint(x: r * 0.48, y: -r * 0.22), radius: r * 0.42, color: Theme.lemon)
         }
     }
 
@@ -804,12 +803,11 @@ enum FairyWingPainter {
             StorybookArt.sparkle(g, at: CGPoint(x: 0, y: -2), radius: 7, color: .white)
 
         case .crescentMoon:
-            var moon = Path(ellipseIn: CGRect(x: -18, y: -20, width: 36, height: 36))
-            moon.addEllipse(in: CGRect(x: -5, y: -24, width: 30, height: 30))
-            g.fill(moon, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
-            let gem = Path(ellipseIn: CGRect(x: -14, y: -4, width: 12, height: 12))
+            let moon = crescentPath(center: CGPoint(x: -2, y: -2), radius: 19)
+            StorybookArt.fillAndStroke(g, moon, fill: Theme.lemon, stroke: goldOutline, width: 2.2)
+            let gem = Path(ellipseIn: CGRect(x: -14, y: -6, width: 11, height: 11))
             StorybookArt.fillAndStroke(g, gem, fill: gemFill, stroke: gemOutline, width: 1.8)
-            StorybookArt.sparkle(g, at: CGPoint(x: 8, y: -6), radius: 8, color: .white)
+            StorybookArt.sparkle(g, at: CGPoint(x: 9, y: -4), radius: 8, color: .white)
 
         case .blossomCrown:
             for k in 0..<5 {
@@ -958,6 +956,25 @@ enum FairyWingPainter {
             to: CGPoint(x: cx, y: cy - r * 0.25),
             control1: CGPoint(x: cx - r * 1.08, y: cy - r * 0.82),
             control2: CGPoint(x: cx - r * 0.35, y: cy - r * 1.05)
+        )
+        p.closeSubpath()
+        return p
+    }
+
+    static func crescentPath(center: CGPoint, radius r: CGFloat) -> Path {
+        let top = CGPoint(x: center.x + r * 0.42, y: center.y - r * 0.90)
+        let bottom = CGPoint(x: center.x + r * 0.42, y: center.y + r * 0.90)
+        var p = Path()
+        p.move(to: top)
+        p.addCurve(
+            to: bottom,
+            control1: CGPoint(x: center.x - r * 1.18, y: center.y - r * 0.88),
+            control2: CGPoint(x: center.x - r * 1.18, y: center.y + r * 0.88)
+        )
+        p.addCurve(
+            to: top,
+            control1: CGPoint(x: center.x - r * 0.24, y: center.y + r * 0.60),
+            control2: CGPoint(x: center.x - r * 0.24, y: center.y - r * 0.60)
         )
         p.closeSubpath()
         return p

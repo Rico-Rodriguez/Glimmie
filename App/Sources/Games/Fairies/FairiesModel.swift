@@ -277,6 +277,29 @@ enum TeaSessionPhase: Equatable {
     }
 }
 
+struct FairiesTeaUIState: Equatable {
+    enum DiscreteStage: Equatable {
+        case awaitingPour
+        case pouring
+        case ready
+        case sipping
+        case transformed
+    }
+
+    var wish: PixieTeaWish
+    var stage: DiscreteStage
+    var selectedNectar: TeaNectar
+    var cupHasLiquid: Bool
+    var cupFilled: Bool
+    var sugarCount: Int
+    var sugarStars: [SugarStarKind]
+    var platedTreat: FairyTeaTreatKind?
+    var hasTreat: Bool
+    var canServe: Bool
+    var transformedEffect: TeaTransformKind?
+    var earnedStars: Int?
+}
+
 enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
     case heart
     case star
