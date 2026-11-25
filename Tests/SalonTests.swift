@@ -432,4 +432,10 @@ final class SalonTests: XCTestCase {
         }
         XCTAssertGreaterThan(baseWorld.bits.filter { $0.kind == .sparkle }.count, 0)
     }
+
+    func testBottomControlsStayClearOfBottomEdge() {
+        XCTAssertEqual(SalonView.turnButtonY(floorDesign: SalonWorld.floorDesignDefault), 726, accuracy: 0.5)
+        XCTAssertEqual(SalonView.trayBottomInset, 44)
+        XCTAssertEqual(SalonView.returnDropPoint.y, 740)
+    }
 }

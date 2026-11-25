@@ -1188,7 +1188,7 @@ enum PotionPainter {
         let botY = PotionGeometry.standShelfBottomY
 
         // Back decorative pastel arch board behind the shelves.
-        let backBoard = Path(roundedRect: CGRect(x: x0 + 8, y: 342, width: x1 - x0 - 16, height: PotionGeometry.tableY - 342), cornerRadius: 26)
+        let backBoard = Path(roundedRect: CGRect(x: x0 + 8, y: 326, width: x1 - x0 - 16, height: PotionGeometry.tableY - 326), cornerRadius: 26)
         StorybookArt.fillAndStroke(
             g,
             backBoard,
@@ -1199,7 +1199,7 @@ enum PotionPainter {
 
         // Side wooden uprights.
         for ux in [x0 + 4, x1 - 18] {
-            let post = Path(roundedRect: CGRect(x: ux, y: 348, width: 14, height: PotionGeometry.tableY - 348), cornerRadius: 6)
+            let post = Path(roundedRect: CGRect(x: ux, y: 332, width: 14, height: PotionGeometry.tableY - 332), cornerRadius: 6)
             StorybookArt.shape(g, post, hex: woodDarkHex, width: 2.5)
         }
 

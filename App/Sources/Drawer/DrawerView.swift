@@ -27,15 +27,18 @@ struct DrawerView: View {
                     }
                 GeometryReader { geo in
                     let layout = DrawerLayout.best(count: GameRegistry.all.count, in: geo.size)
+                    let gameRows = DrawerLayout.split(GameRegistry.all, columns: layout.columns)
                     ScrollView(.vertical, showsIndicators: false) {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(layout.tile), spacing: DrawerLayout.columnSpacing),
-                                                 count: layout.columns),
-                                  spacing: DrawerLayout.rowSpacing) {
-                            ForEach(GameRegistry.all) { game in
-                                GameTile(game: game, size: layout.tile) {
-                                    Sound.shared.play(.pop)
-                                    Sound.shared.tap()
-                                    open(game.id)
+                        VStack(spacing: DrawerLayout.rowSpacing) {
+                            ForEach(Array(gameRows.enumerated()), id: \.offset) { _, row in
+                                HStack(spacing: DrawerLayout.columnSpacing) {
+                                    ForEach(row) { game in
+                                        GameTile(game: game, size: layout.tile) {
+                                            Sound.shared.play(.pop)
+                                            Sound.shared.tap()
+                                            open(game.id)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -104,6 +107,28 @@ struct DrawerLayout: Equatable {
         while cols < n, tileWidth(columns: cols + 1, width: size.width) >= scrollTile { cols += 1 }
         let tile = max(120, min(tileWidth(columns: cols, width: size.width), maxTile))
         return DrawerLayout(columns: cols, tile: tile)
+    }
+
+    /// Splits `count` tiles into balanced rows of at most `columns` tiles, keeping fuller rows on top.
+    static func rows(count: Int, columns: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let cols = max(1, columns)
+        let rowCount = (count + cols - 1) / cols
+        let base = count / rowCount
+        let extra = count % rowCount
+        return (0..<rowCount).map { $0 < extra ? base + 1 : base }
+    }
+
+    static func split<T>(_ items: [T], columns: Int) -> [[T]] {
+        let counts = rows(count: items.count, columns: columns)
+        var result: [[T]] = []
+        result.reserveCapacity(counts.count)
+        var index = 0
+        for rowCount in counts {
+            result.append(Array(items[index..<(index + rowCount)]))
+            index += rowCount
+        }
+        return result
     }
 }
 
@@ -191,6 +216,7 @@ private struct GameTile: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .frame(width: size + DrawerLayout.columnSpacing - 4)
+                    .frame(width: size)
             }
         }
         .buttonStyle(Squish())

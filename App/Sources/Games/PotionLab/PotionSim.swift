@@ -153,7 +153,7 @@ final class PotionSim: ObservableObject {
     var valveAngle: CGFloat { draining ? .pi / 4 : 0 }
 
     // MARK: Stirring Paddle
-    static let spoonRest = CGPoint(x: 492, y: 520)
+    static let spoonRest = CGPoint(x: 492, y: 504)
     var spoon = PotionSim.spoonRest
     var spoonVel = CGVector.zero
     var spoonHeld = false

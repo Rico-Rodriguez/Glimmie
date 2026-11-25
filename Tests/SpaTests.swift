@@ -395,4 +395,15 @@ final class SpaTests: XCTestCase {
         let decoded = try JSONDecoder().decode(SpaSave.self, from: data)
         XCTAssertTrue(decoded.toys.contains { $0.kind == .goldenDuck })
     }
+
+    func testTubBottomAndFloorSitCleanlyAboveLiftedBottomDock() {
+        XCTAssertEqual(GameChromeLayout.dockY, 740)
+        let dockTop = GameChromeLayout.dockY - 49
+        let dockBottom = GameChromeLayout.dockY + 49
+
+        XCTAssertLessThan(SGeo.tubBottom + 20, dockTop)
+        XCTAssertLessThan(SGeo.floorY, dockTop)
+        XCTAssertGreaterThanOrEqual(GameChromeLayout.height - dockBottom, 45)
+        XCTAssertEqual(SGeo.maxDepth, 156, accuracy: 0.01)
+    }
 }

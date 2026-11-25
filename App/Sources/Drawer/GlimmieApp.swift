@@ -7,6 +7,7 @@ struct GlimmieApp: App {
             RootView()
                 .statusBarHidden(true)
                 .persistentSystemOverlays(.hidden)
+                .defersSystemGestures(on: .bottom)
         }
     }
 }

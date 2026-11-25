@@ -32,7 +32,7 @@ struct SpaBackdropView: View {
                 width: size.width / m.scale + 8,
                 height: size.height / m.scale + 8
             )
-            let floorTop: CGFloat = 638
+            let floorTop: CGFloat = 614
 
             // Warm pastel blush-pink tiled wall
             g.fill(
@@ -61,7 +61,7 @@ struct SpaBackdropView: View {
             g.stroke(grout, with: .color(.white.opacity(0.75)), lineWidth: 2.8)
 
             // Soft mint dado band with scalloped cream molding
-            let bandY: CGFloat = 580
+            let bandY: CGFloat = 556
             g.fill(Path(CGRect(x: v.minX, y: bandY, width: v.width, height: floorTop - bandY)), with: .color(hx("#C7F0E2").c()))
             g.fill(Path(CGRect(x: v.minX, y: bandY - 5, width: v.width, height: 8)), with: .color(.white.opacity(0.92)))
             g.fill(Path(CGRect(x: v.minX, y: bandY + 3, width: v.width, height: 2)), with: .color(hx("#9ED9C6").c(0.6)))
@@ -290,19 +290,23 @@ enum SpaPainter {
         g.stroke(plate, with: .color(brassOutline), lineWidth: 3)
 
         // Curved brass spout arching down into the tub
+        let pipeTop = SGeo.handle.y + 12
+        let pipeBot = SGeo.handle.y + 34
+        let spoutRimY = SGeo.spout.y - 8
+        let nozzleTop = SGeo.spout.y - 12
         var pipe = Path()
-        pipe.move(to: CGPoint(x: 842, y: 344))
-        pipe.addLine(to: CGPoint(x: 802, y: 344))
-        pipe.addQuadCurve(to: CGPoint(x: 794, y: 400), control: CGPoint(x: 786, y: 344))
-        pipe.addLine(to: CGPoint(x: 822, y: 400))
-        pipe.addQuadCurve(to: CGPoint(x: 820, y: 366), control: CGPoint(x: 816, y: 370))
-        pipe.addLine(to: CGPoint(x: 842, y: 366))
+        pipe.move(to: CGPoint(x: 842, y: pipeTop))
+        pipe.addLine(to: CGPoint(x: 802, y: pipeTop))
+        pipe.addQuadCurve(to: CGPoint(x: 794, y: spoutRimY), control: CGPoint(x: 786, y: pipeTop))
+        pipe.addLine(to: CGPoint(x: 822, y: spoutRimY))
+        pipe.addQuadCurve(to: CGPoint(x: 820, y: pipeBot), control: CGPoint(x: 816, y: pipeBot + 4))
+        pipe.addLine(to: CGPoint(x: 842, y: pipeBot))
         pipe.closeSubpath()
-        g.fill(pipe, with: .linearGradient(brass, startPoint: CGPoint(x: 790, y: 344), endPoint: CGPoint(x: 842, y: 404)))
+        g.fill(pipe, with: .linearGradient(brass, startPoint: CGPoint(x: 790, y: pipeTop), endPoint: CGPoint(x: 842, y: SGeo.spout.y - 4)))
         g.stroke(pipe, with: .color(brassOutline), lineWidth: 2.8)
 
-        let nozzle = Path(roundedRect: CGRect(x: 790, y: 396, width: 36, height: 13), cornerRadius: 5)
-        g.fill(nozzle, with: .linearGradient(brass, startPoint: CGPoint(x: 790, y: 396), endPoint: CGPoint(x: 826, y: 409)))
+        let nozzle = Path(roundedRect: CGRect(x: 790, y: nozzleTop, width: 36, height: 13), cornerRadius: 5)
+        g.fill(nozzle, with: .linearGradient(brass, startPoint: CGPoint(x: 790, y: nozzleTop), endPoint: CGPoint(x: 826, y: SGeo.spout.y + 1)))
         g.stroke(nozzle, with: .color(brassOutline), lineWidth: 2.4)
 
         // Chunky rotating brass cross-handle
@@ -474,7 +478,7 @@ enum SpaPainter {
         g.stroke(scallops, with: .color(porcelainOutline.opacity(0.55)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
 
         // Embossed golden heart-shell medallion on the cozy left porcelain panel
-        let medC = CGPoint(x: 242, y: 584)
+        let medC = CGPoint(x: 242, y: 560)
         let med = Path(ellipseIn: CGRect(x: medC.x - 36, y: medC.y - 26, width: 72, height: 52))
         StorybookArt.fillAndStroke(g, med, fill: hx("#FFF2F7").c(), stroke: hx("#F2C978").c(), width: 3)
         StorybookArt.heart(g, at: medC, size: 24, color: Theme.pink.opacity(0.85))

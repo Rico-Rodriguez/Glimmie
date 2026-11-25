@@ -223,7 +223,12 @@ struct SalonView: View {
 
     static let shelfRight: CGFloat = 222
     static let trayWidth: CGFloat = 258
-    private static let returnDropPoint = CGPoint(x: SalonWorld.defaultCenterX, y: GameChromeLayout.height - 58)
+    static let trayBottomInset: CGFloat = 44
+    static let returnDropPoint = CGPoint(x: SalonWorld.defaultCenterX, y: GameChromeLayout.dockY)
+
+    static func turnButtonY(floorDesign: CGFloat) -> CGFloat {
+        min(726, floorDesign - 46)
+    }
 
     var body: some View {
         ZStack {
@@ -240,7 +245,7 @@ struct SalonView: View {
                     }
                     .padding(.top, 98)
                     .padding(.horizontal, 14)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, SalonView.trayBottomInset)
 
                     turnButtons
 
@@ -492,7 +497,7 @@ struct SalonView: View {
 
     /// Arrows on each side of the chair base spin her around, so she can do the back and sides too.
     private var turnButtons: some View {
-        let y = min(GameChromeLayout.height - 52, world.floorDesign - 24)
+        let y = SalonView.turnButtonY(floorDesign: world.floorDesign)
         return ZStack {
             RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x9B79E0), size: 74) {
                 Sound.shared.tap()
@@ -692,7 +697,7 @@ struct SalonView: View {
             .padding(.vertical, 2)
         }
         .scrollDisabled(carryingFromTray)
-        .frame(maxHeight: 656)
+        .frame(maxHeight: 648)
     }
 
     private func clipChoice(_ c: SalonCarry) -> some View {

@@ -7,7 +7,7 @@ enum GameChromeLayout {
     static let homeCenter = CGPoint(x: 54, y: 50)
     static let stickerTarget = CGPoint(x: 132, y: 50)
     static let buttonSize: CGFloat = 64
-    static let dockY: CGFloat = 768
+    static let dockY: CGFloat = 740
 }
 
 enum StorybookArt {
@@ -218,6 +218,7 @@ struct GameStage<Background: View, Content: View>: View {
                     .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
             }
         }
+        .defersSystemGestures(on: .bottom)
     }
 }
 

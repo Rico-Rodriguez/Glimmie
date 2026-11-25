@@ -78,6 +78,15 @@ final class StickerBook: ObservableObject {
         return true
     }
 
+    /// Defers `find(game:id:)` to the next main run-loop turn for callers running inside SwiftUI render passes.
+    func findDeferred(game: String, id: String) {
+        let k = StickerBook.key(game, id)
+        guard !found.contains(k) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.find(game: game, id: id)
+        }
+    }
+
     private func scheduleFindSettle(at foundAt: Date) {
         toastWorkItem?.cancel()
         let toastWork = DispatchWorkItem { [weak self] in
@@ -148,7 +157,7 @@ final class StickerBook: ObservableObject {
 
     private func save() {
         guard !demo else { return }
-        GameStorage.save(Save(found: found.sorted(), unseen: unseen.sorted()), game: StickerBook.folder, file: "stickers.json")
+        GameStorage.saveAsync(Save(found: found.sorted(), unseen: unseen.sorted()), game: StickerBook.folder, file: "stickers.json")
     }
 
     /// Which games have stickers, in drawer order.

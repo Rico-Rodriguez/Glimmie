@@ -426,4 +426,16 @@ final class PotionLabTests: XCTestCase {
         sim.endStir()
         XCTAssertTrue(sim.motes.contains { $0.kind == .sparkle }, "fairy ladle should trail starlight sparkles when stirring")
     }
+
+    func testLiftedDockClearsWorkbenchAndCreatureControls() {
+        XCTAssertEqual(GameChromeLayout.dockY, 740)
+        XCTAssertEqual(PotionGeometry.dockY, 740)
+        let dockTop = PotionGeometry.dockY - 51
+
+        XCTAssertLessThanOrEqual(PotionGeometry.burnerCenter.y + 28, 650)
+        XCTAssertLessThanOrEqual(PotionGeometry.dialCenter.y + PotionGeometry.dialRadius + 5, 650)
+        XCTAssertLessThanOrEqual(PotionGeometry.basinRect.maxY, 650)
+        XCTAssertLessThan(PotionGeometry.creatureSwitcherCenter.y + 32, dockTop)
+        XCTAssertTrue(PotionGeometry.inside(PotionSim.spoonRest))
+    }
 }

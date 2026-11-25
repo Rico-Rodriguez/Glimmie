@@ -3,6 +3,7 @@ import Foundation
 /// Each game's own save folder: Application Support/Games/<game id>/.
 enum GameStorage {
     private static let retiredStableID = "unicornstable"
+    static let saveQueue = DispatchQueue(label: "glimmie.storage.save", qos: .utility)
 
     static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -33,11 +34,27 @@ enum GameStorage {
         return try? JSONDecoder().decode(T.self, from: data)
     }
 
-    /// Writes a JSON file into a game's folder atomically.
-    static func save<T: Encodable>(_ value: T, game: String, file: String) {
+    private static func writeAtomically<T: Encodable>(_ value: T, game: String, file: String) {
         let url = folder(game).appendingPathComponent(file)
         guard let data = try? JSONEncoder().encode(value) else { return }
         try? data.write(to: url, options: .atomic)
+    }
+
+    /// Writes a JSON file into a game's folder atomically.
+    static func save<T: Encodable>(_ value: T, game: String, file: String) {
+        writeAtomically(value, game: game, file: file)
+    }
+
+    /// Encodes and writes a JSON file atomically on `saveQueue` so 60fps gameplay never stalls on disk I/O.
+    static func saveAsync<T: Encodable>(_ value: T, game: String, file: String) {
+        saveQueue.async {
+            writeAtomically(value, game: game, file: file)
+        }
+    }
+
+    /// Waits for all queued background saves to finish.
+    static func flushAsyncSaves() {
+        saveQueue.sync {}
     }
 }
 

@@ -18,6 +18,34 @@ final class GameStorageTests: XCTestCase {
         XCTAssertEqual(GameStorage.load(Box.self, game: game, file: "box.json"), Box(n: 3, s: "hi"))
     }
 
+    func testSaveAsyncRoundTripAndSerialOrdering() {
+        struct Box: Codable, Equatable { var n: Int; var s: String }
+        let game = "tests-async-\(UUID().uuidString)"
+        defer { try? FileManager.default.removeItem(at: GameStorage.folder(game)) }
+
+        GameStorage.saveAsync(Box(n: 1, s: "first"), game: game, file: "async.json")
+        GameStorage.saveAsync(Box(n: 2, s: "second"), game: game, file: "async.json")
+        GameStorage.flushAsyncSaves()
+
+        XCTAssertEqual(GameStorage.load(Box.self, game: game, file: "async.json"), Box(n: 2, s: "second"))
+    }
+
+    func testDeferredCoinAndStickerHelpersDeliverOnMainQueue() {
+        Coins.shared.resetForTests(balance: 0)
+        StickerBook.shared.resetForTests()
+
+        let exp = expectation(description: "deferred rewards delivered")
+        Coins.shared.earnDeferred(3, game: "bakery")
+        StickerBook.shared.findDeferred(game: "sample", id: "deferred")
+        DispatchQueue.main.async {
+            exp.fulfill()
+        }
+        wait(for: [exp], timeout: 1.0)
+
+        XCTAssertEqual(Coins.shared.balance, 3)
+        XCTAssertTrue(StickerBook.shared.has(game: "sample", id: "deferred"))
+    }
+
     func testRemovingRetiredSavesOnlyTouchesTheRetiredGame() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }

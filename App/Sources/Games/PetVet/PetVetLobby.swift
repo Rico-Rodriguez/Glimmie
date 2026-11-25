@@ -3,6 +3,8 @@ import SwiftUI
 // MARK: - Waiting room: every patient on a cushion chair, with a thought bubble of what's wrong.
 
 struct VetLobbyView: View {
+    static let seatBottomPadding: CGFloat = 58
+
     @ObservedObject var clinic: VetClinic
     let onExit: () -> Void
     let onPick: (String) -> Void
@@ -30,7 +32,7 @@ struct VetLobbyView: View {
                             }
                             .padding(.horizontal, 40)
                             .padding(.top, 20)
-                            .padding(.bottom, 40)
+                            .padding(.bottom, Self.seatBottomPadding)
                         }
                     }
 
@@ -69,6 +71,7 @@ struct VetLobbyView: View {
             }
         }
         .ignoresSafeArea()
+        .defersSystemGestures(on: .bottom)
     }
 }
 

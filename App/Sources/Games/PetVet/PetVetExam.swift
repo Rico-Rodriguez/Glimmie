@@ -4,11 +4,12 @@ import SwiftUI
 // MARK: - Exam room
 
 /// Where the patient sits inside the 1024 x 834 stage.
-private struct VetLayout {
+struct VetLayout {
     let size: CGSize
     static let k: CGFloat = 0.86
+    static let bottomMargin: CGFloat = 50
     var patient: CGSize { CGSize(width: 600 * VetLayout.k, height: 660 * VetLayout.k) }
-    var origin: CGPoint { CGPoint(x: size.width / 2 - patient.width / 2, y: size.height - patient.height - 18) }
+    var origin: CGPoint { CGPoint(x: size.width / 2 - patient.width / 2, y: size.height - patient.height - VetLayout.bottomMargin) }
     func toRoom(_ p: CGPoint) -> CGPoint { CGPoint(x: origin.x + p.x * VetLayout.k, y: origin.y + p.y * VetLayout.k) }
     func toPatient(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - origin.x) / VetLayout.k, y: (p.y - origin.y) / VetLayout.k) }
 }
@@ -129,7 +130,7 @@ struct VetExamView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 96)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, VetLayout.bottomMargin)
 
                     GameTopBar(
                         gameID: PetVetGame.id,
@@ -177,6 +178,7 @@ struct VetExamView: View {
             }
         }
         .ignoresSafeArea()
+        .defersSystemGestures(on: .bottom)
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-vetFX") {
                 effects.demo(toRoom: layout.toRoom)

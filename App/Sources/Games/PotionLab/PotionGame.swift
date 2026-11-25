@@ -496,7 +496,7 @@ struct PotionLabView: View {
                         DragGesture(minimumDistance: 0, coordinateSpace: .named("potionStage"))
                             .onChanged { value in
                                 let moved = hypot(value.translation.width, value.translation.height)
-                                if moved > 14 && value.location.y < 712 {
+                                if moved > 14 && value.location.y < PotionGeometry.dockY - 52 {
                                     draggedDockKind = kind
                                     let lifted = FingerLift.point(value.location, lift: 74, bottom: PotionGeometry.stageHeight, width: PotionGeometry.stageWidth)
                                     sim.draggedIngredient = (kind, lifted)
@@ -509,7 +509,7 @@ struct PotionLabView: View {
                                 sim.draggedIngredient = nil
 
                                 // Tap OR drag upward toward the cauldron adds a guaranteed integer scoop!
-                                if moved <= 18 || value.location.y < 695 {
+                                if moved <= 18 || value.location.y < PotionGeometry.dockY - 56 {
                                     Sound.shared.tap()
                                     sim.addIngredient(kind, from: origin)
                                 }

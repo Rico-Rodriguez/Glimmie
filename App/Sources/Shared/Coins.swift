@@ -112,6 +112,14 @@ final class Coins: ObservableObject {
         save()
     }
 
+    /// Defers `earn(_:game:from:)` to the next main run-loop turn for callers running inside SwiftUI render passes.
+    func earnDeferred(_ n: Int, game: String, from: CGPoint = CGPoint(x: 512, y: 400)) {
+        guard n > 0 else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.earn(n, game: game, from: from)
+        }
+    }
+
     /// Coins still in the air for this game (the counter shows them only once they land).
     func flying(game: String?, at now: Date = Date()) -> Int {
         guard let p = lastPay, p.game == game || game == nil else { return 0 }
@@ -160,7 +168,7 @@ final class Coins: ObservableObject {
 
     private func save() {
         guard !demo else { return }
-        GameStorage.save(Save(balance: balance, owned: owned.sorted(), earned: earned), game: Coins.folder, file: "purse.json")
+        GameStorage.saveAsync(Save(balance: balance, owned: owned.sorted(), earned: earned), game: Coins.folder, file: "purse.json")
     }
 
     #if DEBUG

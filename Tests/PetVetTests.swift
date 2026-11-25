@@ -196,6 +196,13 @@ final class PetVetTests: XCTestCase {
         XCTAssertTrue(Coins.shared.buy("petvet/bowBandage", price: 8))
         XCTAssertTrue(VetDraw.hasBowBandage)
     }
+
+    func testBottomInteractiveMarginsStayClearOfBottomEdge() {
+        XCTAssertEqual(VetLobbyView.seatBottomPadding, 58)
+        let layout = VetLayout(size: CGSize(width: GameChromeLayout.width, height: GameChromeLayout.height))
+        let patientBottomHitboxY = layout.toRoom(CGPoint(x: 300, y: 650)).y
+        XCTAssertLessThan(patientBottomHitboxY, 785)
+    }
 }
 
 /// A tiny deterministic generator for tests.

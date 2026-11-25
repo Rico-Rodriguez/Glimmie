@@ -45,4 +45,36 @@ final class DrawerLayoutTests: XCTestCase {
             }
         }
     }
+
+    func testBalancedCenteredRowsForTwelveAndThirteenTiles() {
+        XCTAssertEqual(DrawerLayout.rows(count: 0, columns: 4), [])
+        XCTAssertEqual(DrawerLayout.rows(count: 11, columns: 4), [4, 4, 3])
+        XCTAssertEqual(DrawerLayout.rows(count: 12, columns: 4), [4, 4, 4])
+        XCTAssertEqual(DrawerLayout.rows(count: 13, columns: 5), [5, 4, 4])
+        XCTAssertEqual(DrawerLayout.rows(count: 13, columns: 4), [4, 3, 3, 3])
+
+        let split12 = DrawerLayout.split(Array(0..<12), columns: 4)
+        XCTAssertEqual(split12.map(\.count), [4, 4, 4])
+        XCTAssertEqual(split12.flatMap { $0 }, Array(0..<12))
+
+        let split13 = DrawerLayout.split(Array(0..<13), columns: 5)
+        XCTAssertEqual(split13.map(\.count), [5, 4, 4])
+        XCTAssertEqual(split13.flatMap { $0 }, Array(0..<13))
+    }
+
+    func testTwelveAndThirteenTilesFitBalancedOnIPadSizes() {
+        for count in [12, 13] {
+            for size in [ipad11, mini] {
+                let layout = DrawerLayout.best(count: count, in: size)
+                let rows = DrawerLayout.rows(count: count, columns: layout.columns)
+                XCTAssertEqual(rows.reduce(0, +), count)
+                XCTAssertLessThanOrEqual((rows.max() ?? 0) - (rows.min() ?? 0), 1)
+                XCTAssertLessThanOrEqual(rows.max() ?? 0, layout.columns)
+                XCTAssertGreaterThanOrEqual(layout.tile, DrawerLayout.minFitTile, "\(count) in \(size)")
+                let height = CGFloat(rows.count) * (layout.tile + DrawerLayout.labelHeight)
+                    + CGFloat(rows.count - 1) * DrawerLayout.rowSpacing + DrawerLayout.verticalPadding * 2
+                XCTAssertLessThanOrEqual(height, size.height, "\(count) in \(size)")
+            }
+        }
+    }
 }

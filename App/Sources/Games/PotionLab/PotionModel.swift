@@ -7,45 +7,45 @@ enum PotionGeometry {
     static let stageHeight: CGFloat = GameChromeLayout.height
 
     /// Wide-mouth glowing magic cauldron centered on stage.
-    static let cauldronCenter = CGPoint(x: 540, y: 448)
+    static let cauldronCenter = CGPoint(x: 540, y: 432)
     static let cauldronRadius: CGFloat = 138
     static let neckHalfWidth: CGFloat = 88
-    static let rimY: CGFloat = 266
+    static let rimY: CGFloat = 250
     static let glassThickness: CGFloat = 8
     static var joinY: CGFloat { cauldronCenter.y - sqrt(cauldronRadius * cauldronRadius - neckHalfWidth * neckHalfWidth) }
     static var bottomY: CGFloat { cauldronCenter.y + cauldronRadius }
     static var pourTarget: CGPoint { CGPoint(x: cauldronCenter.x, y: rimY - 46) }
 
     /// Left dedicated magical friend nook (open sky/window above, zero shelves).
-    static let cushionCenter = CGPoint(x: 185, y: 590)
-    static let creatureFeet = CGPoint(x: 185, y: 585)
+    static let cushionCenter = CGPoint(x: 185, y: 572)
+    static let creatureFeet = CGPoint(x: 185, y: 567)
     static let creatureScale: CGFloat = 0.34
-    static let creatureDropZone = CGRect(x: 18, y: 118, width: 328, height: 502)
-    static let creatureSwitcherCenter = CGPoint(x: 185, y: 658)
-    static let waterResetCenter = CGPoint(x: 332, y: 586)
+    static let creatureDropZone = CGRect(x: 18, y: 118, width: 328, height: 484)
+    static let creatureSwitcherCenter = CGPoint(x: 185, y: 638)
+    static let waterResetCenter = CGPoint(x: 332, y: 570)
 
-    /// Workbench countertop & controls.
-    static let tableY: CGFloat = 638
-    static let burnerCenter = CGPoint(x: 540, y: 620)
-    static let dialCenter = CGPoint(x: 398, y: 632)
+    /// Workbench countertop & controls (kept <= 650 so lifted bottom dock at y = 740 has clean separation).
+    static let tableY: CGFloat = 620
+    static let burnerCenter = CGPoint(x: 540, y: 604)
+    static let dialCenter = CGPoint(x: 398, y: 610)
     static let dialRadius: CGFloat = 28
-    static let valveCenter = CGPoint(x: 668, y: 586)
-    static let basinRect = CGRect(x: 694, y: 606, width: 48, height: 32)
-    static var drainMouth: CGPoint { CGPoint(x: 718, y: 592) }
-    static let bottleFillCenter = CGPoint(x: 704, y: 316)
+    static let valveCenter = CGPoint(x: 668, y: 570)
+    static let basinRect = CGRect(x: 694, y: 590, width: 48, height: 32)
+    static var drainMouth: CGPoint { CGPoint(x: 718, y: 576) }
+    static let bottleFillCenter = CGPoint(x: 704, y: 300)
 
     /// Cozy 2-tier 5-slot Tasting Stand on the right stage.
     static let standCapacity = 5
     static let standBottleScale: CGFloat = 0.72
     static let standSlots: [CGPoint] = [
-        CGPoint(x: 824, y: 420),
-        CGPoint(x: 924, y: 420),
-        CGPoint(x: 794, y: 552),
-        CGPoint(x: 874, y: 552),
-        CGPoint(x: 954, y: 552),
+        CGPoint(x: 824, y: 404),
+        CGPoint(x: 924, y: 404),
+        CGPoint(x: 794, y: 536),
+        CGPoint(x: 874, y: 536),
+        CGPoint(x: 954, y: 536),
     ]
-    static let standShelfTopY: CGFloat = 462
-    static let standShelfBottomY: CGFloat = 594
+    static let standShelfTopY: CGFloat = 446
+    static let standShelfBottomY: CGFloat = 578
 
     /// Unified bottom ingredient dock.
     static let dockY: CGFloat = GameChromeLayout.dockY
@@ -58,7 +58,7 @@ enum PotionGeometry {
 
     // 2D fluid grid covering the cauldron: 40 x 44 cells of 8 pt.
     static let gx0: CGFloat = 380
-    static let gy0: CGFloat = 252
+    static let gy0: CGFloat = 236
     static let cell: CGFloat = 8
     static let NX = 40
     static let NY = 44

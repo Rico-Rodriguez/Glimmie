@@ -3,29 +3,29 @@ import SwiftUI
 enum SGeo {
     static let tubL: CGFloat = 122
     static let tubR: CGFloat = 862
-    static let tubBottom: CGFloat = 648
-    static let lipY: CGFloat = 472
-    static let fullY: CGFloat = 492
+    static let tubBottom: CGFloat = 624
+    static let lipY: CGFloat = 448
+    static let fullY: CGFloat = 468
     static var maxDepth: CGFloat { tubBottom - fullY }
     static let columns = 148
     static let colW: CGFloat = 5
-    static let floorY: CGFloat = 702
+    static let floorY: CGFloat = 678
 
-    static let handle = CGPoint(x: 836, y: 332)
-    static let spout = CGPoint(x: 808, y: 408)
-    static let plugRing = CGPoint(x: 842, y: 472)
-    static let drain = CGPoint(x: 802, y: 642)
+    static let handle = CGPoint(x: 836, y: 308)
+    static let spout = CGPoint(x: 808, y: 384)
+    static let plugRing = CGPoint(x: 842, y: 448)
+    static let drain = CGPoint(x: 802, y: 618)
     static let mirror = CGRect(x: 528, y: 108, width: 220, height: 224)
     static let fogCols = 22
     static let fogRows = 22
-    static let wishBubbleCenter = CGPoint(x: 446, y: 184)
+    static let wishBubbleCenter = CGPoint(x: 446, y: 168)
 
     // Dress Up doll (600 x 900 art) seated in the cozy left slipper end of the clawfoot tub.
     static let dollScale: CGFloat = 0.78
-    static let dollOrigin = CGPoint(x: 282 - 300 * 0.78, y: 466 - 470 * 0.78)
+    static let dollOrigin = CGPoint(x: 282 - 300 * 0.78, y: 442 - 470 * 0.78)
     static let bodyL: CGFloat = 200
     static let bodyR: CGFloat = 372
-    static let chinY: CGFloat = 432
+    static let chinY: CGFloat = 408
 
     // Her face in Dress Up doll coordinates.
     static let headC = CGPoint(x: 300, y: 290)
