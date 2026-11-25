@@ -1,11 +1,5 @@
 import SwiftUI
 
-// MARK: - Story scenes
-//
-// A little stage for making up stories: pick a scene, bring on her, friends (looks from her gallery)
-// and props, and drag them about. Further back means smaller. Tap someone and they hop, smile and
-// turn around (so two friends can face each other). Drag anyone into the bin to send them off.
-
 struct StoryStage: View {
     let me: Look
     let friends: [Look]
@@ -13,7 +7,6 @@ struct StoryStage: View {
 
     private struct Actor: Identifiable {
         let id = UUID()
-        /// A doll (her or a friend), or a sticker kind for a prop or pet.
         var look: Look?
         var thing: String?
         var x: Double
@@ -25,9 +18,12 @@ struct StoryStage: View {
 
     @State private var bg: String
     @State private var actors: [Actor]
+    @State private var selectedActor: UUID?
     @State private var tab = 0
     @State private var moving: (id: UUID, x: Double, y: Double)?
     @State private var overBin = false
+    @State private var flash = false
+    @State private var snapBurst = 0
 
     init(me: Look, friends: [Look], close: @escaping () -> Void) {
         self.me = me
@@ -37,6 +33,7 @@ struct StoryStage: View {
         var cast = [Actor(look: me, x: 0.36, y: 0.96)]
         if let f = friends.first { cast.append(Actor(look: f, x: 0.66, y: 0.9, flip: true)) }
         _actors = State(initialValue: cast)
+        _selectedActor = State(initialValue: cast.first?.id)
     }
 
     private static let stageHeight: CGFloat = 620
@@ -61,14 +58,28 @@ struct StoryStage: View {
                         .padding(.horizontal, 18)
                         .padding(.bottom, 12)
                 }
-                .overlay(alignment: .topLeading) {
-                    RoundButton(symbol: "chevron.down", tint: Theme.pink) {
-                        Sound.shared.play(.whoosh, volume: 0.6)
-                        close()
+                .overlay(alignment: .top) {
+                    HStack(spacing: 14) {
+                        RoundButton(symbol: "chevron.down", tint: Theme.pink, size: GameChromeLayout.buttonSize) {
+                            Sound.shared.play(.whoosh, volume: 0.6)
+                            close()
+                        }
+                        Spacer()
+                        if !actors.isEmpty {
+                            RoundButton(symbol: "arrow.left.and.right", tint: Color(hex: 0x9B79E0), size: GameChromeLayout.buttonSize) {
+                                flipSelected()
+                            }
+                        }
+                        RoundButton(symbol: "camera.fill", tint: Color(hex: 0xF45C9A), size: GameChromeLayout.buttonSize) {
+                            snapStage()
+                        }
                     }
-                    .padding(.leading, 26)
-                    .padding(.top, 22)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 18)
                 }
+            }
+            if flash {
+                Color.white.ignoresSafeArea().transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.35), value: bg)
@@ -76,12 +87,16 @@ struct StoryStage: View {
 
     // MARK: The stage
 
-    /// Things further back (higher up) are drawn smaller and behind.
     private func depth(_ y: Double) -> CGFloat { 0.62 + 0.42 * CGFloat(max(0, min(1, (y - 0.35) / 0.65))) }
 
     private func stage(_ size: CGSize) -> some View {
         ZStack {
             ForEach(actors.sorted { $0.y < $1.y }) { a in actorView(a, in: size) }
+            if snapBurst > 0 {
+                TwinkleBurst(colors: [.white, Theme.lemon, Theme.pink], count: 16, radius: 220)
+                    .id(snapBurst)
+                    .position(x: size.width / 2, y: size.height * 0.45)
+            }
             if moving != nil {
                 Image(systemName: overBin ? "trash.fill" : "trash")
                     .font(.system(size: overBin ? 40 : 32, weight: .bold))
@@ -105,24 +120,36 @@ struct StoryStage: View {
         let dollH: CGFloat = 440 * k
         let w: CGFloat = a.look != nil ? dollH * box.width / box.height : (a.thing?.hasPrefix("pet:") == true ? 190 : 120) * k
         let h: CGFloat = a.look != nil ? dollH : w
-        return Group {
-            if let l = a.look {
-                DollView(look: l, expression: a.happy ? .happy : .normal, box: box)
-            } else if let t = a.thing {
-                StickerView(kind: t, look: me)
+        let isSelected = selectedActor == a.id
+        return ZStack(alignment: .bottom) {
+            if isSelected {
+                Ellipse()
+                    .fill(Theme.lemon.opacity(0.42))
+                    .overlay(Ellipse().stroke(.white.opacity(0.85), lineWidth: 2.5))
+                    .frame(width: max(64, w * 0.62), height: max(18, 22 * k))
+                    .offset(y: 4)
             }
+            Group {
+                if let l = a.look {
+                    DollView(look: l, expression: a.happy ? .happy : .normal, box: box)
+                } else if let t = a.thing {
+                    StickerView(kind: t, look: me)
+                }
+            }
+            .frame(width: w, height: h)
+            .scaleEffect(x: a.flip ? -1 : 1, y: 1)
+            .scaleEffect(moving?.id == a.id ? 1.08 : 1, anchor: .bottom)
+            .offset(y: a.lift ? -36 * k : 0)
         }
-        .frame(width: w, height: h)
-        .scaleEffect(x: a.flip ? -1 : 1, y: 1)
-        .scaleEffect(moving?.id == a.id ? 1.08 : 1, anchor: .bottom)
-        .offset(y: a.lift ? -36 * k : 0)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { flip(a.id) }
         .onTapGesture { poke(a.id) }
         .gesture(
             DragGesture(minimumDistance: 4)
                 .onChanged { v in
                     guard let i = index(a.id) else { return }
                     if moving?.id != a.id {
+                        selectedActor = a.id
                         moving = (a.id, actors[i].x, actors[i].y)
                         Sound.shared.play(.tap, volume: 0.6)
                     }
@@ -134,7 +161,6 @@ struct StoryStage: View {
                 }
                 .onEnded { _ in drop(a.id, size) }
         )
-        // x, y is where its feet (or bottom) touch the ground
         .position(x: size.width * a.x, y: size.height * a.y - h / 2)
     }
 
@@ -151,7 +177,10 @@ struct StoryStage: View {
         guard let i = index(id) else { return }
         if inBin(actors[i], size) || actors[i].x < -0.05 || actors[i].x > 1.05 {
             Sound.shared.play(.whoosh, volume: 0.7)
-            _ = withAnimation(.spring(response: 0.3)) { actors.remove(at: i) }
+            _ = withAnimation(.spring(response: 0.3)) {
+                actors.remove(at: i)
+                if selectedActor == id { selectedActor = actors.last?.id }
+            }
             return
         }
         Sound.shared.play(.pop, volume: 0.6)
@@ -161,9 +190,10 @@ struct StoryStage: View {
         }
     }
 
-    /// A tap: a hop, a smile and a turn.
+    /// Single tap: select, hop and smile without flipping direction.
     private func poke(_ id: UUID) {
         guard let i = index(id) else { return }
+        selectedActor = id
         Sound.shared.play(actors[i].look != nil ? .boing : .bubble, volume: 0.7)
         Sound.shared.tap()
         withAnimation(.spring(response: 0.22, dampingFraction: 0.5)) {
@@ -174,11 +204,62 @@ struct StoryStage: View {
             guard let j = index(id) else { return }
             withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
                 actors[j].lift = false
-                actors[j].flip.toggle()
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             if let j = index(id) { actors[j].happy = false }
+        }
+    }
+
+    /// Double tap or flip button: turn the actor around cleanly.
+    private func flip(_ id: UUID) {
+        guard let i = index(id) else { return }
+        selectedActor = id
+        Sound.shared.play(.whoosh, volume: 0.65)
+        Sound.shared.tap()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) {
+            actors[i].flip.toggle()
+            actors[i].lift = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            guard let j = index(id) else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.6)) {
+                actors[j].lift = false
+            }
+        }
+    }
+
+    private func flipSelected() {
+        if let id = selectedActor, index(id) != nil {
+            flip(id)
+        } else if let last = actors.last?.id {
+            flip(last)
+        }
+    }
+
+    private func snapStage() {
+        Sound.shared.play(.fanfare, volume: 0.8)
+        Sound.shared.tap()
+        snapBurst += 1
+        DressUpFind.storyDirector.unlock()
+        withAnimation(.easeOut(duration: 0.08)) { flash = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            withAnimation(.easeIn(duration: 0.35)) { flash = false }
+        }
+        for i in actors.indices {
+            let id = actors[i].id
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.5)) {
+                actors[i].lift = true
+                actors[i].happy = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                if let j = index(id) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { actors[j].lift = false }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                if let j = index(id) { actors[j].happy = false }
+            }
         }
     }
 
@@ -187,6 +268,7 @@ struct StoryStage: View {
         Sound.shared.tap()
         var a = Actor(look: look, thing: thing, x: .random(in: 0.2...0.8), y: look != nil ? .random(in: 0.8...0.98) : .random(in: 0.45...0.95))
         a.flip = a.x > 0.5
+        selectedActor = a.id
         withAnimation(.spring(response: 0.4, dampingFraction: 0.65)) {
             actors.append(a)
             if actors.count > 16 { actors.removeFirst(actors.count - 16) }
@@ -215,8 +297,8 @@ struct StoryStage: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 36, style: .continuous).fill(.white.opacity(0.88)))
-        .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).stroke(.white, lineWidth: 5))
+        .background(RoundedRectangle(cornerRadius: 36, style: .continuous).fill(Theme.cream.opacity(0.96)))
+        .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).stroke(Theme.blush, lineWidth: 4))
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, y: 8)
     }
 

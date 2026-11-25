@@ -29,6 +29,8 @@ struct BeautyStroke: Codable, Equatable {
 
     static let tools = ["blush", "shadow", "lip", "glitter"]
 
+    var hasPoints: Bool { pts.count >= 2 }
+
     var points: [CGPoint] {
         stride(from: 0, to: pts.count - 1, by: 2).map { CGPoint(x: CGFloat(pts[$0]), y: CGFloat(pts[$0 + 1])) }
     }
@@ -85,6 +87,7 @@ struct NailPaint: Codable, Equatable {
     }
 
     var painted: Bool { color != nil && NailGrid.decode(mask).contains(true) }
+    var hasArt: Bool { painted || !gems.isEmpty }
 }
 
 /// The coverage grid on a nail: `cols` across by `rows` from cuticle to tip.
@@ -597,7 +600,7 @@ enum CloseHand {
         case "g_star": shape = star(r)
         default: shape = Path(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2))
         }
-        g.fill(shape.applying(CGAffineTransform(translationX: 1.5, y: 2.5)), with: .color(.black.opacity(0.18)))
+        g.fill(shape.applying(CGAffineTransform(translationX: 1.5, y: 2.5)), with: .color(Theme.ink.opacity(0.18)))
         if kind == "g_pearl" {
             g.fill(shape, with: .radialGradient(Gradient(colors: [.white, color.mix(Shades.white, 0.5).color, color.mul(0.85, 0.82, 0.88).color]),
                                                 center: CGPoint(x: -r * 0.35, y: -r * 0.35), startRadius: 0, endRadius: r * 1.5))
