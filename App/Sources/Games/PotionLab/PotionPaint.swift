@@ -1,34 +1,7 @@
 import SwiftUI
 
-// MARK: - Potion Lab drawing
-//
-// Two layers like the Garden and the Aquarium: the room (wall, window, shelves, table) at 30 fps, and everything
-// that moves at 60 fps. The potion is a small picture made from the fluid's pigment every frame (`PotionLiquid`),
-// drawn smooth, clipped to the inside of the glass below the wavy surface. Things in the potion are drawn first
-// so the potion tints them; bubbles and glitter go on top of it, then the front of the glass.
+// MARK: - Luminous Fluid Texture
 
-/// The design frame (1024 x 834) scaled to the screen; wider screens show more of the room at the sides.
-struct PMap {
-    let size: CGSize
-    let s: CGFloat
-    let ox: CGFloat
-    let oy: CGFloat
-
-    init(size: CGSize) {
-        self.size = size
-        let h = DesignCanvas<EmptyView>.designHeight
-        let scale = max(0.1, size.height / h)
-        let w = max(1024, size.width / scale)
-        s = min(scale, size.width / w)
-        ox = size.width / 2 - 512 * s
-        oy = size.height / 2 - 417 * s
-    }
-
-    func design(_ p: CGPoint) -> CGPoint { CGPoint(x: (p.x - ox) / s, y: (p.y - oy) / s) }
-    var visible: CGRect { CGRect(x: -ox / s, y: -oy / s, width: size.width / s, height: size.height / s) }
-}
-
-/// The potion as a small picture (one pixel per fluid cell), made again only when the pigment changed.
 final class PotionLiquid {
     private var buf = [UInt8](repeating: 0, count: PotionGeometry.NX * PotionGeometry.NY * 4)
     private var img: CGImage?
@@ -38,7 +11,7 @@ final class PotionLiquid {
         if key == sim.version, let i = img { return i }
         key = sim.version
         let n = PotionGeometry.NX * PotionGeometry.NY
-        let water = PIngredient.water.color
+        let water = PotionColor.clearWater
         for k in 0..<n {
             let a = sim.da[k]
             let o = k * 4
@@ -46,868 +19,1105 @@ final class PotionLiquid {
                 buf[o] = 0; buf[o + 1] = 0; buf[o + 2] = 0; buf[o + 3] = 0
                 continue
             }
-            var r = water.r, g = water.g, b = water.b
+            var r = water.r
+            var g = water.g
+            var b = water.b
             if a > 0.002 {
-                let m = Double(min(1, a * 2.2))
-                r += (Double(sim.dr[k] / a) - r) * m
-                g += (Double(sim.dg[k] / a) - g) * m
-                b += (Double(sim.db[k] / a) - b) * m
+                let raw = RGB(Double(sim.dr[k] / a), Double(sim.dg[k] / a), Double(sim.db[k] / a))
+                let vivid = PotionColor.luminous(raw)
+                let m = Double(min(1, a * 2.1))
+                r += (vivid.r - r) * m
+                g += (vivid.g - g) * m
+                b += (vivid.b - b) * m
             }
-            let op = 0.2 + 0.72 * (1 - exp(-1.5 * Double(a)))
+            let op = 0.24 + 0.70 * (1 - exp(-1.7 * Double(a)))
             buf[o] = UInt8(max(0, min(1, r)) * op * 255)
             buf[o + 1] = UInt8(max(0, min(1, g)) * op * 255)
             buf[o + 2] = UInt8(max(0, min(1, b)) * op * 255)
             buf[o + 3] = UInt8(op * 255)
         }
         guard let provider = CGDataProvider(data: Data(buf) as CFData) else { return nil }
-        img = CGImage(width: PotionGeometry.NX, height: PotionGeometry.NY, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: PotionGeometry.NX * 4,
-                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                      provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        img = CGImage(
+            width: PotionGeometry.NX,
+            height: PotionGeometry.NY,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: PotionGeometry.NX * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
         return img
     }
 }
 
-enum PotionPainter {
-    static let wood = RGB(hex: "#B9825A")
-    static let woodDark = RGB(hex: "#8A5A3C")
-    static let brass = RGB(hex: "#E2B45A")
-    static let brassDark = RGB(hex: "#A87A2E")
-    static let glassLine = RGB(hex: "#EDE6FF")
+// MARK: - Full-Bleed Apothecary Background (for GameStage)
 
-    // MARK: - The room (slow layer)
+struct PotionBackdropView: View {
+    let moonlit: Bool
 
-    static func drawBackdrop(_ ctx: GraphicsContext, map: PMap, sim: PotionSim) {
-        var g = ctx
-        g.translateBy(x: map.ox, y: map.oy)
-        g.scaleBy(x: map.s, y: map.s)
-        let r = map.visible
-        let n = Double(sim.night)
-        let t = CGFloat(sim.time)
-        // the wall
-        let top = RGB(hex: "#C7B0EC").mix(RGB(hex: "#3A2C62"), n)
-        let bottom = RGB(hex: "#AE92DA").mix(RGB(hex: "#2A2048"), n)
-        g.fill(Path(r), with: .linearGradient(Gradient(colors: [top.c(), bottom.c()]), startPoint: CGPoint(x: 0, y: r.minY), endPoint: CGPoint(x: 0, y: 700)))
-        // soft stone blocks
-        var stones = Path()
-        var row = 0
-        var y: CGFloat = 0
-        while y < 700 {
-            let off: CGFloat = row % 2 == 0 ? 0 : 60
-            var x = r.minX - 120 + off
-            while x < r.maxX {
-                stones.addRoundedRect(in: CGRect(x: x + 3, y: y + 3, width: 114, height: 52), cornerSize: CGSize(width: 14, height: 14))
-                x += 120
-            }
-            y += 58
-            row += 1
-        }
-        g.stroke(stones, with: .color(.white.opacity(0.10 - 0.05 * n)), lineWidth: 3)
-        window(g, n, t)
-        // fairy lights along the top of the wall
-        lights(g, r, n, t)
-        // shelves
-        for x0 in [CGFloat(14), 698] {
-            for sy in [CGFloat(262), 420] {
-                let board = CGRect(x: x0, y: sy, width: 312, height: 16)
-                g.fill(Path(roundedRect: board, cornerRadius: 5), with: .color(wood.c()))
-                g.fill(Path(CGRect(x: x0 + 4, y: sy + 12, width: 304, height: 4)), with: .color(woodDark.c(0.6)))
-                g.fill(Path(roundedRect: CGRect(x: x0, y: sy, width: 312, height: 4), cornerRadius: 2), with: .color(.white.opacity(0.25)))
-                for bx in [x0 + 30, x0 + 270] {
-                    var br = Path()
-                    br.move(to: CGPoint(x: bx, y: sy + 16))
-                    br.addLine(to: CGPoint(x: bx + 12, y: sy + 16))
-                    br.addLine(to: CGPoint(x: bx + 12, y: sy + 44))
-                    br.closeSubpath()
-                    g.fill(br, with: .color(woodDark.c()))
+    var body: some View {
+        Canvas(opaque: true) { ctx, size in
+            let m = GameStageMap(size: size)
+            var g = ctx
+            g.translateBy(x: m.origin.x, y: m.origin.y)
+            g.scaleBy(x: m.scale, y: m.scale)
+
+            let v = CGRect(
+                x: -m.origin.x / m.scale - 4,
+                y: -m.origin.y / m.scale - 4,
+                width: size.width / m.scale + 8,
+                height: size.height / m.scale + 8
+            )
+            let n = moonlit ? 1.0 : 0.0
+            let wallTop = RGB(hex: "#DEC9FA").mix(RGB(hex: "#32265E"), n)
+            let wallBot = RGB(hex: "#C5A8EE").mix(RGB(hex: "#231A46"), n)
+
+            g.fill(
+                Path(CGRect(x: v.minX, y: v.minY, width: v.width, height: max(0, PotionGeometry.tableY - v.minY))),
+                with: .linearGradient(
+                    Gradient(colors: [wallTop.c(), wallBot.c()]),
+                    startPoint: CGPoint(x: 0, y: v.minY),
+                    endPoint: CGPoint(x: 0, y: PotionGeometry.tableY)
+                )
+            )
+
+            var stones = Path()
+            var row = 0
+            var y: CGFloat = (v.minY / 60).rounded(.down) * 60
+            while y < PotionGeometry.tableY {
+                let off: CGFloat = row % 2 == 0 ? 0 : 60
+                var x = (v.minX / 120).rounded(.down) * 120 - 120 + off
+                while x < v.maxX {
+                    stones.addRoundedRect(in: CGRect(x: x + 4, y: y + 4, width: 112, height: 52), cornerSize: CGSize(width: 14, height: 14))
+                    x += 120
                 }
+                y += 60
+                row += 1
             }
-        }
-        // the table
-        let tableTop = CGRect(x: r.minX, y: PotionGeometry.tableY - 4, width: r.width, height: 30)
-        g.fill(Path(tableTop), with: .linearGradient(Gradient(colors: [RGB(hex: "#D29A6C").c(), wood.c()]), startPoint: CGPoint(x: 0, y: tableTop.minY), endPoint: CGPoint(x: 0, y: tableTop.maxY)))
-        g.fill(Path(CGRect(x: r.minX, y: PotionGeometry.tableY - 4, width: r.width, height: 3)), with: .color(.white.opacity(0.3)))
-        let apron = CGRect(x: r.minX, y: PotionGeometry.tableY + 26, width: r.width, height: r.maxY - PotionGeometry.tableY - 26)
-        g.fill(Path(apron), with: .color(woodDark.c()))
-        var planks = Path()
-        var px = r.minX - 20
-        while px < r.maxX {
-            planks.move(to: CGPoint(x: px, y: apron.minY))
-            planks.addLine(to: CGPoint(x: px, y: apron.maxY))
-            px += 128
-        }
-        g.stroke(planks, with: .color(.black.opacity(0.12)), lineWidth: 3)
-        // the potion rack along the front
-        g.fill(Path(roundedRect: CGRect(x: r.minX, y: PotionGeometry.rackY, width: r.width, height: 14), cornerRadius: 4), with: .color(wood.c()))
-        g.fill(Path(CGRect(x: r.minX, y: PotionGeometry.rackY, width: r.width, height: 3)), with: .color(.white.opacity(0.3)))
-        // the night darkens the room a little more down low
-        if n > 0.01 {
-            g.fill(Path(r), with: .color(RGB(hex: "#140F2E").c(0.25 * n)))
+            g.stroke(stones, with: .color(.white.opacity(0.11 - 0.05 * n)), lineWidth: 2.5)
+
+            let topRect = CGRect(x: v.minX, y: PotionGeometry.tableY - 4, width: v.width, height: 30)
+            let woodTop = RGB(hex: "#DCA376").mix(RGB(hex: "#8F6044"), n * 0.55)
+            let woodMid = RGB(hex: "#C48A62").mix(RGB(hex: "#734B36"), n * 0.55)
+            g.fill(
+                Path(topRect),
+                with: .linearGradient(
+                    Gradient(colors: [woodTop.c(), woodMid.c()]),
+                    startPoint: CGPoint(x: 0, y: topRect.minY),
+                    endPoint: CGPoint(x: 0, y: topRect.maxY)
+                )
+            )
+            g.fill(Path(CGRect(x: v.minX, y: PotionGeometry.tableY - 4, width: v.width, height: 3.5)), with: .color(.white.opacity(0.32)))
+
+            let apronRect = CGRect(x: v.minX, y: PotionGeometry.tableY + 26, width: v.width, height: max(0, v.maxY - PotionGeometry.tableY - 26))
+            let apronCol = RGB(hex: "#9B6644").mix(RGB(hex: "#583728"), n * 0.6)
+            g.fill(Path(apronRect), with: .color(apronCol.c()))
+            var planks = Path()
+            var px = (v.minX / 128).rounded(.down) * 128
+            while px < v.maxX {
+                planks.move(to: CGPoint(x: px, y: apronRect.minY))
+                planks.addLine(to: CGPoint(x: px, y: apronRect.maxY))
+                px += 128
+            }
+            g.stroke(planks, with: .color(.black.opacity(0.11)), lineWidth: 3)
         }
     }
+}
 
-    private static func arch(_ x0: CGFloat, _ x1: CGFloat, _ y0: CGFloat, _ y1: CGFloat) -> Path {
+// MARK: - Stage Painter (1024 x 834 design coordinates)
+
+enum PotionPainter {
+    static let woodHex: UInt32 = 0xC48A62
+    static let woodDarkHex: UInt32 = 0x8F5C3E
+    static let brassHex: UInt32 = 0xE8BC5E
+    static let brassDarkHex: UInt32 = 0xAE7E32
+    static let glassLine = RGB(hex: "#F2EBFF")
+
+    static func drawStage(_ g: GraphicsContext, sim: PotionSim, liquid: PotionLiquid) {
+        let t = CGFloat(sim.time)
+        let n = Double(sim.night)
+
+        drawRoom(g, night: n, t: t)
+        drawAmbientLight(g, sim: sim, night: n, t: t)
+        drawCushion(g, t: t)
+        drawCreature(g, sim: sim, t: t)
+
+        drawBasin(g, sim: sim)
+        drawBurner(g, sim: sim, t: t)
+        drawFlameDial(g, sim: sim)
+        drawTripod(g, front: false)
+        drawCauldron(g, sim: sim, liquid: liquid, t: t)
+        drawTripod(g, front: true)
+        drawDrainPipeAndValve(g, sim: sim)
+
+        drawTastingStand(g, sim: sim, t: t)
+        drawDrops(g, sim: sim)
+        drawAirPieces(g, sim: sim)
+        drawPourArcs(g, sim: sim, t: t)
+        drawFlyers(g, sim: sim, t: t)
+        drawMotes(g, sim: sim, t: t)
+        drawDraggedItems(g, sim: sim, t: t)
+    }
+
+    // MARK: Open Sky Window & Apothecary Arch (Zero Shelves Above Creature!)
+
+    private static func drawRoom(_ g: GraphicsContext, night n: Double, t: CGFloat) {
+        // Open arched sky window directly behind the Left Magical Friend Nook (completely clear for floating!).
+        drawArchWindow(g, rect: CGRect(x: 48, y: 112, width: 274, height: 344), night: n, t: t, showMoon: true)
+        // Secondary sunlit/starlit arch behind the cauldron.
+        drawArchWindow(g, rect: CGRect(x: 416, y: 114, width: 248, height: 274), night: n, t: t, showMoon: false)
+        // Delicate fairy lights draped high near the ceiling.
+        drawFairyLights(g, night: n, t: t)
+    }
+
+    private static func archPath(in r: CGRect) -> Path {
         var p = Path()
-        let cx = (x0 + x1) / 2, rr = (x1 - x0) / 2
-        p.move(to: CGPoint(x: x0, y: y1))
-        p.addLine(to: CGPoint(x: x0, y: y0 + rr))
-        for k in 1...30 {
-            let a = Double.pi + Double.pi * Double(k) / 30
-            p.addLine(to: CGPoint(x: cx + rr * CGFloat(cos(a)), y: y0 + rr + rr * CGFloat(sin(a))))
+        let cx = r.midX
+        let rad = r.width / 2
+        p.move(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + rad))
+        for k in 1...28 {
+            let a = Double.pi + Double.pi * Double(k) / 28
+            p.addLine(to: CGPoint(x: cx + rad * CGFloat(cos(a)), y: r.minY + rad + rad * CGFloat(sin(a))))
         }
-        p.addLine(to: CGPoint(x: x1, y: y1))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
         p.closeSubpath()
         return p
     }
 
-    private static func window(_ g: GraphicsContext, _ n: Double, _ t: CGFloat) {
-        let outer = arch(362, 662, 56, 362)
-        let inner = arch(376, 648, 70, 350)
-        g.fill(outer, with: .color(wood.c()))
-        let skyTop = RGB(hex: "#FFC9E3").mix(RGB(hex: "#141142"), n)
-        let skyBottom = RGB(hex: "#C5DCFF").mix(RGB(hex: "#3A2C7C"), n)
-        g.fill(inner, with: .linearGradient(Gradient(colors: [skyTop.c(), skyBottom.c()]), startPoint: CGPoint(x: 0, y: 70), endPoint: CGPoint(x: 0, y: 350)))
+    private static func drawArchWindow(_ g: GraphicsContext, rect: CGRect, night n: Double, t: CGFloat, showMoon: Bool) {
+        let outer = archPath(in: rect)
+        let inner = archPath(in: rect.insetBy(dx: 12, dy: 12))
+        StorybookArt.shape(g, outer, hex: woodHex, width: 3)
+
+        let skyTop = RGB(hex: "#FFD2EA").mix(RGB(hex: "#18154E"), n)
+        let skyBot = RGB(hex: "#C8E4FF").mix(RGB(hex: "#3E3084"), n)
+        g.fill(
+            inner,
+            with: .linearGradient(
+                Gradient(colors: [skyTop.c(), skyBot.c()]),
+                startPoint: CGPoint(x: rect.midX, y: rect.minY),
+                endPoint: CGPoint(x: rect.midX, y: rect.maxY)
+            )
+        )
+
         var sky = g
         sky.clip(to: inner)
         if n < 0.99 {
-            // soft clouds drifting by
             var cl = sky
             cl.opacity = 1 - n
             for k in 0..<3 {
-                let x = 380 + ((t * 6 + CGFloat(k) * 120).truncatingRemainder(dividingBy: 360)) - 40
-                let y: CGFloat = 130 + CGFloat(k) * 60
+                let span = rect.width + 110
+                let x = rect.minX - 40 + ((t * 7 + CGFloat(k) * (span / 3)).truncatingRemainder(dividingBy: span))
+                let y = rect.minY + 62 + CGFloat(k) * 56
                 var c = Path()
-                c.addEllipse(in: CGRect(x: x, y: y, width: 70, height: 26))
-                c.addEllipse(in: CGRect(x: x + 22, y: y - 14, width: 46, height: 34))
-                c.addEllipse(in: CGRect(x: x + 46, y: y - 4, width: 50, height: 26))
-                cl.fill(c, with: .color(.white.opacity(0.85)))
+                c.addEllipse(in: CGRect(x: x, y: y, width: 68, height: 24))
+                c.addEllipse(in: CGRect(x: x + 18, y: y - 13, width: 44, height: 32))
+                c.addEllipse(in: CGRect(x: x + 42, y: y - 4, width: 46, height: 24))
+                cl.fill(c, with: .color(.white.opacity(0.86)))
             }
         }
         if n > 0.01 {
             var nt = sky
             nt.opacity = n
-            // stars
-            for k in 0..<26 {
-                let x = 384 + CGFloat((k * 97) % 260)
-                let y = 82 + CGFloat((k * 53) % 250)
-                let tw = 0.5 + 0.5 * sin(Double(t) * 2 + Double(k) * 1.7)
-                let s = 2 + 3 * CGFloat(tw)
-                nt.fill(Twinkle().path(in: CGRect(x: x - s, y: y - s, width: s * 2, height: s * 2)), with: .color(.white.opacity(0.5 + 0.5 * tw)))
+            for k in 0..<18 {
+                let x = rect.minX + 20 + CGFloat((k * 73) % Int(max(40, rect.width - 40)))
+                let y = rect.minY + 24 + CGFloat((k * 47) % Int(max(40, rect.height - 48)))
+                let tw = 0.5 + 0.5 * sin(Double(t) * 2.2 + Double(k) * 1.5)
+                let s = 2.5 + 3.2 * CGFloat(tw)
+                StorybookArt.sparkle(nt, at: CGPoint(x: x, y: y), radius: s, color: .white, opacity: 0.45 + 0.55 * tw)
             }
-            // the moon
-            let m = CGRect(x: 560, y: 108, width: 58, height: 58)
-            nt.fill(Path(ellipseIn: m.insetBy(dx: -16, dy: -16)), with: .radialGradient(Gradient(colors: [RGB(hex: "#FFF4C8").c(0.45), .clear]), center: CGPoint(x: m.midX, y: m.midY), startRadius: 20, endRadius: 46))
-            var moon = Path(ellipseIn: m)
-            moon.addEllipse(in: m.offsetBy(dx: 18, dy: -8))
-            nt.fill(moon, with: .color(RGB(hex: "#FFF1B8").c()), style: FillStyle(eoFill: true))
+            if showMoon {
+                let m = CGRect(x: rect.maxX - 88, y: rect.minY + 46, width: 52, height: 52)
+                nt.fill(
+                    Path(ellipseIn: m.insetBy(dx: -18, dy: -18)),
+                    with: .radialGradient(
+                        Gradient(colors: [RGB(hex: "#FFF4C4").c(0.45), .clear]),
+                        center: CGPoint(x: m.midX, y: m.midY),
+                        startRadius: 16,
+                        endRadius: 42
+                    )
+                )
+                var moon = Path(ellipseIn: m)
+                moon.addEllipse(in: m.offsetBy(dx: 16, dy: -8))
+                nt.fill(moon, with: .color(RGB(hex: "#FFF2BC").c()), style: FillStyle(eoFill: true))
+            }
         }
-        // the window's bars and sill
+
+        // Delicate window muntins and sill.
         var bars = Path()
-        bars.move(to: CGPoint(x: 512, y: 70)); bars.addLine(to: CGPoint(x: 512, y: 350))
-        bars.move(to: CGPoint(x: 376, y: 220)); bars.addLine(to: CGPoint(x: 648, y: 220))
-        g.stroke(bars, with: .color(wood.c()), lineWidth: 10)
-        g.stroke(inner, with: .color(woodDark.c(0.5)), lineWidth: 3)
-        g.fill(Path(roundedRect: CGRect(x: 352, y: 350, width: 320, height: 16), cornerRadius: 5), with: .color(wood.c()))
+        bars.move(to: CGPoint(x: rect.midX, y: rect.minY + 12))
+        bars.addLine(to: CGPoint(x: rect.midX, y: rect.maxY - 12))
+        bars.move(to: CGPoint(x: rect.minX + 12, y: rect.midY + 14))
+        bars.addLine(to: CGPoint(x: rect.maxX - 12, y: rect.midY + 14))
+        g.stroke(bars, with: .color(StorybookArt.color(woodHex)), lineWidth: 8)
+        g.stroke(inner, with: .color(StorybookArt.outline(for: woodHex).opacity(0.65)), lineWidth: 2.5)
+        let sill = Path(roundedRect: CGRect(x: rect.minX - 10, y: rect.maxY - 8, width: rect.width + 20, height: 16), cornerRadius: 6)
+        StorybookArt.shape(g, sill, hex: woodHex, width: 2.5)
     }
 
-    private static func lights(_ g: GraphicsContext, _ r: CGRect, _ n: Double, _ t: CGFloat) {
+    private static func drawFairyLights(_ g: GraphicsContext, night n: Double, t: CGFloat) {
         var wire = Path()
         var bulbs: [CGPoint] = []
-        let spans: [(CGFloat, CGFloat)] = [(r.minX, 330), (694, r.maxX)]
-        for (a, b) in spans where b > a {
-            wire.move(to: CGPoint(x: a, y: 104))
-            wire.addQuadCurve(to: CGPoint(x: b, y: 104), control: CGPoint(x: (a + b) / 2, y: 150))
-            let cnt = max(2, Int((b - a) / 46))
+        let spans: [(CGFloat, CGFloat)] = [(20, 345), (695, 1004)]
+        for (a, b) in spans {
+            wire.move(to: CGPoint(x: a, y: 98))
+            wire.addQuadCurve(to: CGPoint(x: b, y: 98), control: CGPoint(x: (a + b) / 2, y: 132))
+            let cnt = 6
             for k in 1..<cnt {
                 let u = CGFloat(k) / CGFloat(cnt)
                 let x = a + (b - a) * u
-                let y = 104 + 92 * u * (1 - u)
+                let y = 98 + 68 * u * (1 - u)
                 bulbs.append(CGPoint(x: x, y: y))
             }
         }
-        g.stroke(wire, with: .color(RGB(hex: "#5A3D6E").c(0.7)), lineWidth: 2)
-        let cols = ["#FF9EC8", "#FFE07A", "#9FE8FF", "#C5A8FF", "#A8F0C0"].map { RGB(hex: $0) }
+        g.stroke(wire, with: .color(Theme.ink.opacity(0.45)), lineWidth: 2)
+        let cols: [RGB] = [RGB(hex: "#FFA2CE"), RGB(hex: "#FFE480"), RGB(hex: "#9EEAFF"), RGB(hex: "#CCB0FF"), RGB(hex: "#A8F0C4")]
         for (k, p) in bulbs.enumerated() {
             let c = cols[k % cols.count]
-            let tw = 0.75 + 0.25 * sin(Double(t) * 2.4 + Double(k) * 1.3)
+            let tw = 0.72 + 0.28 * sin(Double(t) * 2.5 + Double(k) * 1.4)
             if n > 0.05 {
-                g.fill(Path(ellipseIn: CGRect(x: p.x - 18, y: p.y - 12, width: 36, height: 36)),
-                       with: .radialGradient(Gradient(colors: [c.c(0.55 * n * tw), .clear]), center: CGPoint(x: p.x, y: p.y + 6), startRadius: 2, endRadius: 18))
+                g.fill(
+                    Path(ellipseIn: CGRect(x: p.x - 18, y: p.y - 12, width: 36, height: 36)),
+                    with: .radialGradient(
+                        Gradient(colors: [c.c(0.55 * n * tw), .clear]),
+                        center: CGPoint(x: p.x, y: p.y + 6),
+                        startRadius: 2,
+                        endRadius: 18
+                    )
+                )
             }
-            g.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y, width: 10, height: 13)), with: .color(c.mix(RGB(1, 1, 1), 0.3 * tw).c()))
+            g.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y, width: 10, height: 13)), with: .color(c.mix(RGB(1, 1, 1), 0.25 * tw).c()))
         }
     }
 
-    // MARK: - Everything that moves
-
-    static func draw(_ ctx: GraphicsContext, map: PMap, sim: PotionSim, liquid: PotionLiquid) {
-        var g = ctx
-        g.translateBy(x: map.ox, y: map.oy)
-        g.scaleBy(x: map.s, y: map.s)
-        let t = CGFloat(sim.time)
+    private static func drawAmbientLight(_ g: GraphicsContext, sim: PotionSim, night n: Double, t: CGFloat) {
         let (mc, ma) = sim.meanColor()
-        let potionColor = PIngredient.water.color.mix(mc, Double(min(1, ma * 2)))
-
-        // the potion's glow on the room, stronger at night
-        let glow = sim.flaskGlow
-        if glow > 0.02 && sim.volume > 1 {
+        let potionColor = PotionColor.clearWater.mix(mc, Double(min(1, ma * 2)))
+        let glow = sim.cauldronGlow
+        if glow > 0.04 && sim.volume > 200 {
             var lg = g
             lg.blendMode = .plusLighter
-            let k = Double(glow) * (0.18 + 0.5 * Double(sim.night))
-            lg.fill(Path(ellipseIn: CGRect(x: PotionGeometry.C.x - 460, y: PotionGeometry.C.y - 420, width: 920, height: 840)),
-                    with: .radialGradient(Gradient(colors: [potionColor.c(k), potionColor.c(k * 0.4), .clear]), center: PotionGeometry.C, startRadius: 40, endRadius: 440))
+            let k = Double(glow) * (0.16 + 0.42 * n)
+            let c = PotionGeometry.cauldronCenter
+            lg.fill(
+                Path(ellipseIn: CGRect(x: c.x - 320, y: c.y - 290, width: 640, height: 580)),
+                with: .radialGradient(
+                    Gradient(colors: [potionColor.c(k), potionColor.c(k * 0.35), .clear]),
+                    center: c,
+                    startRadius: 28,
+                    endRadius: 310
+                )
+            )
         }
-        // the fire's warm light low down
-        if sim.heat > 0 {
+        if sim.burner != .off {
             var fg = g
             fg.blendMode = .plusLighter
-            let k = 0.08 + 0.06 * Double(sim.heat) + 0.03 * sin(Double(t) * 13)
-            fg.fill(Path(ellipseIn: CGRect(x: 512 - 220, y: 560, width: 440, height: 220)),
-                    with: .radialGradient(Gradient(colors: [RGB(hex: "#FFA040").c(k * (0.5 + Double(sim.night))), .clear]), center: CGPoint(x: 512, y: 670), startRadius: 10, endRadius: 200))
+            let intensity = sim.burner == .boil ? 0.22 : 0.12
+            let flick = 0.03 * sin(Double(t) * 14)
+            let bc = PotionGeometry.burnerCenter
+            fg.fill(
+                Path(ellipseIn: CGRect(x: bc.x - 170, y: bc.y - 110, width: 340, height: 180)),
+                with: .radialGradient(
+                    Gradient(colors: [RGB(hex: "#FFA84C").c((intensity + flick) * (0.55 + n * 0.8)), .clear]),
+                    center: bc,
+                    startRadius: 10,
+                    endRadius: 165
+                )
+            )
+        }
+    }
+
+    // MARK: Left Stage — Plush Starry Cushion & Magical Friend
+
+    private static func drawCushion(_ g: GraphicsContext, t: CGFloat) {
+        let c = PotionGeometry.cushionCenter
+        // Soft ground shadow.
+        g.fill(
+            Path(ellipseIn: CGRect(x: c.x - 112, y: c.y + 18, width: 224, height: 24)),
+            with: .color(Theme.ink.opacity(0.18))
+        )
+        // Plush tufted cushion body.
+        let body = Path(roundedRect: CGRect(x: c.x - 104, y: c.y - 16, width: 208, height: 48), cornerRadius: 24)
+        StorybookArt.shape(g, body, hex: 0xC6A2F8, width: 3.5)
+        let top = Path(ellipseIn: CGRect(x: c.x - 94, y: c.y - 18, width: 188, height: 32))
+        g.fill(top, with: .color(Color(hex: 0xDFC4FF)))
+        StorybookArt.highlight(g, in: CGRect(x: c.x - 62, y: c.y - 12, width: 64, height: 10), opacity: 0.42)
+        // Little gold tassels at each corner.
+        for side in [-1.0, 1.0] {
+            let tx = c.x + CGFloat(side) * 102
+            let tassel = Path(ellipseIn: CGRect(x: tx - 9, y: c.y + 2, width: 18, height: 16))
+            StorybookArt.shape(g, tassel, hex: 0xFFE07A, width: 2.5)
+        }
+        // Star embroidery along the front cushion rim.
+        for dx in [-54, 0, 54] {
+            let pulse = 0.8 + 0.2 * sin(Double(t) * 2.4 + Double(dx))
+            StorybookArt.sparkle(g, at: CGPoint(x: c.x + CGFloat(dx), y: c.y + 14), radius: 7.5, color: Theme.lemon, opacity: pulse)
+        }
+    }
+
+    private static func drawCreature(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        let cs = sim.creatureState
+        let effect = cs.activeEffect
+        let feet = CGPoint(x: PotionGeometry.creatureFeet.x, y: PotionGeometry.creatureFeet.y + cs.floatY + cs.hop)
+        let k = PotionGeometry.creatureScale
+
+        // Shadow shrinks softly as creature floats higher into the sky window.
+        let lift = min(1, -(cs.floatY + cs.hop) / 160)
+        let sw = 156 * (1 - lift * 0.42)
+        g.fill(
+            Path(ellipseIn: CGRect(x: PotionGeometry.creatureFeet.x - sw / 2, y: PotionGeometry.creatureFeet.y - 8, width: sw, height: 16)),
+            with: .color(Theme.ink.opacity(0.18 * Double(1 - lift * 0.6)))
+        )
+
+        // Back-layer transformation auras (rainbow arch, sleepy cloud pillow, moonlight crescent, golden/galaxy/mermaid halo).
+        drawCreatureBackEffects(g, effect: effect, feet: feet, tint: cs.tint, t: t)
+
+        var pet = sim.creature.petLook
+        pet.glitter = (effect == .galaxy || effect == .golden || effect == .rainbow || effect == .moonlight || effect == .wild)
+
+        var pose = PetPose()
+        pose.time = Double(t)
+        if effect == .sleepyCloud {
+            pose.eyes = "blink"
+            pose.mouth = "smile"
+        } else if cs.hiccupKick > 0.25 {
+            pose.eyes = "wince"
+            pose.mouth = "o"
+        } else if effect == .love || cs.giggle > 0 {
+            pose.eyes = "happy"
+            pose.mouth = "grin"
+        } else if effect == .frostCrown {
+            pose.eyes = "wince"
+            pose.mouth = "wavy"
+        } else if effect?.isFloating == true {
+            pose.eyes = "sparkle"
+            pose.mouth = "o"
+        } else if effect != nil {
+            pose.eyes = "sparkle"
+            pose.mouth = "grin"
+        } else if cs.blink < 0 {
+            pose.eyes = "blink"
         }
 
-        // the shelves
-        let hidden = sim.hiddenIngredient
-        for ing in PIngredient.allCases where !hidden.contains(ing.rawValue) {
-            let s = ing.shelfSpot
-            drawIngredient(g, ing, center: CGPoint(x: s.x, y: s.y - 62), angle: 0, scale: 1, fill: sim.shelfFill[ing] ?? 1, time: t)
-        }
-        crate(g, sim)
-        bucket(g, sim)
-        burner(g, sim, t)
-        tripod(g, front: false)
+        let head = CGPoint(x: feet.x, y: feet.y - (PetArt.feetY - PetArt.headCenter.y) * k)
+        let lx = max(-1, min(1, (cs.look.x - head.x) / 280))
+        let ly = max(-1, min(1, (cs.look.y - head.y) / 280))
+        pose.look = CGSize(width: lx * 7, height: ly * 5)
 
-        // the flask, with what's in it
-        flask(g, sim, liquid: liquid, t: t)
-        tripod(g, front: true)
-        drain(g, sim)
-        unicorn(g, sim, t)
-        for p in sim.puddles {
-            g.fill(Path(ellipseIn: CGRect(x: p.x - p.w / 2, y: p.y - 3, width: p.w, height: 8)), with: .color(p.color.c(Double(p.a) * 0.6)))
-            g.fill(Path(ellipseIn: CGRect(x: p.x - p.w * 0.3, y: p.y - 2, width: p.w * 0.3, height: 2.5)), with: .color(.white.opacity(Double(p.a) * 0.5)))
+        let danceSquash: CGFloat = (effect == .rainbow || effect == .wild) ? 0.045 * sin(t * 7.5) : 0
+        pose.squash = 1 + 0.015 * sin(t * 2.4) + danceSquash - cs.hiccupKick * 0.08 + (cs.hopV < -90 ? 0.05 : 0)
+
+        var tilt = 0.0
+        if cs.shake > 0 { tilt += sin(Double(t) * 38) * 11 * Double(min(1, cs.shake * 2)) }
+        if effect == .frostCrown { tilt += sin(Double(t) * 44) * 3.2 }
+        if effect == .sleepyCloud { tilt += sin(Double(t) * 1.8) * 6.5 }
+        if effect == .rainbow || effect == .wild { tilt += sin(Double(t) * 6.0) * 6.0 }
+        pose.tilt = tilt
+
+        var shading: GraphicsContext.Shading?
+        if effect == .rainbow {
+            let rainbow = ["#FF8FB8", "#FFB27A", "#FFE27A", "#8FE0A4", "#7FC8FF", "#B89CFF"].map { RGB(hex: $0).c() }
+            shading = .linearGradient(Gradient(colors: rainbow), startPoint: CGPoint(x: 120, y: 60), endPoint: CGPoint(x: 480, y: 620))
+        } else if effect == .wild {
+            let c1 = PotionColor.hue(t * 0.35).c()
+            let c2 = PotionColor.hue(t * 0.35 + 0.33).c()
+            let c3 = PotionColor.hue(t * 0.35 + 0.66).c()
+            shading = .linearGradient(Gradient(colors: [c1, c2, c3]), startPoint: CGPoint(x: 120, y: 80), endPoint: CGPoint(x: 480, y: 600))
+        } else if effect == .frostCrown {
+            shading = .color(RGB(hex: "#B8F0FF").c())
+        } else if effect == .golden {
+            shading = .color(RGB(hex: "#FFD966").c())
+        } else if cs.tintAmt > 0.05 {
+            shading = .color(RGB(hex: "#FFF4FC").mix(cs.tint, Double(min(0.85, cs.tintAmt))).c())
         }
-        // the potions she made
-        let hiddenRack = sim.hiddenRack
-        for (i, b) in sim.rack.enumerated() where !hiddenRack.contains(i) {
-            let c = PotionSim.rackFly(i)
-            PotionBottlePainter.draw(g, bottle: b, center: c, angle: 0, scale: PotionSim.rackScale, time: t)
-        }
-        // pieces in the air or on the table
-        for pc in sim.pieces where pc.state != .liquid {
-            PieceArt.draw(g, pc, alpha: pc.state == .table ? Double(max(0, min(1, (7 - pc.age) / 1.5))) : 1)
-        }
-        drops(g, sim)
-        motes(g, sim, t)
-        // bottles flying home
-        for f in sim.flyers {
-            let (p, a) = PotionSim.flyerPos(f)
-            if let b = f.bottle {
-                let s = PotionSim.heldScale + (PotionSim.rackScale - PotionSim.heldScale) * f.t
-                PotionBottlePainter.draw(g, bottle: b, center: p, angle: a, scale: s, time: t)
-            } else if let ing = f.ing {
-                drawIngredient(g, ing, center: p, angle: a, scale: PotionSim.heldScale + (1 - PotionSim.heldScale) * f.t, fill: sim.shelfFill[ing] ?? 1, time: t)
-            } else {
-                PotionBottlePainter.empty(g, center: p, angle: a, scale: PotionSim.heldScale * (1 - 0.25 * f.t))
+
+        let animal = PetArt.shared.animals[pet.kind]
+        var pg = g
+        pg.translateBy(x: feet.x, y: feet.y)
+        pg.scaleBy(x: k, y: k)
+        pg.translateBy(x: -300, y: -PetArt.feetY)
+
+        PetPainter.draw(
+            pet,
+            pose: pose,
+            furShading: shading,
+            over: { ctx in
+                drawCreatureHeadOverlays(ctx, effect: effect, animal: animal, hiccupKick: cs.hiccupKick, t: t)
+            },
+            in: pg
+        )
+
+        // Front-layer transformation effects (giant iridescent bubble, orbiting galaxy stars).
+        drawCreatureFrontEffects(g, effect: effect, feet: feet, t: t)
+    }
+
+    private static func drawCreatureBackEffects(_ g: GraphicsContext, effect: TransformationEffect?, feet: CGPoint, tint: RGB, t: CGFloat) {
+        guard let effect else { return }
+        let bodyCenter = CGPoint(x: feet.x, y: feet.y - 102)
+        switch effect {
+        case .rainbow:
+            let bands: [Color] = [
+                Color(hex: 0xFF8FB8), Color(hex: 0xFFB87A), Color(hex: 0xFFE582),
+                Color(hex: 0x9AE8B0), Color(hex: 0x86D4FF), Color(hex: 0xC6A2FF),
+            ]
+            for (i, col) in bands.enumerated() {
+                let r = CGFloat(132 - i * 10) + sin(t * 3 + CGFloat(i)) * 2
+                var arc = Path()
+                arc.addArc(center: CGPoint(x: feet.x, y: feet.y - 24), radius: r, startAngle: .degrees(190), endAngle: .degrees(350), clockwise: false)
+                g.stroke(arc, with: .color(col.opacity(0.65)), style: StrokeStyle(lineWidth: 9, lineCap: .round))
             }
+        case .sleepyCloud:
+            // Floating glowing cloud pillow right under the swaying friend.
+            let cy = feet.y - 6 + sin(t * 2.0) * 5
+            var cloud = Path()
+            cloud.addEllipse(in: CGRect(x: feet.x - 106, y: cy - 28, width: 212, height: 64))
+            cloud.addEllipse(in: CGRect(x: feet.x - 86, y: cy - 48, width: 88, height: 66))
+            cloud.addEllipse(in: CGRect(x: feet.x - 8, y: cy - 52, width: 96, height: 70))
+            g.stroke(cloud, with: .color(Color(hex: 0xC8B4FF)), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+            g.fill(cloud, with: .color(Color(hex: 0xFAF6FF)))
+        case .moonlight:
+            // Glowing crescent halo behind head.
+            let c = CGPoint(x: feet.x, y: feet.y - 148)
+            var gl = g
+            gl.blendMode = .plusLighter
+            gl.fill(
+                Path(ellipseIn: CGRect(x: c.x - 125, y: c.y - 125, width: 250, height: 250)),
+                with: .radialGradient(Gradient(colors: [Color(hex: 0xE6DFFF).opacity(0.55), .clear]), center: c, startRadius: 18, endRadius: 125)
+            )
+            let mRect = CGRect(x: c.x - 66, y: c.y - 66, width: 132, height: 132)
+            var moon = Path(ellipseIn: mRect)
+            moon.addEllipse(in: mRect.offsetBy(dx: 32, dy: -14))
+            g.fill(moon, with: .color(Color(hex: 0xFFF4B8).opacity(0.85)), style: FillStyle(eoFill: true))
+        case .golden:
+            var gl = g
+            gl.blendMode = .plusLighter
+            let pulse = 0.42 + 0.12 * sin(Double(t) * 3.5)
+            gl.fill(
+                Path(ellipseIn: CGRect(x: bodyCenter.x - 148, y: bodyCenter.y - 148, width: 296, height: 296)),
+                with: .radialGradient(Gradient(colors: [Color(hex: 0xFFE27A).opacity(pulse), .clear]), center: bodyCenter, startRadius: 20, endRadius: 148)
+            )
+        case .galaxy:
+            var gl = g
+            gl.blendMode = .plusLighter
+            gl.fill(
+                Path(ellipseIn: CGRect(x: bodyCenter.x - 140, y: bodyCenter.y - 140, width: 280, height: 280)),
+                with: .radialGradient(Gradient(colors: [Color(hex: 0x9C72FF).opacity(0.52), Color(hex: 0x5632C8).opacity(0.22), .clear]), center: bodyCenter, startRadius: 20, endRadius: 140)
+            )
+        case .mermaid:
+            var gl = g
+            gl.blendMode = .plusLighter
+            gl.fill(
+                Path(ellipseIn: CGRect(x: bodyCenter.x - 142, y: bodyCenter.y - 142, width: 284, height: 284)),
+                with: .radialGradient(Gradient(colors: [Color(hex: 0x56F2E8).opacity(0.45), .clear]), center: bodyCenter, startRadius: 24, endRadius: 142)
+            )
+        case .love, .dragonFire, .frostCrown, .bubbleFloat, .wild:
+            var gl = g
+            gl.blendMode = .plusLighter
+            gl.fill(
+                Path(ellipseIn: CGRect(x: bodyCenter.x - 125, y: bodyCenter.y - 125, width: 250, height: 250)),
+                with: .radialGradient(Gradient(colors: [tint.c(0.28), .clear]), center: bodyCenter, startRadius: 18, endRadius: 125)
+            )
         }
-        // what she holds
-        if let h = sim.held {
-            switch h {
-            case .ingredient(let ing):
-                drawIngredient(g, ing, center: sim.heldPos, angle: sim.heldTilt, scale: PotionSim.heldScale, fill: sim.heldFill, time: t)
-            case .rack(let i):
-                if var b = sim.rack[safe: i] {
-                    b.fill = Double(sim.heldFill)
-                    PotionBottlePainter.draw(g, bottle: b, center: sim.heldPos, angle: sim.heldTilt, scale: PotionSim.heldScale, time: t, cork: false)
-                }
-            case .empty:
-                if !sim.dipInside { dipBottle(g, sim) }
-            case .spoon:
-                break
+    }
+
+    private static func drawCreatureHeadOverlays(
+        _ ctx: GraphicsContext,
+        effect: TransformationEffect?,
+        animal: PetAnimal?,
+        hiccupKick: CGFloat,
+        t: CGFloat
+    ) {
+        guard let effect else { return }
+        let hat = animal?.hat ?? CGPoint(x: 300, y: 134)
+        let leftEye = animal?.eyeAnchor ?? CGPoint(x: 238, y: 270)
+        let rightEye = CGPoint(x: 600 - leftEye.x, y: leftEye.y)
+
+        switch effect {
+        case .love:
+            // Big sparkling pink heart eyes!
+            let pulse: CGFloat = 1 + 0.1 * sin(t * 7)
+            for eye in [leftEye, rightEye] {
+                StorybookArt.heart(ctx, at: eye, size: 58 * pulse, color: Color(hex: 0xFF4F9A))
+                StorybookArt.sparkle(ctx, at: CGPoint(x: eye.x - 10, y: eye.y - 10), radius: 10, color: .white, opacity: 0.92)
+            }
+        case .dragonFire:
+            // Puffed rosy cheeks!
+            let puff: CGFloat = 1 + 0.25 * hiccupKick + 0.08 * sin(t * 8)
+            for cx in [leftEye.x - 36, rightEye.x + 36] {
+                let r = CGRect(x: cx - 34 * puff, y: leftEye.y + 28 - 26 * puff, width: 68 * puff, height: 52 * puff)
+                ctx.fill(Path(ellipseIn: r), with: .color(Color(hex: 0xFF6B8A).opacity(0.68)))
+            }
+        case .frostCrown:
+            // Sparkling icy snowflake tiara perched on top of the head!
+            var tiara = Path()
+            tiara.move(to: CGPoint(x: hat.x - 84, y: hat.y + 18))
+            tiara.addLine(to: CGPoint(x: hat.x - 52, y: hat.y - 42))
+            tiara.addLine(to: CGPoint(x: hat.x - 22, y: hat.y - 10))
+            tiara.addLine(to: CGPoint(x: hat.x, y: hat.y - 74))
+            tiara.addLine(to: CGPoint(x: hat.x + 22, y: hat.y - 10))
+            tiara.addLine(to: CGPoint(x: hat.x + 52, y: hat.y - 42))
+            tiara.addLine(to: CGPoint(x: hat.x + 84, y: hat.y + 18))
+            tiara.closeSubpath()
+            StorybookArt.shape(ctx, tiara, hex: 0x98EEFF, width: 6)
+            StorybookArt.sparkle(ctx, at: CGPoint(x: hat.x, y: hat.y - 74), radius: 22, color: .white, opacity: 0.95)
+        case .golden:
+            // Shimmering golden royal crown!
+            var crown = Path()
+            crown.move(to: CGPoint(x: hat.x - 76, y: hat.y + 16))
+            crown.addLine(to: CGPoint(x: hat.x - 62, y: hat.y - 52))
+            crown.addLine(to: CGPoint(x: hat.x - 26, y: hat.y - 14))
+            crown.addLine(to: CGPoint(x: hat.x, y: hat.y - 68))
+            crown.addLine(to: CGPoint(x: hat.x + 26, y: hat.y - 14))
+            crown.addLine(to: CGPoint(x: hat.x + 62, y: hat.y - 52))
+            crown.addLine(to: CGPoint(x: hat.x + 76, y: hat.y + 16))
+            crown.closeSubpath()
+            StorybookArt.shape(ctx, crown, hex: 0xFFD44A, width: 6)
+            for gx in [hat.x - 40, hat.x, hat.x + 40] {
+                ctx.fill(Path(ellipseIn: CGRect(x: gx - 10, y: hat.y - 10, width: 20, height: 20)), with: .color(Color(hex: 0xFF62A8)))
+            }
+        default:
+            break
+        }
+    }
+
+    private static func drawCreatureFrontEffects(_ g: GraphicsContext, effect: TransformationEffect?, feet: CGPoint, t: CGFloat) {
+        guard let effect else { return }
+        let center = CGPoint(x: feet.x, y: feet.y - 104)
+
+        if effect.isFloating {
+            // Giant iridescent soap bubble floating cleanly in the open left sky!
+            let r: CGFloat = 124 + sin(t * 3.2) * 3.5
+            let bub = Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r * 0.96, width: r * 2, height: r * 1.92))
+            let tintA = effect == .mermaid ? Color(hex: 0x7CF4EC) : Color(hex: 0xBFEFFF)
+            let tintB = effect == .mermaid ? Color(hex: 0xA2D4FF) : Color(hex: 0xFFC2EC)
+            g.fill(
+                bub,
+                with: .radialGradient(
+                    Gradient(colors: [.clear, tintA.opacity(0.20), tintB.opacity(0.36)]),
+                    center: center,
+                    startRadius: r * 0.45,
+                    endRadius: r
+                )
+            )
+            g.stroke(
+                bub,
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0x8CF0FF).opacity(0.9), Color(hex: 0xFFB8EC).opacity(0.9), Color(hex: 0xFFE68C).opacity(0.9)]),
+                    startPoint: CGPoint(x: center.x - r, y: center.y - r),
+                    endPoint: CGPoint(x: center.x + r, y: center.y + r)
+                ),
+                lineWidth: 3.5
+            )
+            StorybookArt.highlight(
+                g,
+                in: CGRect(x: center.x - r * 0.58, y: center.y - r * 0.72, width: r * 0.44, height: r * 0.24),
+                opacity: 0.72
+            )
+        }
+
+        if effect == .galaxy || effect == .moonlight {
+            // Orbiting glowing mini-stars!
+            for i in 0..<6 {
+                let a = Double(t) * 1.6 + Double(i) * (.pi / 3)
+                let rx: CGFloat = 108
+                let ry: CGFloat = 52
+                let p = CGPoint(x: center.x + CGFloat(cos(a)) * rx, y: center.y - 26 + CGFloat(sin(a)) * ry)
+                let r: CGFloat = 8 + 4 * CGFloat(0.5 + 0.5 * sin(a))
+                let col: Color = i % 2 == 0 ? Theme.lemon : .white
+                StorybookArt.sparkle(g, at: p, radius: r, color: col, opacity: 0.92)
             }
         }
     }
 
-    // MARK: Flask
+    // MARK: Center Stage — Wide-Mouth Magic Cauldron, Burner, Flame Dial & Fixed Drain Valve
 
-    static func benchFlask(_ g: GraphicsContext, _ sim: PotionSim, liquid: PotionLiquid, time: CGFloat) {
-        burner(g, sim, time)
-        tripod(g, front: false)
-        flask(g, sim, liquid: liquid, t: time)
-        tripod(g, front: true)
-        drops(g, sim)
-        motes(g, sim, time)
-    }
+    private static func drawCauldron(_ g: GraphicsContext, sim: PotionSim, liquid: PotionLiquid, t: CGFloat) {
+        let C = PotionGeometry.cauldronCenter
+        let R = PotionGeometry.cauldronRadius
+        let hw = PotionGeometry.neckHalfWidth
 
-    private static func flask(_ g: GraphicsContext, _ sim: PotionSim, liquid: PotionLiquid, t: CGFloat) {
-        // the back of the glass
-        g.fill(PotionGeometry.exterior, with: .color(.white.opacity(0.10)))
-        g.fill(PotionGeometry.interior, with: .radialGradient(Gradient(colors: [RGB(hex: "#E8E0FF").c(0.12), RGB(hex: "#5A4A8A").c(0.16)]),
-                                                     center: CGPoint(x: PotionGeometry.C.x - 40, y: PotionGeometry.C.y - 60), startRadius: 20, endRadius: PotionGeometry.R))
-        // things inside, tinted by the potion drawn over them
+        // Glass back.
+        g.fill(PotionGeometry.exterior, with: .color(.white.opacity(0.14)))
+        g.fill(
+            PotionGeometry.interior,
+            with: .radialGradient(
+                Gradient(colors: [RGB(hex: "#F2EBFF").c(0.16), RGB(hex: "#5A4A8A").c(0.18)]),
+                center: CGPoint(x: C.x - 36, y: C.y - 50),
+                startRadius: 16,
+                endRadius: R
+            )
+        )
+
         var inside = g
         inside.clip(to: PotionGeometry.interior)
-        spoon(g, sim)
-        for pc in sim.pieces where pc.state == .liquid { PieceArt.draw(inside, pc, alpha: 1) }
-        if sim.held == .empty && sim.dipInside { dipBottle(g, sim) }
+        drawPaddle(g, sim: sim)
 
-        guard sim.volume > 1 else {
-            frontGlass(g, sim, t)
-            return
+        for pc in sim.pieces where pc.state == .liquid {
+            drawPiece(inside, pc, alpha: 1)
         }
-        // the potion, below its wavy surface
-        var surf = Path()
-        let x0 = PotionGeometry.C.x - PotionGeometry.R - 4, x1 = PotionGeometry.C.x + PotionGeometry.R + 4
-        var x = x0
-        surf.move(to: CGPoint(x: x0, y: sim.surfaceY(x0)))
-        var top: [CGPoint] = []
-        while x <= x1 {
-            let p = CGPoint(x: x, y: sim.surfaceY(x))
-            top.append(p)
-            surf.addLine(to: p)
-            x += 4
-        }
-        surf.addLine(to: CGPoint(x: x1, y: PotionGeometry.bottomY + 20))
-        surf.addLine(to: CGPoint(x: x0, y: PotionGeometry.bottomY + 20))
-        surf.closeSubpath()
-        var lq = inside
-        lq.clip(to: surf)
-        if let img = liquid.image(sim) {
-            let box = CGRect(x: PotionGeometry.gx0, y: PotionGeometry.gy0, width: CGFloat(PotionGeometry.NX) * PotionGeometry.cell, height: CGFloat(PotionGeometry.NY) * PotionGeometry.cell)
-            lq.draw(Image(decorative: img, scale: 1).interpolation(.high), in: box)
-            // it glows from inside
-            let glow = sim.flaskGlow
-            if glow > 0.05 {
-                var gl = lq
-                gl.blendMode = .plusLighter
-                gl.opacity = Double(glow) * (0.25 + 0.3 * Double(sim.night)) * (0.9 + 0.1 * Double(sin(t * 3)))
-                gl.draw(Image(decorative: img, scale: 1).interpolation(.high), in: box)
+
+        if sim.volume > 20 {
+            var surf = Path()
+            let x0 = C.x - R - 4
+            let x1 = C.x + R + 4
+            var x = x0
+            surf.move(to: CGPoint(x: x0, y: sim.surfaceY(x0)))
+            var topPts: [CGPoint] = []
+            while x <= x1 {
+                let p = CGPoint(x: x, y: sim.surfaceY(x))
+                topPts.append(p)
+                surf.addLine(to: p)
+                x += 4
             }
+            surf.addLine(to: CGPoint(x: x1, y: PotionGeometry.bottomY + 18))
+            surf.addLine(to: CGPoint(x: x0, y: PotionGeometry.bottomY + 18))
+            surf.closeSubpath()
+
+            var lq = inside
+            lq.clip(to: surf)
+            if let img = liquid.image(sim) {
+                let box = CGRect(
+                    x: PotionGeometry.gx0,
+                    y: PotionGeometry.gy0,
+                    width: CGFloat(PotionGeometry.NX) * PotionGeometry.cell,
+                    height: CGFloat(PotionGeometry.NY) * PotionGeometry.cell
+                )
+                lq.draw(Image(decorative: img, scale: 1).interpolation(.high), in: box)
+                let glow = sim.cauldronGlow
+                if glow > 0.05 {
+                    var gl = lq
+                    gl.blendMode = .plusLighter
+                    gl.opacity = Double(glow) * (0.24 + 0.30 * Double(sim.night)) * (0.9 + 0.1 * Double(sin(t * 3)))
+                    gl.draw(Image(decorative: img, scale: 1).interpolation(.high), in: box)
+                }
+            }
+
+            // Soft spherical glass shading.
+            lq.fill(
+                Path(CGRect(x: x0, y: PotionGeometry.rimY, width: x1 - x0, height: PotionGeometry.bottomY - PotionGeometry.rimY + 10)),
+                with: .radialGradient(
+                    Gradient(colors: [.white.opacity(0.20), .clear, .black.opacity(0.14)]),
+                    center: CGPoint(x: C.x - 42, y: C.y - 34),
+                    startRadius: 10,
+                    endRadius: R + 18
+                )
+            )
+
+            // Swirling glitter inside cauldron.
+            drawGlitter(lq, sim: sim, t: t)
+
+            // Rising bubbles inside cauldron.
+            var bub = Path()
+            var hi = Path()
+            for b in sim.bubbles {
+                let r = b.r * (1 + 0.08 * sin(b.phase * 2))
+                bub.addEllipse(in: CGRect(x: b.p.x - r, y: b.p.y - r, width: r * 2, height: r * 2))
+                hi.addEllipse(in: CGRect(x: b.p.x - r * 0.5, y: b.p.y - r * 0.55, width: r * 0.48, height: r * 0.42))
+            }
+            inside.fill(bub, with: .color(.white.opacity(0.2)))
+            inside.stroke(bub, with: .color(.white.opacity(0.8)), lineWidth: 1.5)
+            inside.fill(hi, with: .color(.white.opacity(0.92)))
+
+            // Rippling glossy surface highlight.
+            var surfaceLine = Path()
+            surfaceLine.addLines(topPts)
+            inside.stroke(surfaceLine, with: .color(.white.opacity(0.72)), lineWidth: 3)
         }
-        // its roundness: lighter where the window light comes through, deeper at the edges
-        lq.fill(Path(CGRect(x: x0, y: PotionGeometry.rimY, width: x1 - x0, height: PotionGeometry.bottomY - PotionGeometry.rimY + 10)),
-                with: .radialGradient(Gradient(colors: [.white.opacity(0.16), .clear, Color.black.opacity(0.16)]),
-                                      center: CGPoint(x: PotionGeometry.C.x - 50, y: PotionGeometry.C.y - 40), startRadius: 10, endRadius: PotionGeometry.R + 20))
-        // light rippling through it
-        var caus = Path()
-        for k in 0..<7 {
-            let cx = PotionGeometry.C.x - 120 + CGFloat(k) * 40 + sin(t * 0.9 + CGFloat(k)) * 10
-            caus.move(to: CGPoint(x: cx, y: sim.level + 8))
-            caus.addQuadCurve(to: CGPoint(x: cx - 30, y: PotionGeometry.bottomY), control: CGPoint(x: cx + 26 * sin(t * 1.3 + CGFloat(k) * 2), y: (sim.level + PotionGeometry.bottomY) / 2))
+
+        // Front glass rim, reflections & lip.
+        var ring = PotionGeometry.exterior
+        ring.addPath(PotionGeometry.interior)
+        g.fill(ring, with: .color(.white.opacity(0.24)), style: FillStyle(eoFill: true))
+        g.stroke(PotionGeometry.exterior, with: .color(glassLine.c(0.95)), lineWidth: 3)
+        g.stroke(PotionGeometry.interior, with: .color(.white.opacity(0.58)), lineWidth: 1.6)
+
+        var refl = Path()
+        for k in 0...18 {
+            let a = Double.pi * (1.08 + 0.30 * Double(k) / 18)
+            let p = CGPoint(x: C.x + (R - 18) * CGFloat(cos(a)), y: C.y + (R - 18) * CGFloat(sin(a)))
+            if k == 0 { refl.move(to: p) } else { refl.addLine(to: p) }
         }
-        lq.stroke(caus, with: .color(.white.opacity(0.06)), lineWidth: 10)
-        // glitter swirling in it
-        glitter(lq, sim, t)
-        // bubbles
-        var bub = Path(), hi = Path()
-        for b in sim.bubbles {
-            let r = b.r * (1 + 0.08 * sin(b.phase * 2))
-            bub.addEllipse(in: CGRect(x: b.p.x - r, y: b.p.y - r, width: r * 2, height: r * 2))
-            hi.addEllipse(in: CGRect(x: b.p.x - r * 0.55, y: b.p.y - r * 0.6, width: r * 0.5, height: r * 0.45))
-        }
-        inside.fill(bub, with: .color(.white.opacity(0.16)))
-        inside.stroke(bub, with: .color(.white.opacity(0.75)), lineWidth: 1.4)
-        inside.fill(hi, with: .color(.white.opacity(0.9)))
-        // the surface line
-        var line = Path()
-        line.addLines(top)
-        inside.stroke(line, with: .color(.white.opacity(0.6)), lineWidth: 2.5)
-        var under = inside
-        under.clip(to: surf)
-        under.stroke(line.offsetBy(dx: 0, dy: 5), with: .color(.white.opacity(0.14)), lineWidth: 6)
-        // floating things ride the surface on top
-        for pc in sim.pieces where pc.state == .liquid && pc.p.y < sim.surfaceY(pc.p.x) + 6 { PieceArt.draw(inside, pc, alpha: 0.9) }
-        foam(inside, sim, t)
-        frontGlass(g, sim, t)
-        if let k = sim.rare {
-            Twinkles.draw(g, around: CGPoint(x: PotionGeometry.C.x, y: PotionGeometry.C.y), radius: PotionGeometry.R + 26, time: t * 1.3, count: 7, alpha: 1)
+        g.stroke(refl, with: .color(.white.opacity(0.58)), style: StrokeStyle(lineWidth: 11, lineCap: .round))
+
+        g.fill(
+            Path(roundedRect: CGRect(x: C.x - hw + 10, y: PotionGeometry.rimY + 14, width: 8, height: max(18, PotionGeometry.joinY - PotionGeometry.rimY - 24)), cornerRadius: 4),
+            with: .color(.white.opacity(0.42))
+        )
+
+        let lip = CGRect(x: C.x - hw - 16, y: PotionGeometry.rimY - 12, width: (hw + 16) * 2, height: 22)
+        g.stroke(Path(ellipseIn: lip), with: .color(glassLine.c(0.96)), lineWidth: 6.5)
+        g.stroke(Path(ellipseIn: lip.insetBy(dx: 3, dy: 3)), with: .color(.white.opacity(0.72)), lineWidth: 2)
+
+        if let kind = sim.rare {
+            Twinkles.draw(g, around: C, radius: R + 24, time: t * 1.4, count: 7, alpha: 1)
             if sim.flash > 0 {
                 var fl = g
                 fl.blendMode = .plusLighter
-                fl.fill(PotionGeometry.interior, with: .color(k.color.mix(RGB(1, 1, 1), 0.5).c(Double(sim.flash) * 0.7)))
+                fl.fill(PotionGeometry.interior, with: .color(kind.color.mix(RGB(1, 1, 1), 0.5).c(Double(sim.flash) * 0.72)))
             }
         }
     }
 
-    private static func frontGlass(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
-        // the glass itself: a bright rim of light and soft reflections of the window
-        var ring = PotionGeometry.exterior
-        ring.addPath(PotionGeometry.interior)
-        g.fill(ring, with: .color(.white.opacity(0.22)), style: FillStyle(eoFill: true))
-        g.stroke(PotionGeometry.exterior, with: .color(glassLine.c(0.9)), lineWidth: 2.5)
-        g.stroke(PotionGeometry.interior, with: .color(.white.opacity(0.55)), lineWidth: 1.5)
-        var refl = Path()
-        for k in 0...20 {
-            let a = Double.pi * (1.08 + 0.32 * Double(k) / 20)
-            let p = CGPoint(x: PotionGeometry.C.x + (PotionGeometry.R - 22) * CGFloat(cos(a)), y: PotionGeometry.C.y + (PotionGeometry.R - 22) * CGFloat(sin(a)))
-            if k == 0 { refl.move(to: p) } else { refl.addLine(to: p) }
-        }
-        g.stroke(refl, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 12, lineCap: .round))
-        var refl2 = Path()
-        for k in 0...10 {
-            let a = Double.pi * (1.52 + 0.08 * Double(k) / 10)
-            let p = CGPoint(x: PotionGeometry.C.x + (PotionGeometry.R - 26) * CGFloat(cos(a)), y: PotionGeometry.C.y + (PotionGeometry.R - 26) * CGFloat(sin(a)))
-            if k == 0 { refl2.move(to: p) } else { refl2.addLine(to: p) }
-        }
-        g.stroke(refl2, with: .color(.white.opacity(0.4)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-        var side = Path()
-        for k in 0...14 {
-            let a = Double.pi * (0.05 + 0.25 * Double(k) / 14)
-            let p = CGPoint(x: PotionGeometry.C.x + (PotionGeometry.R - 16) * CGFloat(cos(a)), y: PotionGeometry.C.y + (PotionGeometry.R - 16) * CGFloat(sin(a)))
-            if k == 0 { side.move(to: p) } else { side.addLine(to: p) }
-        }
-        g.stroke(side, with: .color(.white.opacity(0.22)), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-        // the neck's shine
-        g.fill(Path(roundedRect: CGRect(x: PotionGeometry.C.x - PotionGeometry.hw + 10, y: PotionGeometry.rimY + 16, width: 9, height: PotionGeometry.joinY - PotionGeometry.rimY - 30), cornerRadius: 4), with: .color(.white.opacity(0.4)))
-        // the lip at the top, seen a little from above
-        let lip = CGRect(x: PotionGeometry.C.x - PotionGeometry.hw - 16, y: PotionGeometry.rimY - 12, width: (PotionGeometry.hw + 16) * 2, height: 22)
-        g.stroke(Path(ellipseIn: lip), with: .color(glassLine.c(0.95)), lineWidth: 6)
-        g.stroke(Path(ellipseIn: lip.insetBy(dx: 3, dy: 3)), with: .color(.white.opacity(0.7)), lineWidth: 2)
-    }
-
-    private static func glitter(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
-        guard !sim.glitter.isEmpty else { return }
-        var paths: [Int: (Path, RGB)] = [:]
-        var shine = Path()
-        for gl in sim.glitter {
-            let tw = 0.5 + 0.5 * sin(gl.phase * 2.3 + t * 4)
-            let s = gl.size * (0.7 + 0.6 * tw)
-            let key = Int(gl.color.r * 7) * 64 + Int(gl.color.g * 7) * 8 + Int(gl.color.b * 7)
-            var e = paths[key] ?? (Path(), gl.color)
-            e.0.addEllipse(in: CGRect(x: gl.p.x - s, y: gl.p.y - s, width: s * 2, height: s * 2))
-            paths[key] = e
-            if tw > 0.9 {
-                let r = s * 3
-                shine.addPath(Twinkle().path(in: CGRect(x: gl.p.x - r, y: gl.p.y - r, width: r * 2, height: r * 2)))
-            }
-        }
-        for (_, e) in paths { g.fill(e.0, with: .color(e.1.c())) }
-        g.fill(shine, with: .color(.white.opacity(0.9)))
-    }
-
-    private static func foam(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
-        var blobs = Path()
-        var any = false
-        for i in 0..<PotionGeometry.NX where sim.foam[i] > 1.5 {
-            let x = PotionGeometry.gx0 + (CGFloat(i) + 0.5) * PotionGeometry.cell
-            let f = sim.foam[i]
-            let y = sim.surfaceY(x)
-            let layers = Int(min(6, f / 8)) + 1
-            for l in 0..<layers {
-                let r = 4 + min(9, f / 5) * (1 - CGFloat(l) * 0.1)
-                let jx = sin(CGFloat(i * 7 + l * 3) + t * 0.6) * 3
-                blobs.addEllipse(in: CGRect(x: x - r + jx, y: y - CGFloat(l) * min(f, 60) / CGFloat(layers) - r, width: r * 2, height: r * 2))
-            }
-            any = true
-        }
-        guard any else { return }
-        let (c, a) = sim.meanColor()
-        let foamColor = RGB(1, 1, 1).mix(c, Double(min(0.35, a * 0.5)))
-        g.fill(blobs, with: .color(foamColor.c(0.92)))
-        g.stroke(blobs, with: .color(foamColor.mix(RGB(0.6, 0.6, 0.8), 0.3).c(0.5)), lineWidth: 1)
-    }
-
-    // MARK: The stirring paddle
-
-    static func spoon(_ g: GraphicsContext, _ sim: PotionSim) {
+    private static func drawPaddle(_ g: GraphicsContext, sim: PotionSim) {
         let blade = sim.spoon
-        // the shaft goes up through the flask's mouth and out over the rim
-        let pivot = CGPoint(x: max(PotionGeometry.C.x - PotionGeometry.hw + 14, min(PotionGeometry.C.x + PotionGeometry.hw - 14, blade.x * 0.6 + PotionGeometry.C.x * 0.4 - (sim.spoonHeld ? 0 : 50))), y: PotionGeometry.rimY)
-        let dx = pivot.x - blade.x, dy = pivot.y - blade.y
+        let C = PotionGeometry.cauldronCenter
+        let hw = PotionGeometry.neckHalfWidth
+        let pivot = CGPoint(
+            x: max(C.x - hw + 14, min(C.x + hw - 14, blade.x * 0.65 + C.x * 0.35 - (sim.spoonHeld ? 0 : 34))),
+            y: PotionGeometry.rimY
+        )
+        let dx = pivot.x - blade.x
+        let dy = pivot.y - blade.y
         let len = max(1, hypot(dx, dy))
-        let ux = dx / len, uy = dy / len
-        let total: CGFloat = max(len + 90, 330)
+        let ux = dx / len
+        let uy = dy / len
+        let total: CGFloat = max(len + 74, 275)
         let end = CGPoint(x: blade.x + ux * total, y: blade.y + uy * total)
+
         var shaft = Path()
         shaft.move(to: blade)
         shaft.addLine(to: end)
-        g.stroke(shaft, with: .color(woodDark.c()), style: StrokeStyle(lineWidth: 13, lineCap: .round))
-        g.stroke(shaft, with: .color(wood.c()), style: StrokeStyle(lineWidth: 9, lineCap: .round))
-        var shine = Path()
-        shine.move(to: CGPoint(x: blade.x - uy * 2, y: blade.y + ux * 2))
-        shine.addLine(to: CGPoint(x: end.x - uy * 2, y: end.y + ux * 2))
-        g.stroke(shine, with: .color(.white.opacity(0.3)), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-        // the knob at the top
-        g.fill(Path(ellipseIn: CGRect(x: end.x - 11, y: end.y - 11, width: 22, height: 22)), with: .color(RGB(hex: "#C990FF").c()))
-        g.fill(Path(ellipseIn: CGRect(x: end.x - 6, y: end.y - 8, width: 7, height: 6)), with: .color(.white.opacity(0.7)))
-        // the blade: a flat paddle turned along the shaft
+        g.stroke(shaft, with: .color(StorybookArt.outline(for: woodHex)), style: StrokeStyle(lineWidth: 13, lineCap: .round))
+        g.stroke(shaft, with: .color(StorybookArt.color(woodHex)), style: StrokeStyle(lineWidth: 8.5, lineCap: .round))
+
+        // Glowing magic lavender crystal knob at handle tip.
+        let knobRect = CGRect(x: end.x - 13, y: end.y - 13, width: 26, height: 26)
+        StorybookArt.shape(g, Path(ellipseIn: knobRect), hex: 0xC990FF, width: 2.5)
+        StorybookArt.highlight(g, in: CGRect(x: end.x - 7, y: end.y - 9, width: 8, height: 6), opacity: 0.75)
+
+        // Flat wooden stirring blade.
         var b = g
         b.translateBy(x: blade.x, y: blade.y)
         b.rotate(by: .radians(Double(atan2(uy, ux)) + .pi / 2))
-        let paddle = Path(roundedRect: CGRect(x: -17, y: -34, width: 34, height: 54), cornerRadius: 15)
-        b.fill(paddle, with: .color(wood.c()))
-        b.stroke(paddle, with: .color(woodDark.c()), lineWidth: 3)
-        b.fill(Path(roundedRect: CGRect(x: -10, y: -26, width: 6, height: 36), cornerRadius: 3), with: .color(.white.opacity(0.25)))
+        let paddle = Path(roundedRect: CGRect(x: -16, y: -30, width: 32, height: 48), cornerRadius: 14)
+        StorybookArt.shape(b, paddle, hex: woodHex, width: 3)
+        StorybookArt.highlight(b, in: CGRect(x: -9, y: -22, width: 6, height: 30), opacity: 0.3)
     }
 
-    // MARK: Burner, tripod, drain, crate
+    private static func drawGlitter(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        guard !sim.glitter.isEmpty else { return }
+        var shine = Path()
+        for gl in sim.glitter {
+            let tw = 0.5 + 0.5 * sin(gl.phase * 2.3 + t * 4.2)
+            let s = gl.size * (0.7 + 0.6 * tw)
+            g.fill(Path(ellipseIn: CGRect(x: gl.p.x - s, y: gl.p.y - s, width: s * 2, height: s * 2)), with: .color(gl.color.c()))
+            if tw > 0.88 {
+                let r = s * 2.8
+                shine.addPath(Twinkle().path(in: CGRect(x: gl.p.x - r, y: gl.p.y - r, width: r * 2, height: r * 2)))
+            }
+        }
+        g.fill(shine, with: .color(.white.opacity(0.92)))
+    }
 
-    private static func burner(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
-        // flames under the glass
-        let h = sim.heat
-        let base = CGPoint(x: 512, y: 664)
-        let size: CGFloat = h == 0 ? 0.22 : 0.45 + 0.28 * CGFloat(h)
-        let fl = g
-        for k in 0..<5 {
-            let fx = base.x + CGFloat(k - 2) * 15
-            let flick = sin(t * 17 + CGFloat(k) * 2.1) * 0.12 + sin(t * 29 + CGFloat(k)) * 0.06
-            let tall: CGFloat = h == 0 ? (k == 2 ? 14 : 0) : (34 + CGFloat(2 - abs(k - 2)) * 10) * size
-            let hgt = tall * (1 + flick)
-            guard hgt > 1 else { continue }
-            let w: CGFloat = h == 0 ? 5 : 9 + 2 * CGFloat(h)
-            var f = Path()
-            f.move(to: CGPoint(x: fx - w, y: base.y))
-            f.addQuadCurve(to: CGPoint(x: fx + sin(t * 9 + CGFloat(k)) * 4, y: base.y - hgt), control: CGPoint(x: fx - w * 1.1, y: base.y - hgt * 0.5))
-            f.addQuadCurve(to: CGPoint(x: fx + w, y: base.y), control: CGPoint(x: fx + w * 1.1, y: base.y - hgt * 0.5))
-            f.closeSubpath()
-            fl.fill(f, with: .linearGradient(Gradient(colors: [RGB(hex: "#5A8CFF").c(0.9), RGB(hex: "#FFB03A").c(0.95), RGB(hex: "#FF6A2A").c(0.0)]),
-                                             startPoint: CGPoint(x: fx, y: base.y), endPoint: CGPoint(x: fx, y: base.y - hgt)))
-            var core = Path()
-            core.move(to: CGPoint(x: fx - w * 0.45, y: base.y))
-            core.addQuadCurve(to: CGPoint(x: fx, y: base.y - hgt * 0.45), control: CGPoint(x: fx - w * 0.5, y: base.y - hgt * 0.2))
-            core.addQuadCurve(to: CGPoint(x: fx + w * 0.45, y: base.y), control: CGPoint(x: fx + w * 0.5, y: base.y - hgt * 0.2))
-            fl.fill(core, with: .color(RGB(hex: "#FFF3C0").c(0.8)))
+    private static func drawBurner(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        let base = PotionGeometry.burnerCenter
+
+        // `.off` renders ZERO flames (pilot-flame bug fixed!).
+        if sim.burner != .off {
+            let isBoil = sim.burner == .boil
+            let count = isBoil ? 5 : 3
+            let offset = isBoil ? 2 : 1
+            for k in 0..<count {
+                let fx = base.x + CGFloat(k - offset) * (isBoil ? 14 : 16)
+                let flick = sin(t * 16 + CGFloat(k) * 2.2) * 0.14 + sin(t * 27 + CGFloat(k)) * 0.06
+                let centerBoost = CGFloat(offset - abs(k - offset)) * (isBoil ? 8 : 5)
+                let hgt = ((isBoil ? 36 : 19) + centerBoost) * (1 + flick)
+                let w: CGFloat = isBoil ? 12 : 8.5
+                var f = Path()
+                f.move(to: CGPoint(x: fx - w, y: base.y - 4))
+                f.addQuadCurve(to: CGPoint(x: fx + sin(t * 10 + CGFloat(k)) * 4, y: base.y - 4 - hgt), control: CGPoint(x: fx - w * 1.1, y: base.y - 4 - hgt * 0.5))
+                f.addQuadCurve(to: CGPoint(x: fx + w, y: base.y - 4), control: CGPoint(x: fx + w * 1.1, y: base.y - 4 - hgt * 0.5))
+                f.closeSubpath()
+                g.fill(
+                    f,
+                    with: .linearGradient(
+                        Gradient(colors: [RGB(hex: "#5892FF").c(0.92), RGB(hex: "#FFB238").c(0.96), RGB(hex: "#FF5E28").c(0.15)]),
+                        startPoint: CGPoint(x: fx, y: base.y - 4),
+                        endPoint: CGPoint(x: fx, y: base.y - 4 - hgt)
+                    )
+                )
+                var core = Path()
+                core.move(to: CGPoint(x: fx - w * 0.45, y: base.y - 4))
+                core.addQuadCurve(to: CGPoint(x: fx, y: base.y - 4 - hgt * 0.48), control: CGPoint(x: fx - w * 0.5, y: base.y - 4 - hgt * 0.22))
+                core.addQuadCurve(to: CGPoint(x: fx + w * 0.45, y: base.y - 4), control: CGPoint(x: fx + w * 0.5, y: base.y - 4 - hgt * 0.22))
+                g.fill(core, with: .color(RGB(hex: "#FFF4C2").c(0.88)))
+            }
         }
-        // the burner
-        let body = CGRect(x: 470, y: 664, width: 84, height: 36)
-        g.fill(Path(roundedRect: body, cornerRadius: 10), with: .linearGradient(Gradient(colors: [brass.c(), brassDark.c()]), startPoint: CGPoint(x: 0, y: body.minY), endPoint: CGPoint(x: 0, y: body.maxY)))
-        g.fill(Path(roundedRect: CGRect(x: 480, y: 658, width: 64, height: 10), cornerRadius: 4), with: .color(brassDark.c()))
-        g.fill(Path(roundedRect: CGRect(x: 476, y: 668, width: 70, height: 5), cornerRadius: 2), with: .color(.white.opacity(0.35)))
-        // the knob: turn it up for a bigger fire
-        let k = PotionGeometry.knob
-        let R = PotionGeometry.knobRadius
-        g.fill(Path(ellipseIn: CGRect(x: k.x - R - 4, y: k.y - R - 4, width: (R + 4) * 2, height: (R + 4) * 2)), with: .color(brassDark.c()))
-        g.fill(Path(ellipseIn: CGRect(x: k.x - R, y: k.y - R, width: R * 2, height: R * 2)),
-               with: .radialGradient(Gradient(colors: [RGB(hex: "#FF9AC4").c(), RGB(hex: "#E2558F").c()]), center: CGPoint(x: k.x - 8, y: k.y - 10), startRadius: 2, endRadius: R))
-        // dots for each heat, lit up to the current one
-        for i in 0...3 {
-            let a = -Double.pi * 0.75 + Double(i) * Double.pi * 0.5
-            let p = CGPoint(x: k.x + (R + 12) * CGFloat(cos(a)), y: k.y + (R + 12) * CGFloat(sin(a)))
-            let on = i <= h && h > 0
-            g.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10)), with: .color(on ? RGB(hex: "#FFB03A").c() : .white.opacity(0.5)))
+
+        // Brass burner body.
+        let nozzle = Path(roundedRect: CGRect(x: base.x - 32, y: base.y - 8, width: 64, height: 10), cornerRadius: 4)
+        StorybookArt.shape(g, nozzle, hex: brassDarkHex, width: 2.5)
+        let body = Path(roundedRect: CGRect(x: base.x - 40, y: base.y, width: 80, height: 28), cornerRadius: 10)
+        StorybookArt.shape(g, body, hex: brassHex, width: 3)
+        StorybookArt.highlight(g, in: CGRect(x: base.x - 30, y: base.y + 4, width: 52, height: 5), opacity: 0.42)
+    }
+
+    private static func drawFlameDial(_ g: GraphicsContext, sim: PotionSim) {
+        let k = PotionGeometry.dialCenter
+        let R = PotionGeometry.dialRadius
+
+        // Outer brass bezel.
+        StorybookArt.shape(g, Path(ellipseIn: CGRect(x: k.x - R - 5, y: k.y - R - 5, width: (R + 5) * 2, height: (R + 5) * 2)), hex: brassHex, width: 3)
+
+        // Chunky pink/coral dial face.
+        let dialColor: UInt32 = sim.burner == .boil ? 0xFF7048 : (sim.burner == .simmer ? 0xFFA25A : 0xFF8FB8)
+        StorybookArt.shape(g, Path(ellipseIn: CGRect(x: k.x - R, y: k.y - R, width: R * 2, height: R * 2)), hex: dialColor, width: 2.5)
+        StorybookArt.highlight(g, in: CGRect(x: k.x - 16, y: k.y - 20, width: 22, height: 12), opacity: 0.38)
+
+        // 3 clear flame indicator pips around top arc: off (left), simmer (top), boil (right).
+        let angles: [Double] = [-.pi * 0.82, -.pi * 0.5, -.pi * 0.18]
+        for (idx, a) in angles.enumerated() {
+            let p = CGPoint(x: k.x + (R + 13) * CGFloat(cos(a)), y: k.y + (R + 13) * CGFloat(sin(a)))
+            let lit = idx <= sim.burner.rawValue && sim.burner != .off
+            let dot = Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12))
+            StorybookArt.fillAndStroke(
+                g,
+                dot,
+                fill: lit ? Color(hex: 0xFFB838) : Color.white.opacity(0.85),
+                stroke: StorybookArt.outline(for: lit ? 0xFF8C2A : brassHex),
+                width: 2
+            )
         }
-        let a = -Double.pi * 0.75 + Double(h) * Double.pi * 0.5
+
+        // Pointer notch pointing directly at the active step.
+        let activeA = angles[sim.burner.rawValue]
         var pointer = Path()
-        pointer.move(to: k)
-        pointer.addLine(to: CGPoint(x: k.x + (R - 6) * CGFloat(cos(a)), y: k.y + (R - 6) * CGFloat(sin(a))))
-        g.stroke(pointer, with: .color(.white), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-        // a little flame on the knob, so she knows what it does
-        var icon = Path()
-        icon.move(to: CGPoint(x: k.x - 7, y: k.y + 12))
-        icon.addQuadCurve(to: CGPoint(x: k.x, y: k.y - 4), control: CGPoint(x: k.x - 9, y: k.y + 2))
-        icon.addQuadCurve(to: CGPoint(x: k.x + 7, y: k.y + 12), control: CGPoint(x: k.x + 9, y: k.y + 2))
-        icon.closeSubpath()
-        g.fill(icon, with: .color(RGB(hex: "#FFE07A").c(0.9)))
+        pointer.move(to: CGPoint(x: k.x + 8 * CGFloat(cos(activeA)), y: k.y + 8 * CGFloat(sin(activeA))))
+        pointer.addLine(to: CGPoint(x: k.x + (R - 5) * CGFloat(cos(activeA)), y: k.y + (R - 5) * CGFloat(sin(activeA))))
+        g.stroke(pointer, with: .color(.white), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+
+        // Flame icon centered on dial face.
+        var flame = Path()
+        flame.move(to: CGPoint(x: k.x - 7, y: k.y + 11))
+        flame.addQuadCurve(to: CGPoint(x: k.x, y: k.y - 6), control: CGPoint(x: k.x - 10, y: k.y + 1))
+        flame.addQuadCurve(to: CGPoint(x: k.x + 7, y: k.y + 11), control: CGPoint(x: k.x + 10, y: k.y + 1))
+        flame.closeSubpath()
+        g.fill(flame, with: .color(sim.burner == .off ? .white.opacity(0.65) : Theme.lemon))
     }
 
-    private static func tripod(_ g: GraphicsContext, front: Bool) {
-        let ring = CGRect(x: 384, y: 590, width: 256, height: 24)
+    private static func drawTripod(_ g: GraphicsContext, front: Bool) {
+        let C = PotionGeometry.cauldronCenter
+        let ring = CGRect(x: C.x - 104, y: C.y + 102, width: 208, height: 22)
         var half = Path()
-        let n = 24
+        let n = 22
         for k in 0...n {
             let a = (front ? 0 : Double.pi) + Double.pi * Double(k) / Double(n)
             let p = CGPoint(x: ring.midX + ring.width / 2 * CGFloat(cos(a)), y: ring.midY + ring.height / 2 * CGFloat(sin(a)))
             if k == 0 { half.move(to: p) } else { half.addLine(to: p) }
         }
-        g.stroke(half, with: .color(brassDark.c()), style: StrokeStyle(lineWidth: 9, lineCap: .round))
-        g.stroke(half, with: .color(brass.c()), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+        g.stroke(half, with: .color(StorybookArt.outline(for: brassHex)), style: StrokeStyle(lineWidth: 9.5, lineCap: .round))
+        g.stroke(half, with: .color(StorybookArt.color(brassHex)), style: StrokeStyle(lineWidth: 5.5, lineCap: .round))
         if front {
             var legs = Path()
-            legs.move(to: CGPoint(x: 388, y: 604)); legs.addLine(to: CGPoint(x: 364, y: PotionGeometry.tableY))
-            legs.move(to: CGPoint(x: 636, y: 604)); legs.addLine(to: CGPoint(x: 660, y: PotionGeometry.tableY))
-            g.stroke(legs, with: .color(brassDark.c()), style: StrokeStyle(lineWidth: 10, lineCap: .round))
-            g.stroke(legs, with: .color(brass.c()), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            legs.move(to: CGPoint(x: ring.minX + 4, y: ring.midY + 4))
+            legs.addLine(to: CGPoint(x: ring.minX - 18, y: PotionGeometry.tableY + 2))
+            legs.move(to: CGPoint(x: ring.maxX - 4, y: ring.midY + 4))
+            legs.addLine(to: CGPoint(x: ring.maxX + 18, y: PotionGeometry.tableY + 2))
+            g.stroke(legs, with: .color(StorybookArt.outline(for: brassHex)), style: StrokeStyle(lineWidth: 10, lineCap: .round))
+            g.stroke(legs, with: .color(StorybookArt.color(brassHex)), style: StrokeStyle(lineWidth: 5.5, lineCap: .round))
         }
     }
 
-    private static func drain(_ g: GraphicsContext, _ sim: PotionSim) {
-        // a glass pipe from the bottom of the flask, a brass tap, into the bucket
+    private static func drawDrainPipeAndValve(_ g: GraphicsContext, sim: PotionSim) {
+        let v = PotionGeometry.valveCenter
+        let mouth = PotionGeometry.drainMouth
+
+        // Horizontal glass drain pipe from bottom-right of cauldron to catch basin.
         var pipe = Path()
-        pipe.move(to: CGPoint(x: 556, y: 636))
-        pipe.addQuadCurve(to: CGPoint(x: 640, y: 652), control: CGPoint(x: 580, y: 652))
-        pipe.addLine(to: CGPoint(x: PotionGeometry.drainMouth.x - 8, y: 652))
-        pipe.addQuadCurve(to: CGPoint(x: PotionGeometry.drainMouth.x, y: 664), control: CGPoint(x: PotionGeometry.drainMouth.x, y: 652))
-        g.stroke(pipe, with: .color(glassLine.c(0.9)), style: StrokeStyle(lineWidth: 14, lineCap: .round))
-        g.stroke(pipe, with: .color(.white.opacity(0.35)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
-        if sim.draining && sim.volume > 1 {
-            let (c, a) = sim.colorAt(CGPoint(x: PotionGeometry.C.x + 40, y: PotionGeometry.bottomY - 14))
-            g.stroke(pipe, with: .color(PIngredient.water.color.mix(c, Double(min(1, a * 2))).c(0.85)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+        pipe.move(to: CGPoint(x: PotionGeometry.cauldronCenter.x + 62, y: PotionGeometry.bottomY - 8))
+        pipe.addQuadCurve(to: CGPoint(x: v.x - 16, y: v.y), control: CGPoint(x: PotionGeometry.cauldronCenter.x + 76, y: v.y))
+        pipe.addLine(to: CGPoint(x: mouth.x - 8, y: v.y))
+        pipe.addQuadCurve(to: CGPoint(x: mouth.x, y: mouth.y + 10), control: CGPoint(x: mouth.x, y: v.y))
+        g.stroke(pipe, with: .color(glassLine.c(0.92)), style: StrokeStyle(lineWidth: 13, lineCap: .round))
+        g.stroke(pipe, with: .color(.white.opacity(0.38)), style: StrokeStyle(lineWidth: 7.5, lineCap: .round))
+        if sim.draining && sim.volume > 10 {
+            let (mc, ma) = sim.meanColor()
+            let col = PotionColor.clearWater.mix(mc, Double(min(1, ma * 1.8)))
+            g.stroke(pipe, with: .color(col.c(0.88)), style: StrokeStyle(lineWidth: 6.5, lineCap: .round))
         }
-        // the tap: a big lever, sideways when shut, along the pipe when open
-        let v = PotionGeometry.valve
-        g.fill(Path(ellipseIn: CGRect(x: v.x - 15, y: v.y - 15, width: 30, height: 30)), with: .color(brassDark.c()))
-        g.fill(Path(ellipseIn: CGRect(x: v.x - 11, y: v.y - 11, width: 22, height: 22)), with: .color(brass.c()))
+
+        // Brass valve hub.
+        StorybookArt.shape(g, Path(ellipseIn: CGRect(x: v.x - 15, y: v.y - 15, width: 30, height: 30)), hex: brassHex, width: 3)
+
+        // Fixed lever: perpendicular (vertical up, angle = 0) when shut, inline with horizontal pipe (angle = +pi/2) when open!
         var lever = g
         lever.translateBy(x: v.x, y: v.y)
-        lever.rotate(by: .radians(sim.draining ? 0 : -.pi / 2))
-        let handle = Path(roundedRect: CGRect(x: -6, y: -44, width: 12, height: 44), cornerRadius: 6)
-        lever.fill(handle, with: .color(RGB(hex: "#7FD3F2").c()))
-        lever.stroke(handle, with: .color(RGB(hex: "#3D8FB8").c()), lineWidth: 2.5)
-        lever.fill(Path(ellipseIn: CGRect(x: -11, y: -54, width: 22, height: 22)), with: .color(RGB(hex: "#7FD3F2").c()))
-        lever.stroke(Path(ellipseIn: CGRect(x: -11, y: -54, width: 22, height: 22)), with: .color(RGB(hex: "#3D8FB8").c()), lineWidth: 2.5)
+        lever.rotate(by: .radians(Double(sim.valveAngle)))
+        let handle = Path(roundedRect: CGRect(x: -6, y: -42, width: 12, height: 42), cornerRadius: 6)
+        StorybookArt.shape(lever, handle, hex: 0x7ED8F8, width: 2.5)
+        let knob = Path(ellipseIn: CGRect(x: -11, y: -52, width: 22, height: 22))
+        StorybookArt.shape(lever, knob, hex: 0x7ED8F8, width: 2.5)
+        StorybookArt.highlight(lever, in: CGRect(x: -6, y: -48, width: 8, height: 6), opacity: 0.65)
     }
 
-    private static func bucket(_ g: GraphicsContext, _ sim: PotionSim) {
-        let b = PotionGeometry.bucket
+    private static func drawBasin(_ g: GraphicsContext, sim: PotionSim) {
+        let b = PotionGeometry.basinRect
         var body = Path()
         body.move(to: CGPoint(x: b.minX, y: b.minY))
         body.addLine(to: CGPoint(x: b.maxX, y: b.minY))
-        body.addLine(to: CGPoint(x: b.maxX - 8, y: b.maxY))
-        body.addLine(to: CGPoint(x: b.minX + 8, y: b.maxY))
+        body.addLine(to: CGPoint(x: b.maxX - 6, y: b.maxY))
+        body.addLine(to: CGPoint(x: b.minX + 6, y: b.maxY))
         body.closeSubpath()
-        g.fill(body, with: .linearGradient(Gradient(colors: [RGB(hex: "#D9A27A").c(), RGB(hex: "#B07450").c()]), startPoint: CGPoint(x: b.minX, y: 0), endPoint: CGPoint(x: b.maxX, y: 0)))
-        var bands = Path()
-        bands.move(to: CGPoint(x: b.minX + 3, y: b.minY + 12)); bands.addLine(to: CGPoint(x: b.maxX - 3, y: b.minY + 12))
-        bands.move(to: CGPoint(x: b.minX + 6, y: b.maxY - 10)); bands.addLine(to: CGPoint(x: b.maxX - 6, y: b.maxY - 10))
-        g.stroke(bands, with: .color(brassDark.c()), lineWidth: 4)
-        let mouth = CGRect(x: b.minX, y: b.minY - 6, width: b.width, height: 12)
-        g.fill(Path(ellipseIn: mouth), with: .color(RGB(hex: "#6A4030").c()))
-        if sim.bucketFill > 0.02 {
-            g.fill(Path(ellipseIn: mouth.insetBy(dx: 5, dy: 2)), with: .color(sim.bucketColor.c(0.5 + 0.4 * Double(sim.bucketFill))))
+        StorybookArt.shape(g, body, hex: 0xC6926A, width: 2.5)
+        let mouth = CGRect(x: b.minX, y: b.minY - 5, width: b.width, height: 10)
+        g.fill(Path(ellipseIn: mouth), with: .color(Color(hex: 0x6A4230)))
+        if sim.basinFill > 0.02 {
+            g.fill(Path(ellipseIn: mouth.insetBy(dx: 4, dy: 2)), with: .color(sim.basinColor.c(0.55 + 0.4 * Double(sim.basinFill))))
         }
-        g.stroke(Path(ellipseIn: mouth), with: .color(RGB(hex: "#E8B88A").c()), lineWidth: 3)
+        g.stroke(Path(ellipseIn: mouth), with: .color(Color(hex: 0xECC294)), lineWidth: 2.5)
     }
 
-    private static func crate(_ g: GraphicsContext, _ sim: PotionSim) {
-        let c = PotionGeometry.crate
-        // three empty bottles standing in it
-        for k in 0..<3 {
-            let x = c.minX + 48 + CGFloat(k) * 58
-            PotionBottlePainter.empty(g, center: CGPoint(x: x, y: c.minY + 34 - CGFloat(k % 2) * 4), angle: 0, scale: 0.72)
+    // MARK: Right Stage — Cozy 5-Slot Tasting Stand
+
+    private static func drawTastingStand(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        let x0: CGFloat = 758
+        let x1: CGFloat = 992
+        let topY = PotionGeometry.standShelfTopY
+        let botY = PotionGeometry.standShelfBottomY
+
+        // Back decorative pastel arch board behind the shelves.
+        let backBoard = Path(roundedRect: CGRect(x: x0 + 8, y: 342, width: x1 - x0 - 16, height: PotionGeometry.tableY - 342), cornerRadius: 26)
+        StorybookArt.fillAndStroke(
+            g,
+            backBoard,
+            fill: Color(hex: 0xEAD9FF).opacity(Double(0.52 - 0.22 * sim.night)),
+            stroke: StorybookArt.outline(for: woodHex),
+            width: 3.5
+        )
+
+        // Side wooden uprights.
+        for ux in [x0 + 4, x1 - 18] {
+            let post = Path(roundedRect: CGRect(x: ux, y: 348, width: 14, height: PotionGeometry.tableY - 348), cornerRadius: 6)
+            StorybookArt.shape(g, post, hex: woodDarkHex, width: 2.5)
         }
-        let front = CGRect(x: c.minX, y: c.minY + 34, width: c.width, height: c.height - 34)
-        g.fill(Path(roundedRect: front, cornerRadius: 6), with: .color(wood.c()))
-        var slats = Path()
-        slats.move(to: CGPoint(x: front.minX + 6, y: front.midY)); slats.addLine(to: CGPoint(x: front.maxX - 6, y: front.midY))
-        g.stroke(slats, with: .color(woodDark.c()), lineWidth: 3)
-        g.stroke(Path(roundedRect: front, cornerRadius: 6), with: .color(woodDark.c()), lineWidth: 3)
-        // a picture of an empty bottle on the front
-        PotionBottlePainter.empty(g, center: CGPoint(x: front.midX, y: front.midY + 2), angle: 0, scale: 0.3)
+
+        // Two wooden shelves.
+        for sy in [topY, botY] {
+            let shelf = Path(roundedRect: CGRect(x: x0 - 4, y: sy, width: x1 - x0 + 8, height: 16), cornerRadius: 6)
+            StorybookArt.shape(g, shelf, hex: woodHex, width: 3)
+            StorybookArt.highlight(g, in: CGRect(x: x0 + 6, y: sy + 2.5, width: x1 - x0 - 12, height: 4), opacity: 0.35)
+        }
+
+        // Recessed coaster rings for all 5 slots.
+        for spot in PotionGeometry.standSlots {
+            let coaster = CGRect(x: spot.x - 24, y: spot.y + 36, width: 48, height: 10)
+            g.fill(Path(ellipseIn: coaster), with: .color(StorybookArt.outline(for: woodHex).opacity(0.35)))
+        }
+
+        // Filled corked bottles on the Tasting Stand.
+        let hidden = sim.hiddenStandIndices
+        for (i, bottle) in sim.stand.enumerated() where !hidden.contains(i) && i < PotionGeometry.standSlots.count {
+            let spot = PotionGeometry.standSlots[i]
+            let bob = sin(t * 2.2 + CGFloat(i) * 1.4) * 1.5
+            PotionBottlePainter.draw(
+                g,
+                bottle: bottle,
+                center: CGPoint(x: spot.x, y: spot.y + bob),
+                angle: 0,
+                scale: PotionGeometry.standBottleScale,
+                time: t
+            )
+        }
     }
 
-    // MARK: The empty bottle being dipped
+    // MARK: Drops, Pieces, Pour Arcs, Flyers, Motes & Dragged Items
 
-    static func dipBottle(_ g: GraphicsContext, _ sim: PotionSim) {
-        let s = PotionSim.heldScale
-        let poly = PPoly.transform(PBottleShape.round.outline, at: sim.heldPos, angle: 0, scale: s)
-        if sim.dipFill > 0.01 {
-            let lvl = PPoly.level(poly, fill: sim.dipFill)
-            let liq = PPoly.below(poly, lvl)
-            var lp = Path()
-            lp.addLines(liq)
-            lp.closeSubpath()
-            g.fill(lp, with: .color(sim.dipColor.c(0.9)))
-        }
-        PotionBottlePainter.glass(g, poly: poly, center: sim.heldPos, angle: 0, scale: s, shape: .round)
-    }
-
-    // MARK: Ingredients on the shelves (and in her hand)
-
-    static func drawIngredient(_ g: GraphicsContext, _ ing: PIngredient, center: CGPoint, angle: CGFloat, scale: CGFloat, fill: CGFloat, time t: CGFloat) {
-        if ing.isLiquid {
-            let shape = PotionSimShapes.shape(ing)
-            PotionBottlePainter.liquidBottle(g, shape: shape, center: center, angle: angle, scale: scale, fill: fill, color: ing.color,
-                                             alpha: ing == .water ? 0.35 : 0.92, glow: ing == .moon ? 0.6 : (ing == .dragon ? 0.4 : 0), time: t)
-            PotionBottlePainter.label(g, ing, center: center, angle: angle, scale: scale)
-            PotionBottlePainter.cork(g, shape: shape, center: center, angle: angle, scale: scale, on: abs(angle) < 0.4)
-        } else {
-            jar(g, ing, center: center, angle: angle, scale: scale, time: t)
+    private static func drawDrops(_ g: GraphicsContext, sim: PotionSim) {
+        for dp in sim.drops {
+            let rect = CGRect(x: dp.p.x - dp.r, y: dp.p.y - dp.r * 1.25, width: dp.r * 2, height: dp.r * 2.5)
+            g.fill(Path(ellipseIn: rect), with: .color(dp.color.c(0.92)))
+            g.fill(Path(ellipseIn: CGRect(x: dp.p.x - dp.r * 0.4, y: dp.p.y - dp.r * 0.7, width: dp.r * 0.6, height: dp.r * 0.6)), with: .color(.white.opacity(0.75)))
         }
     }
 
-    static let jarOutline: [CGPoint] = {
-        var p: [CGPoint] = [CGPoint(x: 26, y: -62), CGPoint(x: 26, y: -48), CGPoint(x: 36, y: -40)]
-        p.append(CGPoint(x: 38, y: 48))
-        for k in 0...6 {
-            let a = Double.pi * Double(k) / 6
-            p.append(CGPoint(x: 28 * CGFloat(cos(a)), y: 48 + 10 * CGFloat(sin(a))))
+    private static func drawAirPieces(_ g: GraphicsContext, sim: PotionSim) {
+        for pc in sim.pieces where pc.state == .air {
+            drawPiece(g, pc, alpha: 1)
         }
-        p.append(CGPoint(x: -38, y: 48))
-        p.append(CGPoint(x: -36, y: -40))
-        p.append(CGPoint(x: -26, y: -48))
-        p.append(CGPoint(x: -26, y: -62))
-        return p
-    }()
+    }
 
-    static func jar(_ g: GraphicsContext, _ ing: PIngredient, center: CGPoint, angle: CGFloat, scale: CGFloat, time t: CGFloat,
-                    contents: ((GraphicsContext, CGPoint) -> Void)? = nil) {
+    private static func drawPiece(_ g: GraphicsContext, _ pc: PPiece, alpha: Double) {
+        let k = 1 - pc.dissolve * 0.65
+        let a = alpha * Double(1 - pc.dissolve * 0.8)
+        guard a > 0.02 else { return }
+        if pc.kind == .rainbowMane {
+            let pts = pc.trail.isEmpty ? [pc.p, CGPoint(x: pc.p.x + 18, y: pc.p.y + 4)] : pc.trail
+            var l = g
+            l.opacity = a
+            for i in 0..<(pts.count - 1) {
+                var s = Path()
+                s.move(to: pts[i])
+                s.addLine(to: pts[i + 1])
+                l.stroke(s, with: .color(PotionColor.hue(CGFloat(i) / CGFloat(max(1, pts.count))).c()), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+            }
+            return
+        }
         var l = g
-        l.translateBy(x: center.x, y: center.y)
-        l.rotate(by: .radians(Double(angle)))
-        l.scaleBy(x: scale, y: scale)
-        var body = Path()
-        body.addLines(jarOutline)
-        body.closeSubpath()
-        l.fill(body, with: .color(.white.opacity(0.28)))
-        // what's in it: a heap at the bottom (or at the lid, turned over)
-        var inner = l
-        inner.clip(to: body)
-        let flipped = abs(angle) > 1.6
-        for k in 0..<14 {
-            let col = CGFloat(k % 5), row = CGFloat(k / 5)
-            let x = -26 + col * 13 + (row.truncatingRemainder(dividingBy: 2)) * 6
-            let y = flipped ? -40 + row * 13 : 44 - row * 13
-            if let contents { contents(inner,CGPoint(x:x,y:y)); continue }
-            let pc = PPiece(kind: ing, p: CGPoint(x: x, y: y), v: .zero, ang: CGFloat(k) * 1.3, spin: 0, seed: k, trail: ing == .hair ? (0..<10).map { CGPoint(x: x - 10 + CGFloat($0) * 2.5, y: y + sin(CGFloat($0) * 0.9 + CGFloat(k)) * 5) } : [])
-            if ing == .hair && k > 4 { continue }
-            PieceArt.draw(inner, pc, alpha: 1)
-        }
-        l.fill(Path(roundedRect: CGRect(x: -30, y: -36, width: 9, height: 70), cornerRadius: 4), with: .color(.white.opacity(0.45)))
-        l.stroke(body, with: .color(glassLine.c(0.95)), lineWidth: 3)
-        // the lid
-        let lidColor: RGB
-        switch ing {
-        case .stars: lidColor = RGB(hex: "#FFC93A")
-        case .petals: lidColor = RGB(hex: "#FF7FAE")
-        case .berries: lidColor = RGB(hex: "#4A72FF")
-        case .frost: lidColor = RGB(hex: "#7FD8F2")
-        case .hair: lidColor = RGB(hex: "#C58CFF")
-        default: lidColor = RGB(hex: "#9C7BFF")
-        }
-        let lid = Path(roundedRect: CGRect(x: -30, y: -72, width: 60, height: 18), cornerRadius: 6)
-        l.fill(lid, with: .color(lidColor.c()))
-        l.stroke(lid, with: .color(lidColor.mul(0.7, 0.6, 0.75).c()), lineWidth: 2.5)
-        l.fill(Path(roundedRect: CGRect(x: -24, y: -69, width: 48, height: 4), cornerRadius: 2), with: .color(.white.opacity(0.45)))
+        l.translateBy(x: pc.p.x, y: pc.p.y)
+        l.rotate(by: .radians(Double(pc.ang)))
+        l.scaleBy(x: k * 0.42, y: k * 0.42)
+        l.opacity = a
+        IngredientIconPainter.drawEmblem(l, kind: pc.kind, center: .zero, radius: 26)
     }
 
-    // MARK: The unicorn
-
-    static let unicornLook = PetLook(kind: "unicorn")
-
-    static func unicorn(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
-        let u = sim.uni
-        let feet = CGPoint(x: PotionGeometry.unicornFeet.x, y: PotionGeometry.unicornFeet.y + u.floatY + u.hop)
-        let k = PotionGeometry.unicornScale
-        // a soft shadow on the table
-        let lift = min(1, -(u.floatY + u.hop) / 140)
-        g.fill(Path(ellipseIn: CGRect(x: PotionGeometry.unicornFeet.x - 90 * (1 - lift * 0.4), y: PotionGeometry.unicornFeet.y - 10, width: 180 * (1 - lift * 0.4), height: 18)),
-               with: .color(Theme.ink.opacity(0.16 * Double(1 - lift * 0.6))))
-        // glowing
-        if u.glow > 0 {
-            var gl = g
-            gl.blendMode = .plusLighter
-            let a = Double(min(1, u.glow / 2)) * (0.35 + 0.1 * sin(Double(t) * 3))
-            let c = u.tintAmt > 0.1 ? u.tint : RGB(hex: "#FFF4C8")
-            gl.fill(Path(ellipseIn: CGRect(x: feet.x - 150, y: feet.y - 260, width: 300, height: 280)),
-                    with: .radialGradient(Gradient(colors: [c.c(a), .clear]), center: CGPoint(x: feet.x, y: feet.y - 110), startRadius: 20, endRadius: 150))
-        }
-        var pet = unicornLook
-        pet.glitter = u.glitter > 0
-        var pose = PetPose()
-        pose.time = Double(t)
-        if u.sleepy > 0 {
-            pose.eyes = u.sleepy > 7 ? "tired" : "blink"
-            pose.mouth = u.sleepy > 7 ? "o" : "smile"
-        } else if u.hicKick > 0.2 {
-            pose.eyes = "wince"; pose.mouth = "o"
-        } else if u.giggle > 0 || u.love > 0 {
-            pose.eyes = "happy"; pose.mouth = "grin"
-        } else if u.glitter > 0 || u.glow > 0 || u.rainbow > 0 {
-            pose.eyes = "sparkle"; pose.mouth = "grin"
-        } else if u.frost > 0 {
-            pose.eyes = "wince"; pose.mouth = "wavy"
-        } else if u.float > 0 {
-            pose.eyes = "sparkle"; pose.mouth = "o"
-        } else if u.blink < 0 {
-            pose.eyes = "blink"
-        }
-        let head = CGPoint(x: feet.x, y: feet.y - (PetArt.feetY - PetArt.headCenter.y) * k)
-        let lx = max(-1, min(1, (u.look.x - head.x) / 300)), ly = max(-1, min(1, (u.look.y - head.y) / 300))
-        pose.look = CGSize(width: lx * 7, height: ly * 5)
-        pose.squash = 1 + 0.012 * sin(t * 2.2) - (u.hicKick * 0.06) + (u.hopV < -100 ? 0.04 : 0)
-        var tilt = 0.0
-        if u.shake > 0 { tilt += sin(Double(t) * 34) * 9 * Double(min(1, u.shake * 2)) }
-        if u.frost > 0 { tilt += sin(Double(t) * 50) * 2 }
-        if u.sleepy > 0 { tilt += 6 * Double(min(1, u.sleepy)) }
-        pose.tilt = tilt
-        var shading: GraphicsContext.Shading?
-        if u.rainbow > 0 {
-            let rainbow = ["#FF8FB8", "#FFB27A", "#FFE27A", "#8FE0A4", "#7FC8FF", "#B89CFF"].map { RGB(hex: $0).c() }
-            shading = .linearGradient(Gradient(colors: rainbow), startPoint: CGPoint(x: 120, y: 60), endPoint: CGPoint(x: 480, y: 620))
-        } else if u.frost > 0 {
-            shading = .color(RGB(hex: "#BFEFFF").c())
-        } else if u.tintAmt > 0.03 {
-            shading = .color(RGB(hex: "#FBF3FF").mix(u.tint, Double(min(1, u.tintAmt * 1.2))).c())
-        }
-        var pg = g
-        pg.translateBy(x: feet.x, y: feet.y)
-        pg.scaleBy(x: k, y: k)
-        pg.translateBy(x: -300, y: -PetArt.feetY)
-        PetPainter.draw(pet, pose: pose, furShading: shading, in: pg)
-        // floating in a big bubble
-        if u.float > 0 || u.floatY < -4 {
-            let c = CGPoint(x: feet.x, y: feet.y - 112)
-            let r: CGFloat = 138 + sin(t * 3) * 3
-            let bub = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r * 0.96, width: r * 2, height: r * 1.92))
-            let a = u.float > 0 ? 1.0 : 0.0
-            g.fill(bub, with: .radialGradient(Gradient(colors: [.clear, RGB(hex: "#BFEFFF").c(0.18 * a), RGB(hex: "#FFC2EC").c(0.35 * a)]),
-                                              center: c, startRadius: r * 0.5, endRadius: r))
-            g.stroke(bub, with: .linearGradient(Gradient(colors: [RGB(hex: "#9FE8FF").c(0.8 * a), RGB(hex: "#FFB8E8").c(0.8 * a), RGB(hex: "#FFE38A").c(0.8 * a)]),
-                                                startPoint: CGPoint(x: c.x - r, y: c.y - r), endPoint: CGPoint(x: c.x + r, y: c.y + r)), lineWidth: 3)
-            g.fill(Path(ellipseIn: CGRect(x: c.x - r * 0.6, y: c.y - r * 0.75, width: r * 0.42, height: r * 0.26)), with: .color(.white.opacity(0.7 * a)))
+    private static func drawPourArcs(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        for arc in sim.pourArcs {
+            let (p, angle) = sim.pourArcPosition(arc)
+            let fade: Double = arc.t > 0.82 ? Double(max(0, 1 - (arc.t - 0.82) / 0.18)) : 1
+            var ctx = g
+            ctx.opacity = fade
+            ctx.translateBy(x: p.x, y: p.y)
+            ctx.rotate(by: .radians(Double(angle)))
+            IngredientIconPainter.drawVessel(ctx, kind: arc.kind, center: .zero, scale: 0.78, time: t)
         }
     }
 
-    // MARK: Drops and streams
-
-    private static func drops(_ g: GraphicsContext, _ sim: PotionSim) {
-        var streams: [Int: [PDrop]] = [:]
-        var lone = Path()
-        var loneColors: [(Path, RGB)] = []
-        for d in sim.drops {
-            if d.stream >= 0 {
-                streams[d.stream, default: []].append(d)
-            } else {
-                var p = Path(ellipseIn: CGRect(x: d.p.x - d.r, y: d.p.y - d.r * 1.2, width: d.r * 2, height: d.r * 2.4))
-                if d.onGlass { p = Path(ellipseIn: CGRect(x: d.p.x - d.r, y: d.p.y - d.r * 1.5, width: d.r * 2, height: d.r * 3)) }
-                loneColors.append((p, d.color))
-                lone.addEllipse(in: CGRect(x: d.p.x - d.r * 0.4, y: d.p.y - d.r * 0.7, width: d.r * 0.6, height: d.r * 0.6))
-            }
-        }
-        for (p, c) in loneColors { g.fill(p, with: .color(c.c(0.85))) }
-        g.fill(lone, with: .color(.white.opacity(0.7)))
-        for (_, list) in streams {
-            guard let first = list.first else { continue }
-            // newest at the mouth, oldest at the front of the stream: draw along it, breaking at gaps
-            var seg: [PDrop] = []
-            func flush() {
-                guard seg.count > 1 else {
-                    if let d = seg.first { g.fill(Path(ellipseIn: CGRect(x: d.p.x - d.r, y: d.p.y - d.r, width: d.r * 2, height: d.r * 2)), with: .color(d.color.c(0.9))) }
-                    return
-                }
-                var p = Path()
-                p.addLines(seg.map(\.p))
-                let w = seg.map(\.r).reduce(0, +) / CGFloat(seg.count) * 2
-                g.stroke(p, with: .color(seg[seg.count / 2].color.c(first.ing == .water ? 0.55 : 0.92)), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
-                g.stroke(p.offsetBy(dx: -w * 0.2, dy: 0), with: .color(.white.opacity(0.45)), style: StrokeStyle(lineWidth: max(1, w * 0.22), lineCap: .round, lineJoin: .round))
-            }
-            for d in list {
-                if let last = seg.last, hypot(d.p.x - last.p.x, d.p.y - last.p.y) > 34 {
-                    flush()
-                    seg = []
-                }
-                seg.append(d)
-            }
-            flush()
+    private static func drawFlyers(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        for f in sim.flyers {
+            let (p, angle) = PotionSim.flyerPosition(f)
+            let scale = f.pouringOnCreature ? 0.84 : (0.86 + (PotionGeometry.standBottleScale - 0.86) * f.t)
+            PotionBottlePainter.draw(g, bottle: f.bottle, center: p, angle: angle, scale: scale, time: t, cork: !f.pouringOnCreature)
         }
     }
 
-    // MARK: Motes
+    private static func drawDraggedItems(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        if let drag = sim.draggedIngredient {
+            let tilt: CGFloat = drag.pos.y < 360 ? -0.9 : 0
+            var ctx = g
+            ctx.translateBy(x: drag.pos.x, y: drag.pos.y)
+            ctx.rotate(by: .radians(Double(tilt)))
+            IngredientIconPainter.drawVessel(ctx, kind: drag.kind, center: .zero, scale: 0.86, time: t)
+        }
+        if let dragB = sim.draggedStandBottle, let bottle = sim.stand[safe: dragB.index] {
+            PotionBottlePainter.draw(
+                g,
+                bottle: bottle,
+                center: dragB.pos,
+                angle: dragB.tilt,
+                scale: 0.86,
+                time: t,
+                cork: abs(dragB.tilt) < 0.35
+            )
+        }
+    }
 
-    private static func motes(_ g: GraphicsContext, _ sim: PotionSim, _ t: CGFloat) {
-        // the soft ones in a blurred layer
-        let soft = sim.motes.filter { $0.kind == .steam || $0.kind == .fog || $0.kind == .smoke }
+    private static func drawMotes(_ g: GraphicsContext, sim: PotionSim, t: CGFloat) {
+        let soft = sim.motes.filter { $0.kind == .steam || $0.kind == .fog }
         if !soft.isEmpty {
             g.drawLayer { l in
                 l.addFilter(.blur(radius: 7))
                 for m in soft {
                     let k = m.life / m.max
-                    let a: Double
-                    switch m.kind {
-                    case .fog: a = 0.55 * Double(min(1, k * 4) * (1 - k))
-                    case .smoke: a = 0.7 * Double(1 - k)
-                    default: a = 0.32 * Double(min(1, k * 5) * (1 - k))
-                    }
-                    l.fill(Path(ellipseIn: CGRect(x: m.p.x - m.size, y: m.p.y - m.size * 0.8, width: m.size * 2, height: m.size * 1.6)), with: .color(m.color.c(a)))
+                    let a = (m.kind == .fog ? 0.52 : 0.34) * Double(min(1, k * 4) * (1 - k))
+                    l.fill(
+                        Path(ellipseIn: CGRect(x: m.p.x - m.size, y: m.p.y - m.size * 0.8, width: m.size * 2, height: m.size * 1.6)),
+                        with: .color(m.color.c(a))
+                    )
                 }
             }
         }
@@ -915,14 +1125,14 @@ enum PotionPainter {
             let k = m.life / m.max
             let fade = Double(max(0, 1 - k))
             switch m.kind {
-            case .sparkle:
-                let s = m.size * (1 - k * 0.5)
-                g.fill(Twinkle().path(in: CGRect(x: m.p.x - s, y: m.p.y - s, width: s * 2, height: s * 2)), with: .color(m.color.c(fade)))
+            case .sparkle, .starOrbit:
+                StorybookArt.sparkle(g, at: m.p, radius: m.size * (1 - k * 0.45), color: m.color.c(), opacity: fade)
             case .heart:
-                let s = m.size
-                let r = CGRect(x: m.p.x - s, y: m.p.y - s, width: s * 2, height: s * 1.8)
-                g.fill(PetPainter.heartPath(in: r), with: .color(m.color.c(fade)))
-                g.stroke(PetPainter.heartPath(in: r), with: .color(.white.opacity(fade)), lineWidth: 2)
+                StorybookArt.heart(g, at: m.p, size: m.size * 1.6, color: m.color.c(), opacity: fade)
+            case .fireHeart:
+                // Harmless cartoon fire-heart burp!
+                StorybookArt.heart(g, at: m.p, size: m.size * 1.7, color: Color(hex: 0xFF6B3D), opacity: fade)
+                StorybookArt.heart(g, at: CGPoint(x: m.p.x, y: m.p.y + 2), size: m.size * 0.95, color: Theme.lemon, opacity: fade)
             case .snow:
                 var s = Path()
                 for a in 0..<3 {
@@ -930,13 +1140,17 @@ enum PotionPainter {
                     s.move(to: CGPoint(x: m.p.x - cos(ang) * m.size, y: m.p.y - sin(ang) * m.size))
                     s.addLine(to: CGPoint(x: m.p.x + cos(ang) * m.size, y: m.p.y + sin(ang) * m.size))
                 }
-                g.stroke(s, with: .color(.white.opacity(fade)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                g.stroke(s, with: .color(.white.opacity(fade)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
             case .soap:
                 let r = m.size
                 let c = CGRect(x: m.p.x - r, y: m.p.y - r, width: r * 2, height: r * 2)
-                g.fill(Path(ellipseIn: c), with: .color(.white.opacity(0.12 * fade)))
-                g.stroke(Path(ellipseIn: c), with: .linearGradient(Gradient(colors: [RGB(hex: "#9FE8FF").c(fade), RGB(hex: "#FFB8E8").c(fade)]), startPoint: CGPoint(x: c.minX, y: c.minY), endPoint: CGPoint(x: c.maxX, y: c.maxY)), lineWidth: 1.5)
-                g.fill(Path(ellipseIn: CGRect(x: c.minX + r * 0.4, y: c.minY + r * 0.35, width: r * 0.5, height: r * 0.35)), with: .color(.white.opacity(0.8 * fade)))
+                g.fill(Path(ellipseIn: c), with: .color(.white.opacity(0.14 * fade)))
+                g.stroke(
+                    Path(ellipseIn: c),
+                    with: .linearGradient(Gradient(colors: [Color(hex: 0x9FE8FF).opacity(fade), Color(hex: 0xFFB8E8).opacity(fade)]), startPoint: CGPoint(x: c.minX, y: c.minY), endPoint: CGPoint(x: c.maxX, y: c.maxY)),
+                    lineWidth: 1.8
+                )
+                g.fill(Path(ellipseIn: CGRect(x: c.minX + r * 0.38, y: c.minY + r * 0.32, width: r * 0.5, height: r * 0.34)), with: .color(.white.opacity(0.8 * fade)))
             case .zz:
                 let s = m.size
                 var z = Path()
@@ -947,46 +1161,211 @@ enum PotionPainter {
                 g.stroke(z, with: .color(m.color.c(fade)), style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
             case .flash:
                 let r = m.size
-                g.stroke(Path(ellipseIn: CGRect(x: m.p.x - r, y: m.p.y - r, width: r * 2, height: r * 2)), with: .color(m.color.c(fade * 0.9)), lineWidth: 10 * CGFloat(fade) + 1)
+                g.stroke(Path(ellipseIn: CGRect(x: m.p.x - r, y: m.p.y - r, width: r * 2, height: r * 2)), with: .color(m.color.c(fade * 0.9)), lineWidth: 10 * CGFloat(fade) + 1.5)
             case .drip:
                 let r = m.size * 0.5
-                g.fill(Path(ellipseIn: CGRect(x: m.p.x - r, y: m.p.y - r * 1.3, width: r * 2, height: r * 2.6)), with: .color(m.color.c(0.8 * fade)))
-            default:
+                g.fill(Path(ellipseIn: CGRect(x: m.p.x - r, y: m.p.y - r * 1.3, width: r * 2, height: r * 2.6)), with: .color(m.color.c(0.86 * fade)))
+            case .confetti:
+                var c = g
+                c.translateBy(x: m.p.x, y: m.p.y)
+                c.rotate(by: .radians(Double(t * 5 + m.spin)))
+                c.fill(Path(roundedRect: CGRect(x: -m.size * 0.55, y: -m.size * 0.32, width: m.size * 1.1, height: m.size * 0.64), cornerRadius: 2.5), with: .color(m.color.c(fade)))
+            case .steam, .fog:
                 break
             }
         }
     }
 }
 
-enum PotionSimShapes {
-    static func shape(_ ing: PIngredient) -> PBottleShape {
-        switch ing {
-        case .water: return .square
-        case .nectar: return .heart
-        case .mermaid: return .drop
-        case .dragon: return .diamond
-        case .moon: return .round
-        case .night: return .tall
-        default: return .square
+// MARK: - Crisp StorybookArt Ingredient Medallions & Pouring Vessels
+
+enum IngredientIconPainter {
+    static func drawEmblem(_ g: GraphicsContext, kind: PIngredient, center c: CGPoint, radius r: CGFloat) {
+        var ctx = g
+        ctx.translateBy(x: c.x, y: c.y)
+        let s = r / 26
+
+        switch kind {
+        case .fairyRose:
+            // Lush pink rose blossom + emerald leaves.
+            for side in [-1.0, 1.0] {
+                let leaf = Path(ellipseIn: CGRect(x: CGFloat(side) * 10 * s - 9 * s, y: 8 * s, width: 18 * s, height: 11 * s))
+                StorybookArt.shape(ctx, leaf, hex: 0x7ED88C, width: 2.2 * s)
+            }
+            for i in 0..<5 {
+                let a = CGFloat(i) / 5 * 2 * .pi - .pi / 2
+                let p = Path(ellipseIn: CGRect(x: cos(a) * 9 * s - 10 * s, y: sin(a) * 9 * s - 10 * s, width: 20 * s, height: 20 * s))
+                StorybookArt.shape(ctx, p, hex: 0xFF6BB2, width: 2.2 * s)
+            }
+            let bud = Path(ellipseIn: CGRect(x: -9 * s, y: -9 * s, width: 18 * s, height: 18 * s))
+            StorybookArt.shape(ctx, bud, hex: 0xFFA4D2, width: 2 * s)
+            StorybookArt.highlight(ctx, in: CGRect(x: -5 * s, y: -6 * s, width: 6 * s, height: 4 * s), opacity: 0.65)
+
+        case .mermaidWave:
+            // Turquoise sea-shell with pearl & curling white wave crest.
+            var shell = Path()
+            shell.move(to: CGPoint(x: -20 * s, y: 8 * s))
+            shell.addQuadCurve(to: CGPoint(x: 20 * s, y: 8 * s), control: CGPoint(x: 0, y: -34 * s))
+            shell.addLine(to: CGPoint(x: 8 * s, y: 18 * s))
+            shell.addLine(to: CGPoint(x: -8 * s, y: 18 * s))
+            shell.closeSubpath()
+            StorybookArt.shape(ctx, shell, hex: 0x36DDD0, width: 2.5 * s)
+            var ribs = Path()
+            for k in -2...2 {
+                ribs.move(to: CGPoint(x: 0, y: 15 * s))
+                ribs.addLine(to: CGPoint(x: CGFloat(k) * 7.5 * s, y: -7 * s))
+            }
+            ctx.stroke(ribs, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 2 * s, lineCap: .round))
+            let pearl = Path(ellipseIn: CGRect(x: -5 * s, y: 6 * s, width: 10 * s, height: 10 * s))
+            StorybookArt.fillAndStroke(ctx, pearl, fill: .white, stroke: Color(hex: 0x20A6A0), width: 1.5 * s)
+
+        case .starGlitter:
+            // Bold golden 5-point star + white twinkles.
+            let star = PetPainter.starPath(.zero, 23 * s)
+            StorybookArt.shape(ctx, star, hex: 0xFFD44A, width: 2.6 * s)
+            StorybookArt.highlight(ctx, in: CGRect(x: -8 * s, y: -11 * s, width: 10 * s, height: 7 * s), opacity: 0.65)
+            StorybookArt.sparkle(ctx, at: CGPoint(x: 17 * s, y: -15 * s), radius: 7 * s, color: .white, opacity: 0.95)
+            StorybookArt.sparkle(ctx, at: CGPoint(x: -18 * s, y: 14 * s), radius: 5.5 * s, color: Theme.lemon, opacity: 0.95)
+
+        case .rainbowMane:
+            // Vivid 5-band pastel rainbow arch + fluffy white cloud puffs.
+            let cols: [Color] = [Color(hex: 0xFF7CB4), Color(hex: 0xFFBC6A), Color(hex: 0xFFE672), Color(hex: 0x8CE2A8), Color(hex: 0x86C8FF)]
+            for (i, col) in cols.enumerated() {
+                let rad = CGFloat(21 - i * 3.4) * s
+                var arc = Path()
+                arc.addArc(center: CGPoint(x: 0, y: 10 * s), radius: rad, startAngle: .degrees(185), endAngle: .degrees(355), clockwise: false)
+                ctx.stroke(arc, with: .color(col), style: StrokeStyle(lineWidth: 4.2 * s, lineCap: .round))
+            }
+            for cx in [-15, 15] {
+                let puff = Path(ellipseIn: CGRect(x: CGFloat(cx) * s - 9 * s, y: 4 * s, width: 18 * s, height: 13 * s))
+                StorybookArt.fillAndStroke(ctx, puff, fill: .white, stroke: Color(hex: 0xC6B2EC), width: 2 * s)
+            }
+
+        case .frostFlake:
+            // Crisp 6-arm crystal snowflake with icy outline.
+            var arms = Path()
+            for i in 0..<3 {
+                let a = CGFloat(i) * .pi / 3
+                let dx = cos(a) * 21 * s
+                let dy = sin(a) * 21 * s
+                arms.move(to: CGPoint(x: -dx, y: -dy))
+                arms.addLine(to: CGPoint(x: dx, y: dy))
+            }
+            ctx.stroke(arms, with: .color(Color(hex: 0x4CB8E8)), style: StrokeStyle(lineWidth: 7 * s, lineCap: .round))
+            ctx.stroke(arms, with: .color(Color(hex: 0xE6FAFF)), style: StrokeStyle(lineWidth: 3.5 * s, lineCap: .round))
+            for i in 0..<6 {
+                let a = CGFloat(i) * .pi / 3
+                let tip = Path(ellipseIn: CGRect(x: cos(a) * 19 * s - 3.5 * s, y: sin(a) * 19 * s - 3.5 * s, width: 7 * s, height: 7 * s))
+                StorybookArt.shape(ctx, tip, hex: 0x90E8FF, width: 1.5 * s)
+            }
+            let core = Path(ellipseIn: CGRect(x: -6 * s, y: -6 * s, width: 12 * s, height: 12 * s))
+            StorybookArt.shape(ctx, core, hex: 0xC4F4FF, width: 2 * s)
+
+        case .bubbleBerry:
+            // Glossy cluster of 3 purple bubble berries + emerald leaf.
+            var leaf = Path()
+            leaf.move(to: CGPoint(x: 0, y: -12 * s))
+            leaf.addQuadCurve(to: CGPoint(x: 14 * s, y: -20 * s), control: CGPoint(x: 8 * s, y: -23 * s))
+            leaf.addQuadCurve(to: CGPoint(x: 0, y: -12 * s), control: CGPoint(x: 9 * s, y: -10 * s))
+            StorybookArt.shape(ctx, leaf, hex: 0x76D884, width: 2 * s)
+            let spots: [(CGFloat, CGFloat)] = [(-10, 4), (10, 4), (0, -6)]
+            for (bx, by) in spots {
+                let berry = Path(ellipseIn: CGRect(x: (bx - 11) * s, y: (by - 11) * s, width: 22 * s, height: 22 * s))
+                StorybookArt.shape(ctx, berry, hex: 0x9E6BFF, width: 2.4 * s)
+                StorybookArt.highlight(ctx, in: CGRect(x: (bx - 6) * s, y: (by - 7) * s, width: 7 * s, height: 5 * s), opacity: 0.72)
+            }
+
+        case .dragonChili:
+            // Playful glowing coral flame emblem!
+            var flame = Path()
+            flame.move(to: CGPoint(x: -16 * s, y: 15 * s))
+            flame.addQuadCurve(to: CGPoint(x: 0, y: -24 * s), control: CGPoint(x: -24 * s, y: -6 * s))
+            flame.addQuadCurve(to: CGPoint(x: 16 * s, y: 15 * s), control: CGPoint(x: 24 * s, y: -6 * s))
+            flame.addQuadCurve(to: CGPoint(x: -16 * s, y: 15 * s), control: CGPoint(x: 0, y: 24 * s))
+            flame.closeSubpath()
+            StorybookArt.shape(ctx, flame, hex: 0xFF6B3D, width: 2.6 * s)
+            var inner = Path()
+            inner.move(to: CGPoint(x: -8 * s, y: 13 * s))
+            inner.addQuadCurve(to: CGPoint(x: 0, y: -6 * s), control: CGPoint(x: -12 * s, y: 3 * s))
+            inner.addQuadCurve(to: CGPoint(x: 8 * s, y: 13 * s), control: CGPoint(x: 12 * s, y: 3 * s))
+            inner.closeSubpath()
+            ctx.fill(inner, with: .color(Theme.lemon))
+
+        case .sleepyLavender:
+            // Dreamy lilac crescent moon + tiny lavender buds + gold star!
+            let mRect = CGRect(x: -19 * s, y: -19 * s, width: 38 * s, height: 38 * s)
+            var moon = Path(ellipseIn: mRect)
+            moon.addEllipse(in: mRect.offsetBy(dx: 13 * s, dy: -6 * s))
+            ctx.fill(moon, with: .color(Color(hex: 0xB892FF)), style: FillStyle(eoFill: true))
+            ctx.stroke(moon, with: .color(StorybookArt.outline(for: 0xB892FF)), lineWidth: 2.2 * s)
+            StorybookArt.sparkle(ctx, at: CGPoint(x: 13 * s, y: -11 * s), radius: 8.5 * s, color: Theme.lemon, opacity: 0.98)
+            StorybookArt.sparkle(ctx, at: CGPoint(x: 16 * s, y: 8 * s), radius: 5 * s, color: .white, opacity: 0.92)
+        }
+    }
+
+    static func drawVessel(_ g: GraphicsContext, kind: PIngredient, center c: CGPoint, scale: CGFloat, time t: CGFloat) {
+        let bottle = PotionBottle(
+            id: kind.dockIndex + 1,
+            r: kind.color.r,
+            g: kind.color.g,
+            b: kind.color.b,
+            fill: 0.84,
+            shape: kind.vesselShape.rawValue,
+            kind: nil,
+            magic: [kind.magic.rawValue: 1],
+            glow: 0.35,
+            sparkle: 0.6
+        )
+        PotionBottlePainter.draw(g, bottle: bottle, center: c, angle: 0, scale: scale, time: t, cork: false)
+        // Iconic medallion badge right on the vessel belly.
+        let badgeR = 19 * scale
+        let badge = Path(ellipseIn: CGRect(x: c.x - badgeR, y: c.y + 12 * scale - badgeR, width: badgeR * 2, height: badgeR * 2))
+        StorybookArt.fillAndStroke(g, badge, fill: Color(hex: 0xFFF9F2), stroke: StorybookArt.outline(for: kind.hex), width: 2 * scale)
+        drawEmblem(g, kind: kind, center: CGPoint(x: c.x, y: c.y + 12 * scale), radius: 13 * scale)
+    }
+}
+
+struct IngredientIconView: View {
+    let kind: PIngredient
+
+    var body: some View {
+        Canvas { ctx, size in
+            let r = min(size.width, size.height) * 0.42
+            IngredientIconPainter.drawEmblem(ctx, kind: kind, center: CGPoint(x: size.width / 2, y: size.height / 2), radius: r)
         }
     }
 }
 
-// MARK: - Bottles
+// MARK: - Specialty Shaped Bottles & Spoiler-Free Silhouettes
 
 enum PotionBottlePainter {
-    /// A bottled potion: the glass, the potion inside (level, even when it tips), its magic, the cork.
-    static func draw(_ g: GraphicsContext, bottle b: PotionBottle, center: CGPoint, angle: CGFloat, scale: CGFloat, time t: CGFloat, cork: Bool = true) {
+    static func draw(
+        _ g: GraphicsContext,
+        bottle b: PotionBottle,
+        center: CGPoint,
+        angle: CGFloat,
+        scale: CGFloat,
+        time t: CGFloat,
+        cork: Bool = true
+    ) {
         let shape = b.bottleShape
         let poly = PPoly.transform(shape.outline, at: center, angle: angle, scale: scale)
-        // a soft glow around glowing potions
+
         if b.glow > 0.2 {
             var gl = g
             gl.blendMode = .plusLighter
-            let r = 70 * scale
-            gl.fill(Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
-                    with: .radialGradient(Gradient(colors: [b.color.c(0.35 * b.glow * (0.85 + 0.15 * sin(Double(t) * 2.5))), .clear]), center: center, startRadius: 4, endRadius: r))
+            let r = 68 * scale
+            gl.fill(
+                Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
+                with: .radialGradient(
+                    Gradient(colors: [b.color.c(0.36 * b.glow * (0.85 + 0.15 * sin(Double(t) * 2.5))), .clear]),
+                    center: center,
+                    startRadius: 4,
+                    endRadius: r
+                )
+            )
         }
+
         if b.fill > 0.01 {
             let lvl = PPoly.level(poly, fill: CGFloat(b.fill))
             let liq = PPoly.below(poly, lvl)
@@ -996,34 +1375,67 @@ enum PotionBottlePainter {
             var inner = g
             inner.clip(to: lp)
             if b.potion == .rainbow || b.potion == .wild {
-                let cols = (0..<6).map { PotionSim.hue(CGFloat($0) / 6 + (b.potion == .wild ? t * 0.1 : 0)).c(0.95) }
-                inner.fill(Path(lp.boundingRect.insetBy(dx: -4, dy: -4)), with: .linearGradient(Gradient(colors: cols), startPoint: CGPoint(x: center.x, y: lp.boundingRect.minY), endPoint: CGPoint(x: center.x, y: lp.boundingRect.maxY)))
+                let cols = (0..<6).map { PotionColor.hue(CGFloat($0) / 6 + (b.potion == .wild ? t * 0.12 : 0)).c(0.95) }
+                inner.fill(
+                    Path(lp.boundingRect.insetBy(dx: -4, dy: -4)),
+                    with: .linearGradient(Gradient(colors: cols), startPoint: CGPoint(x: center.x, y: lp.boundingRect.minY), endPoint: CGPoint(x: center.x, y: lp.boundingRect.maxY))
+                )
             } else {
-                inner.fill(Path(lp.boundingRect.insetBy(dx: -4, dy: -4)), with: .linearGradient(Gradient(colors: [b.color.mix(RGB(1, 1, 1), 0.25).c(0.92), b.color.mul(0.8, 0.75, 0.85).c(0.95)]),
-                                                                                                startPoint: CGPoint(x: center.x, y: lvl), endPoint: CGPoint(x: center.x, y: lp.boundingRect.maxY)))
+                inner.fill(
+                    Path(lp.boundingRect.insetBy(dx: -4, dy: -4)),
+                    with: .linearGradient(
+                        Gradient(colors: [b.color.mix(RGB(1, 1, 1), 0.25).c(0.94), b.color.mul(0.8, 0.76, 0.86).c(0.96)]),
+                        startPoint: CGPoint(x: center.x, y: lvl),
+                        endPoint: CGPoint(x: center.x, y: lp.boundingRect.maxY)
+                    )
+                )
             }
-            magic(inner, b, center: center, scale: scale, top: lvl, time: t)
-            var surface = Path()
+            drawBottleMagic(inner, b, center: center, scale: scale, time: t)
             if let a = liq.first(where: { abs($0.y - lvl) < 0.5 }), let z = liq.last(where: { abs($0.y - lvl) < 0.5 }) {
-                surface.move(to: a); surface.addLine(to: z)
-                g.stroke(surface, with: .color(.white.opacity(0.6)), lineWidth: 1.5 * scale + 0.5)
+                var surf = Path()
+                surf.move(to: a)
+                surf.addLine(to: z)
+                g.stroke(surf, with: .color(.white.opacity(0.65)), lineWidth: 1.5 * scale + 0.5)
             }
         }
-        glass(g, poly: poly, center: center, angle: angle, scale: scale, shape: shape)
-        if cork { self.cork(g, shape: shape, center: center, angle: angle, scale: scale, on: true) }
+
+        drawGlass(g, poly: poly, center: center, angle: angle, scale: scale, shape: shape)
+        if cork { drawCork(g, shape: shape, center: center, angle: angle, scale: scale) }
         if b.potion != nil {
-            Twinkles.draw(g, around: center, radius: 46 * scale, time: t + CGFloat(b.id), count: 2, alpha: 0.9)
+            Twinkles.draw(g, around: center, radius: 44 * scale, time: t + CGFloat(b.id), count: 2, alpha: 0.9)
         }
     }
 
-    private static func magic(_ g: GraphicsContext, _ b: PotionBottle, center: CGPoint, scale: CGFloat, top: CGFloat, time t: CGFloat) {
+    /// Spoiler-free uniform lavender mystery silhouette for unfound potions in the Picture Spellbook.
+    static func mysterySilhouette(_ g: GraphicsContext, shape: PBottleShape, center: CGPoint, scale: CGFloat, time t: CGFloat) {
+        let poly = PPoly.transform(shape.outline, at: center, angle: 0, scale: scale)
+        var p = Path()
+        p.addLines(poly)
+        p.closeSubpath()
+        g.fill(p, with: .color(Theme.ink.opacity(0.18)))
+        g.stroke(p, with: .color(Theme.lilac.opacity(0.75)), style: StrokeStyle(lineWidth: 2.5 * scale, dash: [6 * scale, 4 * scale]))
+
+        // Mystery cork silhouette.
+        var l = g
+        l.translateBy(x: center.x, y: center.y)
+        l.scaleBy(x: scale, y: scale)
+        let n = shape.neck
+        let corkRect = CGRect(x: -n + 1, y: PBottleShape.mouthY - 15, width: n * 2 - 2, height: 17)
+        l.fill(Path(roundedRect: corkRect, cornerRadius: 4), with: .color(Theme.ink.opacity(0.16)))
+
+        // Sparkling mystery stars (zero potion color leaked!).
+        StorybookArt.sparkle(g, at: CGPoint(x: center.x, y: center.y + 12 * scale), radius: 13 * scale * (0.9 + 0.12 * sin(t * 3)), color: .white, opacity: 0.88)
+        StorybookArt.sparkle(g, at: CGPoint(x: center.x + 18 * scale, y: center.y - 8 * scale), radius: 7 * scale, color: Theme.lemon, opacity: 0.82)
+    }
+
+    private static func drawBottleMagic(_ g: GraphicsContext, _ b: PotionBottle, center: CGPoint, scale: CGFloat, time t: CGFloat) {
         let s = scale
         if b.sparkle > 0.2 {
             var dots = Path()
-            for k in 0..<Int(6 + b.sparkle * 10) {
-                let x = center.x + CGFloat((k * 37) % 60 - 30) * s
-                let y = center.y + CGFloat((k * 53) % 90 - 30) * s + sin(t * 0.8 + CGFloat(k)) * 4 * s
-                let r = (1.2 + CGFloat(k % 3) * 0.8) * s * (0.7 + 0.3 * sin(t * 4 + CGFloat(k) * 1.7))
+            for k in 0..<Int(5 + b.sparkle * 8) {
+                let x = center.x + CGFloat((k * 37) % 56 - 28) * s
+                let y = center.y + CGFloat((k * 53) % 82 - 26) * s + sin(t * 0.9 + CGFloat(k)) * 3.5 * s
+                let r = (1.2 + CGFloat(k % 3) * 0.7) * s * (0.7 + 0.3 * sin(t * 4 + CGFloat(k) * 1.7))
                 dots.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
             }
             g.fill(dots, with: .color(.white.opacity(0.9)))
@@ -1031,264 +1443,66 @@ enum PotionBottlePainter {
         switch b.potion {
         case .love?:
             for k in 0..<3 {
-                let y = center.y + 40 * s - ((t * 14 + CGFloat(k) * 26).truncatingRemainder(dividingBy: 78)) * s
-                let x = center.x + CGFloat(k - 1) * 16 * s
-                g.fill(PetPainter.heartPath(in: CGRect(x: x - 6 * s, y: y - 6 * s, width: 12 * s, height: 11 * s)), with: .color(.white.opacity(0.8)))
+                let y = center.y + 38 * s - ((t * 14 + CGFloat(k) * 26).truncatingRemainder(dividingBy: 72)) * s
+                let x = center.x + CGFloat(k - 1) * 15 * s
+                StorybookArt.heart(g, at: CGPoint(x: x, y: y), size: 11 * s, color: .white, opacity: 0.85)
             }
         case .mermaid?, .wild?:
             var bub = Path()
             for k in 0..<5 {
-                let y = center.y + 50 * s - ((t * 22 + CGFloat(k) * 19).truncatingRemainder(dividingBy: 90)) * s
-                let x = center.x + CGFloat((k * 23) % 40 - 20) * s + sin(t * 3 + CGFloat(k)) * 2 * s
+                let y = center.y + 46 * s - ((t * 20 + CGFloat(k) * 18).truncatingRemainder(dividingBy: 82)) * s
+                let x = center.x + CGFloat((k * 23) % 36 - 18) * s
                 let r = (2 + CGFloat(k % 3)) * s
                 bub.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
             }
             g.stroke(bub, with: .color(.white.opacity(0.85)), lineWidth: 1.2)
-        case .dragon?:
-            var em = Path()
-            for k in 0..<5 {
-                let y = center.y + 46 * s - ((t * 30 + CGFloat(k) * 17).truncatingRemainder(dividingBy: 80)) * s
-                let x = center.x + CGFloat((k * 29) % 44 - 22) * s
-                let r = 2.2 * s
-                em.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
-            }
-            g.fill(em, with: .color(RGB(hex: "#FFE08A").c(0.95)))
         case .frost?:
             var fl = Path()
-            for k in 0..<3 {
-                let c = CGPoint(x: center.x + CGFloat(k - 1) * 18 * s, y: center.y + CGFloat(k % 2) * 20 * s + 6 * s)
-                for a in 0..<3 {
-                    let ang = CGFloat(a) * .pi / 3 + t * 0.3
-                    fl.move(to: CGPoint(x: c.x - cos(ang) * 7 * s, y: c.y - sin(ang) * 7 * s))
-                    fl.addLine(to: CGPoint(x: c.x + cos(ang) * 7 * s, y: c.y + sin(ang) * 7 * s))
-                }
+            let c = CGPoint(x: center.x, y: center.y + 12 * s)
+            for a in 0..<3 {
+                let ang = CGFloat(a) * .pi / 3 + t * 0.3
+                fl.move(to: CGPoint(x: c.x - cos(ang) * 11 * s, y: c.y - sin(ang) * 11 * s))
+                fl.addLine(to: CGPoint(x: c.x + cos(ang) * 11 * s, y: c.y + sin(ang) * 11 * s))
             }
-            g.stroke(fl, with: .color(.white.opacity(0.9)), lineWidth: 1.6)
-        case .dream?:
-            let c = CGPoint(x: center.x, y: center.y + 16 * s)
-            var moon = Path(ellipseIn: CGRect(x: c.x - 12 * s, y: c.y - 12 * s, width: 24 * s, height: 24 * s))
-            moon.addEllipse(in: CGRect(x: c.x - 6 * s, y: c.y - 16 * s, width: 24 * s, height: 24 * s))
-            g.fill(moon, with: .color(RGB(hex: "#FFF1B8").c(0.9)), style: FillStyle(eoFill: true))
-        case .moonlight?, .golden?, .galaxy?:
-            g.fill(Twinkle().path(in: CGRect(x: center.x - 12 * s, y: center.y + 6 * s, width: 24 * s, height: 24 * s)), with: .color(.white.opacity(0.85 + 0.15 * Double(sin(t * 3)))))
+            g.stroke(fl, with: .color(.white.opacity(0.9)), lineWidth: 2 * s)
+        case .dream?, .moonlight?:
+            let c = CGPoint(x: center.x, y: center.y + 14 * s)
+            var moon = Path(ellipseIn: CGRect(x: c.x - 11 * s, y: c.y - 11 * s, width: 22 * s, height: 22 * s))
+            moon.addEllipse(in: CGRect(x: c.x - 5 * s, y: c.y - 15 * s, width: 22 * s, height: 22 * s))
+            g.fill(moon, with: .color(RGB(hex: "#FFF2BC").c(0.92)), style: FillStyle(eoFill: true))
+        case .golden?, .galaxy?:
+            StorybookArt.sparkle(g, at: CGPoint(x: center.x, y: center.y + 14 * s), radius: 13 * s, color: .white, opacity: 0.92)
         default:
             break
         }
     }
 
-    /// The glass of a bottle: its outline, a bright edge and a shine down one side.
-    static func glass(_ g: GraphicsContext, poly: [CGPoint], center: CGPoint, angle: CGFloat, scale: CGFloat, shape: PBottleShape) {
+    static func drawGlass(_ g: GraphicsContext, poly: [CGPoint], center: CGPoint, angle: CGFloat, scale: CGFloat, shape: PBottleShape) {
         var p = Path()
         p.addLines(poly)
         p.closeSubpath()
         g.fill(p, with: .color(.white.opacity(0.16)))
-        g.stroke(p, with: .color(RGB(hex: "#8E7BC0").c(0.55)), lineWidth: 4.5 * scale)
-        g.stroke(p, with: .color(.white.opacity(0.9)), lineWidth: 2.2 * scale)
+        g.stroke(p, with: .color(RGB(hex: "#8E7BC0").c(0.6)), lineWidth: 4.4 * scale)
+        g.stroke(p, with: .color(.white.opacity(0.92)), lineWidth: 2.2 * scale)
         var l = g
         l.translateBy(x: center.x, y: center.y)
         l.rotate(by: .radians(Double(angle)))
         l.scaleBy(x: scale, y: scale)
-        // the shine
-        l.fill(Path(roundedRect: CGRect(x: -shape.neck - 16, y: -8, width: 7, height: 40), cornerRadius: 3.5), with: .color(.white.opacity(0.55)))
-        // the lip
+        l.fill(Path(roundedRect: CGRect(x: -shape.neck - 15, y: -8, width: 7, height: 38), cornerRadius: 3.5), with: .color(.white.opacity(0.56)))
         let n = shape.neck
-        l.fill(Path(roundedRect: CGRect(x: -n - 4, y: PBottleShape.mouthY - 3, width: n * 2 + 8, height: 8), cornerRadius: 3), with: .color(.white.opacity(0.75)))
-        l.stroke(Path(roundedRect: CGRect(x: -n - 4, y: PBottleShape.mouthY - 3, width: n * 2 + 8, height: 8), cornerRadius: 3), with: .color(RGB(hex: "#8E7BC0").c(0.5)), lineWidth: 1.5)
+        let lip = Path(roundedRect: CGRect(x: -n - 4, y: PBottleShape.mouthY - 3, width: n * 2 + 8, height: 8), cornerRadius: 3)
+        l.fill(lip, with: .color(.white.opacity(0.78)))
+        l.stroke(lip, with: .color(RGB(hex: "#8E7BC0").c(0.55)), lineWidth: 1.5)
     }
 
-    static func cork(_ g: GraphicsContext, shape: PBottleShape, center: CGPoint, angle: CGFloat, scale: CGFloat, on: Bool) {
-        guard on else { return }
+    static func drawCork(_ g: GraphicsContext, shape: PBottleShape, center: CGPoint, angle: CGFloat, scale: CGFloat) {
         var l = g
         l.translateBy(x: center.x, y: center.y)
         l.rotate(by: .radians(Double(angle)))
         l.scaleBy(x: scale, y: scale)
         let n = shape.neck
         let r = CGRect(x: -n + 1, y: PBottleShape.mouthY - 16, width: n * 2 - 2, height: 18)
-        l.fill(Path(roundedRect: r, cornerRadius: 4), with: .color(RGB(hex: "#C99466").c()))
-        l.stroke(Path(roundedRect: r, cornerRadius: 4), with: .color(RGB(hex: "#8A5A3C").c()), lineWidth: 2)
-        l.fill(Path(ellipseIn: CGRect(x: r.minX + 2, y: r.minY + 3, width: 4, height: 4)), with: .color(RGB(hex: "#8A5A3C").c(0.6)))
-        l.fill(Path(ellipseIn: CGRect(x: r.maxX - 7, y: r.minY + 9, width: 3, height: 3)), with: .color(RGB(hex: "#8A5A3C").c(0.6)))
-    }
-
-    /// An ingredient's liquid in its bottle.
-    static func liquidBottle(_ g: GraphicsContext, shape: PBottleShape, center: CGPoint, angle: CGFloat, scale: CGFloat, fill: CGFloat, color: RGB, alpha: Double, glow: Double, time t: CGFloat) {
-        let poly = PPoly.transform(shape.outline, at: center, angle: angle, scale: scale)
-        if glow > 0 {
-            var gl = g
-            gl.blendMode = .plusLighter
-            let r = 66 * scale
-            gl.fill(Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
-                    with: .radialGradient(Gradient(colors: [color.c(0.3 * glow), .clear]), center: center, startRadius: 4, endRadius: r))
-        }
-        if fill > 0.01 {
-            let lvl = PPoly.level(poly, fill: fill)
-            let liq = PPoly.below(poly, lvl)
-            var lp = Path()
-            lp.addLines(liq)
-            lp.closeSubpath()
-            g.fill(lp, with: .linearGradient(Gradient(colors: [color.mix(RGB(1, 1, 1), 0.25).c(alpha), color.mul(0.82, 0.78, 0.88).c(alpha)]),
-                                              startPoint: CGPoint(x: center.x, y: lvl), endPoint: CGPoint(x: center.x, y: lp.boundingRect.maxY)))
-            if color.luminance < 0.4 {
-                // night sky: tiny stars hang in it
-                var inner = g
-                inner.clip(to: lp)
-                var st = Path()
-                for k in 0..<9 {
-                    let x = center.x + CGFloat((k * 31) % 50 - 25) * scale
-                    let y = center.y + CGFloat((k * 47) % 80 - 20) * scale
-                    let r = (1 + CGFloat(k % 2)) * scale * CGFloat(0.7 + 0.3 * sin(Double(t) * 3 + Double(k)))
-                    st.addEllipse(in: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
-                }
-                inner.fill(st, with: .color(.white.opacity(0.9)))
-            }
-        }
-        glass(g, poly: poly, center: center, angle: angle, scale: scale, shape: shape)
-    }
-
-    /// The picture on an ingredient's bottle, so she can tell them apart without reading.
-    static func label(_ g: GraphicsContext, _ ing: PIngredient, center: CGPoint, angle: CGFloat, scale: CGFloat) {
-        var l = g
-        l.translateBy(x: center.x, y: center.y)
-        l.rotate(by: .radians(Double(angle)))
-        l.scaleBy(x: scale, y: scale)
-        let c = CGPoint(x: 0, y: 18)
-        let tag = Path(ellipseIn: CGRect(x: c.x - 19, y: c.y - 19, width: 38, height: 38))
-        l.fill(tag, with: .color(RGB(hex: "#FFF7EA").c(0.95)))
-        l.stroke(tag, with: .color(RGB(hex: "#C9A27A").c()), lineWidth: 2)
-        switch ing {
-        case .water:
-            var drop = Path()
-            drop.move(to: CGPoint(x: c.x, y: c.y - 12))
-            drop.addQuadCurve(to: CGPoint(x: c.x, y: c.y + 12), control: CGPoint(x: c.x + 16, y: c.y + 8))
-            drop.addQuadCurve(to: CGPoint(x: c.x, y: c.y - 12), control: CGPoint(x: c.x - 16, y: c.y + 8))
-            l.fill(drop, with: .color(RGB(hex: "#6EC6FF").c()))
-        case .nectar:
-            // a flower
-            var fl = Path()
-            for k in 0..<5 {
-                let a = CGFloat(k) / 5 * 2 * .pi
-                fl.addEllipse(in: CGRect(x: c.x + cos(a) * 7 - 6, y: c.y + sin(a) * 7 - 6, width: 12, height: 12))
-            }
-            l.fill(fl, with: .color(RGB(hex: "#FF7FB6").c()))
-            l.fill(Path(ellipseIn: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8)), with: .color(RGB(hex: "#FFD45A").c()))
-        case .mermaid:
-            // a shell
-            var sh = Path()
-            sh.move(to: CGPoint(x: c.x - 13, y: c.y + 6))
-            sh.addQuadCurve(to: CGPoint(x: c.x + 13, y: c.y + 6), control: CGPoint(x: c.x, y: c.y - 24))
-            sh.addLine(to: CGPoint(x: c.x + 4, y: c.y + 11))
-            sh.addLine(to: CGPoint(x: c.x - 4, y: c.y + 11))
-            sh.closeSubpath()
-            l.fill(sh, with: .color(RGB(hex: "#38D6C8").c()))
-            var ribs = Path()
-            for k in -2...2 {
-                ribs.move(to: CGPoint(x: c.x, y: c.y + 10))
-                ribs.addLine(to: CGPoint(x: c.x + CGFloat(k) * 5, y: c.y - 5))
-            }
-            l.stroke(ribs, with: .color(.white.opacity(0.8)), lineWidth: 1.5)
-        case .dragon:
-            var f = Path()
-            f.move(to: CGPoint(x: c.x - 9, y: c.y + 11))
-            f.addQuadCurve(to: CGPoint(x: c.x, y: c.y - 13), control: CGPoint(x: c.x - 14, y: c.y - 2))
-            f.addQuadCurve(to: CGPoint(x: c.x + 9, y: c.y + 11), control: CGPoint(x: c.x + 14, y: c.y - 2))
-            f.closeSubpath()
-            l.fill(f, with: .color(RGB(hex: "#FF7A2A").c()))
-            var core = Path()
-            core.move(to: CGPoint(x: c.x - 4, y: c.y + 10))
-            core.addQuadCurve(to: CGPoint(x: c.x, y: c.y - 2), control: CGPoint(x: c.x - 6, y: c.y + 3))
-            core.addQuadCurve(to: CGPoint(x: c.x + 4, y: c.y + 10), control: CGPoint(x: c.x + 6, y: c.y + 3))
-            l.fill(core, with: .color(RGB(hex: "#FFE07A").c()))
-        case .moon:
-            var m = Path(ellipseIn: CGRect(x: c.x - 12, y: c.y - 12, width: 24, height: 24))
-            m.addEllipse(in: CGRect(x: c.x - 5, y: c.y - 15, width: 24, height: 24))
-            l.fill(m, with: .color(RGB(hex: "#C8B8FF").c()), style: FillStyle(eoFill: true))
-        case .night:
-            l.fill(PetPainter.starPath(c, 13), with: .color(RGB(hex: "#5A44C8").c()))
-        default:
-            break
-        }
-    }
-
-    /// An empty bottle (in the crate, or carried).
-    static func empty(_ g: GraphicsContext, center: CGPoint, angle: CGFloat, scale: CGFloat) {
-        let poly = PPoly.transform(PBottleShape.round.outline, at: center, angle: angle, scale: scale)
-        glass(g, poly: poly, center: center, angle: angle, scale: scale, shape: .round)
-    }
-}
-
-// MARK: - Things to shake in
-
-enum PieceArt {
-    static func draw(_ g: GraphicsContext, _ pc: PPiece, alpha: Double) {
-        let k = 1 - pc.dissolve * 0.65
-        let a = alpha * Double(1 - pc.dissolve * 0.8)
-        guard a > 0.02 else { return }
-        if pc.kind == .hair {
-            hair(g, pc, alpha: a)
-            return
-        }
-        var l = g
-        l.translateBy(x: pc.p.x, y: pc.p.y)
-        l.rotate(by: .radians(Double(pc.ang)))
-        l.scaleBy(x: k, y: k)
-        l.opacity = a
-        switch pc.kind {
-        case .stars:
-            let s = PetPainter.starPath(.zero, 10)
-            l.fill(s, with: .color(RGB(hex: "#FFD44A").c()))
-            l.stroke(s, with: .color(RGB(hex: "#E0A020").c()), lineWidth: 1.5)
-            l.fill(Path(ellipseIn: CGRect(x: -3, y: -4, width: 4, height: 3)), with: .color(.white.opacity(0.8)))
-        case .petals:
-            var p = Path()
-            p.move(to: CGPoint(x: 0, y: -10))
-            p.addQuadCurve(to: CGPoint(x: 0, y: 10), control: CGPoint(x: 13, y: -2))
-            p.addQuadCurve(to: CGPoint(x: 0, y: -10), control: CGPoint(x: -13, y: -2))
-            l.fill(p, with: .color(RGB(hex: "#FF8DBA").c()))
-            var vein = Path()
-            vein.move(to: CGPoint(x: 0, y: -7)); vein.addLine(to: CGPoint(x: 0, y: 7))
-            l.stroke(vein, with: .color(RGB(hex: "#E8609A").c(0.7)), lineWidth: 1.2)
-        case .berries:
-            l.fill(Path(ellipseIn: CGRect(x: -8, y: -8, width: 16, height: 16)), with: .color(RGB(hex: "#4A72FF").c()))
-            l.fill(Path(ellipseIn: CGRect(x: -5, y: -5, width: 5, height: 4)), with: .color(.white.opacity(0.75)))
-            var leaf = Path()
-            leaf.move(to: CGPoint(x: 0, y: -8)); leaf.addQuadCurve(to: CGPoint(x: 7, y: -12), control: CGPoint(x: 4, y: -14))
-            l.stroke(leaf, with: .color(RGB(hex: "#5CC46A").c()), lineWidth: 2.5)
-        case .frost:
-            var s = Path()
-            for i in 0..<3 {
-                let ang = CGFloat(i) * .pi / 3
-                s.move(to: CGPoint(x: -cos(ang) * 10, y: -sin(ang) * 10))
-                s.addLine(to: CGPoint(x: cos(ang) * 10, y: sin(ang) * 10))
-            }
-            l.stroke(s, with: .color(RGB(hex: "#7FD8F2").c()), style: StrokeStyle(lineWidth: 4, lineCap: .round))
-            l.stroke(s, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-        case .lavender:
-            var stem = Path()
-            stem.move(to: CGPoint(x: 0, y: 12)); stem.addLine(to: CGPoint(x: 0, y: -12))
-            l.stroke(stem, with: .color(RGB(hex: "#6FB86A").c()), lineWidth: 2.2)
-            for i in 0..<4 {
-                let y = -10 + CGFloat(i) * 5
-                l.fill(Path(ellipseIn: CGRect(x: -5, y: y - 3, width: 5, height: 6)), with: .color(RGB(hex: "#A27BFF").c()))
-                l.fill(Path(ellipseIn: CGRect(x: 0, y: y - 2, width: 5, height: 6)), with: .color(RGB(hex: "#8A62F0").c()))
-            }
-        default:
-            break
-        }
-    }
-
-    private static func hair(_ g: GraphicsContext, _ pc: PPiece, alpha: Double) {
-        let pts = pc.trail.isEmpty ? [pc.p, CGPoint(x: pc.p.x + 20, y: pc.p.y + 4)] : pc.trail
-        guard pts.count > 1 else { return }
-        var l = g
-        l.opacity = alpha
-        // a soft wavy rainbow strand
-        for i in 0..<(pts.count - 1) {
-            var s = Path()
-            let a = pts[i], b = pts[i + 1]
-            let wob = sin(CGFloat(i) * 1.1 + CGFloat(pc.seed)) * 3
-            s.move(to: CGPoint(x: a.x, y: a.y + wob))
-            s.addLine(to: CGPoint(x: b.x, y: b.y - wob))
-            l.stroke(s, with: .color(PotionSim.hue(CGFloat(i) / CGFloat(pts.count) + CGFloat(pc.seed) * 0.03).c()), style: StrokeStyle(lineWidth: 5, lineCap: .round))
-        }
+        StorybookArt.shape(l, Path(roundedRect: r, cornerRadius: 4), hex: 0xCE986A, width: 2)
+        l.fill(Path(ellipseIn: CGRect(x: r.minX + 2, y: r.minY + 3, width: 4, height: 4)), with: .color(StorybookArt.outline(for: 0xCE986A).opacity(0.55)))
     }
 }

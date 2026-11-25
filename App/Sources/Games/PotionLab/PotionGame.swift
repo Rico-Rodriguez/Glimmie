@@ -1,23 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-// MARK: - Potion Lab (a game in the drawer)
-//
-// A cozy magic lab with a big glass flask on a tripod over a little burner. She takes bottles off the left shelves
-// (water, fairy nectar, mermaid water, dragon fire, moon milk, night sky) and pours them in: they tip over the
-// mouth and pour once their liquid reaches it, in a stream that lands with a splash, sinks or floats by how heavy
-// it is and marbles into the potion. Jars on the right (star sugar, rose petals, bubble berries, frost flakes,
-// unicorn hair, lavender) are turned over and shaken: stars fizz and leave glitter, petals float, berries sink and
-// pop into bubbles, frost cools it and spills cold fog over the rim, unicorn hair swirls a rainbow through it.
-// The paddle in the flask stirs (the potion swirls and dips like a whirlpool), the knob turns the fire up until it
-// boils and steams, the tap at the bottom drains it into the bucket. Empty bottles from the crate are dipped in to
-// fill them (bubbles glug out), they get a cork and go on the rack, and a potion from the rack poured on the
-// unicorn changes her: pink, glowing, sparkly, rainbow, floating in a bubble, hiccuping warm puffs, shivering,
-// sleepy, or in love. Secret combos turn the potion into one of ten rare potions for the sticker book, and the
-// light bulb shows a picture recipe for one she hasn't found yet.
-//
-// Code: PotionSim (simulation), PotionPaint (drawing), PotionModel (layout, ingredients, saves), PotionFinds
-// (stickers), this file (screen). Sounds: tools/potion/sounds.py -> App/Resources/Games/PotionLab/*.wav.
+// MARK: - Game Entry & Storybook Tile Icon
 
 enum PotionGame {
     static let entry = GameEntry(
@@ -25,7 +9,7 @@ enum PotionGame {
         title: "Potions",
         tint: Color(hex: 0xC9A6FF),
         icon: { AnyView(PotionTileIcon()) },
-        play: { exit in AnyView(SpellBenchView(exit: exit)) },
+        play: { exit in AnyView(PotionLabView(exit: exit)) },
         stickers: PotionFind.stickers
     )
 }
@@ -36,24 +20,82 @@ private struct PotionTileIcon: View {
             Canvas { ctx, size in
                 let t = CGFloat(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
                 var g = ctx
-                let k = size.width / 300
+                let k = min(size.width, size.height) / 300
+                g.translateBy(x: (size.width - 300 * k) / 2, y: (size.height - 300 * k) / 2)
                 g.scaleBy(x: k, y: k)
-                let b = PotionBottle(id: 1, r: 1, g: 0.42, b: 0.74, fill: 0.72, shape: PBottleShape.round.rawValue, kind: PotionKind.love.rawValue,
-                                     magic: [:], glow: 0.5, sparkle: 0.8)
-                PotionBottlePainter.draw(g, bottle: b, center: CGPoint(x: 150, y: 160), angle: sin(t * 1.2) * 0.08, scale: 2.0, time: t)
-                var bubbles = Path()
-                for i in 0..<4 {
-                    let y = 80 - (t * 30 + CGFloat(i) * 22).truncatingRemainder(dividingBy: 80)
-                    let r = 6 + CGFloat(i % 2) * 4
-                    bubbles.addEllipse(in: CGRect(x: 150 + sin(t * 3 + CGFloat(i)) * 10 - r, y: y - r, width: r * 2, height: r * 2))
+
+                // Soft magical aura behind the flask.
+                g.fill(
+                    Path(ellipseIn: CGRect(x: 44, y: 58, width: 212, height: 212)),
+                    with: .radialGradient(
+                        Gradient(colors: [Color(hex: 0xFFB8E8).opacity(0.65), Color(hex: 0xC9A6FF).opacity(0.25), .clear]),
+                        center: CGPoint(x: 150, y: 164),
+                        startRadius: 20,
+                        endRadius: 106
+                    )
+                )
+
+                // Storybook round magic flask with warm tinted outline.
+                let wobble = sin(t * 1.4) * 0.06
+                var f = g
+                f.translateBy(x: 150, y: 170)
+                f.rotate(by: .radians(Double(wobble)))
+
+                let bulb = Path(ellipseIn: CGRect(x: -74, y: -56, width: 148, height: 146))
+                let neck = Path(roundedRect: CGRect(x: -26, y: -112, width: 52, height: 68), cornerRadius: 12)
+                let lip = Path(roundedRect: CGRect(x: -36, y: -120, width: 72, height: 18), cornerRadius: 9)
+                let cork = Path(roundedRect: CGRect(x: -20, y: -144, width: 40, height: 30), cornerRadius: 8)
+
+                // Wooden cork & glass silhouette.
+                StorybookArt.shape(f, cork, hex: 0xD29A6A, width: 5)
+                StorybookArt.fillAndStroke(f, neck, fill: Color(hex: 0xF8F2FF).opacity(0.88), stroke: StorybookArt.outline(for: 0xB898F0), width: 6)
+                StorybookArt.fillAndStroke(f, bulb, fill: Color(hex: 0xF8F2FF).opacity(0.9), stroke: StorybookArt.outline(for: 0xB898F0), width: 6)
+
+                // Luminous pink-to-lilac swirling magic brew inside.
+                var inner = f
+                inner.clip(to: Path(ellipseIn: CGRect(x: -66, y: -48, width: 132, height: 130)))
+                var wave = Path()
+                wave.move(to: CGPoint(x: -72, y: -6))
+                for x in stride(from: CGFloat(-72), through: 72, by: 8) {
+                    let y = -6 + sin(x * 0.08 + t * 3.2) * 5
+                    wave.addLine(to: CGPoint(x: x, y: y))
                 }
-                g.stroke(bubbles, with: .color(.white.opacity(0.9)), lineWidth: 3)
+                wave.addLine(to: CGPoint(x: 72, y: 92))
+                wave.addLine(to: CGPoint(x: -72, y: 92))
+                wave.closeSubpath()
+                inner.fill(
+                    wave,
+                    with: .linearGradient(
+                        Gradient(colors: [Color(hex: 0xFF78C2), Color(hex: 0xC678FF), Color(hex: 0x7E68F4)]),
+                        startPoint: CGPoint(x: 0, y: -10),
+                        endPoint: CGPoint(x: 0, y: 84)
+                    )
+                )
+                StorybookArt.sparkle(inner, at: CGPoint(x: 18, y: 24), radius: 16, color: Theme.lemon, opacity: 0.95)
+                StorybookArt.sparkle(inner, at: CGPoint(x: -24, y: 42), radius: 10, color: .white, opacity: 0.9)
+
+                // Glossy crescent highlight & glass rim lip.
+                StorybookArt.highlight(f, in: CGRect(x: -50, y: -28, width: 22, height: 54), opacity: 0.58)
+                StorybookArt.fillAndStroke(f, lip, fill: Color(hex: 0xFAF6FF), stroke: StorybookArt.outline(for: 0xB898F0), width: 5)
+
+                // Gently rising soap bubbles & outer sparkles.
+                for i in 0..<3 {
+                    let prog = ((t * 0.42 + CGFloat(i) * 0.34).truncatingRemainder(dividingBy: 1))
+                    let bx = 150 + sin(t * 2.6 + CGFloat(i) * 2) * 20 + CGFloat(i - 1) * 18
+                    let by = 66 - prog * 54
+                    let r: CGFloat = 7 + CGFloat(i % 2) * 4
+                    let rect = CGRect(x: bx - r, y: by - r, width: r * 2, height: r * 2)
+                    g.fill(Path(ellipseIn: rect), with: .color(.white.opacity(Double(1 - prog) * 0.35)))
+                    g.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(Double(1 - prog) * 0.92)), lineWidth: 2.5)
+                }
+                StorybookArt.sparkle(g, at: CGPoint(x: 224, y: 86), radius: 15 * (0.85 + 0.15 * sin(t * 4)), color: Theme.lemon)
+                StorybookArt.sparkle(g, at: CGPoint(x: 72, y: 112), radius: 11 * (0.85 + 0.15 * cos(t * 3.5)), color: .white)
             }
         }
     }
 }
 
-// MARK: - Sounds
+// MARK: - Bundled Potion Lab Audio
 
 enum PotionSFX: String, CaseIterable {
     case glug, splash, plop, drip, tink, clink, cork, pop, bloop, fizz, frost, chime, magic, poof, heart, boing, hiccup
@@ -61,7 +103,6 @@ enum PotionSFX: String, CaseIterable {
     case boil, sizzle, fire, stir
 }
 
-/// The lab's own effects and its looping boil, fizz, fire and stir, from App/Resources/Games/PotionLab.
 final class PotionSound {
     static let shared = PotionSound()
     static let looping: Set<PotionSFX> = [.boil, .sizzle, .fire, .stir]
@@ -94,10 +135,9 @@ final class PotionSound {
 
     func play(_ s: PotionSFX, volume: Float = 0.85) {
         guard let pool = players[s], !pool.isEmpty else { return }
-        let v = volume * Float.random(in: 0.8...1)
-        // a little variety in pitch for the watery ones
+        let v = volume * Float.random(in: 0.82...1.0)
         let watery: Set<PotionSFX> = [.plop, .drip, .pop, .bloop, .splash, .glug, .tink, .clink]
-        let rate: Float = watery.contains(s) ? Float.random(in: 0.88...1.15) : 1
+        let rate: Float = watery.contains(s) ? Float.random(in: 0.88...1.14) : 1
         queue.async {
             let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
             p.volume = v
@@ -110,7 +150,7 @@ final class PotionSound {
     func setLoop(_ s: PotionSFX, volume: Float) {
         guard let p = loops[s] else { return }
         let old = loopLevel[s] ?? 0
-        let v = old + (volume - old) * 0.1
+        let v = old + (volume - old) * 0.12
         loopLevel[s] = v
         let sent = loopSent[s] ?? 0
         let on = v > 0.01
@@ -129,156 +169,119 @@ final class PotionSound {
     func stopLoops() {
         for s in loops.keys { loopLevel[s] = 0; loopSent[s] = 0 }
         let all = Array(loops.values)
-        queue.async { for p in all { p.pause(); p.volume = 0 } }
-    }
-}
-
-// MARK: - A scripted move (a tap makes a thing do its job by itself)
-
-/// Plays a path of points into the game's drag handlers, like a ghost hand.
-final class PotionScript {
-    private var timer: Timer?
-    private var legs: [(CGPoint, Double)] = []
-    private var start = CGPoint.zero
-    private var began = Date()
-    private var step: ((CGPoint) -> Void)?
-    private var end: (() -> Void)?
-    var running: Bool { timer != nil }
-
-    /// Moves from `from` through each point (reached after its duration), with a little wobble while holding still.
-    func run(from: CGPoint, legs: [(CGPoint, Double)], step: @escaping (CGPoint) -> Void, end: @escaping () -> Void) {
-        cancel()
-        start = from
-        self.legs = legs
-        self.step = step
-        self.end = end
-        began = Date()
-        step(from)
-        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
-    }
-
-    func cancel() {
-        guard let t = timer else { return }
-        t.invalidate()
-        timer = nil
-        let e = end
-        step = nil
-        end = nil
-        e?()
-    }
-
-    private func tick() {
-        var a = Date().timeIntervalSince(began)
-        var from = start
-        for (to, dur) in legs {
-            if a < dur {
-                let k = CGFloat(a / dur)
-                let e = k * k * (3 - 2 * k)
-                var p = CGPoint(x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e)
-                if hypot(to.x - from.x, to.y - from.y) < 2 {
-                    // holding still: a little shake, like a hand
-                    p.x += sin(CGFloat(a) * 22) * 7
-                    p.y += cos(CGFloat(a) * 17) * 4
-                }
-                step?(p)
-                return
+        queue.async {
+            for p in all {
+                p.pause()
+                p.volume = 0
             }
-            a -= dur
-            from = to
         }
-        timer?.invalidate()
-        timer = nil
-        step?(from)
-        let e = end
-        step = nil
-        end = nil
-        e?()
     }
 }
 
-// MARK: - The screen
+// MARK: - Stage Gesture Tracking
 
-final class PotionHand {
+private enum StageTouch {
+    case none
+    case stir
+    case dial
+    case valve
+    case creature
+    case standBottle(Int)
+}
+
+private final class StageHand {
     var active = false
-    var startAt = Date()
-    var grab: PotionGrab = .none
-    var offset = CGSize.zero
+    var grab: StageTouch = .none
     var start = CGPoint.zero
-    var autoStir: AutoTool?
+    var lastCreatureTapAt: Date = .distantPast
 }
 
-enum PotionGrab: Equatable {
-    case none, knob, valve, unicorn, glass
-    case ingredient(PIngredient)
-    case rack(Int)
-    case crate
-    case spoon
-}
+// MARK: - Main Potion Lab Screen
 
 struct PotionLabView: View {
     let exit: () -> Void
 
-    @State private var sim = PotionSim()
+    @StateObject private var sim = PotionSim()
     @State private var liquid = PotionLiquid()
-    @State private var hand = PotionHand()
-    @State private var script = PotionScript()
+    @State private var hand = StageHand()
     @State private var started = false
-    @State private var lightsOn = true
-    @State private var book = false
-    @State private var hint: PotionKind?
-    static let bookSpot = CGPoint(x: 150, y: 46)
-
-    /// How far the stirring paddle's blade sits ahead of (below) her finger: she holds the end of its handle.
-    static let paddleReach: CGFloat = 96
+    @State private var showStickerBook = false
+    @State private var showSpellbook = false
+    @State private var draggedDockKind: PIngredient? = nil
+    @State private var bottlePulse = false
 
     var body: some View {
-        GeometryReader { geo in
-            let map = PMap(size: geo.size)
-            ZStack {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { _ in
-                    Canvas(opaque: true) { ctx, _ in
-                        PotionPainter.drawBackdrop(ctx, map: map, sim: sim)
+        ZStack {
+            GameStage {
+                PotionBackdropView(moonlit: sim.moonlit)
+            } content: {
+                ZStack {
+                    TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+                        Canvas { ctx, _ in
+                            sim.step(tl.date)
+                            playSounds()
+                            PotionPainter.drawStage(ctx, sim: sim, liquid: liquid)
+                        }
+                    }
+                    .frame(width: PotionGeometry.stageWidth, height: PotionGeometry.stageHeight)
+                    .contentShape(Rectangle())
+                    .gesture(stageGesture)
+
+                    creatureControls
+                    bottleFillButton
+                    ingredientDock
+
+                    GameTopBar(
+                        gameID: PotionSim.gameID,
+                        showStickerBook: true,
+                        showCoins: true,
+                        onExit: exit,
+                        onStickerBook: {
+                            withAnimation(.easeOut(duration: 0.2)) { showStickerBook = true }
+                        }
+                    ) {
+                        RoundButton(symbol: "sparkles", tint: Theme.lilac, size: GameChromeLayout.buttonSize) {
+                            Sound.shared.play(.sparkle, volume: 0.65)
+                            Sound.shared.tap()
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
+                                showSpellbook = true
+                            }
+                        }
+                        RoundButton(
+                            symbol: sim.moonlit ? "moon.stars.fill" : "sun.max.fill",
+                            tint: sim.moonlit ? Theme.lilac : Theme.lemon,
+                            size: GameChromeLayout.buttonSize
+                        ) {
+                            Sound.shared.tap()
+                            sim.toggleMoonlit()
+                        }
+                    }
+
+                    StickerToast(game: PotionSim.gameID, target: GameChromeLayout.stickerTarget)
+
+                    if showSpellbook {
+                        PotionSpellbookView {
+                            Sound.shared.play(.flip, volume: 0.6)
+                            withAnimation(.easeOut(duration: 0.2)) { showSpellbook = false }
+                        }
+                        .transition(.opacity)
+                        .zIndex(4)
                     }
                 }
-                .allowsHitTesting(false)
-                TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
-                    Canvas { ctx, _ in
-                        sim.step(tl.date)
-                        playSounds()
-                        PotionPainter.draw(ctx, map: map, sim: sim, liquid: liquid)
-                    }
-                }
-                .contentShape(Rectangle())
-                .gesture(handGesture(map))
-
-                controls
-                    .frame(width: 1024, height: 834)
-                    .scaleEffect(map.s)
-                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
-
-                if let k = hint {
-                    PotionHintCard(kind: k, next: { hint = sim.hint(after: k); Sound.shared.play(.flip, volume: 0.6) },
-                                   close: { withAnimation(.easeOut(duration: 0.2)) { hint = nil } })
-                        .frame(width: 1024, height: 834)
-                        .scaleEffect(map.s)
-                        .position(x: geo.size.width / 2, y: geo.size.height / 2)
-                        .transition(.opacity)
-                        .zIndex(1)
-                }
-                if book {
-                    StickerBookView(game: PotionSim.gameID) { withAnimation(.easeOut(duration: 0.2)) { book = false } }
-                        .transition(.opacity)
-                        .zIndex(2)
-                }
+                .coordinateSpace(name: "potionStage")
+                .coinPurse(game: PotionSim.gameID)
             }
-            .coordinateSpace(name: "potion")
+
+            if showStickerBook {
+                StickerBookView(game: PotionSim.gameID) {
+                    withAnimation(.easeOut(duration: 0.2)) { showStickerBook = false }
+                }
+                .transition(.opacity)
+                .zIndex(10)
+            }
         }
-        .ignoresSafeArea()
         .onAppear(perform: start)
         .onDisappear {
-            script.cancel()
             sim.save()
             PotionSound.shared.stopLoops()
         }
@@ -288,442 +291,444 @@ struct PotionLabView: View {
         guard !started else { return }
         started = true
         _ = PotionSound.shared
-        lightsOn = sim.lightsOn
+        withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+            bottlePulse = true
+        }
         applyLaunchArguments()
     }
 
     private func playSounds() {
         let snd = PotionSound.shared
-        for c in sim.cues { snd.play(c, volume: c == .glug || c == .fill ? 0.6 : 0.85) }
-        sim.cues.removeAll()
-        snd.setLoop(.fire, volume: sim.heat > 0 ? 0.18 + 0.12 * Float(sim.heat) : 0)
-        snd.setLoop(.boil, volume: Float(sim.boiling) * 0.7)
-        snd.setLoop(.sizzle, volume: Float(sim.fizzLevel) * 0.6)
-        snd.setLoop(.stir, volume: Float(min(1, sim.stirSpeed / 700)) * 0.7)
+        for c in sim.cues {
+            snd.play(c, volume: c == .glug ? 0.62 : 0.84)
+        }
+        sim.cues.removeAll(keepingCapacity: true)
+
+        for note in sim.harpNotes {
+            Sound.shared.play(note, volume: 0.52)
+        }
+        sim.harpNotes.removeAll(keepingCapacity: true)
+
+        snd.setLoop(.fire, volume: sim.burner == .off ? 0 : (sim.burner == .boil ? 0.34 : 0.16))
+        snd.setLoop(.boil, volume: sim.burner == .boil ? Float(sim.boiling) * 0.65 : 0)
+        snd.setLoop(.stir, volume: Float(min(1, sim.stirSpeed / 580)) * 0.62)
     }
 
-    // MARK: Controls
+    // MARK: Creature Switcher & Water Reset
 
-    private var controls: some View {
+    private var creatureControls: some View {
         ZStack {
-            HomeButton(action: exit)
-                .position(x: 62, y: 46)
-            StickerBookButton(game: PotionSim.gameID) { book = true }
-                .position(x: PotionLabView.bookSpot.x, y: PotionLabView.bookSpot.y)
-            Button {
-                Sound.shared.play(.sparkle, volume: 0.6)
-                Sound.shared.tap()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { hint = sim.hint(after: nil) }
-            } label: {
-                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                    let recipes = PotionKind.allCases
-                    let found = recipes.filter { StickerBook.shared.has(game: PotionSim.gameID, id: $0.rawValue) }.count
-                    HStack(spacing: 9) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundStyle(Color(hex: 0xE09D12))
-                        Text("\(found)/\(recipes.count)")
-                            .font(.system(size: 23, weight: .heavy, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(Theme.ink)
+            // 4-icon Creature Switcher strip right below the plush cushion.
+            HStack(spacing: 10) {
+                ForEach(LabCreature.allCases) { kind in
+                    let selected = sim.creature == kind
+                    Button {
+                        Sound.shared.tap()
+                        sim.selectCreature(kind)
+                    } label: {
+                        ZStack {
+                            Circle().fill(kind.badgeTint.opacity(0.92))
+                            PetThumb(pet: kind.petLook, box: CGRect(x: 86, y: 58, width: 428, height: 420))
+                                .padding(4)
+                        }
+                        .frame(width: 50, height: 50)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(selected ? Theme.pink : .white, lineWidth: selected ? 4.5 : 3))
+                        .shadow(color: Theme.ink.opacity(selected ? 0.28 : 0.14), radius: selected ? 6 : 3, y: 2)
+                        .scaleEffect(selected ? 1.12 : 1)
+                        .animation(.spring(response: 0.28, dampingFraction: 0.65), value: selected)
                     }
-                    .frame(width: 134, height: 72)
-                    .background(.white, in: Capsule())
-                    .overlay(Capsule().strokeBorder(Theme.lemon, lineWidth: 5))
-                    .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Potion recipes")
-                    .accessibilityValue("\(found) of \(recipes.count) discovered")
+                    .buttonStyle(Squish())
                 }
             }
-            .buttonStyle(Squish())
-            .position(x: 270, y: 46)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(Theme.cream.opacity(0.94)))
+            .overlay(Capsule().stroke(Theme.blush, lineWidth: 3))
+            .shadow(color: Theme.ink.opacity(0.16), radius: 7, y: 4)
+            .position(PotionGeometry.creatureSwitcherCenter)
+
+            // Sparkling Water Drop Reset button beside the cushion.
             Button {
                 Sound.shared.tap()
-                lightsOn.toggle()
-                sim.setLights(lightsOn)
+                sim.resetCreatureEffects()
             } label: {
-                Image(systemName: lightsOn ? "sun.max.fill" : "moon.stars.fill")
-                    .symbolRenderingMode(.multicolor)
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(lightsOn ? Color(hex: 0xFFB83D) : Color(hex: 0x7A7AF0))
-                    .frame(width: 72, height: 72)
-                    .background(Circle().fill(.white))
-                    .overlay(Circle().stroke(lightsOn ? Color(hex: 0xFFB83D) : Color(hex: 0x7A7AF0), lineWidth: 5))
-                    .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+                ZStack {
+                    Circle().fill(sim.hasActiveEffect ? Color(hex: 0x76DCFF) : Color.white.opacity(0.92))
+                    Image(systemName: "drop.fill")
+                        .font(.system(size: 25, weight: .bold))
+                        .foregroundStyle(sim.hasActiveEffect ? .white : Color(hex: 0x56BFE8))
+                }
+                .frame(width: 54, height: 54)
+                .overlay(Circle().stroke(.white, lineWidth: 4))
+                .shadow(color: Theme.ink.opacity(0.2), radius: 5, y: 3)
+                .scaleEffect(sim.hasActiveEffect && bottlePulse ? 1.08 : 1.0)
             }
             .buttonStyle(Squish())
-            .position(x: 962, y: 46)
-            StickerToast(game: PotionSim.gameID, target: PotionLabView.bookSpot)
+            .position(PotionGeometry.waterResetCenter)
         }
     }
 
-    // MARK: Touch
+    // MARK: Bottle-Fill Sparkle Button
 
-    private func grabAt(_ p: CGPoint) -> PotionGrab {
-        if hypot(p.x - PotionGeometry.knob.x, p.y - PotionGeometry.knob.y) < PotionGeometry.knobRadius + 20 { return .knob }
-        if hypot(p.x - PotionGeometry.valve.x, p.y - (PotionGeometry.valve.y - 20)) < 46 { return .valve }
-        for ing in PIngredient.allCases where ing.shelfRect.contains(p) { return .ingredient(ing) }
-        for i in sim.rack.indices {
-            let s = PotionSim.rackSpot(i)
-            if CGRect(x: s.x - 40, y: s.y - 96, width: 80, height: 100).contains(p) { return .rack(i) }
+    @ViewBuilder
+    private var bottleFillButton: some View {
+        if sim.canBottle {
+            Button {
+                Sound.shared.tap()
+                sim.bottleCurrentBrew()
+            } label: {
+                ZStack {
+                    Circle().fill(Theme.cream)
+                    Canvas { ctx, size in
+                        let (mc, _) = sim.meanColor()
+                        let col = sim.rare?.color ?? mc
+                        let preview = PotionBottle(
+                            id: 0,
+                            r: col.r,
+                            g: col.g,
+                            b: col.b,
+                            fill: 0.85,
+                            shape: (sim.rare?.shape ?? .round).rawValue,
+                            kind: sim.rare?.rawValue,
+                            magic: [:],
+                            glow: 0.35,
+                            sparkle: 0.7
+                        )
+                        PotionBottlePainter.draw(
+                            ctx,
+                            bottle: preview,
+                            center: CGPoint(x: size.width / 2, y: size.height / 2 + 4),
+                            angle: 0,
+                            scale: 0.36,
+                            time: 0.5
+                        )
+                        StorybookArt.sparkle(ctx, at: CGPoint(x: size.width - 14, y: 15), radius: 8, color: Theme.lemon)
+                    }
+                }
+                .frame(width: 66, height: 66)
+                .overlay(Circle().stroke(Theme.pink, lineWidth: 4.5))
+                .shadow(color: Theme.ink.opacity(0.24), radius: 7, y: 4)
+                .scaleEffect(bottlePulse ? 1.07 : 0.98)
+            }
+            .buttonStyle(Squish())
+            .position(PotionGeometry.bottleFillCenter)
+            .transition(.scale.combined(with: .opacity))
         }
-        if PotionGeometry.crate.insetBy(dx: 0, dy: -50).contains(p) { return .crate }
-        if PotionGeometry.unicornBox.contains(p) { return .unicorn }
-        // the flask (and the paddle's handle sticking out of it)
-        if PotionGeometry.insideOuter(p, pad: 10) || (abs(p.x - PotionGeometry.C.x) < PotionGeometry.hw + 60 && p.y > PotionGeometry.rimY - 160 && p.y < PotionGeometry.rimY + 10) { return .spoon }
-        return .none
     }
 
-    private func handGesture(_ map: PMap) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named("potion"))
-            .onChanged { v in
-                let p = map.design(v.location)
+    // MARK: Unified Bottom Ingredient Dock
+
+    private var ingredientDock: some View {
+        GameTrayCard(cornerRadius: 32, paddingH: 18, paddingV: 10) {
+            HStack(spacing: 12) {
+                ForEach(PIngredient.allCases) { kind in
+                    let count = sim.ingredients[kind] ?? 0
+                    let isDragging = draggedDockKind == kind
+                    GameDockTile(
+                        size: 82,
+                        selected: count > 0 || isDragging,
+                        tint: kind.tileTint,
+                        cornerRadius: 24
+                    ) {
+                        ZStack(alignment: .bottom) {
+                            IngredientIconView(kind: kind)
+                                .padding(10)
+                            if count > 0 {
+                                HStack(spacing: 4) {
+                                    ForEach(0..<min(3, count), id: \.self) { _ in
+                                        Circle()
+                                            .fill(Theme.pink)
+                                            .frame(width: 7, height: 7)
+                                            .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                                    }
+                                }
+                                .padding(.bottom, 5)
+                            }
+                        }
+                    }
+                    .opacity(isDragging ? 0.45 : 1)
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .named("potionStage"))
+                            .onChanged { value in
+                                let moved = hypot(value.translation.width, value.translation.height)
+                                if moved > 14 && value.location.y < 712 {
+                                    draggedDockKind = kind
+                                    let lifted = FingerLift.point(value.location, lift: 74, bottom: PotionGeometry.stageHeight, width: PotionGeometry.stageWidth)
+                                    sim.draggedIngredient = (kind, lifted)
+                                }
+                            }
+                            .onEnded { value in
+                                let moved = hypot(value.translation.width, value.translation.height)
+                                let origin = sim.draggedIngredient?.pos ?? PotionGeometry.dockSlotCenter(kind.dockIndex)
+                                draggedDockKind = nil
+                                sim.draggedIngredient = nil
+
+                                // Tap OR drag upward toward the cauldron adds a guaranteed integer scoop!
+                                if moved <= 18 || value.location.y < 695 {
+                                    Sound.shared.tap()
+                                    sim.addIngredient(kind, from: origin)
+                                }
+                            }
+                    )
+                }
+            }
+        }
+        .position(x: PotionGeometry.stageWidth / 2, y: PotionGeometry.dockY)
+    }
+
+    // MARK: Interactive Stage Gesture (Direct Stir, Dial, Valve, Tasting Stand, Creature)
+
+    private var stageGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("potionStage"))
+            .onChanged { value in
+                let p = value.location
                 if !hand.active {
                     hand.active = true
-                    hand.startAt = Date()
                     hand.start = p
-                    if script.running { script.cancel() }
-                    if let a = hand.autoStir, a.running { a.cancel() }
-                    hand.grab = grabAt(p)
-                    if hand.grab == .knob || hand.grab == .valve || hand.grab == .unicorn { Sound.shared.tap() }
+                    hand.grab = hitTestStage(p)
+                    switch hand.grab {
+                    case .stir:
+                        sim.beginStir(at: p)
+                    case .dial, .valve, .creature:
+                        Sound.shared.tap()
+                    case .standBottle:
+                        Sound.shared.tap()
+                    case .none:
+                        break
+                    }
                     return
                 }
                 let moved = hypot(p.x - hand.start.x, p.y - hand.start.y)
-                guard moved > 10 || sim.held != nil else { return }
-                drag(hand.grab, finger: p)
+                switch hand.grab {
+                case .stir:
+                    sim.moveStir(to: p)
+                case .standBottle(let idx):
+                    if moved > 10 {
+                        let lifted = FingerLift.point(p, lift: 68, bottom: PotionGeometry.stageHeight, width: PotionGeometry.stageWidth)
+                        let tilt: CGFloat = lifted.x < 390 ? -1.35 : 0
+                        sim.draggedStandBottle = (idx, lifted, tilt)
+                    }
+                default:
+                    break
+                }
             }
-            .onEnded { v in
-                let p = map.design(v.location)
+            .onEnded { value in
+                let p = value.location
                 let moved = hypot(p.x - hand.start.x, p.y - hand.start.y)
-                let tap = moved < 12 && Date().timeIntervalSince(hand.startAt) < 0.5 && sim.held == nil
-                if tap {
-                    tapped(hand.grab, at: p)
-                } else if sim.held != nil {
-                    sim.release()
-                } else if hand.grab == .knob {
-                    // a slide along the knob turns it
-                    let dx = p.x - hand.start.x
-                    sim.setHeat(sim.heat + (dx > 0 ? 1 : -1))
+                switch hand.grab {
+                case .stir:
+                    sim.endStir()
+                case .dial:
+                    sim.cycleBurner()
+                case .valve:
+                    sim.toggleDrain()
+                case .creature:
+                    if moved < 24 {
+                        let now = Date()
+                        if now.timeIntervalSince(hand.lastCreatureTapAt) < 0.38 {
+                            hand.lastCreatureTapAt = .distantPast
+                            sim.resetCreatureEffects()
+                        } else {
+                            hand.lastCreatureTapAt = now
+                            sim.tapCreature()
+                        }
+                    }
+                case .standBottle(let idx):
+                    let dropPos = sim.draggedStandBottle?.pos ?? p
+                    sim.draggedStandBottle = nil
+                    if moved <= 16 {
+                        sim.serveBottle(at: idx)
+                    } else if p.x < 420 || PotionGeometry.creatureDropZone.contains(dropPos) {
+                        sim.serveBottle(at: idx, from: dropPos)
+                    } else if let b = sim.stand[safe: idx] {
+                        let home = PotionGeometry.standSlots[min(idx, PotionGeometry.standSlots.count - 1)]
+                        sim.flyers.append(PFlyer(from: dropPos, to: home, bottle: b, standIndex: idx, spin: 0))
+                    }
+                case .none:
+                    break
                 }
                 hand.active = false
                 hand.grab = .none
             }
     }
 
-    /// Where a held thing goes for her finger: bottles and jars above it, the paddle's blade ahead of it.
-    private func lifted(_ g: PotionGrab, _ f: CGPoint) -> CGPoint {
-        switch g {
-        case .spoon:
-            return CGPoint(x: f.x - 8, y: f.y + PotionLabView.paddleReach)
-        case .crate:
-            return FingerLift.point(f, lift: FingerLift.item, bottom: 834, width: 1024)
-        default:
-            return FingerLift.point(f, lift: FingerLift.pour, bottom: 834, width: 1024)
+    private func hitTestStage(_ p: CGPoint) -> StageTouch {
+        if PotionGeometry.dialHit(p) { return .dial }
+        if PotionGeometry.valveHit(p) { return .valve }
+        if let idx = PotionGeometry.standSlotHit(p), sim.stand.indices.contains(idx) {
+            return .standBottle(idx)
         }
+        if PotionGeometry.insideCauldronTouch(p) { return .stir }
+        if PotionGeometry.creatureDropZone.contains(p) { return .creature }
+        return .none
     }
 
-    private func drag(_ g: PotionGrab, finger f: CGPoint) {
-        if sim.held == nil {
-            switch g {
-            case .ingredient(let ing):
-                let c = CGPoint(x: ing.shelfSpot.x, y: ing.shelfSpot.y - 62)
-                hand.offset = CGSize(width: c.x - f.x, height: c.y - f.y)
-                sim.pickUp(.ingredient(ing), finger: f, at: c)
-            case .rack(let i):
-                let c = PotionSim.rackFly(i)
-                hand.offset = CGSize(width: c.x - f.x, height: c.y - f.y)
-                sim.pickUp(.rack(i), finger: f, at: c)
-            case .crate:
-                let c = CGPoint(x: PotionGeometry.crate.midX, y: PotionGeometry.crate.minY + 10)
-                hand.offset = CGSize(width: c.x - f.x, height: c.y - f.y)
-                sim.pickUp(.empty, finger: f, at: c)
-            case .spoon:
-                hand.offset = CGSize(width: sim.spoon.x - f.x, height: sim.spoon.y - f.y)
-                sim.pickUp(.spoon, finger: f, at: sim.spoon)
-            default:
-                return
-            }
-        }
-        let target = lifted(g, f)
-        hand.offset = FingerLift.ease(hand.offset, toward: CGSize(width: target.x - f.x, height: target.y - f.y), by: 0.25)
-        sim.carry(to: CGPoint(x: f.x + hand.offset.width, y: f.y + hand.offset.height), finger: f)
-    }
+    // MARK: Screenshot Demo Hook
 
-    private func tapped(_ g: PotionGrab, at p: CGPoint) {
-        switch g {
-        case .knob:
-            sim.setHeat(sim.heat >= 3 ? 0 : sim.heat + 1)
-        case .valve:
-            sim.toggleDrain()
-        case .unicorn:
-            sim.tapUnicorn()
-        case .ingredient(let ing):
-            // it flies over the flask and pours (or shakes) a bit in by itself
-            let from = CGPoint(x: ing.shelfSpot.x, y: ing.shelfSpot.y - 62 + FingerLift.pour)
-            let over = CGPoint(x: PotionGeometry.C.x + (ing.isLiquid ? -40 : 0), y: 96 + FingerLift.pour)
-            auto(g, from: from, legs: [(over, 0.45), (over, ing.isLiquid ? 1.4 : 1.8)])
-        case .rack(let i):
-            // a potion from the rack goes to the unicorn
-            let c = PotionSim.rackFly(i)
-            let from = CGPoint(x: c.x, y: c.y + FingerLift.pour)
-            let over = CGPoint(x: PotionGeometry.unicornBox.midX + 50, y: PotionGeometry.unicornBox.minY - 60 + FingerLift.pour)
-            auto(g, from: from, legs: [(over, 0.5), (over, 1.4)])
-        case .crate:
-            // an empty bottle goes in through the mouth, fills, and comes out with its cork
-            let from = CGPoint(x: PotionGeometry.crate.midX, y: PotionGeometry.crate.minY + 10 + FingerLift.item)
-            let above = CGPoint(x: PotionGeometry.C.x, y: 70 + FingerLift.item)
-            let deep = CGPoint(x: PotionGeometry.C.x, y: min(PotionGeometry.bottomY - 70, max(sim.level + 90, PotionGeometry.joinY + 40)) + FingerLift.item)
-            auto(g, from: from, legs: [(above, 0.45), (deep, 0.5), (deep, 1.5), (above, 0.5)])
-        case .spoon:
-            let f = CGPoint(x: p.x, y: p.y - PotionLabView.paddleReach)
-            let auto = AutoTool()
-            hand.autoStir = auto
-            auto.run(from: CGPoint(x: PotionSim.spoonRest.x, y: PotionSim.spoonRest.y - PotionLabView.paddleReach), to: f,
-                     step: { drag(.spoon, finger: $0) }, end: { _ in sim.release() })
-        case .glass, .none:
-            break
-        }
-    }
-
-    private func auto(_ g: PotionGrab, from: CGPoint, legs: [(CGPoint, Double)]) {
-        script.run(from: from, legs: legs, step: { drag(g, finger: $0) }, end: { sim.release() })
-    }
-
-    // MARK: Screenshot hooks
-
-    /// -potionDemo <mix|pour|shake|stir|boil|dip|unicorn|rare|night|hint> (nothing is saved).
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-potionDemo") else { return }
         let mode = i + 1 < args.count ? args[i + 1] : "mix"
         StickerBook.shared.demo = true
+        Coins.shared.demo = true
         sim.showcase(mode)
-        if mode == "night" { lightsOn = false }
-        if mode == "hint" { hint = .galaxy }
+        if mode == "spellbook" || mode == "hint" {
+            showSpellbook = true
+        }
     }
 }
 
-// MARK: - The picture recipe
+// MARK: - Spoiler-Free Picture Spellbook Overlay (Zero English Prose)
 
-/// A card with a rare potion and what goes into it, in pictures: the ingredients, and the fire or the moon when it
-/// needs the burner up high or the lights off. The arrow shows another one.
-struct PotionHintCard: View {
-    let kind: PotionKind
-    let next: () -> Void
+struct PotionSpellbookView: View {
     let close: () -> Void
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14),
+    ]
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.3)
+            Color.black.opacity(0.32)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: close)
-            VStack(spacing: 16) {
-                TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
-                    Canvas { ctx, size in
-                        let t = CGFloat(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
-                        draw(ctx, size, t)
+
+            GameTrayCard(cornerRadius: 40, paddingH: 26, paddingV: 24) {
+                VStack(spacing: 14) {
+                    // Purely pictorial star progress bar (10 stars, filled for discovered potions).
+                    HStack(spacing: 8) {
+                        ForEach(PotionKind.allCases) { kind in
+                            let found = StickerBook.shared.has(game: PotionSim.gameID, id: kind.rawValue)
+                            Image(systemName: found ? "star.fill" : "star")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(found ? Theme.lemon : Theme.ink.opacity(0.2))
+                                .shadow(color: found ? Theme.ink.opacity(0.22) : .clear, radius: 1, y: 1)
+                        }
+                    }
+
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(PotionKind.allCases) { kind in
+                            PotionRecipeCard(kind: kind)
+                        }
                     }
                 }
-                .frame(width: 720, height: 300)
+                .frame(width: 840)
             }
-            .padding(24)
-            .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream))
-            .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 8))
-            .shadow(color: Theme.ink.opacity(0.35), radius: 20, y: 10)
             .overlay(alignment: .topTrailing) {
                 Button(action: close) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 28, weight: .heavy))
+                        .font(.system(size: 26, weight: .heavy))
                         .foregroundStyle(.white)
-                        .frame(width: 66, height: 66)
+                        .frame(width: 62, height: 62)
                         .background(Circle().fill(Theme.pink))
                         .overlay(Circle().stroke(.white, lineWidth: 5))
+                        .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
                 }
                 .buttonStyle(Squish())
                 .offset(x: 18, y: -18)
             }
-            .overlay(alignment: .bottomTrailing) {
-                Button(action: next) {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 28, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 66, height: 66)
-                        .background(Circle().fill(Theme.lilac))
-                        .overlay(Circle().stroke(.white, lineWidth: 5))
-                }
-                .buttonStyle(Squish())
-                .offset(x: 18, y: 18)
-            }
         }
-    }
-
-    private func draw(_ ctx: GraphicsContext, _ size: CGSize, _ t: CGFloat) {
-        let g = ctx
-        let found = StickerBook.shared.has(game: PotionSim.gameID, id: kind.rawValue)
-        // the ingredients, with plus signs between
-        var items: [PIngredient?] = kind.recipe.map { $0 }
-        if kind.needsFire || kind.needsNight { items.append(nil) }
-        let n = CGFloat(items.count)
-        let step: CGFloat = min(118, 470 / max(1, n))
-        let x0: CGFloat = 40 + step / 2
-        let scale: CGFloat = min(0.95, step / 118 * 0.95)
-        for (i, it) in items.enumerated() {
-            let x = x0 + CGFloat(i) * step
-            let y: CGFloat = 150
-            if let ing = it {
-                PotionPainter.drawIngredient(g, ing, center: CGPoint(x: x, y: y), angle: 0, scale: scale, fill: 1, time: t)
-            } else if kind.needsFire {
-                flame(g, CGPoint(x: x, y: y + 20), t)
-            } else {
-                moon(g, CGPoint(x: x, y: y))
-            }
-            if i < items.count - 1 {
-                plus(g, CGPoint(x: x + step / 2, y: y + 10))
-            }
-        }
-        // = the potion
-        let ex = x0 + n * step - step / 2 + 34
-        var eq = Path()
-        eq.move(to: CGPoint(x: ex - 16, y: 152)); eq.addLine(to: CGPoint(x: ex + 16, y: 152))
-        eq.move(to: CGPoint(x: ex - 16, y: 172)); eq.addLine(to: CGPoint(x: ex + 16, y: 172))
-        g.stroke(eq, with: .color(Theme.ink.opacity(0.5)), style: StrokeStyle(lineWidth: 8, lineCap: .round))
-        let b = PotionBottle(id: 7, r: kind.color.r, g: kind.color.g, b: kind.color.b, fill: 0.8, shape: kind.shape.rawValue, kind: kind.rawValue,
-                             magic: [:], glow: Double(kind.glow), sparkle: Double(kind.sparkle))
-        let bc = CGPoint(x: min(size.width - 90, ex + 120), y: 140)
-        if found {
-            PotionBottlePainter.draw(g, bottle: b, center: bc, angle: sin(t * 1.5) * 0.06, scale: 1.6, time: t)
-        } else {
-            // not found yet: a mystery shape with a question of stars
-            var m = g
-            m.opacity = 0.9
-            PotionBottlePainter.draw(m, bottle: b, center: bc, angle: sin(t * 1.5) * 0.06, scale: 1.6, time: t)
-            Twinkles.draw(g, around: bc, radius: 90, time: t * 1.5, count: 5, alpha: 1)
-        }
-        // stir it: a paddle going round under the recipe
-        var arrow = Path()
-        let c = CGPoint(x: x0 + (n - 1) * step / 2, y: 262)
-        for k in 0...24 {
-            let a = Double(k) / 24 * 1.7 * .pi + Double(t) * 1.6
-            let p = CGPoint(x: c.x + 60 * CGFloat(cos(a)), y: c.y + 14 * CGFloat(sin(a)))
-            if k == 0 { arrow.move(to: p) } else { arrow.addLine(to: p) }
-        }
-        g.stroke(arrow, with: .color(Theme.lilac), style: StrokeStyle(lineWidth: 6, lineCap: .round))
-    }
-
-    private func plus(_ g: GraphicsContext, _ c: CGPoint) {
-        var p = Path()
-        p.move(to: CGPoint(x: c.x - 13, y: c.y)); p.addLine(to: CGPoint(x: c.x + 13, y: c.y))
-        p.move(to: CGPoint(x: c.x, y: c.y - 13)); p.addLine(to: CGPoint(x: c.x, y: c.y + 13))
-        g.stroke(p, with: .color(Theme.ink.opacity(0.45)), style: StrokeStyle(lineWidth: 7, lineCap: .round))
-    }
-
-    private func flame(_ g: GraphicsContext, _ c: CGPoint, _ t: CGFloat) {
-        for k in 0..<3 {
-            let s: CGFloat = 1 - CGFloat(k) * 0.3
-            let h = 70 * s * (1 + 0.08 * sin(t * 12 + CGFloat(k)))
-            var f = Path()
-            f.move(to: CGPoint(x: c.x - 26 * s, y: c.y + 30))
-            f.addQuadCurve(to: CGPoint(x: c.x, y: c.y + 30 - h), control: CGPoint(x: c.x - 34 * s, y: c.y + 30 - h * 0.5))
-            f.addQuadCurve(to: CGPoint(x: c.x + 26 * s, y: c.y + 30), control: CGPoint(x: c.x + 34 * s, y: c.y + 30 - h * 0.5))
-            f.closeSubpath()
-            let col = [RGB(hex: "#FF6A2A"), RGB(hex: "#FFB03A"), RGB(hex: "#FFF0A0")][k]
-            g.fill(f, with: .color(col.c()))
-        }
-    }
-
-    private func moon(_ g: GraphicsContext, _ c: CGPoint) {
-        let r = CGRect(x: c.x - 34, y: c.y - 34, width: 68, height: 68)
-        g.fill(Path(ellipseIn: r.insetBy(dx: -10, dy: -10)), with: .color(RGB(hex: "#2A2458").c()))
-        var m = Path(ellipseIn: r)
-        m.addEllipse(in: r.offsetBy(dx: 22, dy: -10))
-        g.fill(m, with: .color(RGB(hex: "#FFF1B8").c()), style: FillStyle(eoFill: true))
     }
 }
 
-// MARK: - Screenshots
+private struct PotionRecipeCard: View {
+    let kind: PotionKind
 
-extension PotionSim {
-    /// Sets up the lab for a screenshot. Nothing is saved.
-    func showcase(_ mode: String) {
-        demo = true
-        rack = [
-            PotionBottle(id: 1, r: 1, g: 0.31, b: 0.6, fill: 0.9, shape: PBottleShape.heart.rawValue, kind: PotionKind.love.rawValue, magic: ["love": 1], glow: 0.3, sparkle: 0.3),
-            PotionBottle(id: 2, r: 0.23, g: 0.12, b: 0.61, fill: 0.85, shape: PBottleShape.star.rawValue, kind: PotionKind.galaxy.rawValue, magic: ["sparkle": 1], glow: 0.45, sparkle: 1),
-            PotionBottle(id: 3, r: 0.4, g: 0.8, b: 0.75, fill: 0.7, shape: PBottleShape.round.rawValue, kind: nil, magic: ["bubble": 0.8], glow: 0, sparkle: 0.1),
-            PotionBottle(id: 4, r: 1, g: 0.76, b: 0.18, fill: 0.9, shape: PBottleShape.diamond.rawValue, kind: PotionKind.golden.rawValue, magic: ["glow": 1], glow: 0.75, sparkle: 1),
-            PotionBottle(id: 5, r: 0.95, g: 0.55, b: 0.3, fill: 0.6, shape: PBottleShape.tall.rawValue, kind: nil, magic: ["fire": 0.7], glow: 0.2, sparkle: 0),
-            PotionBottle(id: 6, r: 1, g: 0.54, b: 0.82, fill: 0.8, shape: PBottleShape.star.rawValue, kind: PotionKind.rainbow.rawValue, magic: ["rainbow": 1], glow: 0.5, sparkle: 0.7),
-        ]
-        nextID = 10
-        volume = PotionGeometry.capacity * 0.6
-        updateLiquid()
-        // three layers: heavy night sky at the bottom, fairy nectar in the middle, moon milk on top
-        for j in 0..<PotionSim.NY {
-            for i in 0..<PotionSim.NX {
-                let k = PotionSim.idx(i, j)
-                guard !solid[k] else { continue }
-                let y = PotionGeometry.cellCenter(i, j).y
-                let ing: PIngredient = y > 560 ? .night : (y > 450 ? .nectar : .mermaid)
-                let a: Float = 0.9
-                dr[k] = Float(ing.color.r) * a; dg[k] = Float(ing.color.g) * a; db[k] = Float(ing.color.b) * a; da[k] = a
-                rho[k] = ing.density
+    var body: some View {
+        let found = StickerBook.shared.has(game: PotionSim.gameID, id: kind.rawValue)
+        let recipe = kind.recipe
+
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { idx, ing in
+                    if idx > 0 {
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .black))
+                            .foregroundStyle(Theme.ink.opacity(0.45))
+                    }
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ing.tileTint)
+                        IngredientIconView(kind: ing)
+                            .padding(4)
+                    }
+                    .frame(width: 44, height: 44)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Theme.blush, lineWidth: 2))
+                }
+
+                if recipe.requiresBoil {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundStyle(Theme.ink.opacity(0.45))
+                    ZStack {
+                        Circle().fill(Color(hex: 0xFFE8D4))
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(Color(hex: 0xFF6B3D))
+                    }
+                    .frame(width: 42, height: 42)
+                    .overlay(Circle().stroke(Color(hex: 0xFFB888), lineWidth: 2))
+                }
+
+                if recipe.requiresMoonlit {
+                    Image(systemName: "plus")
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundStyle(Theme.ink.opacity(0.45))
+                    ZStack {
+                        Circle().fill(Color(hex: 0x2F245C))
+                        Image(systemName: "moon.stars.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Theme.lemon)
+                    }
+                    .frame(width: 42, height: 42)
+                    .overlay(Circle().stroke(Theme.lilac, lineWidth: 2))
+                }
             }
-        }
-        doses = [.night: 1, .nectar: 1, .mermaid: 1]
-        version += 1
-        // give it a swirl so the layers marble
-        for k in u.indices where liquid[k] {
-            let p = PotionGeometry.cellCenter(k % PotionSim.NX, k / PotionSim.NX)
-            let dx = p.x - PotionGeometry.C.x, dy = p.y - 500
-            u[k] = Float(-dy * 1.4)
-            v[k] = Float(dx * 1.4)
-        }
-        for _ in 0..<40 { step(dt: 1.0 / 60) }
-        switch mode {
-        case "pour":
-            pickUp(.ingredient(.dragon), finger: CGPoint(x: 420, y: 230), at: CGPoint(x: 420, y: 110))
-            carry(to: CGPoint(x: 420, y: 110), finger: CGPoint(x: 420, y: 220))
-            demoKeepFull = true
-        case "shake":
-            addPiece(.stars, at: CGPoint(x: 500, y: 300), v: .zero)
-            for k in 0..<6 { addPiece([PIngredient.petals, .berries, .stars][k % 3], at: CGPoint(x: 460 + CGFloat(k) * 18, y: 140 - CGFloat(k) * 20), v: CGVector(dx: 0, dy: 60)) }
-            pickUp(.ingredient(.stars), finger: CGPoint(x: 540, y: 200), at: CGPoint(x: 540, y: 90))
-            carry(to: CGPoint(x: 540, y: 90), finger: CGPoint(x: 540, y: 200))
-            demoKeepFull = true
-        case "stir":
-            pickUp(.spoon, finger: CGPoint(x: 512, y: 380), at: spoon)
-            demoStir = true
-        case "boil":
-            heat = 3
-            temp = 1
-            doses[.berries] = 3
-            for i in foam.indices { foam[i] = 20 }
-        case "dip":
-            pickUp(.empty, finger: CGPoint(x: 512, y: 520), at: CGPoint(x: 512, y: 120))
-            dipInside = true
-            heldPos = CGPoint(x: 512, y: max(level + 90, PotionGeometry.joinY + 40))
-            dipFill = 0.45
-            dipColor = PIngredient.nectar.color
-        case "unicorn":
-            uni.rainbow = 30
-            uni.glitter = 30
-            uni.float = 30
-            uni.floatY = -110
-            pickUp(.rack(0), finger: CGPoint(x: 250, y: 470), at: CGPoint(x: 250, y: 360))
-            carry(to: CGPoint(x: 250, y: 360), finger: CGPoint(x: 250, y: 470))
-            demoKeepFull = true
-        case "rare", "night":
-            doses = [.night: 2, .stars: 3]
-            if mode == "night" {
-                doses = [.moon: 2]
-                lightsOn = false
-                night = 1
-                uni.glow = 30
+
+            Spacer(minLength: 4)
+
+            Image(systemName: "arrow.right")
+                .font(.system(size: 16, weight: .black))
+                .foregroundStyle(Theme.ink.opacity(0.42))
+
+            // Spoiler-free: unfound shows a uniform lavender mystery silhouette; found shows the gleaming bottle!
+            TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !found)) { tl in
+                let t = CGFloat(tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000))
+                Canvas { ctx, size in
+                    let center = CGPoint(x: size.width / 2, y: size.height / 2 + 4)
+                    if found {
+                        let bottle = PotionBottle(
+                            id: 9,
+                            r: kind.color.r,
+                            g: kind.color.g,
+                            b: kind.color.b,
+                            fill: 0.86,
+                            shape: kind.shape.rawValue,
+                            kind: kind.rawValue,
+                            magic: [:],
+                            glow: Double(kind.glow),
+                            sparkle: Double(kind.sparkle)
+                        )
+                        PotionBottlePainter.draw(ctx, bottle: bottle, center: center, angle: sin(t * 1.4) * 0.05, scale: 0.52, time: t)
+                    } else {
+                        PotionBottlePainter.mysterySilhouette(ctx, shape: kind.shape, center: center, scale: 0.52, time: t)
+                    }
+                }
             }
-            for _ in 0..<240 { step(dt: 1.0 / 60) }
-        default:
-            break
+            .frame(width: 72, height: 82)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(height: 94)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(found ? Color.white : Color.white.opacity(0.68))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(found ? Theme.lemon : Theme.blush, lineWidth: found ? 3.5 : 2.5)
+        )
     }
 }
