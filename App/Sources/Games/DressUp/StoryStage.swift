@@ -1026,9 +1026,10 @@ struct StoryStage: View {
     }
 
     private func feedNearestActor(treatID: UUID, preferredActor: UUID?, in size: CGSize) {
-        guard let actorID = withAnimation(.spring(response: 0.3, dampingFraction: 0.62)) {
+        let matchedActor = withAnimation(.spring(response: 0.3, dampingFraction: 0.62)) {
             playhouse.nibbleTreat(treatID, nearActor: preferredActor, stageSize: size)
-        } else { return }
+        }
+        guard let actorID = matchedActor else { return }
         Sound.shared.play(.bubble, volume: 0.75)
         Sound.shared.play(.sparkle, volume: 0.5)
         Sound.shared.tap()
