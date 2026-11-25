@@ -192,4 +192,134 @@ final class SalonTests: XCTestCase {
         XCTAssertTrue(GameRegistry.all.contains { $0.id == "salon" })
         for h in SalonView.hats { XCTAssertNotNil(DressUpArt.shared.items[h], h) }
     }
+
+    func testCombDetanglesAddsGlossAndRemovesLeaves() {
+        XCTAssertTrue(SalonTool.allCases.contains(.comb))
+        let s = HairSim(recipe: HairRecipe(seed: 12, color: 2, length: 2, fringe: 4, curl: 0, tangle: 0.9), palette: DressUpArt.shared.hair)
+        s.settle(seconds: 1)
+        guard let si = s.strands.indices.first(where: { s.strands[$0].kind == .side && s.strands[$0].free >= 6 }) else {
+            return XCTFail("expected a side strand")
+        }
+        let node = s.strands[si].pinned + 3
+        s.clips = [
+            HairClip(kind: .leaf, color: 0, strand: si, node: node, dx: 0, dy: 0),
+            HairClip(kind: .twig, color: 0, strand: si, node: node + 1, dx: 0, dy: 0),
+        ]
+        let tangleBefore = s.strands[si].tangle
+        XCTAssertGreaterThan(tangleBefore, 0.3)
+
+        var totalCaught = 0
+        for k in 0..<12 {
+            let cur = s.strands[si].p[node]
+            let sign: CGFloat = k % 2 == 0 ? 1 : -1
+            totalCaught += s.comb(from: cur + HairV(-28 * sign, -10), to: cur + HairV(28 * sign, 10), radius: 56, detangle: 0.25)
+            s.step(1.0 / 60)
+        }
+        XCTAssertGreaterThan(totalCaught, 0)
+        XCTAssertLessThan(s.strands[si].tangle, tangleBefore * 0.2)
+        XCTAssertGreaterThan(s.strands[si].gloss, 0.2)
+        XCTAssertTrue(s.clips.isEmpty, "comb should knock loose leaves and twigs")
+        XCTAssertEqual(s.dropped.compactMap(\.clip).count, 2)
+    }
+
+    func testSalonFindStickersRegisteredAndCoinRewardGated() {
+        let expected = ["firstCut", "rainbowStylist", "bubbleWash", "updoArtist", "sparkleCrown", "salonStar"]
+        XCTAssertEqual(SalonFind.allCases.count, 6)
+        XCTAssertEqual(SalonFind.stickers.count, 6)
+        XCTAssertEqual(SalonGame.entry.stickers.count, 6)
+        XCTAssertEqual(SalonGame.entry.stickers.map(\.id), expected)
+
+        let prevDemo = StickerBook.shared.demo
+        StickerBook.shared.demo = true
+        defer { StickerBook.shared.demo = prevDemo }
+
+        let w = SalonWorld(visit: nil)
+        XCTAssertFalse(w.consumeCoinReward(), "unmodified client should not pay coins before styling")
+        w.wearHat("h_crown")
+        XCTAssertTrue(w.hasBeenStyled)
+        XCTAssertTrue(w.consumeCoinReward(), "first snap after styling should award coins")
+        XCTAssertFalse(w.consumeCoinReward(), "repeated snaps without new styling must not spam coins")
+    }
+
+    func testCrispSingleSnipScissorsTap() {
+        let prevDemo = StickerBook.shared.demo
+        StickerBook.shared.demo = true
+        defer { StickerBook.shared.demo = prevDemo }
+
+        let base = SalonWorld.makeClient(seed: 7)
+        let s = HairSim(recipe: HairRecipe(seed: 7, color: 2, length: 3, fringe: 4, curl: 0, tangle: 0.3), palette: DressUpArt.shared.hair)
+        s.settle(seconds: 1)
+        let visit = SalonVisit(look: base.0, hair: s.save(positions: true), cape: 3, hat: nil)
+        let w = SalonWorld(visit: visit)
+        w.tool = .scissors
+
+        guard let targetStrand = w.sim.strands.first(where: { $0.kind == .side && $0.free >= 8 }) else {
+            return XCTFail("expected a long side strand")
+        }
+        let targetArt = (targetStrand.p[targetStrand.pinned + 4] + targetStrand.p[targetStrand.pinned + 5]) * 0.5
+        let freeBefore = w.sim.strands.map(\.free).reduce(0, +)
+        let cuts = w.tapSnip(at: w.toDesign(targetArt))
+
+        XCTAssertFalse(cuts.isEmpty)
+        XCTAssertEqual(w.sim.pieces.count, cuts.count)
+        XCTAssertLessThan(w.sim.strands.map(\.free).reduce(0, +), freeBefore)
+        XCTAssertNotNil(w.scissorsFlash)
+        for c in cuts {
+            XCTAssertLessThanOrEqual(abs(c.x - targetArt.x), 52)
+        }
+    }
+
+    func testFasterDryerDriesWithinTwoSeconds() {
+        let s = sim(9)
+        s.settle(seconds: 1)
+        for i in s.strands.indices { s.makeWet(i, 1.0) }
+
+        let nozzle = HairV(470, 340)
+        let dir = (SalonBody.center - nozzle).unit
+        let dt: CGFloat = 1.0 / 60
+        for _ in 0..<120 {
+            _ = s.dry(from: nozzle, dir: dir, dt: dt)
+        }
+
+        // Visible strands in the dryer cone should dry from 1.0 to nearly 0 in ~2 seconds.
+        var coneWets: [CGFloat] = []
+        let focus = nozzle + dir * 140
+        for (si, st) in s.strands.enumerated() {
+            let inCone = st.p.indices.contains { k in s.visible(si, k) && st.p[k].dist(focus) < 120 }
+            if inCone { coneWets.append(st.wet) }
+        }
+        XCTAssertFalse(coneWets.isEmpty)
+        let avgWet = coneWets.reduce(0, +) / CGFloat(coneWets.count)
+        XCTAssertLessThan(avgWet, 0.15, "dryer should dry wet hair in ~2 seconds")
+    }
+
+    func testGrownBangsStayOffEyesAndRinseClearsFoam() {
+        let s = sim(15)
+        s.settle(seconds: 1)
+        // Grow all fringe strands heavily and confirm they stay cleanly above her eyes (< 300).
+        for _ in 0..<80 {
+            for st in s.strands where st.kind == .fringe {
+                _ = s.grow(near: st.tip, radius: 14, dt: 1.0 / 30)
+            }
+            s.step(1.0 / 60)
+        }
+        s.settle(seconds: 1)
+        for st in s.strands where st.kind == .fringe {
+            XCTAssertLessThan(st.tip.y, 300, "regrown bangs should frame brow and never cover her eyes")
+        }
+
+        // Lather then rinse across the suds patch with the boosted 28pt radius & 0.75 clear probability.
+        let spot = HairV(300, 210)
+        for _ in 0..<6 { _ = s.lather(spot, dt: 0.25) }
+        let startFoam = s.foam.count
+        XCTAssertGreaterThan(startFoam, 5)
+        var cleared = 0
+        for dy in stride(from: CGFloat(-70), through: 70, by: 35) {
+            for dx in stride(from: CGFloat(-70), through: 70, by: 35) {
+                cleared += s.rinse(spot + HairV(dx, dy), radius: 28)
+            }
+        }
+        XCTAssertGreaterThan(cleared, 0)
+        XCTAssertLessThan(s.foam.count, max(3, startFoam / 3))
+    }
 }

@@ -429,6 +429,9 @@ final class HairSim {
     var dropped: [(clip: HairClip?, at: HairV, vel: HairV, bubble: CGFloat)] = []
 
     private var rng: SeededGenerator
+    private var heldMasks: [UInt64] = []
+    private var hasAnyHeld = false
+    private var windPhase: CGFloat = 0
 
     init(recipe: HairRecipe, palette: [RGB]) {
         self.recipe = recipe
@@ -499,7 +502,7 @@ final class HairSim {
                                   order: 2 - abs(s), phase: 1 + CGFloat(i) * 0.45))
         }
         strands = out
-        boxes = Array(repeating: .zero, count: out.count)
+        boxes = out.map(HairSim.box)
     }
 
     private func makeStrand(_ kind: HairStrand.Kind, rest restL: [H3], dir dirL: H3, free: Int, width: CGFloat,
@@ -597,27 +600,49 @@ final class HairSim {
 
     func step(_ hd: Double) {
         let h = CGFloat(hd)
+        if dryer != nil { windPhase += h * 7 }
         updateRoots()
         for i in strands.indices { integrate(&strands[i], h) }
         // position-based constraints, several passes: every segment back to its length (both ends give
         // way, so nothing whips), then out of her head, face and shoulders. It settles to a standstill.
         let sq = squash
-        var held = Array(repeating: [Int](), count: strands.count)
-        for t in ties {
-            for m in t.members where m.strand < strands.count { held[m.strand].append(m.node) }
+        let strandCount = strands.count
+        if heldMasks.count != strandCount {
+            heldMasks = Array(repeating: 0, count: strandCount)
+            hasAnyHeld = false
+        } else if hasAnyHeld {
+            for i in 0..<strandCount { heldMasks[i] = 0 }
+            hasAnyHeld = false
         }
-        for c in clips where c.hx != nil && c.strand < strands.count && c.node >= strands[c.strand].pinned
-            && c.node < strands[c.strand].p.count {
-            held[c.strand].append(c.node)
+        if !ties.isEmpty {
+            for t in ties {
+                for m in t.members where m.strand < strandCount && m.node >= 0 && m.node < 64 {
+                    heldMasks[m.strand] |= (UInt64(1) &<< UInt64(m.node))
+                    hasAnyHeld = true
+                }
+            }
         }
-        for i in strands.indices { HairSim.shape(&strands[i]) }
+        if !clips.isEmpty {
+            for c in clips where c.hx != nil && c.strand < strandCount && c.node >= strands[c.strand].pinned
+                && c.node < strands[c.strand].p.count && c.node < 64 {
+                heldMasks[c.strand] |= (UInt64(1) &<< UInt64(c.node))
+                hasAnyHeld = true
+            }
+        }
+        for i in 0..<strandCount { HairSim.shape(&strands[i]) }
+        let cosYaw = cos(yaw)
+        let sinYaw = sin(yaw)
+        let hasTies = !ties.isEmpty
+        let hasClips = !clips.isEmpty
         for pass in 0..<HairSim.passes {
-            applyTies()
-            applyClips()
+            if hasTies { applyTies() }
+            if hasClips { applyClips() }
             let last = pass == HairSim.passes - 1
-            for i in strands.indices { HairSim.constrain(&strands[i], held: held[i], yaw: yaw, squash: sq, last: last) }
+            for i in 0..<strandCount {
+                HairSim.constrain(&strands[i], heldMask: heldMasks[i], cosYaw: cosYaw, sinYaw: sinYaw, squash: sq, last: last)
+            }
         }
-        for i in strands.indices { boxes[i] = HairSim.box(strands[i]) }
+        for i in 0..<strandCount { boxes[i] = HairSim.box(strands[i]) }
         stepPieces(hd)
         stepFoam(h)
     }
@@ -644,15 +669,16 @@ final class HairSim {
     private func windAccel(_ p: HairV, _ w: (at: HairV, dir: HairV)) -> HairV {
         let r = p - w.at
         let along = r.dot(w.dir)
-        guard along > 0, along < 430 else { return .zero }
+        guard along > 0, along < 450 else { return .zero }
         let side = r - w.dir * along
         let perp = side.len
-        let cone = 26 + along * 0.45
+        let cone = 30 + along * 0.48
         guard perp < cone else { return .zero }
-        let f = (1 - along / 430) * (1 - perp / cone)
-        let gust = 0.7 + 0.6 * CGFloat(Double.random(in: 0..<1, using: &rng))
-        let flutter = w.dir.perp * (CGFloat(Double.random(in: -1..<1, using: &rng)) * 2600 * f)
-        return w.dir * (6400 * f * gust) + side.unit * (1500 * f) + flutter
+        let f = (1 - along / 450) * (1 - perp / cone)
+        let sway = sin(windPhase + p.y * 0.035 + p.x * 0.02)
+        let gust = 0.85 + 0.25 * sway
+        let flutter = w.dir.perp * (sway * 1700 * f)
+        return w.dir * (5200 * f * gust) + side.unit * (1200 * f) + flutter
     }
 
     private func integrate(_ s: inout HairStrand, _ h: CGFloat) {
@@ -729,58 +755,165 @@ final class HairSim {
     /// move), then each point out of her head, face and shoulders. On the last pass a point pushed out of
     /// her head brings its previous position along with friction, so lying on her head never turns into
     /// sliding or bouncing.
-    private static func constrain(_ s: inout HairStrand, held: [Int], yaw: CGFloat, squash: CGFloat, last: Bool) {
+    private static func constrain(_ s: inout HairStrand, heldMask: UInt64, cosYaw: CGFloat, sinYaw: CGFloat, squash: CGFloat, last: Bool) {
         let P = s.pinned
         let n = s.p.count
         guard n > P else { return }
+        // O(1) bitmask fast-path: most strands have no clips or ties and skip all bit tests.
+        let hasHeld = heldMask != 0
+        let wetCurl: CGFloat = 0.4 * (1 - 0.7 * s.wet)
+        let segBase = HairSim.seg
         for i in P..<n {
-            let fa = i - 1 < P || held.contains(i - 1)
-            let fb = held.contains(i)
-            if fa && fb { continue }
-            let a = H3(s.p[i - 1], s.z[i - 1])
-            let b = H3(s.p[i], s.z[i])
-            let d = b - a
-            let l = d.len
-            guard l > 0.0001 else { continue }
-            let corr = d * ((l - s.segLen(i)) / l)
-            let wa: CGFloat = fa ? 0 : (fb ? 1 : 0.5)
-            if !fa {
-                let na = a + corr * wa
-                s.p[i - 1] = na.xy
-                s.z[i - 1] = na.z
+            let fa: Bool
+            let fb: Bool
+            if hasHeld {
+                fa = i - 1 < P || (i - 1 < 64 && (heldMask & (UInt64(1) &<< UInt64(i - 1))) != 0)
+                fb = i < 64 && (heldMask & (UInt64(1) &<< UInt64(i))) != 0
+            } else {
+                fa = i - 1 < P
+                fb = false
             }
-            if !fb {
-                let nb = b - corr * (1 - wa)
-                s.p[i] = nb.xy
-                s.z[i] = nb.z
+            if fa && fb { continue }
+            let ax = s.p[i - 1].x, ay = s.p[i - 1].y, az = s.z[i - 1]
+            let bx = s.p[i].x, by = s.p[i].y, bz = s.z[i]
+            let dx = bx - ax, dy = by - ay, dz = bz - az
+            let l2 = dx * dx + dy * dy + dz * dz
+            guard l2 > 0.00000001 else { continue }
+            let l = l2.squareRoot()
+            let rampCurl = min(1, CGFloat(i - P + 1) / 2.5)
+            let targetLen = segBase * (1 - wetCurl * s.curl[i] * rampCurl)
+            let scale = (l - targetLen) / l
+            let cx = dx * scale, cy = dy * scale, cz = dz * scale
+            if fa {
+                s.p[i] = HairV(bx - cx, by - cy)
+                s.z[i] = bz - cz
+            } else if fb {
+                s.p[i - 1] = HairV(ax + cx, ay + cy)
+                s.z[i - 1] = az + cz
+            } else {
+                let hx = cx * 0.5, hy = cy * 0.5, hz = cz * 0.5
+                s.p[i - 1] = HairV(ax + hx, ay + hy)
+                s.z[i - 1] = az + hz
+                s.p[i] = HairV(bx - hx, by - hy)
+                s.z[i] = bz - hz
             }
         }
         let root = s.restL[P - 1]
         let headK: CGFloat = s.kind == .back ? 1.035 : 1.02
-        for i in P..<n where !held.contains(i) {
+        let isSide = s.kind == .side
+        let isFringe = s.kind == .fringe
+        let touchCount = s.touch.count
+        let hcx = SalonBody.center.x, hcy = SalonBody.center.y
+        let hrx = SalonBody.rx, hry = SalonBody.ry
+        let bodyDepth = SalonBody.bodyDepth
+        let floorY = SalonBody.floorY
+        let capeBottom = SalonBody.capeBottom
+        let invSquash = 1 / squash
+        for i in P..<n {
+            if hasHeld && i < 64 && (heldMask & (UInt64(1) &<< UInt64(i))) != 0 { continue }
             // collisions ease in over the first points, whose roots are on the scalp itself
             let ramp = min(1, CGFloat(i - P + 1) / 4)
-            var xy = s.p[i]
-            var z = s.z[i]
-            let inX = xy, inZ = z
-            SalonBody.pushOutOfHead(&xy, &z, k: headK * ramp)
-            if s.kind == .side { SalonBody.keepOffFace(&xy, &z, root: root, yaw: yaw) }
-            SalonBody.pushOutOfBody(&xy, &z, squash: squash)
-            xy.x = max(-300, min(900, xy.x))
-            let hit = xy != inX || z != inZ
-            if last, hit || (i < s.touch.count && s.touch[i]) {
-                // touching her: barely moving hair stays put (static friction), the rest slides with drag
-                let creep = H3(xy - s.o[i], z - s.oz[i]).len
-                if creep < 0.2 {
-                    xy = s.o[i]
-                    z = s.oz[i]
-                } else {
-                    let ox = s.o[i] + (xy - inX), oz = s.oz[i] + (z - inZ)
-                    s.o[i] = ox + (xy - ox) * 0.35
-                    s.oz[i] = oz + (z - oz) * 0.35
+            let inX = s.p[i].x, inY = s.p[i].y, inZ = s.z[i]
+            var x = inX, y = inY, z = inZ
+
+            let krx = hrx * headK * ramp
+            let kry = hry * headK * ramp
+            let ex = (x - hcx) / krx
+            let ey = (y - hcy) / kry
+            let ez = z / krx
+            let r2 = ex * ex + ey * ey + ez * ez
+            if r2 < 1 && r2 > 0.000001 {
+                let invR = 1 / r2.squareRoot()
+                x = hcx + ex * invR * krx
+                y = hcy + ey * invR * kry
+                z = ez * invR * krx
+            }
+
+            if isSide {
+                let wx = x - hcx
+                let ly = y - hcy
+                let lz = wx * sinYaw + z * cosYaw
+                if lz > -20 {
+                    let lx = wx * cosYaw - z * sinYaw
+                    let side: CGFloat = root.x < 0 ? -1 : 1
+                    let fey = max(-1, min(0, ly / hry))
+                    let edge = side * hrx * (1 - fey * fey).squareRoot()
+                    let u = max(0, min(1, (ly - root.y) / 60))
+                    let w = u * u * (3 - 2 * u)
+                    let limit = root.x + (edge - root.x) * w
+                    var nlx = lx
+                    if side < 0, nlx > limit { nlx = limit }
+                    if side > 0, nlx < limit { nlx = limit }
+                    if nlx != lx {
+                        x = hcx + nlx * cosYaw + lz * sinYaw
+                        z = -nlx * sinYaw + lz * cosYaw
+                    }
+                }
+            } else if isFringe {
+                // Keep grown or pulled bangs parting gently off her eyes below the brow line.
+                let wx = x - hcx
+                let ly = y - hcy
+                let lz = wx * sinYaw + z * cosYaw
+                if lz > -10 && ly > 0 {
+                    let lx = wx * cosYaw - z * sinYaw
+                    let side: CGFloat = root.x < 0 ? -1 : 1
+                    let u = min(1, ly / 45)
+                    let w = u * u * (3 - 2 * u)
+                    let targetX = side * max(abs(root.x), 74)
+                    var nlx = lx
+                    if side < 0, nlx > targetX { nlx = lx + (targetX - lx) * w }
+                    if side > 0, nlx < targetX { nlx = lx + (targetX - lx) * w }
+                    if nlx != lx {
+                        x = hcx + nlx * cosYaw + lz * sinYaw
+                        z = -nlx * sinYaw + lz * cosYaw
+                    }
                 }
             }
-            s.p[i] = xy
+
+            if y < capeBottom + 30 && abs(z) < bodyDepth {
+                let d = abs(x - 300) * invSquash
+                let top: CGFloat
+                if d <= 34 {
+                    top = 436
+                } else if d <= 100 {
+                    top = 436 + (d - 34) * 0.6
+                } else {
+                    top = 475.6 + (d - 100) * 2.4
+                }
+                if top < capeBottom && y > top {
+                    let sSlope: CGFloat = (d <= 34 ? 0 : (d <= 100 ? 0.6 : 2.4)) * invSquash
+                    let m = x < 300 ? -sSlope : sSlope
+                    let depth = y - top
+                    let k = 1 / (1 + m * m)
+                    if depth * k < bodyDepth - abs(z) {
+                        y -= depth * k
+                        x += m * depth * k
+                    } else {
+                        z = z < 0 ? -bodyDepth : bodyDepth
+                    }
+                }
+            }
+            if y > floorY { y = floorY }
+            if x < -300 { x = -300 } else if x > 900 { x = 900 }
+
+            if last {
+                let hit = x != inX || y != inY || z != inZ
+                if hit || (i < touchCount && s.touch[i]) {
+                    // touching her: barely moving hair stays put (static friction), the rest slides with drag
+                    let ox0 = s.o[i].x, oy0 = s.o[i].y, oz0 = s.oz[i]
+                    let cdx = x - ox0, cdy = y - oy0, cdz = z - oz0
+                    if cdx * cdx + cdy * cdy + cdz * cdz < 0.04 {
+                        x = ox0
+                        y = oy0
+                        z = oz0
+                    } else {
+                        let ox = ox0 + (x - inX), oy = oy0 + (y - inY), oz = oz0 + (z - inZ)
+                        s.o[i] = HairV(ox + (x - ox) * 0.35, oy + (y - oy) * 0.35)
+                        s.oz[i] = oz + (z - oz) * 0.35
+                    }
+                }
+            }
+            s.p[i] = HairV(x, y)
             s.z[i] = z
         }
     }
@@ -877,7 +1010,12 @@ final class HairSim {
     /// Switches the scrunchie near q to its next style. Returns the new style, or nil if there is none there.
     func restyle(near q: HairV) -> HairTie.Style? {
         guard let i = ties.indices.min(by: { ties[$0].at.dist(q) < ties[$1].at.dist(q) }),
-              ties[i].at.dist(q) < 44, SalonBody.visible(ties[i].at, ties[i].z) else { return nil }
+              ties[i].at.dist(q) < 48, SalonBody.visible(ties[i].at, ties[i].z, squash: squash) else { return nil }
+        return restyle(tieIndex: i)
+    }
+
+    func restyle(tieIndex i: Int) -> HairTie.Style? {
+        guard ties.indices.contains(i) else { return nil }
         ties[i].style = ties[i].style.next
         return ties[i].style
     }
@@ -986,9 +1124,10 @@ final class HairSim {
 
     /// The comb (or her finger) moves from a to b. Returns how many locks it caught.
     @discardableResult
-    func comb(from a: HairV, to b: HairV, radius: CGFloat, detangle: CGFloat) -> Int {
+    func comb(from a: HairV, to b: HairV, radius: CGFloat, detangle: CGFloat, gloss: CGFloat? = nil, looseChance: Double? = nil) -> Int {
         let mv = b - a
         guard mv.len > 0.3 else { return 0 }
+        let sheen = gloss ?? (detangle >= 0.2 ? 0.12 : 0)
         var caught = 0
         for si in strands.indices {
             let P = strands[si].pinned
@@ -1004,17 +1143,28 @@ final class HairSim {
             if hit {
                 caught += 1
                 strands[si].tangle = max(0, strands[si].tangle - detangle)
+                if sheen > 0 {
+                    strands[si].gloss = min(1, strands[si].gloss + sheen)
+                }
             }
         }
-        if detangle > 0 { knockLoose(near: b, radius: radius + 10, chance: 0.12) }
+        if detangle > 0 {
+            let chance = looseChance ?? min(0.85, max(0.12, Double(detangle) * 2.4))
+            knockLoose(from: a, to: b, radius: radius + 12, chance: chance)
+        }
         return caught
     }
 
     /// Leaves and twigs fall out when the comb, towel or water gets them.
     func knockLoose(near q: HairV, radius: CGFloat, chance: Double) {
+        knockLoose(from: q, to: q, radius: radius, chance: chance)
+    }
+
+    func knockLoose(from a: HairV, to b: HairV, radius: CGFloat, chance: Double) {
         var keep: [HairClip] = []
         for c in clips {
-            if (c.kind == .leaf || c.kind == .twig), let at = position(c.strand, c.node), at.dist(q) < radius,
+            if (c.kind == .leaf || c.kind == .twig), let at = position(c.strand, c.node),
+               at.distToSegment(a, b) < radius,
                Double.random(in: 0..<1, using: &rng) < chance {
                 dropped.append((c, at + HairV(c.dx, c.dy), HairV(rand(-2, 2), rand(-3, 0)), 0))
             } else {
@@ -1090,14 +1240,25 @@ final class HairSim {
         return t >= 0 && t <= 1 && u >= 0 && u <= 1
     }
 
+    /// Maximum free points a strand can grow to: bangs frame the brow cleanly instead of covering her eyes.
+    static func maxFree(for s: HairStrand) -> Int {
+        guard s.kind == .fringe, let root = s.restL.last else { return HairSim.maxFree }
+        let rootY = root.y + SalonBody.center.y
+        let sideCurve = min(1, abs(root.x) / 90) * 10
+        let browY: CGFloat = 284 + sideCurve
+        return max(1, min(4, Int((browY - rootY) / HairSim.seg)))
+    }
+
     /// The grow potion: locks near q get longer. Returns true if any grew.
     func grow(near q: HairV, radius: CGFloat, dt: CGFloat) -> Bool {
         var any = false
-        for si in strands.indices where strands[si].free < HairSim.maxFree {
+        for si in strands.indices {
+            let limit = HairSim.maxFree(for: strands[si])
+            guard strands[si].free < limit else { continue }
             let s = strands[si]
             guard s.p.contains(where: { $0.dist(q) < radius }) else { continue }
             strands[si].growth += dt * 9
-            while strands[si].growth >= 1 && strands[si].free < HairSim.maxFree {
+            while strands[si].growth >= 1 && strands[si].free < limit {
                 strands[si].growth -= 1
                 let t = strands[si]
                 let n = t.p.count
@@ -1208,12 +1369,32 @@ final class HairSim {
         return added
     }
 
+    /// Blow-dryer: dries every strand in the warm air cone evenly at ~0.55/s (~2s from soaked to dry).
+    @discardableResult
+    func dry(from q: HairV, dir: HairV, dt: CGFloat) -> Int {
+        var proximity: [Int: CGFloat] = [:]
+        touch(q + dir * 140, radius: 195, freeOnly: false) { si, _, f in
+            if let prev = proximity[si] {
+                if f > prev { proximity[si] = f }
+            } else {
+                proximity[si] = f
+            }
+        }
+        var dried = 0
+        for (si, f) in proximity where strands[si].wet > 0 {
+            let rate: CGFloat = 0.58 * (0.5 + 0.5 * f)
+            strands[si].wet = max(0, strands[si].wet - dt * rate)
+            dried += 1
+        }
+        return dried
+    }
+
     /// Water washes foam away near q. Returns how much foam came off.
     func rinse(_ q: HairV, radius: CGFloat) -> Int {
         var off = 0
         var keep: [HairBubble] = []
         for b in foam {
-            if let at = position(b.strand, b.node), (at + b.off).dist(q) < radius + b.r, Double.random(in: 0..<1, using: &rng) < 0.35 {
+            if let at = position(b.strand, b.node), (at + b.off).dist(q) < radius + b.r, Double.random(in: 0..<1, using: &rng) < 0.75 {
                 dropped.append((nil, at + b.off, HairV(0, 0), b.r))
                 off += 1
             } else {
@@ -1221,7 +1402,7 @@ final class HairSim {
             }
         }
         foam = keep
-        knockLoose(near: q, radius: radius, chance: 0.02)
+        knockLoose(near: q, radius: radius, chance: 0.05)
         return off
     }
 
