@@ -238,6 +238,7 @@ final class GardenHandState {
     var lastAt = Date()
     var startAt = Date()
     var active = false
+    var autoCancelled = false
 }
 
 struct GardenView: View {
@@ -292,14 +293,16 @@ struct GardenView: View {
                     showStickerBook: true,
                     showCoins: true,
                     onExit: {
-                        auto.cancel()
+                        cancelAutoTool()
+                        cancelActiveStockDrag()
                         sim.onUIStateChange = nil
                         sim.save()
                         GardenSound.shared.stopLoops()
                         exit()
                     },
                     onStickerBook: {
-                        auto.cancel()
+                        cancelAutoTool()
+                        cancelActiveStockDrag()
                         GardenSound.shared.stopLoops()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
                             showBook = true
@@ -354,13 +357,15 @@ struct GardenView: View {
         .onAppear(perform: start)
         .onChange(of: scenePhase) { phase in
             if phase != .active {
-                auto.cancel()
+                cancelAutoTool()
+                cancelActiveStockDrag()
                 sim.save()
                 GardenSound.shared.stopLoops()
             }
         }
         .onDisappear {
-            auto.cancel()
+            cancelAutoTool()
+            cancelActiveStockDrag()
             sim.onUIStateChange = nil
             sim.save()
             GardenSound.shared.stopLoops()
@@ -378,6 +383,18 @@ struct GardenView: View {
         ui = sim.currentUIState()
     }
 
+    private func cancelAutoTool() {
+        guard auto.running else { return }
+        hand.autoCancelled = true
+        auto.cancel()
+        hand.autoCancelled = false
+    }
+
+    private func cancelActiveStockDrag() {
+        sim.cancelStockItemDrag()
+        draggedStockID = nil
+    }
+
     // MARK: Direct World Hand Gesture
 
     private var handGesture: some Gesture {
@@ -386,7 +403,7 @@ struct GardenView: View {
                 let p = v.location
                 let now = Date()
                 if !hand.active {
-                    if auto.running { auto.cancel() }
+                    if auto.running { cancelAutoTool() }
                     if dockMode != .hand {
                         withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
                             dockMode = .hand
@@ -436,7 +453,8 @@ struct GardenView: View {
         let active = ui.station == target
         let readyBadge = target == .farmstand && ui.station == .bed && ui.orderReadyInInventory
         return Button {
-            auto.cancel()
+            cancelAutoTool()
+            cancelActiveStockDrag()
             dockMode = .hand
             withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
                 sim.setStation(target)
@@ -469,11 +487,16 @@ struct GardenView: View {
     }
 
     private func orderPreviewPill(_ order: FarmstandOrder) -> some View {
-        let pool = ui.inventory + (sim.activeDraft?.items ?? [])
+        var rawPool = ui.inventory + (sim.activeDraft?.items ?? [])
+        if let dragged = ui.draggedStockItem, !rawPool.contains(where: { $0.id == dragged.id }) {
+            rawPool.append(dragged)
+        }
+        let pool = rawPool.filter { order.kind.accepts($0) }
         let previewMatch = FarmstandMatcher.match(requirements: order.requirements, items: pool)
         let activeMatches = ui.station == .farmstand ? ui.draftMatchedSlots : previewMatch.slotMatched
         return Button {
-            auto.cancel()
+            cancelAutoTool()
+            cancelActiveStockDrag()
             dockMode = .hand
             if ui.station != .farmstand {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
@@ -538,7 +561,8 @@ struct GardenView: View {
         return Button {
             Sound.shared.play(.flip, volume: 0.65)
             Sound.shared.tap()
-            auto.cancel()
+            cancelAutoTool()
+            cancelActiveStockDrag()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
                 showAlmanac = true
             }
@@ -644,7 +668,7 @@ struct GardenView: View {
                 case .seeds, .decor:
                     return
                 case .shovel, .can:
-                    if auto.running { auto.cancel() }
+                    if auto.running { cancelAutoTool() }
                     guard carrying != nil || !ToolTap.isTap(v.translation) else { return }
                     if dockMode != .hand { dockMode = .hand }
                     useTool(slot, v.location)
@@ -655,7 +679,7 @@ struct GardenView: View {
                 case .seeds, .decor:
                     Sound.shared.tap()
                     Sound.shared.play(.pop, volume: 0.6)
-                    auto.cancel()
+                    cancelAutoTool()
                     let want: GardenTray = slot == .seeds ? .seeds : .decor
                     withAnimation(.spring(response: 0.36, dampingFraction: 0.76)) {
                         dockMode = dockMode == .tray(want) ? .hand : .tray(want)
@@ -695,6 +719,8 @@ struct GardenView: View {
 
     private func runAutoTool(_ slot: DockSlot) {
         guard slot == .shovel || slot == .can else { return }
+        cancelAutoTool()
+        hand.autoCancelled = false
         if slot == .shovel {
             let target = sim.bestShovelTarget()
             let fingerSpot = GardenSim.fingerPoint(for: target, lift: GardenSim.lift(for: .shovel))
@@ -707,7 +733,9 @@ struct GardenView: View {
                 }
                 sim.handleDockToolDragChanged(.shovel, finger: p)
             }, end: { _ in
-                sim.autoShovel(at: target)
+                if !hand.autoCancelled {
+                    sim.autoShovel(at: target)
+                }
                 endTool(.shovel)
             })
         } else {
@@ -717,7 +745,9 @@ struct GardenView: View {
             auto.run(from: slot.homePoint, to: fingerSpot, step: { p in
                 useTool(.can, p)
             }, end: { _ in
-                sim.waterPlant(at: target)
+                if !hand.autoCancelled {
+                    sim.waterPlant(at: target)
+                }
                 endTool(.can)
             })
         }
@@ -837,12 +867,16 @@ struct GardenView: View {
 
     private var farmstandStockShelf: some View {
         let order = ui.activeOrder
-        let sortedItems = ui.inventory.sorted { a, b in
+        var shelfPool = ui.inventory
+        if let dragged = ui.draggedStockItem, !shelfPool.contains(where: { $0.id == dragged.id }) {
+            shelfPool.append(dragged)
+        }
+        let sortedItems = shelfPool.sorted { a, b in
             let aOk = order?.kind.accepts(a) ?? true
             let bOk = order?.kind.accepts(b) ?? true
             if aOk != bOk { return aOk }
             if a.isGiant != b.isGiant { return a.isGiant }
-            return false
+            return a.id.uuidString < b.id.uuidString
         }
         let hasAccepted = sortedItems.contains { order?.kind.accepts($0) ?? true }
 
@@ -871,6 +905,7 @@ struct GardenView: View {
                     Button {
                         Sound.shared.play(.whoosh, volume: 0.5)
                         Sound.shared.tap()
+                        cancelActiveStockDrag()
                         sim.clearDraft()
                     } label: {
                         Image(systemName: "arrow.uturn.backward")
@@ -894,6 +929,7 @@ struct GardenView: View {
 
     private var goGrowShortcutTile: some View {
         Button {
+            cancelActiveStockDrag()
             withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
                 sim.setStation(.bed)
             }
@@ -919,6 +955,7 @@ struct GardenView: View {
 
     private func farmstandStockTile(_ item: HarvestItem, accepted: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let isDragging = draggedStockID == item.id || ui.draggedStockItem?.id == item.id
         return ZStack {
             shape.fill(accepted ? .white : Theme.cream.opacity(0.75))
             Canvas { ctx, size in
@@ -935,9 +972,10 @@ struct GardenView: View {
                 lineWidth: item.isGiant ? 3.5 : 2.5
             )
         )
-        .opacity(accepted ? 1.0 : 0.42)
+        .opacity(isDragging ? 0.28 : (accepted ? 1.0 : 0.42))
         .contentShape(Rectangle())
         .onTapGesture {
+            guard draggedStockID == nil else { return }
             _ = sim.addStockItemToDraft(item.id)
         }
         .simultaneousGesture(

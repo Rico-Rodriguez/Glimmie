@@ -311,9 +311,9 @@ enum FarmstandOrderGenerator {
         let produce = inventory.filter(\.isEdibleProduce)
 
         let kind: FarmstandOrderKind
-        if flowers.count >= 2 && produce.count < 2 {
+        if flowers.count > produce.count && !flowers.isEmpty {
             kind = .bouquet
-        } else if produce.count >= 2 && flowers.count < 2 {
+        } else if produce.count > flowers.count && !produce.isEmpty {
             kind = (servedCount + seed) % 2 == 0 ? .jamJar : .farmBasket
         } else {
             let cycle: [FarmstandOrderKind] = [.bouquet, .jamJar, .farmBasket]

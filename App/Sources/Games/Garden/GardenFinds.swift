@@ -167,9 +167,9 @@ extension GardenSim {
         if Int(time * 2) != Int((time - Double(dt)) * 2) {
             for i in plots.indices {
                 switch plots[i].stage {
-                case .ripe(let ripe) where ripe.isSpecial:
+                case .ripe(let ripe) where ripe.isSpecial && ripe.kind != .pumpkin:
                     discover(.special(ripe.kind), at: head(plot: i) ?? CGPoint(x: GGeo.plotX[i], y: GGeo.soilY - 60))
-                case .growing(let growing) where growing.growth >= 0.97 && growing.isSpecial:
+                case .growing(let growing) where growing.growth >= 0.97 && growing.isSpecial && growing.kind != .pumpkin:
                     discover(.special(growing.kind), at: head(plot: i) ?? CGPoint(x: GGeo.plotX[i], y: GGeo.soilY - 60))
                 default:
                     break
@@ -423,7 +423,7 @@ extension GardenSim {
         let origin = CGPoint(x: v.pos.x, y: v.pos.y - v.kind.stickerHeight * 0.45)
         playVisitorSound(v.kind)
         Sound.shared.play(.sparkle, volume: 0.45)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         heartBurst(at: origin, count: 6)
         sparkle(at: origin, count: 10)
         if let f = GardenFind(rawValue: v.kind.rawValue) {
@@ -477,14 +477,14 @@ extension GardenSim {
             guard time - v.poked > 0.45 else { return true }
             visitors[i].poked = time
             playVisitorSound(v.kind)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             return true
         }
         guard time - v.poked > 0.55 else { return true }
         visitors[i].poked = time
         let mid = v.kind.flies ? v.p : CGPoint(x: v.p.x, y: v.p.y - v.kind.stickerHeight * 0.4)
         playVisitorSound(v.kind)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         heartBurst(at: mid, count: 3)
         sparkle(at: mid, count: 6)
         return true
@@ -647,9 +647,8 @@ enum GardenVisitorPainter {
             StorybookArt.shape(g, roof, hex: 0xFF8DA1, width: 2)
             g.fill(Path(ellipseIn: CGRect(x: center.x - 3.5, y: center.y + 1.5, width: 7, height: 7)), with: .color(Color(hex: 0x3A4A5C)))
         case .moon:
-            var moon = Path(ellipseIn: CGRect(x: center.x - 12, y: center.y - 12, width: 24, height: 24))
-            moon.addEllipse(in: CGRect(x: center.x - 4, y: center.y - 16, width: 24, height: 24))
-            g.fill(moon, with: .color(Theme.lemon), style: FillStyle(eoFill: true))
+            let moon = GardenPlants.crescentMoonPath(center: center, radius: 12)
+            g.fill(moon, with: .color(Theme.lemon))
             StorybookArt.sparkle(g, at: CGPoint(x: center.x + 9, y: center.y - 7), radius: 5, color: Color(hex: 0xFFB830))
         }
     }

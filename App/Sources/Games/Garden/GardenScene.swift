@@ -154,9 +154,8 @@ enum GardenPainter {
             g.fill(Path(ellipseIn: CGRect(x: mc.x - 104, y: mc.y - 104, width: 208, height: 208)),
                    with: .radialGradient(Gradient(colors: [Color(hex: 0xFFF8D6, alpha: 0.32 * n), Color.white.opacity(0)]),
                                          center: mc, startRadius: 18, endRadius: 104))
-            var moon = Path(ellipseIn: CGRect(x: mc.x - 36, y: mc.y - 36, width: 72, height: 72))
-            moon.addEllipse(in: CGRect(x: mc.x - 16, y: mc.y - 46, width: 72, height: 72))
-            g.fill(moon, with: .color(Color(hex: 0xFFF6D0, alpha: n)), style: FillStyle(eoFill: true))
+            let moon = GardenPlants.crescentMoonPath(center: mc, radius: 36)
+            g.fill(moon, with: .color(Color(hex: 0xFFF6D0, alpha: n)))
         }
 
         // Warm storybook sun with turning rays, fully visible below the top bar.

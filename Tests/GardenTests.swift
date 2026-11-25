@@ -1082,4 +1082,180 @@ final class GardenTests: XCTestCase {
             XCTAssertNotNil(url, s.rawValue)
         }
     }
+
+    // MARK: Adversarial Review Regressions
+
+    func testStockDragKeepsUIStateExposedAndCancelRestoresOrder() {
+        let sim = freshSim()
+        let tulip = HarvestItem(source: .plant(kind: .tulip, variant: 0, isGiant: false))
+        let daisy = HarvestItem(source: .plant(kind: .daisy, variant: 1, isGiant: false))
+        sim.inventory = [tulip, daisy]
+        let order = FarmstandOrder(customer: .bunny, kind: .bouquet, requirements: [.species(.tulip), .anyFlower])
+        sim.farmstandPhase = .crafting(order: order, draft: FarmstandDraft())
+        sim.setStation(.farmstand)
+
+        XCTAssertTrue(sim.beginStockItemDrag(tulip.id, finger: CGPoint(x: 420, y: 740)))
+        let midUI = sim.currentUIState()
+        XCTAssertEqual(midUI.inventory.map(\.id), [daisy.id])
+        XCTAssertEqual(midUI.draggedStockItem?.id, tulip.id)
+        XCTAssertTrue(midUI.orderReadyInInventory)
+
+        sim.cancelStockItemDrag()
+        let afterCancel = sim.currentUIState()
+        XCTAssertNil(afterCancel.draggedStockItem)
+        XCTAssertEqual(afterCancel.inventory.map(\.id), [tulip.id, daisy.id])
+
+        // Single-item inventory drag stays exposed in UI state until endStockItemDrag lands in draft.
+        sim.inventory = [tulip]
+        XCTAssertTrue(sim.beginStockItemDrag(tulip.id, finger: CGPoint(x: 420, y: 740)))
+        XCTAssertTrue(sim.currentUIState().inventory.isEmpty)
+        XCTAssertEqual(sim.currentUIState().draggedStockItem?.id, tulip.id)
+        let fingerForCraft = GardenSim.fingerPoint(for: GGeo.Farmstand.craftCenter, lift: FingerLift.item)
+        sim.endStockItemDrag(finger: fingerForCraft)
+        XCTAssertNil(sim.currentUIState().draggedStockItem)
+        XCTAssertEqual(sim.activeDraft?.items.map(\.id), [tulip.id])
+    }
+
+    func testPlacedTallDecorDropsOntoReturnBadgeViaSceneDrag() {
+        let sim = freshSim()
+        for i in sim.plots.indices { sim.plots[i].plant = nil }
+        sim.decor = []
+        sim.addDecor(.birdhouse, x: 500, falling: false)
+
+        let grabPt = CGPoint(x: sim.decor[0].x, y: sim.decor[0].y - 60)
+        sim.handleSceneDragChanged(grabPt, startLocation: grabPt, dt: 1.0 / 60)
+        XCTAssertTrue(sim.isDraggingDecor)
+
+        sim.handleSceneDragChanged(GGeo.returnBadge, startLocation: grabPt, dt: 1.0 / 60)
+        XCTAssertTrue(sim.overReturnBadge)
+
+        sim.handleSceneDragEnded(GGeo.returnBadge, startLocation: grabPt, duration: 0.6)
+        XCTAssertTrue(sim.decor.isEmpty)
+        XCTAssertFalse(sim.overReturnBadge)
+    }
+
+    func testAutoShovelStrictSingleActionNeverUprootsHealthyPlantOnWeedOrMysteryBulb() {
+        // Case A: Full 6-plot bed + 1 weed -> rubbing mid-autoShovel never pops early or uproots a plant.
+        let sim = freshSim()
+        for i in sim.plots.indices {
+            sim.plots[i].stage = .ripe(RipePlant(kind: .tulip, variant: i % 6, yieldLeft: 1))
+        }
+        let weedX = GGeo.plotX[2] + 16
+        sim.weeds = [GWeed(x: weedX, growth: 1.0, seed: 5)]
+
+        let targetA = sim.bestShovelTarget()
+        sim.pickUp(.shovel, at: targetA)
+        sim.autoShovelActive = true
+        for k in 0..<78 {
+            let ang = CGFloat(k) / 78 * 4 * .pi
+            sim.carry(to: CGPoint(x: targetA.x + sin(ang) * 20, y: targetA.y + cos(ang) * 12))
+            sim.step(dt: 1.0 / 60)
+        }
+        XCTAssertEqual(sim.weeds.count, 1)
+        XCTAssertTrue(sim.plots.allSatisfy { !$0.isEmpty })
+
+        sim.autoShovel(at: targetA)
+        sim.release(home: CGPoint(x: 371, y: GGeo.dockY))
+        XCTAssertTrue(sim.weeds.isEmpty)
+        XCTAssertTrue(sim.plots.allSatisfy { !$0.isEmpty })
+
+        // Case B: 5 healthy plants + 1 empty plot with mystery bulb -> unearths once and spares all 5 plants.
+        let simB = freshSim()
+        simB.weeds = []
+        for i in 0..<5 {
+            simB.plots[i].stage = .ripe(RipePlant(kind: .daisy, variant: i % 6, yieldLeft: 2))
+        }
+        simB.plots[5].stage = .empty(surprise: .mysteryBulb, surpriseReady: true)
+
+        let targetB = simB.bestShovelTarget()
+        simB.pickUp(.shovel, at: targetB)
+        simB.autoShovelActive = true
+        for k in 0..<78 {
+            let ang = CGFloat(k) / 78 * 4 * .pi
+            simB.carry(to: CGPoint(x: targetB.x + sin(ang) * 18, y: targetB.y + cos(ang) * 10))
+            simB.step(dt: 1.0 / 60)
+        }
+        XCTAssertTrue(simB.plots[5].isEmpty)
+
+        simB.autoShovel(at: targetB)
+        simB.release(home: CGPoint(x: 371, y: GGeo.dockY))
+        XCTAssertTrue(simB.plots[5].plant?.isSpecial ?? false)
+        for i in 0..<5 {
+            XCTAssertEqual(simB.plots[i].plant?.kind, .daisy)
+        }
+    }
+
+    func testJamPressMilestonesCarrotPollenOrderBalanceAndRarePumpkinDecoupling() {
+        // 1) Smooth plunger drag fires discrete milestones instead of per-pixel particle spam.
+        let sim = freshSim()
+        let berry = HarvestItem(source: .plant(kind: .strawberry, variant: 0, isGiant: false))
+        sim.inventory = [berry]
+        let jamOrder = FarmstandOrder(customer: .hedgehog, kind: .jamJar, requirements: [.species(.strawberry)])
+        sim.farmstandPhase = .crafting(order: jamOrder, draft: FarmstandDraft())
+        sim.setStation(.farmstand)
+        XCTAssertTrue(sim.addStockItemToDraft(berry.id))
+        sim.farmstandParticles.removeAll()
+
+        for step in 1...50 {
+            sim.setJamPressProgress(CGFloat(step) / 50.0)
+        }
+        XCTAssertEqual(sim.activeDraft?.pressProgress ?? 0, 1.0, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(sim.farmstandParticles.count, 50)
+        XCTAssertGreaterThanOrEqual(sim.farmstandParticles.count, 28)
+
+        // 2) Ripe carrot pollen orb has priority over carrot pull-up grab.
+        let simP = freshSim()
+        for i in simP.plots.indices { simP.plots[i].plant = nil }
+        simP.plots[1].stage = .ripe(RipePlant(kind: .carrot, variant: 0, yieldLeft: 1))
+        simP.plots[4].stage = .ripe(RipePlant(kind: .tulip, variant: 0, yieldLeft: 1))
+        guard let carrotOrb = simP.pollenOrbPos(plot: 1), let tulipAnchor = simP.pollenAnchor(plot: 4) else {
+            return XCTFail("Expected carrot pollen orb and tulip anchor")
+        }
+        simP.handBegan(carrotOrb)
+        XCTAssertEqual(simP.dragPollenFromPlot, 1)
+        XCTAssertFalse(simP.plots[1].held)
+        simP.handMoved(tulipAnchor)
+        simP.handEnded(tulipAnchor, tap: false)
+        XCTAssertEqual(simP.plots[1].plant?.kind, .carrot)
+        XCTAssertNotNil(simP.plots[4].plant?.hybrid)
+
+        // 3) Order generator balances surplus flower vs surplus produce vs equal counts.
+        let f1 = HarvestItem(source: .plant(kind: .tulip, variant: 0, isGiant: false))
+        let f2 = HarvestItem(source: .plant(kind: .daisy, variant: 0, isGiant: false))
+        let f3 = HarvestItem(source: .plant(kind: .sunflower, variant: 0, isGiant: false))
+        let p1 = HarvestItem(source: .plant(kind: .carrot, variant: 0, isGiant: false))
+        let p2 = HarvestItem(source: .plant(kind: .tomato, variant: 0, isGiant: false))
+        let p3 = HarvestItem(source: .plant(kind: .strawberry, variant: 0, isGiant: false))
+        XCTAssertEqual(FarmstandOrderGenerator.nextOrder(inventory: [f1, f2, f3, p1, p2], servedCount: 1, seed: 1).kind, .bouquet)
+        XCTAssertNotEqual(FarmstandOrderGenerator.nextOrder(inventory: [f1, f2, p1, p2, p3], servedCount: 0, seed: 0).kind, .bouquet)
+        let equalKinds = Set((0..<3).map { FarmstandOrderGenerator.nextOrder(inventory: [f1, f2, p1, p2], servedCount: 0, seed: $0).kind })
+        XCTAssertEqual(equalKinds, Set(FarmstandOrderKind.allCases))
+
+        // 4) Rare-variant unpuffed pumpkin does NOT unlock giantPumpkin sticker until watered/puffed.
+        let simG = freshSim()
+        for i in simG.plots.indices { simG.plots[i].plant = nil }
+        simG.plots[3].stage = .ripe(RipePlant(kind: .pumpkin, variant: Plant.specialVariant, yieldLeft: 1, isGiant: false))
+        run(simG, seconds: 1.2)
+        simG.drainEffectsForTesting()
+        XCTAssertFalse(StickerBook.shared.has(game: GardenSim.gameID, id: GardenFind.giantPumpkin.rawValue))
+        simG.waterPlant(at: CGPoint(x: GGeo.plotX[3], y: simG.surface(GGeo.plotX[3]) - 10))
+        simG.drainEffectsForTesting()
+        XCTAssertTrue(simG.plots[3].plant?.giant ?? false)
+        XCTAssertTrue(StickerBook.shared.has(game: GardenSim.gameID, id: GardenFind.giantPumpkin.rawValue))
+
+        // 5) Inventory total cap (inventory + draft) enforced on harvest without dropping draft items on save.
+        let simCap = freshSim()
+        simCap.inventory = (0..<58).map { HarvestItem(source: .plant(kind: .tulip, variant: $0 % 6, isGiant: false)) }
+        let d1 = HarvestItem(source: .plant(kind: .daisy, variant: 0, isGiant: false))
+        let d2 = HarvestItem(source: .plant(kind: .daisy, variant: 1, isGiant: false))
+        let bOrder = FarmstandOrder(customer: .owl, kind: .bouquet, requirements: [.anyFlower, .anyFlower])
+        simCap.farmstandPhase = .crafting(order: bOrder, draft: FarmstandDraft(items: [d1, d2]))
+        simCap.plots[0].stage = .ripe(RipePlant(kind: .sunflower, variant: 0, yieldLeft: 1))
+        XCTAssertNotNil(simCap.harvest(0))
+        XCTAssertEqual(simCap.inventory.count + (simCap.activeDraft?.items.count ?? 0), GardenSim.maxInventory)
+        let savedInv = simCap.makeSave().harvestInventory ?? []
+        XCTAssertEqual(savedInv.count, GardenSim.maxInventory)
+        XCTAssertTrue(savedInv.contains(where: { $0.id == d1.id }))
+        XCTAssertTrue(savedInv.contains(where: { $0.id == d2.id }))
+    }
 }

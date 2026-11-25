@@ -18,6 +18,7 @@ enum GardenDockHint: String, Equatable {
 enum GardenEffect: Equatable {
     case earnCoins(amount: Int, from: CGPoint)
     case discoverSticker(GardenFind, at: CGPoint)
+    case haptic
     case save
 }
 
@@ -31,6 +32,7 @@ struct GardenUIState: Equatable {
     var showReturnBadge: Bool
     var overReturnBadge: Bool
     var inventory: [HarvestItem]
+    var draggedStockItem: HarvestItem?
     var activeOrder: FarmstandOrder?
     var orderReadyInInventory: Bool
     var farmstandServedCount: Int
@@ -42,7 +44,6 @@ struct GardenUIState: Equatable {
     var draftRibbon: BouquetRibbonColor
     var draftLid: JamLidColor
     var draftDewSpritzed: Bool
-    var draftPressProgress: CGFloat
     var isCelebrating: Bool
     var celebrationStars: Int
     var isPollinatingTapMode: Bool
@@ -349,7 +350,9 @@ final class GardenSim {
     var farmstandPlungerHeld = false
     private var plungerGrabStartY: CGFloat = 0
     private var plungerStartProgress: CGFloat = 0
+    private var lastJamPressMilestone: Int = 0
     var draggedStockItem: HarvestItem?
+    private var draggedStockOriginalIndex: Int?
     var draggedStockPos = CGPoint.zero
     private var nextCelebrationHeartAt: Double = 0
 
@@ -624,22 +627,21 @@ final class GardenSim {
         if let dragged = draggedStockItem {
             persistedInventory.append(dragged)
         }
-        let capped = Array(persistedInventory.suffix(GardenSim.maxInventory))
         return GardenSave(
             plots: plots.map { $0.plant },
             soil: h.map { Double($0) },
             wet: wet.map { Double($0) },
             weeds: weeds.map { WeedSave(x: Double($0.x), growth: Double($0.growth), seed: $0.seed) },
             decor: decor.map { DecorSave(kind: $0.kind, x: Double($0.x), water: Double($0.water)) },
-            basket: GardenSave.encodeLegacyBasket(capped),
+            basket: GardenSave.encodeLegacyBasket(persistedInventory),
             weather: weather,
-            bouquet: GardenSave.encodeLegacyBouquet(capped, maxCount: GardenSim.maxBouquet),
+            bouquet: GardenSave.encodeLegacyBouquet(persistedInventory, maxCount: GardenSim.maxBouquet),
             discoveredHybrids: discoveredHybrids.isEmpty ? nil : discoveredHybrids,
             treehouseStage: treehouseStage > 0 ? treehouseStage : nil,
             picnicFeedCount: picnicFeedCount > 0 ? picnicFeedCount : nil,
             season: season,
             caughtFireflies: caughtFireflies > 0 ? caughtFireflies : nil,
-            harvestInventory: capped,
+            harvestInventory: persistedInventory,
             farmstandServedCount: farmstandServedCount > 0 ? farmstandServedCount : nil,
             activeOrder: activeOrder
         )
@@ -647,7 +649,13 @@ final class GardenSim {
 
     func save() {
         guard !demo else { return }
+        GameStorage.flushAsyncSaves()
         GardenStorage.save(makeSave())
+    }
+
+    func saveAsync() {
+        guard !demo else { return }
+        GardenStorage.saveAsync(makeSave())
     }
 
     // MARK: Post-Frame Outbox & UI Snapshot
@@ -676,6 +684,7 @@ final class GardenSim {
             let pending = outbox
             outbox.removeAll(keepingCapacity: true)
             var shouldSave = false
+            var shouldHaptic = false
             for effect in pending {
                 switch effect {
                 case .earnCoins(let amount, let from):
@@ -686,12 +695,17 @@ final class GardenSim {
                     if !demo || StickerBook.shared.demo {
                         _ = StickerBook.shared.find(game: GardenSim.gameID, id: find.rawValue)
                     }
+                case .haptic:
+                    shouldHaptic = true
                 case .save:
                     shouldSave = true
                 }
             }
+            if shouldHaptic {
+                Sound.shared.tap()
+            }
             if shouldSave {
-                save()
+                saveAsync()
             }
         }
         let next = currentUIState()
@@ -731,7 +745,10 @@ final class GardenSim {
         }()
         let readyInInventory: Bool = {
             guard let order else { return false }
-            let pool = inventory + (draft?.items ?? [])
+            var pool = inventory + (draft?.items ?? [])
+            if let dragged = draggedStockItem {
+                pool.append(dragged)
+            }
             return FarmstandMatcher.canFulfill(order: order, with: pool)
         }()
         let celebrating: Bool
@@ -753,6 +770,7 @@ final class GardenSim {
             showReturnBadge: isDraggingDecor,
             overReturnBadge: overReturnBadge,
             inventory: inventory,
+            draggedStockItem: draggedStockItem,
             activeOrder: order,
             orderReadyInInventory: readyInInventory,
             farmstandServedCount: farmstandServedCount,
@@ -764,7 +782,6 @@ final class GardenSim {
             draftRibbon: draft?.ribbon ?? .berryPink,
             draftLid: draft?.lid ?? .strawberryGingham,
             draftDewSpritzed: draft?.dewSpritzed ?? false,
-            draftPressProgress: draft?.pressProgress ?? 0,
             isCelebrating: celebrating,
             celebrationStars: celStars,
             isPollinatingTapMode: isPollinatingTapMode
@@ -820,7 +837,7 @@ final class GardenSim {
                 default:
                     target = location
                 }
-                handMoved(target, dt: dt)
+                handMoved(target, rawFinger: location, dt: dt)
             }
         case .farmstand:
             handleFarmstandDragChanged(location, startLocation: startLocation, dt: dt)
@@ -846,7 +863,7 @@ final class GardenSim {
             } else {
                 finalPoint = location
             }
-            handEnded(finalPoint, tap: isTap)
+            handEnded(finalPoint, rawFinger: location, tap: isTap)
             sceneDragActive = false
         case .farmstand:
             handleFarmstandDragEnded(location, tap: isTap)
@@ -927,10 +944,7 @@ final class GardenSim {
 
     func setStation(_ next: GardenStation) {
         guard next != station else { return }
-        if let dragged = draggedStockItem {
-            inventory.append(dragged)
-            draggedStockItem = nil
-        }
+        cancelStockItemDrag()
         farmstandSpritzHeld = false
         farmstandSpritzPos = GGeo.Farmstand.spritzHome
         farmstandSpritzTilt = 0
@@ -941,7 +955,7 @@ final class GardenSim {
         sceneDragActive = false
         station = next
         Sound.shared.play(.flip, volume: 0.65)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
     }
 
@@ -964,13 +978,14 @@ final class GardenSim {
         draft.items.append(item)
         if order.kind == .jamJar && draft.pressProgress > 0.45 {
             draft.pressProgress = 0.45
+            lastJamPressMilestone = min(lastJamPressMilestone, 1)
         }
         farmstandPhase = .crafting(order: order, draft: draft)
         farmstandCraftBounceV += 11
         let burst = CGPoint(x: GGeo.Farmstand.craftCenter.x, y: GGeo.Farmstand.craftCenter.y - 44)
         spawnFarmstandSparkles(at: burst, count: 10, color: item.source.displayColor)
         Sound.shared.play(.pop, volume: 0.65)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         let match = FarmstandMatcher.match(requirements: order.requirements, items: draft.items)
         if match.allMatched {
             farmstandBellBounceV += 10
@@ -989,11 +1004,12 @@ final class GardenSim {
         if draft.items.isEmpty {
             draft.dewSpritzed = false
             draft.pressProgress = 0
+            lastJamPressMilestone = 0
         }
         farmstandPhase = .crafting(order: order, draft: draft)
         farmstandCraftBounceV += 7
         Sound.shared.play(.whoosh, volume: 0.45)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
         return true
     }
@@ -1005,6 +1021,7 @@ final class GardenSim {
         draft.items.removeAll()
         draft.dewSpritzed = false
         draft.pressProgress = 0
+        lastJamPressMilestone = 0
         farmstandPhase = .crafting(order: order, draft: draft)
         markUIStateDirty()
     }
@@ -1015,7 +1032,7 @@ final class GardenSim {
         farmstandPhase = .crafting(order: order, draft: draft)
         farmstandCraftBounceV += 8
         Sound.shared.play(.pop, volume: 0.55)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
     }
 
@@ -1025,7 +1042,7 @@ final class GardenSim {
         farmstandPhase = .crafting(order: order, draft: draft)
         farmstandCraftBounceV += 8
         Sound.shared.play(.pop, volume: 0.55)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
     }
 
@@ -1035,7 +1052,7 @@ final class GardenSim {
         farmstandPhase = .crafting(order: order, draft: draft)
         farmstandCraftBounceV += 8
         Sound.shared.play(.pop, volume: 0.55)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
     }
 
@@ -1060,7 +1077,7 @@ final class GardenSim {
         }
         GardenSound.shared.play(.splash, volume: 0.55)
         Sound.shared.play(.sparkle, volume: 0.6)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
     }
 
@@ -1084,9 +1101,18 @@ final class GardenSim {
 
     private func applyJamPressProgress(_ next: CGFloat, order: FarmstandOrder, draft: FarmstandDraft) {
         var updated = draft
+        let prevMilestone = updated.pressProgress >= 0.99 ? 4 : Int(floor(updated.pressProgress * 4))
+        if prevMilestone < lastJamPressMilestone {
+            lastJamPressMilestone = prevMilestone
+        }
         let wasFinished = updated.pressProgress >= 0.99
         updated.pressProgress = next >= 0.96 ? 1.0 : next
         farmstandPhase = .crafting(order: order, draft: updated)
+
+        let milestone = updated.pressProgress >= 0.99 ? 4 : Int(floor(updated.pressProgress * 4))
+        guard milestone > lastJamPressMilestone else { return }
+        lastJamPressMilestone = milestone
+
         farmstandCraftBounceV += 10
         let col = updated.jamColor
         let jarTop = CGPoint(x: GGeo.Farmstand.craftCenter.x, y: GGeo.Farmstand.craftCenter.y - 26)
@@ -1101,14 +1127,14 @@ final class GardenSim {
             ))
         }
         Sound.shared.play(.pop, volume: 0.65)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         if !wasFinished && updated.pressProgress >= 0.99 {
             spawnFarmstandSparkles(at: jarTop, count: 16, color: GRGB(0xFFE38A))
             Sound.shared.play(.ding, volume: 0.65)
             Sound.shared.play(.sparkle, volume: 0.65)
             farmstandBellBounceV += 12
+            markUIStateDirty()
         }
-        markUIStateDirty()
     }
 
     @discardableResult
@@ -1141,6 +1167,7 @@ final class GardenSim {
             startedAt: time
         )
         farmstandPhase = .celebrating(celebration)
+        lastJamPressMilestone = 0
         farmstandBellBounceV += 14
         farmstandCraftBounceV += 12
         nextCelebrationHeartAt = time + 0.2
@@ -1151,7 +1178,7 @@ final class GardenSim {
         Sound.shared.play(.ding, volume: 0.7)
         Sound.shared.play(.cheer, volume: 0.6)
         Sound.shared.play(.fanfare, volume: 0.55)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
 
         earnCoins(coins, from: customerOrigin)
         if let sticker = GardenFind(rawValue: order.customer.rawValue) {
@@ -1163,6 +1190,7 @@ final class GardenSim {
     }
 
     func advanceToNextOrder(previousCustomer: GVisitorKind? = nil) {
+        cancelStockItemDrag()
         orderSeed += 1
         let nextOrder = FarmstandOrderGenerator.nextOrder(
             inventory: inventory,
@@ -1171,6 +1199,7 @@ final class GardenSim {
             seed: orderSeed
         )
         farmstandPhase = .crafting(order: nextOrder, draft: GardenSim.initialDraft(for: nextOrder))
+        lastJamPressMilestone = 0
         farmstandSpritzHeld = false
         farmstandSpritzPos = GGeo.Farmstand.spritzHome
         farmstandSpritzTilt = 0
@@ -1187,9 +1216,10 @@ final class GardenSim {
             Sound.shared.play(.boing, volume: 0.35)
             return false
         }
+        draggedStockOriginalIndex = idx
         draggedStockItem = inventory.remove(at: idx)
         draggedStockPos = GardenSim.liftedPoint(finger, lift: FingerLift.item)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         markUIStateDirty()
         return true
     }
@@ -1199,9 +1229,20 @@ final class GardenSim {
         draggedStockPos = GardenSim.liftedPoint(finger, lift: FingerLift.item)
     }
 
+    func cancelStockItemDrag() {
+        guard let item = draggedStockItem else { return }
+        let idx = min(draggedStockOriginalIndex ?? inventory.count, inventory.count)
+        draggedStockItem = nil
+        draggedStockOriginalIndex = nil
+        inventory.insert(item, at: idx)
+        markUIStateDirty()
+    }
+
     func endStockItemDrag(finger: CGPoint) {
         guard let item = draggedStockItem else { return }
+        let origIdx = draggedStockOriginalIndex
         draggedStockItem = nil
+        draggedStockOriginalIndex = nil
         let drop = GardenSim.liftedPoint(finger, lift: FingerLift.item)
         let targetZone = GGeo.Farmstand.craftDropZone.insetBy(dx: -44, dy: -44)
         if (targetZone.contains(drop) || targetZone.contains(finger)),
@@ -1211,18 +1252,19 @@ final class GardenSim {
             draft.items.append(item)
             if order.kind == .jamJar && draft.pressProgress > 0.45 {
                 draft.pressProgress = 0.45
+                lastJamPressMilestone = min(lastJamPressMilestone, 1)
             }
             farmstandPhase = .crafting(order: order, draft: draft)
             farmstandCraftBounceV += 11
             spawnFarmstandSparkles(at: drop, count: 10, color: item.source.displayColor)
             Sound.shared.play(.pop, volume: 0.65)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             if FarmstandMatcher.match(requirements: order.requirements, items: draft.items).allMatched {
                 farmstandBellBounceV += 10
                 Sound.shared.play(.ding, volume: 0.55)
             }
         } else {
-            inventory.append(item)
+            inventory.insert(item, at: min(origIdx ?? inventory.count, inventory.count))
             Sound.shared.play(.whoosh, volume: 0.4)
         }
         markUIStateDirty()
@@ -1235,14 +1277,14 @@ final class GardenSim {
             if order.kind == .bouquet,
                hypot(location.x - farmstandSpritzPos.x, location.y - farmstandSpritzPos.y) < 58 {
                 farmstandSpritzHeld = true
-                Sound.shared.tap()
+                enqueueEffect(.haptic)
             } else if order.kind == .jamJar, !draft.items.isEmpty {
                 let plungerY = GGeo.Farmstand.plungerTopY + draft.pressProgress * GGeo.Farmstand.plungerTravelY
                 if abs(location.x - GGeo.Farmstand.craftCenter.x) < 76 && abs(location.y - plungerY) < 72 {
                     farmstandPlungerHeld = true
                     plungerGrabStartY = location.y
                     plungerStartProgress = draft.pressProgress
-                    Sound.shared.tap()
+                    enqueueEffect(.haptic)
                 }
             }
         }
@@ -1353,7 +1395,7 @@ final class GardenSim {
 
         if hypot(p.x - GGeo.Farmstand.customerSeat.x, p.y - (GGeo.Farmstand.customerSeat.y - 44)) < 76 {
             playVisitorSound(order.customer)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             spawnFarmstandHearts(at: CGPoint(x: GGeo.Farmstand.customerSeat.x, y: GGeo.Farmstand.customerSeat.y - 72), count: 3)
         }
     }
@@ -1472,7 +1514,7 @@ final class GardenSim {
         season = s
         spawnSeasonalBurst(for: s)
         Sound.shared.play(.sparkle, volume: 0.5)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         enqueueEffect(.save)
         markUIStateDirty()
     }
@@ -1765,7 +1807,8 @@ final class GardenSim {
         let moved = hypot(tip.x - prev.x, tip.y - prev.y)
         if GGeo.inBed(tip.x) {
             let surf = surface(tip.x)
-            if tip.y > surf - 36,
+            if !autoShovelActive,
+               tip.y > surf - 36,
                let wi = weeds.indices.min(by: { abs(weeds[$0].x - tip.x) < abs(weeds[$1].x - tip.x) }),
                abs(weeds[wi].x - tip.x) < 36 * FingerLift.spread {
                 popWeed(wi, v: CGVector(dx: toolV.dx * 0.35 + CGFloat.random(in: -90...90), dy: -620))
@@ -1794,7 +1837,7 @@ final class GardenSim {
                     if time - digSound > 0.16 {
                         digSound = time
                         GardenSound.shared.play(.dig, volume: 0.7)
-                        Sound.shared.tap()
+                        enqueueEffect(.haptic)
                     }
                     for _ in 0..<Int(min(4, took / 24)) {
                         particles.append(GParticle(kind: .dust,
@@ -1821,7 +1864,7 @@ final class GardenSim {
                         } else {
                             plots[i].digWork = max(0, plots[i].digWork - dt * 50)
                         }
-                    } else if plots[i].isEmpty && plots[i].surpriseReady && dx < 38 {
+                    } else if !autoShovelActive && plots[i].isEmpty && plots[i].surpriseReady && dx < 38 {
                         plots[i].digWork += max(moved, dt * 60)
                         if plots[i].digWork >= 10 {
                             unearthSurprise(plot: i)
@@ -1853,7 +1896,7 @@ final class GardenSim {
         sparkle(at: origin, count: 12)
         GardenSound.shared.play(.dig, volume: 0.8)
         Sound.shared.play(.sparkle, volume: 0.55)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         surprisePops.append(SurprisePop(surprise: surprise, origin: origin, start: time))
         switch surprise {
         case .worm:
@@ -2049,7 +2092,7 @@ final class GardenSim {
                              v0: GFlyer.aim(from: start, to: dest, dur: dur),
                              start: time, dur: dur, spin: 8, toBasket: false))
         GardenSound.shared.play(.seeds, volume: 0.7)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         return targetIdx
     }
 
@@ -2193,7 +2236,7 @@ final class GardenSim {
         petals(at: pos, color: hybrid.primaryColor, n: 8)
         GardenSound.shared.play(.grow, volume: 0.9)
         Sound.shared.play(.sparkle, volume: 0.75)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
 
         if !discoveredHybrids.contains(hybrid) {
             discoveredHybrids.append(hybrid)
@@ -2248,7 +2291,7 @@ final class GardenSim {
         }
         GardenSound.shared.play(.basket, volume: 0.7)
         Sound.shared.play(.pop, volume: 0.55)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
 
         let species: [GVisitorKind] = [.bunny, .hedgehog, .frog, .bluebird]
         let kind = species[picnicSpeciesCursor % species.count]
@@ -2358,7 +2401,7 @@ final class GardenSim {
             GardenSound.shared.play(.chirp, volume: 0.85)
             heartBurst(at: CGPoint(x: GGeo.treehouse.x, y: GGeo.treehouse.y - 146), count: 5)
         }
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         let dropCol: GRGB
         let dropKind: GPart
         switch season {
@@ -2396,7 +2439,7 @@ final class GardenSim {
         sparkle(at: f.p, count: 6)
         let notes: [SFX] = [.note1, .note2, .note3, .note4]
         Sound.shared.play(notes[(caughtFireflies - 1) % notes.count], volume: 0.65)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         enqueueEffect(.save)
         return true
     }
@@ -2420,7 +2463,7 @@ final class GardenSim {
         sparkle(at: origin, count: 16)
         Sound.shared.play(.sparkle, volume: 0.7)
         Sound.shared.play(.ding, volume: 0.5)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         enqueueEffect(.save)
         return count
     }
@@ -2454,7 +2497,7 @@ final class GardenSim {
         sparkle(at: CGPoint(x: GGeo.flowerCrownSpot.x, y: GGeo.flowerCrownSpot.y - 14), count: 10)
         Sound.shared.play(.sparkle, volume: 0.65)
         Sound.shared.play(.ding, volume: 0.6)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         enqueueEffect(.save)
         markUIStateDirty()
         return true
@@ -2473,7 +2516,7 @@ final class GardenSim {
         playVisitorSound(visitors[i].kind)
         Sound.shared.play(.cheer, volume: 0.55)
         Sound.shared.play(.sparkle, volume: 0.7)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         heartBurst(at: origin, count: 6)
         confettiBurst(at: origin, count: 20)
         earnCoins(3, from: pos)
@@ -2495,7 +2538,7 @@ final class GardenSim {
         playVisitorSound(picnicCritters[i].kind)
         Sound.shared.play(.cheer, volume: 0.55)
         Sound.shared.play(.sparkle, volume: 0.7)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         heartBurst(at: origin, count: 6)
         confettiBurst(at: origin, count: 20)
         earnCoins(3, from: pos)
@@ -2675,7 +2718,7 @@ final class GardenSim {
                         sparkle(at: top, count: 14)
                         GardenSound.shared.play(.grow, volume: 0.9)
                         Sound.shared.play(.sparkle, volume: 0.45)
-                        if ripe.isSpecial {
+                        if ripe.isSpecial && ripe.kind != .pumpkin {
                             discover(.special(ripe.kind), at: top)
                         }
                         markUIStateDirty()
@@ -2754,7 +2797,7 @@ final class GardenSim {
         flyers.append(GFlyer(kind: .weed(w.seed), p0: CGPoint(x: base.x, y: base.y - 10), v0: v, start: time, dur: 1.5,
                              spin: v.dx >= 0 ? 6 : -6, toBasket: false))
         GardenSound.shared.play(.pluck)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         burstSoil(at: base, n: 7)
         let c = GGeo.column(w.x)
         for j in max(0, c - 2)...min(GGeo.columns - 1, c + 2) { h[j] += 2 }
@@ -3059,6 +3102,15 @@ final class GardenSim {
         surprisePops.removeAll { time - $0.start >= $0.dur }
     }
 
+    private func appendToInventory(_ item: HarvestItem) {
+        inventory.append(item)
+        let inUse = (activeDraft?.items.count ?? 0) + (draggedStockItem != nil ? 1 : 0)
+        let maxShelf = max(0, GardenSim.maxInventory - inUse)
+        if inventory.count > maxShelf {
+            inventory.removeFirst(inventory.count - maxShelf)
+        }
+    }
+
     @discardableResult
     func harvest(_ i: Int) -> HarvestItem? {
         guard plots.indices.contains(i), case .ripe(var ripe) = plots[i].stage, ripe.yieldLeft >= 1 else { return nil }
@@ -3091,10 +3143,7 @@ final class GardenSim {
             source = .plant(kind: ripe.kind, variant: ripe.variant, isGiant: ripe.isGiant)
         }
         let item = HarvestItem(source: source)
-        inventory.append(item)
-        if inventory.count > GardenSim.maxInventory {
-            inventory.removeFirst(inventory.count - GardenSim.maxInventory)
-        }
+        appendToInventory(item)
 
         if item.isFlower {
             let target = CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 64)
@@ -3126,7 +3175,7 @@ final class GardenSim {
         }
 
         GardenSound.shared.play(.pluck, volume: 0.8)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         plots[i].bendV += CGFloat.random(in: -1.5...1.5)
         plots[i].popV += 5
 
@@ -3212,6 +3261,16 @@ final class GardenSim {
             }
         }
         for i in plots.indices {
+            guard let orb = pollenOrbPos(plot: i), case .ripe(let ripe) = plots[i].stage else { continue }
+            if hypot(p.x - orb.x, p.y - orb.y) < 30 {
+                grab = .pollen(fromPlot: i, kind: ripe.kind)
+                pollination = .carrying(donorPlot: i, donorKind: ripe.kind, point: orb, tapMode: false)
+                Sound.shared.play(.sparkle, volume: 0.45)
+                enqueueEffect(.haptic)
+                return
+            }
+        }
+        for i in plots.indices {
             guard case .ripe(let ripe) = plots[i].stage, ripe.harvestMechanic == .pullUp else { continue }
             let x = GGeo.plotX[i]
             let base = surface(x)
@@ -3221,21 +3280,11 @@ final class GardenSim {
                 return
             }
         }
-        for i in plots.indices {
-            guard let orb = pollenOrbPos(plot: i), case .ripe(let ripe) = plots[i].stage else { continue }
-            if hypot(p.x - orb.x, p.y - orb.y) < 30 {
-                grab = .pollen(fromPlot: i, kind: ripe.kind)
-                pollination = .carrying(donorPlot: i, donorKind: ripe.kind, point: orb, tapMode: false)
-                Sound.shared.play(.sparkle, volume: 0.45)
-                Sound.shared.tap()
-                return
-            }
-        }
         if hasCraftedCrown && hypot(p.x - GGeo.flowerCrownSpot.x, p.y - (GGeo.flowerCrownSpot.y - 16)) < 46 {
             grab = .flowerCrown
             crownBounceV += 8
             Sound.shared.play(.pop, volume: 0.5)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             return
         }
         if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 62 {
@@ -3262,7 +3311,7 @@ final class GardenSim {
         }
     }
 
-    func handMoved(_ p: CGPoint, dt: CGFloat = 1.0 / 60) {
+    func handMoved(_ p: CGPoint, rawFinger: CGPoint? = nil, dt: CGFloat = 1.0 / 60) {
         let vx = (p.x - handP.x) / max(dt, 0.001)
         let vy = (p.y - handP.y) / max(dt, 0.001)
         handV = CGVector(dx: vx, dy: vy)
@@ -3296,7 +3345,8 @@ final class GardenSim {
             decor[d].y = p.y + k.size.height * 0.45
             decor[d].vy = 0
             decor[d].tiltV += (p.x - handLast.x) * 0.05
-            let over = isOverReturnBadge(p)
+            let raw = rawFinger ?? p
+            let over = isOverReturnBadge(raw) || isOverReturnBadge(p)
             if over != overReturnBadge {
                 overReturnBadge = over
                 markUIStateDirty()
@@ -3324,7 +3374,7 @@ final class GardenSim {
         }
     }
 
-    func handEnded(_ p: CGPoint, tap: Bool) {
+    func handEnded(_ p: CGPoint, rawFinger: CGPoint? = nil, tap: Bool) {
         handDown = false
         switch grab {
         case .weed(let w)?:
@@ -3349,10 +3399,11 @@ final class GardenSim {
         case .decor(let d)?:
             if d < decor.count {
                 decor[d].held = false
+                let raw = rawFinger ?? p
                 if tap {
                     decor[d].y = decor[d].baseY
                     pokeDecor(d)
-                } else if isOverReturnBadge(p) {
+                } else if isOverReturnBadge(raw) || isOverReturnBadge(p) {
                     removeDecor(d)
                 } else {
                     decor[d].baseY = max(484, min(504, p.y + decor[d].kind.size.height * 0.45))
@@ -3367,7 +3418,7 @@ final class GardenSim {
                 pollination = .carrying(donorPlot: fromPlot, donorKind: kind, point: orb, tapMode: true)
                 sparkle(at: orb, count: 10)
                 Sound.shared.play(.sparkle, volume: 0.55)
-                Sound.shared.tap()
+                enqueueEffect(.haptic)
                 markUIStateDirty()
             } else {
                 let hitPlot = plantHit(p) ?? plots.indices.min(by: { abs(GGeo.plotX[$0] - p.x) < abs(GGeo.plotX[$1] - p.x) }).flatMap { idx in
@@ -3400,7 +3451,7 @@ final class GardenSim {
             if tap {
                 basketBounceV += 12
                 GardenSound.shared.play(.basket, volume: 0.75)
-                Sound.shared.tap()
+                enqueueEffect(.haptic)
                 sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
             } else {
                 if !feedVisitorFromBasket(at: p) && isOverPicnic(p) {
@@ -3541,7 +3592,7 @@ final class GardenSim {
             } else {
                 jarBounceV += 10
                 Sound.shared.play(.ding, volume: 0.35)
-                Sound.shared.tap()
+                enqueueEffect(.haptic)
             }
             return
         }
@@ -3549,7 +3600,7 @@ final class GardenSim {
         if hypot(p.x - GGeo.basket.x, p.y - (GGeo.basket.y - 10)) < 62 {
             basketBounceV += 12
             GardenSound.shared.play(.basket, volume: 0.75)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             sparkle(at: CGPoint(x: GGeo.basket.x, y: GGeo.basket.y - 40), count: 8)
             return
         }
@@ -3561,7 +3612,7 @@ final class GardenSim {
             }
             vaseBounceV += 12
             Sound.shared.play(.ding, volume: 0.5)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             sparkle(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 72), count: 8)
             if let lastFlower = vaseFlowers.last {
                 petals(at: CGPoint(x: GGeo.vase.x, y: GGeo.vase.y - 78), color: lastFlower.source.displayColor, n: 5)
@@ -3577,7 +3628,7 @@ final class GardenSim {
             picnicCritters[pi].poked = time
             playVisitorSound(picnicCritters[pi].kind)
             heartBurst(at: CGPoint(x: picnicCritters[pi].p.x, y: picnicCritters[pi].p.y - 38), count: 4)
-            Sound.shared.tap()
+            enqueueEffect(.haptic)
             return
         }
         if isOverPicnic(p) {
@@ -3669,7 +3720,7 @@ final class GardenSim {
         } ?? 856
         let idx = addDecor(k, x: bestX, falling: true)
         Sound.shared.play(.pop, volume: 0.6)
-        Sound.shared.tap()
+        enqueueEffect(.haptic)
         return idx
     }
 
@@ -4027,4 +4078,5 @@ final class GardenSim {
 enum GardenStorage {
     static func load() -> GardenSave? { GameStorage.load(GardenSave.self, game: GardenSim.gameID, file: "garden.json") }
     static func save(_ s: GardenSave) { GameStorage.save(s, game: GardenSim.gameID, file: "garden.json") }
+    static func saveAsync(_ s: GardenSave) { GameStorage.saveAsync(s, game: GardenSim.gameID, file: "garden.json") }
 }

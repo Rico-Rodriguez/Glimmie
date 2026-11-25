@@ -33,6 +33,20 @@ enum GardenPlants {
         return CGPoint(x: x, y: y)
     }
 
+    static func crescentMoonPath(center c: CGPoint, radius r: CGFloat) -> Path {
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: c.x + x * r, y: c.y + y * r)
+        }
+        var p = Path()
+        p.move(to: pt(-0.087, -0.996))
+        p.addCurve(to: pt(-0.866, 0.500), control1: pt(-0.816, -0.932), control2: pt(-1.232, -0.133))
+        p.addCurve(to: pt(0.819, 0.574), control1: pt(-0.500, 1.133), control2: pt(0.400, 1.173))
+        p.addCurve(to: pt(-0.339, 0.195), control1: pt(0.393, 0.762), control2: pt(-0.106, 0.599))
+        p.addCurve(to: pt(-0.087, -0.996), control1: pt(-0.572, -0.208), control2: pt(-0.463, -0.721))
+        p.closeSubpath()
+        return p
+    }
+
     struct Stem {
         var base: CGPoint
         var ctrl: CGPoint
@@ -665,8 +679,7 @@ enum GardenPlants {
         let fruitK = gdEase((g - 0.66) / 0.28)
         let ripe = gdEase((g - 0.86) / 0.14)
         if fruitK > 0 && !(g >= 1 && p.left == 0) {
-            let isGiant = p.giant || p.isSpecial
-            let giantScale: CGFloat = isGiant ? (1.52 + 0.03 * sin(time * 4)) : 1.0
+            let giantScale: CGFloat = p.giant ? (1.52 + 0.03 * sin(time * 4)) : 1.0
             let w = (14 + 54 * fruitK) * giantScale
             pumpkinFruit(ctx, at: CGPoint(x: base.x + 12, y: base.y + 2), w: w, ripe: ripe, tint: p.kind.bloom(p.variant), prizeGlow: p.giant)
         }
@@ -961,10 +974,8 @@ enum GardenPlants {
         tulipPetal(g, at: .zero, angle: -0.34, height: 39, width: 17, color: berry)
         tulipPetal(g, at: .zero, angle: 0.34, height: 39, width: 17, color: violet.shade(0.14))
 
-        // Glowing golden crescent moon crest nestled in the chalice
-        var moon = Path(ellipseIn: CGRect(x: -8, y: -33, width: 16, height: 16))
-        moon.addEllipse(in: CGRect(x: -2.5, y: -36, width: 16, height: 16))
-        g.fill(moon, with: .color(Color(hex: 0xFFF4B2)), style: FillStyle(eoFill: true))
+        let moon = crescentMoonPath(center: CGPoint(x: 0, y: -25), radius: 8)
+        g.fill(moon, with: .color(Color(hex: 0xFFF4B2)))
 
         // Dripping starlight dew drops
         let dropBob = sin(time * 3.2) * 3
@@ -1260,7 +1271,7 @@ enum GardenPlants {
         case .strawberry:
             strawberryFruit(g, at: .zero, r: 11 * s, ripe: 1, tint: col, specialSeeds: isSpecial)
         case .pumpkin:
-            let gScale: CGFloat = (giant || isSpecial) ? 1.32 : 1
+            let gScale: CGFloat = giant ? 1.32 : 1
             pumpkinFruit(g, at: CGPoint(x: 0, y: 20 * s * gScale), w: 48 * s * gScale, ripe: 1, tint: col, prizeGlow: giant)
         case .carrot:
             for o in [-0.4, 0, 0.4] as [CGFloat] {
