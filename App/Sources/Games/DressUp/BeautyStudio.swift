@@ -1007,6 +1007,7 @@ struct BeautyToolIcon: View {
 // MARK: - The studio screen
 
 struct BeautyStudio: View {
+    let initialMode: BeautyWorld.Mode
     let cancel: () -> Void
     let done: (Look) -> Void
     @State private var world: BeautyWorld
@@ -1014,6 +1015,7 @@ struct BeautyStudio: View {
     @State private var tick = 0
 
     init(look: Look, mode: BeautyWorld.Mode, cancel: @escaping () -> Void = {}, done: @escaping (Look) -> Void) {
+        self.initialMode = mode
         self.cancel = cancel
         self.done = done
         _world = State(initialValue: BeautyWorld(look: look, mode: mode))
@@ -1039,6 +1041,7 @@ struct BeautyStudio: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .defersSystemGestures(on: .bottom)
     }
 
     // MARK: Stage
@@ -1172,21 +1175,24 @@ struct BeautyStudio: View {
     private var panel: some View {
         VStack(spacing: 14) {
             HStack(spacing: 8) {
-                modeButton(.makeup, symbol: "paintbrush.pointed.fill")
-                modeButton(.nails, symbol: "hand.raised.fill")
+                modeButton(.makeup, symbol: "paintbrush.pointed.fill", label: "Makeup Studio")
+                modeButton(.nails, symbol: "hand.raised.fill", label: "Nail Salon")
                 Spacer(minLength: 4)
                 RoundButton(symbol: "arrow.uturn.backward", tint: Color(hex: 0x9B79E0), size: 54) {
                     world.undo(); tick += 1
                 }
                 .opacity(world.canUndo ? 1 : 0.4)
+                .accessibilityLabel("Undo")
                 RoundButton(symbol: "xmark", tint: Theme.pink, size: 54) {
                     Sound.shared.play(.whoosh, volume: 0.6)
                     cancel()
                 }
+                .accessibilityLabel("Close")
                 RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B), size: 54) {
                     Sound.shared.play(.fanfare, volume: 0.7)
                     done(world.finished())
                 }
+                .accessibilityLabel("Done")
             }
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
@@ -1258,7 +1264,7 @@ struct BeautyStudio: View {
             .overlay(Capsule().stroke(.white, lineWidth: 3))
     }
 
-    private func modeButton(_ m: BeautyWorld.Mode, symbol: String) -> some View {
+    private func modeButton(_ m: BeautyWorld.Mode, symbol: String, label: String) -> some View {
         Button {
             guard world.mode != m else { return }
             Sound.shared.play(.whoosh, volume: 0.6)
@@ -1275,6 +1281,7 @@ struct BeautyStudio: View {
                     .fill(world.mode == m ? Theme.pink.opacity(0.92) : Theme.blush.opacity(0.7)))
         }
         .buttonStyle(Squish())
+        .accessibilityLabel(label)
     }
 
     private var tools: [BeautyWorld.Tool] {

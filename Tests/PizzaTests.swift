@@ -6,140 +6,371 @@ final class PizzaTests: XCTestCase {
         let sim = PizzaSim(load: false)
         sim.demo = true
         sim.order = PizzaOrder(customer: 0, wants: [.pepperoni, .olive])
+        sim.selectedTopping = .pepperoni
         return sim
     }
 
     private func run(_ sim: PizzaSim, seconds: Double) {
-        for _ in 0..<Int(seconds * 60) { sim.step(dt: 1.0 / 60) }
+        let steps = max(1, Int((seconds * 60).rounded()))
+        for _ in 0..<steps { sim.step(dt: 1.0 / 60) }
     }
 
-    func testKneadingSmoothsTheBallThenItFlattens() {
-        let sim = freshSim()
-        let c = PGeo.center
-        let rough = sim.lumps.map { abs($0) }.max() ?? 0
-        for _ in 0..<PGeo.knead {
-            sim.handBegan(c)
-            run(sim, seconds: 0.1)
-            sim.handEnded(c, tap: true)
-            run(sim, seconds: 0.1)
+    private func swipe(_ sim: PizzaSim, from a: CGPoint, to b: CGPoint, frames: Int = 10) {
+        sim.handBegan(a)
+        sim.step(dt: 1.0 / 60)
+        for i in 1...max(1, frames) {
+            let u = CGFloat(i) / CGFloat(max(1, frames))
+            let p = CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u)
+            sim.handMoved(p, dt: 1.0 / 60)
+            sim.step(dt: 1.0 / 60)
         }
-        XCTAssertEqual(sim.kneads, PGeo.knead)
-        XCTAssertLessThan(sim.lumps.map { abs($0) }.max() ?? 1, rough * 0.4)
-        XCTAssertTrue(sim.ball)
-        sim.handBegan(c)
+        sim.handEnded(b, tap: false)
+    }
+
+    func testThreeStageFlowEndToEnd() {
+        Coins.shared.resetForTests(balance: 0)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(PizzaStep.allCases, [.dough, .prep, .bake, .slice])
+        let sim = freshSim()
+        XCTAssertEqual(sim.stage, .dough)
+
+        // Stage 1: Fast rolling-pin expansion + fun crust shape
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 100, y: PGeo.center.y), to: CGPoint(x: PGeo.center.x + 100, y: PGeo.center.y), frames: 8)
+        swipe(sim, from: CGPoint(x: PGeo.center.x, y: PGeo.center.y - 100), to: CGPoint(x: PGeo.center.x, y: PGeo.center.y + 100), frames: 8)
+        sim.setCrustShape(.heart)
+        run(sim, seconds: 0.4)
         XCTAssertFalse(sim.ball)
-        run(sim, seconds: 1)
-        XCTAssertGreaterThan(sim.meanR, 115)
+        XCTAssertTrue(sim.ready(.dough))
+
+        // Stage 2: Open Prep (sauce + cheese + wanted toppings)
+        sim.go(.prep)
+        XCTAssertEqual(sim.stage, .prep)
+        sim.selectSauce(.goguma)
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 120, y: PGeo.center.y), to: CGPoint(x: PGeo.center.x + 120, y: PGeo.center.y), frames: 4)
+        sim.selectCheese(.cornCheese)
+        sim.sprinkleBurstCheese()
+        run(sim, seconds: 0.5)
+        sim.selectTopping(.pepperoni)
+        sim.handBegan(CGPoint(x: PGeo.center.x - 40, y: PGeo.center.y))
+        sim.handEnded(CGPoint(x: PGeo.center.x - 40, y: PGeo.center.y), tap: true)
+        sim.handBegan(CGPoint(x: PGeo.center.x + 40, y: PGeo.center.y))
+        sim.handEnded(CGPoint(x: PGeo.center.x + 40, y: PGeo.center.y), tap: true)
+        sim.selectTopping(.olive)
+        sim.handBegan(CGPoint(x: PGeo.center.x, y: PGeo.center.y - 40))
+        sim.handEnded(CGPoint(x: PGeo.center.x, y: PGeo.center.y - 40), tap: true)
+        sim.handBegan(CGPoint(x: PGeo.center.x, y: PGeo.center.y + 40))
+        sim.handEnded(CGPoint(x: PGeo.center.x, y: PGeo.center.y + 40), tap: true)
+        XCTAssertTrue(sim.ready(.prep))
+
+        // Stage 3a: Brisk 3.5s wood-fired oven
+        sim.go(.bake)
+        XCTAssertTrue(sim.inOven)
+        run(sim, seconds: PGeo.bakeTime + 0.7)
+        XCTAssertEqual(sim.bake, 1, accuracy: 0.001)
+        XCTAssertTrue(sim.ready(.bake))
+
+        // Stage 3b: Pull out -> direct swipe slice -> serve stretchy slice
+        sim.pullFromOven()
+        XCTAssertEqual(sim.stage, .slice)
+        XCTAssertFalse(sim.inOven)
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 160, y: PGeo.center.y), to: CGPoint(x: PGeo.center.x + 160, y: PGeo.center.y), frames: 8)
+        XCTAssertEqual(sim.cuts.count, 1)
+        let firstSlice = sim.slices[0]
+        let mid = (firstSlice.0 + firstSlice.1) / 2
+        let tapPt = CGPoint(x: PGeo.center.x + CGFloat(cos(mid)) * 90, y: PGeo.center.y + CGFloat(sin(mid)) * 90)
+        sim.handBegan(tapPt)
+        sim.handEnded(tapPt, tap: true)
+        XCTAssertNotNil(sim.lifted)
+        XCTAssertFalse(sim.lifted?.strings.isEmpty ?? true)
+        XCTAssertEqual(sim.stars, 3)
+        XCTAssertEqual(Coins.shared.balance, Coins.reward(stars: 3))
     }
 
-    func testStretchingGrowsTheDoughAndItSpringsBackALittle() {
-        let sim = freshSim()
-        sim.flatten()
-        run(sim, seconds: 1.5)
-        let before = sim.meanR
-        // push outward in eight directions, from the middle to past the edge
-        for k in 0..<8 {
-            let a = Double(k) / 8 * 2 * .pi
-            let u = CGPoint(x: CGFloat(cos(a)), y: CGFloat(sin(a)))
-            var p = CGPoint(x: PGeo.center.x + u.x * 60, y: PGeo.center.y + u.y * 60)
-            sim.handBegan(p)
-            for _ in 0..<20 {
-                p = CGPoint(x: p.x + u.x * 6, y: p.y + u.y * 6)
-                sim.handMoved(p, dt: 1.0 / 60)
-                sim.step(dt: 1.0 / 60)
-            }
-            sim.handEnded(p, tap: false)
-        }
-        let stretched = sim.meanR
-        run(sim, seconds: 2)
-        let settled = sim.meanR
-        XCTAssertGreaterThan(settled, before + 15)
-        XCTAssertLessThan(settled, stretched + 3)
-        XCTAssertLessThanOrEqual(sim.r.max() ?? 0, PGeo.maxR + 6)
-    }
-
-    func testATossLandsBiggerAndRounder() {
-        let sim = freshSim()
-        sim.flatten()
-        run(sim, seconds: 1.5)
-        let before = sim.meanR
-        sim.tossStart = sim.time
-        run(sim, seconds: 2)
-        XCTAssertNil(sim.tossStart)
-        XCTAssertGreaterThan(sim.meanR, before + 8)
-    }
-
-    func testSpreadingSauceKeepsItAndCoversThePizza() {
-        let sim = freshSim()
-        sim.demoDisc(220)
+    func testFastRollingPinExpansionViaTapsAndSwipes() {
+        // 3 easy taps expand ball -> full crust with zero grind
+        let tapSim = freshSim()
         let c = PGeo.center
-        sim.pour(at: c, amount: 67)
+        for _ in 0..<3 {
+            tapSim.handBegan(c)
+            run(tapSim, seconds: 0.06)
+            tapSim.handEnded(c, tap: true)
+            run(tapSim, seconds: 0.12)
+        }
+        XCTAssertFalse(tapSim.ball)
+        XCTAssertGreaterThanOrEqual(tapSim.rollProgress, 0.99)
+        XCTAssertTrue(tapSim.ready(.dough))
+        run(tapSim, seconds: 0.5)
+        XCTAssertGreaterThan(tapSim.meanR, 195)
+
+        // 2 quick swipes across the dough expand smoothly without snap-back
+        let swipeSim = freshSim()
+        swipe(swipeSim, from: CGPoint(x: c.x - 95, y: c.y), to: CGPoint(x: c.x + 95, y: c.y), frames: 8)
+        let afterFirst = swipeSim.rollProgress
+        XCTAssertFalse(swipeSim.ball)
+        XCTAssertGreaterThan(afterFirst, 0.45)
+        swipe(swipeSim, from: CGPoint(x: c.x, y: c.y - 95), to: CGPoint(x: c.x, y: c.y + 95), frames: 8)
+        XCTAssertGreaterThanOrEqual(swipeSim.rollProgress, 0.85)
+        XCTAssertTrue(swipeSim.ready(.dough))
+        run(swipeSim, seconds: 0.6)
+        XCTAssertGreaterThan(swipeSim.meanR, 190)
+    }
+
+    func testAllFourCrustShapesMorphSmoothly() {
+        XCTAssertEqual(CrustShape.allCases, [.round, .heart, .star, .kitty])
+        let sim = freshSim()
+        for shape in CrustShape.allCases {
+            sim.setCrustShape(shape)
+            run(sim, seconds: 0.6)
+            XCTAssertFalse(sim.ball)
+            XCTAssertEqual(sim.crustShape, shape)
+            XCTAssertLessThanOrEqual(sim.r.max() ?? 0, PGeo.maxR + 14)
+            XCTAssertGreaterThan(sim.r.min() ?? 0, 70)
+        }
+
+        // Verify distinct silhouettes
+        sim.setCrustShape(.kitty)
+        run(sim, seconds: 0.6)
+        XCTAssertGreaterThan(sim.edge(-.pi / 2 - 0.62), sim.edge(-.pi / 2) + 18, "kitty ears must rise above forehead")
+
+        sim.setCrustShape(.heart)
+        run(sim, seconds: 0.6)
+        XCTAssertGreaterThan(sim.edge(-.pi / 2 - 0.55), sim.edge(-.pi / 2) + 20, "heart lobes must rise above center cleft")
+
+        sim.setCrustShape(.star)
+        run(sim, seconds: 0.6)
+        XCTAssertGreaterThan(sim.edge(-.pi / 2), sim.edge(-.pi / 2 + .pi / 5) + 28, "star tips must extend beyond valleys")
+    }
+
+    func testOptionalAirTossLandsExpanded() {
+        let sim = freshSim()
+        sim.triggerToss()
+        XCTAssertNotNil(sim.tossStart)
+        run(sim, seconds: 1.4)
+        XCTAssertNil(sim.tossStart)
+        XCTAssertFalse(sim.ball)
+        XCTAssertEqual(sim.rollProgress, 1, accuracy: 0.001)
+        XCTAssertTrue(sim.ready(.dough))
+    }
+
+    func testFastDragSaucePaintingRegressionCoatsAtHighSpeed() {
+        XCTAssertEqual(SauceKind.allCases, [.tomato, .garlicWhite, .goguma])
+        let sim = freshSim()
+        sim.demoDisc(216)
+        sim.go(.prep)
+        sim.selectSauce(.tomato)
+
+        // Ultra-fast drag (~6600 pt/s across 3 frames) — previously poured ZERO sauce due to speedFactor cutoff!
+        let start = CGPoint(x: PGeo.center.x - 165, y: PGeo.center.y)
+        let end = CGPoint(x: PGeo.center.x + 165, y: PGeo.center.y)
+        swipe(sim, from: start, to: end, frames: 3)
+        XCTAssertGreaterThan(sim.totalSauce, 60, "high-speed drag must paint continuous lush sauce")
+        XCTAssertGreaterThan(sim.coverage(sim.sauce, above: 0.14), 0.25)
+
+        // All 3 sauces + 1-tap Swirl-Fill
+        sim.swirlFillSauce(.garlicWhite)
+        XCTAssertGreaterThan(sim.sauceCoverage, 0.85)
+        XCTAssertTrue(sim.saucePalette.contains(SauceKind.garlicWhite.paletteID))
+
+        sim.swirlFillSauce(.goguma)
+        XCTAssertGreaterThan(sim.sauceCoverage, 0.85)
+        XCTAssertTrue(sim.saucePalette.contains(SauceKind.goguma.paletteID))
+    }
+
+    func testSpreadingSauceConservesMass() {
+        let sim = freshSim()
+        sim.demoDisc(216)
+        let c = PGeo.center
+        sim.pour(at: c, amount: 60)
         let total = sim.totalSauce
         XCTAssertGreaterThan(total, 0)
         var p = c
-        for k in 0..<600 {
-            let a = Double(k) * 0.09
-            let rr = 20 + CGFloat(k) / 600 * 170
+        for k in 0..<240 {
+            let a = Double(k) * 0.12
+            let rr = 20 + CGFloat(k) / 240 * 155
             let q = CGPoint(x: c.x + CGFloat(cos(a)) * rr, y: c.y + CGFloat(sin(a)) * rr)
             sim.flowSauce()
             sim.spread(at: q, by: CGPoint(x: q.x - p.x, y: q.y - p.y))
             p = q
         }
         XCTAssertEqual(sim.totalSauce, total, accuracy: total * 0.01)
-        XCTAssertGreaterThan(sim.coverage(sim.sauce, above: 0.14), 0.45)
     }
 
-    func testCheeseLandsOnTheDoughAndMeltsInTheOven() {
+    func testCheeseCoatsQuicklyInTwoSwipesAndSupportsBothKinds() {
+        XCTAssertEqual(CheeseKind.allCases, [.mozzarella, .cornCheese])
         let sim = freshSim()
-        sim.demoDisc(220)
-        sim.holdTool(.cheese, at: PGeo.center)
-        run(sim, seconds: 3)
-        sim.release()
-        run(sim, seconds: 1)
-        XCTAssertGreaterThan(sim.landed, 40)
-        XCTAssertGreaterThan(sim.cheese.reduce(0, +), 1)
+        sim.demoDisc(216)
+        sim.go(.prep)
+        sim.selectCheese(.cornCheese)
+        XCTAssertEqual(sim.cheeseKind, .cornCheese)
+
+        // Two quick swipes coat >60% without needing 6 seconds of grinding
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 160, y: PGeo.center.y - 68),
+              to: CGPoint(x: PGeo.center.x + 160, y: PGeo.center.y - 68), frames: 12)
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 160, y: PGeo.center.y + 68),
+              to: CGPoint(x: PGeo.center.x + 160, y: PGeo.center.y + 68), frames: 12)
+        run(sim, seconds: 0.6)
+        XCTAssertGreaterThan(sim.landed, 120)
+        XCTAssertGreaterThan(sim.cheeseCoverage, 0.60, "2 quick cheese swipes must coat >60%")
+
+        // 1-tap sprinkle burst also covers generously
+        let burstSim = freshSim()
+        burstSim.demoDisc(216)
+        burstSim.go(.prep)
+        burstSim.sprinkleBurstCheese(.mozzarella)
+        run(burstSim, seconds: 0.6)
+        XCTAssertGreaterThan(burstSim.landed, 100)
+        XCTAssertGreaterThan(burstSim.cheeseCoverage, 0.55)
+    }
+
+    func testOneTapToppingStampingNeverDropsSelection() {
+        let sim = freshSim()
+        sim.demoDisc(216)
+        sim.go(.prep)
+        sim.selectTopping(.goguma)
+        XCTAssertEqual(sim.prepTab, .toppings)
+        XCTAssertEqual(sim.selectedTopping, .goguma)
+
+        let spots = [
+            CGPoint(x: PGeo.center.x - 60, y: PGeo.center.y),
+            CGPoint(x: PGeo.center.x, y: PGeo.center.y + 50),
+            CGPoint(x: PGeo.center.x + 65, y: PGeo.center.y - 45)
+        ]
+        for pt in spots {
+            sim.handBegan(pt)
+            sim.handEnded(pt, tap: true)
+            XCTAssertEqual(sim.selectedTopping, .goguma, "stamping must never drop selected topping")
+        }
+        XCTAssertEqual(sim.toppings.count, 3)
+        XCTAssertTrue(sim.toppings.allSatisfy { $0.kind == .goguma })
+    }
+
+    func testBriskOvenBakeAndEarlyPullOut() {
+        XCTAssertEqual(PGeo.bakeTime, 3.5, accuracy: 0.0001)
+        let sim = freshSim()
+        sim.demoDisc(216)
+        sim.demoSauce(.tomato)
+        sim.demoCheese(160)
         sim.go(.bake)
         XCTAssertTrue(sim.inOven)
-        run(sim, seconds: PGeo.bakeTime + 2)
+
+        run(sim, seconds: PGeo.bakeTime + 0.7)
         XCTAssertEqual(sim.bake, 1, accuracy: 0.0001)
         XCTAssertEqual(sim.melt, 1, accuracy: 0.0001)
         XCTAssertTrue(sim.ready(.bake))
+
+        // Early pull-out once bake >= 0.45 by tapping the pizza directly in the oven
+        let early = freshSim()
+        early.demoDisc(216)
+        early.demoSauce(.tomato)
+        early.go(.bake)
+        run(early, seconds: 2.1)
+        XCTAssertGreaterThanOrEqual(early.bake, 0.45)
+        XCTAssertTrue(early.canPullFromOven)
+        early.handBegan(PGeo.ovenCenter)
+        XCTAssertEqual(early.stage, .slice)
+        XCTAssertFalse(early.inOven)
+
+        // Stoking accelerates baking
+        let stoked = freshSim()
+        stoked.demoDisc(216)
+        stoked.go(.bake)
+        run(stoked, seconds: 0.4)
+        stoked.stoke()
+        let plain = freshSim()
+        plain.demoDisc(216)
+        plain.go(.bake)
+        run(plain, seconds: 0.4)
+        run(stoked, seconds: 1.0)
+        run(plain, seconds: 1.0)
+        XCTAssertGreaterThan(stoked.bake, plain.bake + 0.08)
     }
 
-    func testCutsAcrossTheMiddleMakeSlices() {
+    func testDirectSwipeSlicingNeverFeedsUncutPie() {
+        Coins.shared.resetForTests(balance: 0)
+        defer { Coins.shared.resetForTests() }
+
         let sim = freshSim()
-        sim.demoDisc(220)
-        XCTAssertEqual(sim.slices.count, 1)
-        // a cut that misses the middle doesn't count
-        sim.stroke = [CGPoint(x: PGeo.center.x - 200, y: PGeo.center.y + 170), CGPoint(x: PGeo.center.x + 200, y: PGeo.center.y + 170)]
-        sim.finishCut()
+        sim.demoDisc(216)
+        sim.demoSauce(.tomato)
+        sim.demoCheese(180)
+        sim.bake = 1
+        sim.go(.slice)
         XCTAssertTrue(sim.cuts.isEmpty)
-        sim.stroke = [CGPoint(x: PGeo.center.x - 200, y: PGeo.center.y + 10), CGPoint(x: PGeo.center.x + 200, y: PGeo.center.y - 6)]
-        sim.finishCut()
+        XCTAssertFalse(sim.canServe)
+
+        // Tapping an uncut pie or calling serveSlice directly MUST NOT feed it!
+        sim.handBegan(PGeo.center)
+        sim.handEnded(PGeo.center, tap: true)
+        XCTAssertNil(sim.lifted, "must never feed an uncut pie")
+        XCTAssertNil(sim.stars)
+        XCTAssertEqual(Coins.shared.balance, 0)
+        XCTAssertGreaterThanOrEqual(sim.cutterNudgeAt, 0)
+
+        sim.serveSlice(at: PGeo.center)
+        XCTAssertNil(sim.lifted, "serveSlice must refuse uncut pie")
+
+        // Short swipe (<90pt) does not cut or feed
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 25, y: PGeo.center.y), to: CGPoint(x: PGeo.center.x + 25, y: PGeo.center.y), frames: 4)
+        XCTAssertTrue(sim.cuts.isEmpty)
+        XCTAssertNil(sim.lifted)
+
+        // Direct finger swipe (>=90pt across pizza) cleanly cuts into 2 slices without feeding!
+        swipe(sim, from: CGPoint(x: PGeo.center.x - 160, y: PGeo.center.y + 12),
+              to: CGPoint(x: PGeo.center.x + 160, y: PGeo.center.y - 8), frames: 8)
         XCTAssertEqual(sim.cuts.count, 1)
-        // the same cut again isn't a new one
-        XCTAssertFalse(sim.addCut(.pi))
-        XCTAssertTrue(sim.addCut(.pi / 2))
+        XCTAssertEqual(sim.slices.count, 2)
+        XCTAssertNil(sim.lifted)
+        XCTAssertTrue(sim.canServe)
+
+        // Duplicate angle rejected; 1-tap quickSlice adds another cut cleanly
+        XCTAssertFalse(sim.addCut(sim.cuts[0]))
+        XCTAssertTrue(sim.quickSlice())
+        XCTAssertEqual(sim.cuts.count, 2)
         XCTAssertEqual(sim.slices.count, 4)
     }
 
-    func testServingASliceGivesStarsAndAllSlicesFinishThePizza() {
+    func testServingSlicesAwardsCoinsOnceAndStretchesCheese() {
+        Coins.shared.resetForTests(balance: 0)
+        defer { Coins.shared.resetForTests() }
+
         let sim = freshSim()
-        sim.demoDisc(220)
+        sim.demoDisc(216)
+        sim.demoSauce(.tomato)
+        sim.demoCheese(180)
+        sim.bake = 1
         sim.go(.slice)
         sim.addCut(0)
         sim.addCut(.pi / 2)
-        for k in 0..<2 { sim.place(.pepperoni, at: CGPoint(x: PGeo.center.x + CGFloat(k) * 40, y: PGeo.center.y), from: nil) }
-        for s in sim.slices {
+        for k in 0..<2 {
+            sim.place(.pepperoni, at: CGPoint(x: PGeo.center.x + CGFloat(k) * 35, y: PGeo.center.y), from: nil)
+            sim.place(.olive, at: CGPoint(x: PGeo.center.x - CGFloat(k + 1) * 35, y: PGeo.center.y), from: nil)
+        }
+
+        let allSlices = sim.slices
+        let firstMid = (allSlices[0].0 + allSlices[0].1) / 2
+        sim.serveSlice(at: CGPoint(x: PGeo.center.x + CGFloat(cos(firstMid)) * 100, y: PGeo.center.y + CGFloat(sin(firstMid)) * 100))
+        XCTAssertNotNil(sim.lifted)
+        XCTAssertGreaterThanOrEqual(sim.lifted?.strings.count ?? 0, 6, "baked cheesy slice must pull stretchy strings")
+        XCTAssertEqual(sim.stars, 3)
+        XCTAssertTrue(sim.paidThisPizza)
+        let expectedPay = Coins.reward(stars: 3)
+        XCTAssertEqual(Coins.shared.balance, expectedPay)
+
+        run(sim, seconds: LiftedSlice.duration + 0.15)
+        for s in allSlices.dropFirst() {
             let mid = (s.0 + s.1) / 2
             sim.serveSlice(at: CGPoint(x: PGeo.center.x + CGFloat(cos(mid)) * 100, y: PGeo.center.y + CGFloat(sin(mid)) * 100))
-            run(sim, seconds: LiftedSlice.duration + 0.2)
+            run(sim, seconds: LiftedSlice.duration + 0.15)
         }
-        XCTAssertEqual(sim.stars, 2) // pepperoni yes, olives no
         XCTAssertTrue(sim.allEaten)
-        run(sim, seconds: 3)
-        XCTAssertTrue(sim.ball) // a fresh pizza
+        XCTAssertEqual(Coins.shared.balance, expectedPay, "subsequent slices must never double-pay")
+
+        run(sim, seconds: 3.1)
+        XCTAssertTrue(sim.ball)
+        XCTAssertEqual(sim.stage, .dough)
         XCTAssertNil(sim.stars)
+        XCTAssertFalse(sim.paidThisPizza)
     }
 
     func testOrderStarsAreGentle() {
@@ -154,9 +385,12 @@ final class PizzaTests: XCTestCase {
         }
     }
 
-    func testEveryStepCanBeVisitedInAnyOrder() {
+    func testEveryStageCanBeVisitedInAnyOrder() {
         let sim = freshSim()
-        for s in PizzaStep.allCases.reversed() { sim.go(s); run(sim, seconds: 0.2) }
+        for s in PizzaStep.allCases.reversed() {
+            sim.go(s)
+            run(sim, seconds: 0.2)
+        }
         XCTAssertEqual(sim.stage, .dough)
         XCTAssertFalse(sim.inOven)
         XCTAssertFalse(sim.ball)
@@ -164,100 +398,57 @@ final class PizzaTests: XCTestCase {
 
     func testPizzaFindsDefinesSixUniqueStickersWiredToEntry() {
         let stickers = PizzaFind.stickers
+        XCTAssertEqual(PizzaGame.entry.id, "pizza")
         XCTAssertEqual(stickers.count, 6)
         XCTAssertEqual(Set(stickers.map { $0.id }).count, 6)
         XCTAssertEqual(PizzaGame.entry.stickers.map { $0.id }, PizzaFind.allCases.map { $0.rawValue })
     }
 
-    func testServingFirstSliceAwardsCoinsOnceWithoutDoublePaying() {
-        Coins.shared.resetForTests(balance: 0)
-        let sim = freshSim()
-        sim.demoDisc(220)
-        sim.go(.slice)
-        sim.addCut(0)
-        sim.addCut(.pi / 2)
-        for k in 0..<2 {
-            sim.place(.pepperoni, at: CGPoint(x: PGeo.center.x + CGFloat(k) * 35, y: PGeo.center.y), from: nil)
-            sim.place(.olive, at: CGPoint(x: PGeo.center.x - CGFloat(k + 1) * 35, y: PGeo.center.y), from: nil)
-        }
-        let slices = sim.slices
-        let firstMid = (slices[0].0 + slices[0].1) / 2
-        sim.serveSlice(at: CGPoint(x: PGeo.center.x + CGFloat(cos(firstMid)) * 100, y: PGeo.center.y + CGFloat(sin(firstMid)) * 100))
-        XCTAssertEqual(sim.stars, 3)
-        XCTAssertTrue(sim.paidThisPizza)
-        let expectedPay = Coins.reward(stars: 3)
-        XCTAssertEqual(Coins.shared.balance, expectedPay)
-
-        run(sim, seconds: LiftedSlice.duration + 0.15)
-        for s in slices.dropFirst() {
-            let mid = (s.0 + s.1) / 2
-            sim.serveSlice(at: CGPoint(x: PGeo.center.x + CGFloat(cos(mid)) * 100, y: PGeo.center.y + CGFloat(sin(mid)) * 100))
-            run(sim, seconds: LiftedSlice.duration + 0.15)
-        }
-        XCTAssertTrue(sim.allEaten)
-        XCTAssertEqual(Coins.shared.balance, expectedPay, "subsequent slices must never double-pay")
-
-        sim.newPizza()
-        XCTAssertFalse(sim.paidThisPizza)
-    }
-
-    func testToppingsReadyMatchesExactWantedOrder() {
-        let sim = freshSim()
-        sim.demoDisc(220)
-        sim.order = PizzaOrder(customer: 0, wants: [.basil])
-        sim.place(.basil, at: PGeo.center, from: nil)
-        XCTAssertFalse(sim.ready(.toppings))
-        sim.place(.basil, at: CGPoint(x: PGeo.center.x + 40, y: PGeo.center.y), from: nil)
-        XCTAssertTrue(sim.ready(.toppings))
-    }
-
-    func testShorterRadialCutSplitsPizza() {
-        let sim = freshSim()
-        sim.demoDisc(220)
-        let span = sim.meanR * 0.36
-        sim.stroke = [CGPoint(x: PGeo.center.x - span, y: PGeo.center.y), CGPoint(x: PGeo.center.x + span, y: PGeo.center.y)]
-        sim.finishCut()
-        XCTAssertEqual(sim.cuts.count, 1)
-        XCTAssertEqual(sim.slices.count, 2)
-    }
-
     func testSoundsAreBundled() {
+        XCTAssertEqual(PizzaSFX.allCases.count, 20)
         for s in PizzaSFX.allCases { XCTAssertNotNil(PizzaSound.url(for: s), s.rawValue) }
     }
 
-    func testKoreanToppingsPlaceAndMatchOrders() {
+    func testKoreanToppingsAllTenPresentAndMatchOrders() {
         XCTAssertEqual(ToppingKind.allCases.count, 10)
         XCTAssertTrue(ToppingKind.allCases.contains(.goguma))
         XCTAssertTrue(ToppingKind.allCases.contains(.cornCheese))
 
         let sim = freshSim()
-        sim.demoDisc(220)
+        sim.demoDisc(216)
+        sim.go(.prep)
         sim.order = PizzaOrder(customer: 0, wants: [.goguma, .cornCheese])
         for k in 0..<2 {
             sim.place(.goguma, at: CGPoint(x: PGeo.center.x + CGFloat(k) * 36, y: PGeo.center.y), from: nil)
             sim.place(.cornCheese, at: CGPoint(x: PGeo.center.x - CGFloat(k + 1) * 36, y: PGeo.center.y), from: nil)
         }
-        XCTAssertTrue(sim.ready(.toppings))
+        XCTAssertTrue(sim.ready(.prep))
         XCTAssertEqual(sim.order.stars(sim.toppings), 3)
     }
 
     func testRawEmptyDoughRefusesServeAndNudgesOven() {
         Coins.shared.resetForTests(balance: 0)
+        defer { Coins.shared.resetForTests() }
+
         let sim = freshSim()
-        sim.demoDisc(220)
+        sim.demoDisc(216)
         sim.go(.slice)
+        sim.addCut(0)
         XCTAssertTrue(sim.isUnbakedEmptyDough)
 
-        sim.serveSlice(at: PGeo.center)
+        let s = sim.slices[0]
+        let mid = (s.0 + s.1) / 2
+        let pt = CGPoint(x: PGeo.center.x + CGFloat(cos(mid)) * 90, y: PGeo.center.y + CGFloat(sin(mid)) * 90)
+        sim.serveSlice(at: pt)
         XCTAssertNil(sim.lifted, "bare raw dough must not be served")
         XCTAssertNil(sim.stars)
         XCTAssertEqual(Coins.shared.balance, 0)
         XCTAssertGreaterThanOrEqual(sim.ovenNudgeAt, 0)
 
-        sim.bake = 0.3
+        sim.bake = 0.35
         XCTAssertFalse(sim.isUnbakedEmptyDough)
-        sim.serveSlice(at: PGeo.center)
-        XCTAssertNotNil(sim.lifted, "lightly baked pizza serves normally")
+        sim.serveSlice(at: pt)
+        XCTAssertNotNil(sim.lifted, "baked sliced pizza serves normally")
     }
 
     func testPizzaTreasureHooksRespondToOwnership() {

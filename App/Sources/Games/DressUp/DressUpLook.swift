@@ -273,6 +273,7 @@ final class LookStore: ObservableObject {
     static let game = "dressup"
     static let maxSaved = 60
     static let maxPlayhousePhotos = 40
+    static let maxUndoDepth = 15
     static let galleryCoinReward = 2
     static let playhouseCoinReward = 3
 
@@ -284,10 +285,12 @@ final class LookStore: ObservableObject {
     }
     @Published private(set) var gallery: [Look]
     @Published private(set) var playhousePhotos: [PlayhousePhoto]
+    @Published private(set) var undoStack: [Look] = []
     /// Colors she mixed, newest first (at most 12).
     @Published var mixes: [String] { didSet { GameStorage.save(mixes, game: Self.game, file: "mixes.json") } }
 
     var hasGalleryItems: Bool { !gallery.isEmpty || !playhousePhotos.isEmpty }
+    var canUndo: Bool { !undoStack.isEmpty }
 
     private var pending: DispatchWorkItem?
     private var galleryCoinGuard = DressUpCoinGuard(cooldown: 5.0)
@@ -380,11 +383,42 @@ final class LookStore: ObservableObject {
         GameStorage.save(gallery, game: Self.game, file: "gallery.json")
     }
 
+    func pushUndoSnapshot(_ look: Look? = nil) {
+        let snapshot = look ?? current
+        if undoStack.last == snapshot { return }
+        undoStack.append(snapshot)
+        if undoStack.count > Self.maxUndoDepth {
+            undoStack.removeFirst(undoStack.count - Self.maxUndoDepth)
+        }
+    }
+
+    @discardableResult
+    func undo() -> Bool {
+        guard let previous = undoStack.popLast() else { return false }
+        current = previous
+        return true
+    }
+
+    func applySurprise(using randomLook: Look? = nil) {
+        pushUndoSnapshot()
+        current = (randomLook ?? Look.random()).sanitized()
+    }
+
+    func applyOutfitSet(_ set: OutfitSet) {
+        let next = set.apply(to: current).sanitized()
+        guard next != current else { return }
+        pushUndoSnapshot()
+        current = next
+    }
+
     func open(_ look: Look) {
         var l = look
         l.id = current.id
         l.stickers = []
         l.frame = nil
+        if l.styleSignature != current.styleSignature {
+            pushUndoSnapshot()
+        }
         current = l
     }
 

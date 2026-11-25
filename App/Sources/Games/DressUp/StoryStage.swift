@@ -566,7 +566,7 @@ struct StoryStage: View {
     @State private var snapBurst = 0
     @State private var lastSnapPreview: UIImage?
     @State private var lastTickDate: Date?
-    @State private var currentStageSize = CGSize(width: 1024, height: 616)
+    @State private var currentStageSize = CGSize(width: 1024, height: 606)
 
     init(me: Look, friends: [Look], store: LookStore? = nil, close: @escaping () -> Void) {
         self.me = me
@@ -593,7 +593,7 @@ struct StoryStage: View {
         _selectedActor = State(initialValue: cast.first?.id)
     }
 
-    private static let stageHeight: CGFloat = 616
+    private static let stageHeight: CGFloat = 606
     private static let trayHeight: CGFloat = 196
     private let art = DressUpArt.shared
 
@@ -620,7 +620,7 @@ struct StoryStage: View {
                     tray
                         .frame(height: Self.trayHeight)
                         .padding(.horizontal, 18)
-                        .padding(.bottom, 12)
+                        .padding(.bottom, 32)
                 }
                 .overlay(alignment: .top) { topBar }
                 .coinPurse(game: LookStore.game)
@@ -629,6 +629,7 @@ struct StoryStage: View {
                 Color.white.ignoresSafeArea().transition(.opacity)
             }
         }
+        .defersSystemGestures(on: .bottom)
         .animation(.easeInOut(duration: 0.35), value: playhouse.bg)
     }
 

@@ -705,4 +705,115 @@ final class DressUpTests: XCTestCase {
         XCTAssertEqual(back.picks["hat"], "h_hanbokCrown")
         XCTAssertEqual(back.picks["hold"], "p_fairyWand")
     }
+
+    func testLookUndoStackRestoresSurpriseOutfitSetsAndGalleryLoads() throws {
+        let store = LookStore()
+        XCTAssertFalse(store.canUndo)
+        XCTAssertFalse(store.undo())
+
+        var original = Look.starter.sanitized()
+        original.wear("d_princess", in: "dress")
+        original.wear("h_twobows", in: "hat")
+        original.bg = "bg_bedroom"
+        store.current = original
+
+        // 1. Surprise pushes previous look and undo restores it cleanly.
+        var surprise = Look.starter.sanitized()
+        surprise.wear("d_sun", in: "dress")
+        surprise.bg = "bg_beach"
+        store.applySurprise(using: surprise)
+        XCTAssertTrue(store.canUndo)
+        XCTAssertEqual(store.current.picks["dress"], "d_sun")
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.current, original)
+        XCTAssertFalse(store.canUndo)
+
+        // 2. Outfit set application pushes previous look and undo restores it cleanly.
+        let hanbok = try XCTUnwrap(OutfitSet.all.first { $0.id == "hanbok" })
+        let jewelFairy = try XCTUnwrap(OutfitSet.all.first { $0.id == "jewelFairy" })
+        store.applyOutfitSet(hanbok)
+        XCTAssertEqual(store.current.picks["top"], "t_jeogori")
+        XCTAssertTrue(store.canUndo)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.current, original)
+
+        // 3. Multi-step stack walks cleanly across OutfitSet -> Surprise -> original.
+        store.applyOutfitSet(jewelFairy)
+        let wearingFairy = store.current
+        XCTAssertEqual(wearingFairy.picks["dress"], "d_jewelfairy")
+        store.applySurprise(using: surprise)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.current, wearingFairy)
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.current, original)
+
+        // 4. Opening a saved gallery portrait pushes the previous look onto undoStack.
+        let savedPortrait = store.saveToGallery()
+        defer { store.delete(savedPortrait) }
+        store.applyOutfitSet(hanbok)
+        let preGalleryLook = store.current
+        store.open(savedPortrait)
+        XCTAssertEqual(store.current.picks["dress"], original.picks["dress"])
+        XCTAssertTrue(store.undo())
+        XCTAssertEqual(store.current, preGalleryLook)
+
+        // 5. Undo stack caps cleanly at LookStore.maxUndoDepth (15).
+        for step in 0..<22 {
+            var next = Look.starter.sanitized()
+            next.skin = step % max(1, art.skin.count)
+            next.hair = (step * 3) % max(1, art.hair.count)
+            next.eye = (step * 5) % max(1, art.eye.count)
+            store.applySurprise(using: next)
+        }
+        XCTAssertEqual(store.undoStack.count, LookStore.maxUndoDepth)
+        XCTAssertEqual(LookStore.maxUndoDepth, 15)
+    }
+
+    func testBeautyStudioDirectNailsEntryMode() {
+        XCTAssertEqual(DressUpActivity.allCases, [.makeup, .nails, .pets, .playhouse, .runway, .gallery])
+        XCTAssertEqual(DressUpActivity.makeup.beautyMode, .makeup)
+        XCTAssertEqual(DressUpActivity.nails.beautyMode, .nails)
+        XCTAssertNil(DressUpActivity.pets.beautyMode)
+        XCTAssertNil(DressUpActivity.playhouse.beautyMode)
+        XCTAssertNil(DressUpActivity.runway.beautyMode)
+        XCTAssertNil(DressUpActivity.gallery.beautyMode)
+
+        let nailsStudio = BeautyStudio(look: Look.starter.sanitized(), mode: .nails, done: { _ in })
+        XCTAssertEqual(nailsStudio.initialMode, .nails)
+
+        let nailsWorld = BeautyWorld(look: Look.starter.sanitized(), mode: .nails)
+        XCTAssertEqual(nailsWorld.mode, .nails)
+        XCTAssertEqual(nailsWorld.tool, .polish)
+        XCTAssertEqual(nailsWorld.color, BeautyColors.polish[0])
+        XCTAssertEqual(nailsWorld.load, 1, accuracy: 0.0001)
+        XCTAssertEqual(nailsWorld.box, BeautyWorld.handBox)
+    }
+
+    func testConsolidatedMeSubTabsCoverAllTenMeCategoriesWithoutDroppingItems() {
+        XCTAssertEqual(MeSubTab.allCases.count, 5)
+        XCTAssertEqual(MeSubTab.allCases, [.skin, .hair, .eyes, .mouthAndBlush, .faceShape])
+
+        let underlyingMe = art.categories.filter { $0.group == "me" }
+        XCTAssertEqual(underlyingMe.count, 10)
+
+        let coveredIDs = MeSubTab.allCoveredCategoryIDs
+        XCTAssertEqual(coveredIDs.count, 10)
+        XCTAssertEqual(Set(coveredIDs).count, 10, "Each underlying me category must belong to exactly one sub-tab")
+        XCTAssertEqual(Set(coveredIDs), Set(underlyingMe.map(\.id)))
+
+        let expectedItems = Set(underlyingMe.flatMap(\.items))
+        let reachableItems = Set(
+            MeSubTab.allCases
+                .flatMap(\.categoryIDs)
+                .compactMap { art.category($0) }
+                .flatMap(\.items)
+        )
+        XCTAssertEqual(reachableItems, expectedItems)
+        XCTAssertFalse(reachableItems.isEmpty)
+
+        for category in underlyingMe {
+            let tab = MeSubTab.tab(forCategory: category.id)
+            XCTAssertTrue(tab.categoryIDs.contains(category.id), "Expected \(category.id) inside \(tab)")
+        }
+    }
 }
