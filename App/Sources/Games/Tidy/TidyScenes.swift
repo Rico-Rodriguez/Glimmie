@@ -10,6 +10,7 @@ import SwiftUI
 enum TidySceneArt {
     static let wood = TRGB(0xDDA56C)
     static let darkWood = TRGB(0xB77B4B)
+    static let warmPlum = Color(hex: 0x3A2248)
 
     static func back(_ scene: TidyScene, _ ctx: GraphicsContext) {
         switch scene {
@@ -52,7 +53,7 @@ enum TidySceneArt {
     /// The soft shadow a shelf throws on the wall behind it.
     static func shelfShadow(_ ctx: GraphicsContext, _ x: CGFloat, _ y: CGFloat, _ w: CGFloat) {
         let r = CGRect(x: x, y: y, width: w, height: 26)
-        ctx.fill(Path(r), with: .linearGradient(Gradient(colors: [Color.black.opacity(0.16), .clear]),
+        ctx.fill(Path(r), with: .linearGradient(Gradient(colors: [warmPlum.opacity(0.16), .clear]),
                                                 startPoint: CGPoint(x: 0, y: r.minY), endPoint: CGPoint(x: 0, y: r.maxY)))
     }
 
@@ -70,7 +71,7 @@ enum TidySceneArt {
         // Inner shadow along the top and sides.
         var c2 = ctx
         c2.clip(to: p)
-        c2.stroke(p, with: .color(.black.opacity(0.12)), lineWidth: 14)
+        c2.stroke(p, with: .color(warmPlum.opacity(0.13)), lineWidth: 14)
     }
 
     static func shelfUnit(_ ctx: GraphicsContext, x: CGFloat, w: CGFloat, shelves: [CGFloat], paint: TRGB, inside c: TRGB) {
@@ -149,17 +150,30 @@ enum TidySceneArt {
                                               startPoint: CGPoint(x: 60, y: 0), endPoint: CGPoint(x: 140, y: 0)))
             ctx.stroke(d, with: .color(paint.line.color(0.8)), lineWidth: 3)
         }
-        TPaint.dot(ctx, 76, 250, 7, TRGB(0xFFE39A).color)
-        TPaint.dot(ctx, 684, 250, 7, TRGB(0xFFE39A).color)
+        let knobColor = TRGB(0xFFE39A)
+        for kx in [CGFloat(76), 684] {
+            let knob = Path(ellipseIn: CGRect(x: kx - 7, y: 243, width: 14, height: 14))
+            TPaint.ball(ctx, knob, knobColor, CGRect(x: kx - 7, y: 243, width: 14, height: 14), line: 2)
+            TPaint.gloss(ctx, CGRect(x: kx - 4, y: 246, width: 4, height: 3), 0.8)
+        }
         box(ctx, CGRect(x: 140, y: 0, width: 480, height: 500), paint, radius: 10)
         inside(ctx, CGRect(x: 160, y: 18, width: 440, height: 462), TRGB(0xFFF8EE))
-        // Scalloped shelf paper along each shelf.
+        // Scalloped shelf paper along each shelf with warm outlines and glossy highlights.
+        let scallopColor = TidyPalette.c(7)
         for y in [CGFloat(240), 480] {
             shelfShadow(ctx, 160, y + 14, 440)
             plank(ctx, 150, y, 460, 16, paint)
             for i in 0..<15 {
                 let x = 160 + CGFloat(i) * 29.3
-                ctx.fill(Path(ellipseIn: CGRect(x: x, y: y + 10, width: 29, height: 14)), with: .color(TidyPalette.c(7).light.color))
+                let rect = CGRect(x: x, y: y + 10, width: 29, height: 14)
+                let sc = Path(ellipseIn: rect)
+                ctx.fill(sc, with: .linearGradient(
+                    Gradient(colors: [scallopColor.light.color, scallopColor.color]),
+                    startPoint: CGPoint(x: x, y: rect.minY),
+                    endPoint: CGPoint(x: x, y: rect.maxY)
+                ))
+                ctx.stroke(sc, with: .color(scallopColor.line.color(0.65)), lineWidth: 1.8)
+                TPaint.gloss(ctx, CGRect(x: x + 7, y: y + 13, width: 9, height: 3.5), 0.65)
             }
         }
     }
@@ -215,13 +229,23 @@ enum TidySceneArt {
             let y = CGFloat(j) * 70
             TPaint.stroke(ctx, [CGPoint(x: tile.minX, y: y), CGPoint(x: tile.maxX, y: y)], Color(hex: 0xC9EEE8), 2)
         }
-        // Round mirror above the shelf.
+        // Round mirror above the shelf with warm wood frame outline & crisp glass rim.
         let mirror = CGRect(x: 300, y: 6, width: 160, height: 120)
-        ctx.fill(Path(ellipseIn: mirror.insetBy(dx: -8, dy: -8)), with: .color(wood.color))
-        ctx.fill(Path(ellipseIn: mirror), with: .linearGradient(Gradient(colors: [Color(hex: 0xEAF7FF), Color(hex: 0xBFDDF2)]),
-                                                                startPoint: CGPoint(x: 300, y: 6), endPoint: CGPoint(x: 460, y: 126)))
-        TPaint.stroke(ctx, [CGPoint(x: 330, y: 70), CGPoint(x: 370, y: 30)], .white.opacity(0.8), 6)
-        TPaint.stroke(ctx, [CGPoint(x: 352, y: 84), CGPoint(x: 380, y: 56)], .white.opacity(0.6), 4)
+        let mirrorFrame = mirror.insetBy(dx: -8, dy: -8)
+        let framePath = Path(ellipseIn: mirrorFrame)
+        ctx.fill(framePath, with: .linearGradient(
+            Gradient(colors: [wood.light.color, wood.color, wood.shade.color]),
+            startPoint: CGPoint(x: mirrorFrame.minX, y: mirrorFrame.minY),
+            endPoint: CGPoint(x: mirrorFrame.maxX, y: mirrorFrame.maxY)
+        ))
+        ctx.stroke(framePath, with: .color(wood.line.color(0.85)), lineWidth: 3)
+        let glassPath = Path(ellipseIn: mirror)
+        ctx.fill(glassPath, with: .linearGradient(Gradient(colors: [Color(hex: 0xF2FAFF), Color(hex: 0xBFDDF2)]),
+                                                 startPoint: CGPoint(x: 300, y: 6), endPoint: CGPoint(x: 460, y: 126)))
+        ctx.stroke(glassPath, with: .color(Color(hex: 0x8DBAD4)), lineWidth: 2.2)
+        TPaint.stroke(ctx, [CGPoint(x: 330, y: 70), CGPoint(x: 370, y: 30)], .white.opacity(0.85), 6)
+        TPaint.stroke(ctx, [CGPoint(x: 352, y: 84), CGPoint(x: 380, y: 56)], .white.opacity(0.65), 4)
+        TPaint.gloss(ctx, CGRect(x: 320, y: 18, width: 22, height: 9), 0.7)
         // Glass shelf.
         shelfShadow(ctx, 150, 198, 460)
         ctx.fill(Path(roundedRect: CGRect(x: 150, y: 190, width: 460, height: 10), cornerRadius: 4), with: .color(Color(hex: 0xD9F2FF, alpha: 0.9)))
@@ -229,13 +253,30 @@ enum TidySceneArt {
         // Counter with a sink.
         plank(ctx, 120, 480, 520, 20, TRGB(0xFBFAF7))
         let basin = CGRect(x: 300, y: 470, width: 140, height: 22)
-        ctx.fill(Path(ellipseIn: basin), with: .color(Color(hex: 0xD9E6EE)))
+        let basinPath = Path(ellipseIn: basin)
+        ctx.fill(basinPath, with: .linearGradient(
+            Gradient(colors: [Color(hex: 0xF2F8FC), Color(hex: 0xCADCE8)]),
+            startPoint: CGPoint(x: basin.midX, y: basin.minY),
+            endPoint: CGPoint(x: basin.midX, y: basin.maxY)
+        ))
+        ctx.stroke(basinPath, with: .color(Color(hex: 0x8BA6BA)), lineWidth: 2.4)
+        TPaint.gloss(ctx, CGRect(x: 318, y: 473, width: 42, height: 5), 0.8)
+        TPaint.dot(ctx, 370, 482, 4, Color(hex: 0x8D9BAE))
         let tap = Path(roundedRect: CGRect(x: 362, y: 432, width: 16, height: 44), cornerRadius: 6)
         TPaint.metal(ctx, tap, tap.boundingRect)
         let spout = Path(roundedRect: CGRect(x: 346, y: 430, width: 40, height: 12), cornerRadius: 6)
         TPaint.metal(ctx, spout, spout.boundingRect)
-        // A little dish for the soap.
-        ctx.fill(Path(ellipseIn: CGRect(x: 440, y: 472, width: 80, height: 14)), with: .color(TidyPalette.c(10).color))
+        // A little dish for the soap with warm outline & shine.
+        let soapDishRect = CGRect(x: 440, y: 472, width: 80, height: 14)
+        let soapDish = Path(ellipseIn: soapDishRect)
+        let dishColor = TidyPalette.c(10)
+        ctx.fill(soapDish, with: .linearGradient(
+            Gradient(colors: [dishColor.light.color, dishColor.color, dishColor.shade.color]),
+            startPoint: CGPoint(x: soapDishRect.midX, y: soapDishRect.minY),
+            endPoint: CGPoint(x: soapDishRect.midX, y: soapDishRect.maxY)
+        ))
+        ctx.stroke(soapDish, with: .color(dishColor.line.color(0.85)), lineWidth: 2.2)
+        TPaint.gloss(ctx, CGRect(x: 454, y: 474, width: 26, height: 4), 0.75)
     }
 
     static func bathroomFront(_ ctx: GraphicsContext) {
@@ -348,11 +389,23 @@ enum TidySceneArt {
         box(ctx, CGRect(x: 130, y: 20, width: 500, height: 460), slat, radius: 12)
         inside(ctx, CGRect(x: 150, y: 40, width: 460, height: 420), TRGB(0xF6E2C2), radius: 6)
         for i in 0..<6 { TPaint.stroke(ctx, [CGPoint(x: 150, y: 40 + CGFloat(i) * 70), CGPoint(x: 610, y: 40 + CGFloat(i) * 70)], slat.shade.color(0.35), 2) }
-        // Paper liners show what goes where.
+        // Paper liners show what goes where, with crisp warm outlines and soft craft trim.
         let liners = [TRGB(0xFFD9D6), TRGB(0xFFE6C8), TRGB(0xFFDCE8), TRGB(0xFFF4C4)]
         for (i, c) in liners.enumerated() {
             let r = CGRect(x: 160 + CGFloat(i % 2) * 230, y: 50 + CGFloat(i / 2) * 210, width: 210, height: 190)
-            ctx.fill(Path(roundedRect: r, cornerRadius: 14), with: .color(c.color(0.85)))
+            let p = Path(roundedRect: r, cornerRadius: 14)
+            ctx.fill(p, with: .linearGradient(
+                Gradient(colors: [c.light.color(0.92), c.color(0.9)]),
+                startPoint: CGPoint(x: r.minX, y: r.minY),
+                endPoint: CGPoint(x: r.minX, y: r.maxY)
+            ))
+            ctx.stroke(p, with: .color(c.line.color(0.55)), lineWidth: 2)
+            ctx.stroke(
+                Path(roundedRect: r.insetBy(dx: 7, dy: 7), cornerRadius: 10),
+                with: .color(.white.opacity(0.75)),
+                style: StrokeStyle(lineWidth: 1.8, dash: [6, 5])
+            )
+            TPaint.gloss(ctx, CGRect(x: r.minX + 18, y: r.minY + 10, width: 64, height: 6), 0.55)
         }
         plank(ctx, 374, 40, 12, 420, slat)
         plank(ctx, 150, 244, 460, 12, slat)

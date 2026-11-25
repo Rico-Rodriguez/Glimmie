@@ -21,7 +21,8 @@ enum TidyGame {
         title: "Tidy Up",
         tint: Color(hex: 0xC9B6FF),
         icon: { AnyView(TidyTileIcon()) },
-        play: { exit in AnyView(TidyGameView(exit: exit)) }
+        play: { exit in AnyView(TidyGameView(exit: exit)) },
+        stickers: TidyFind.stickers
     )
 }
 
@@ -136,6 +137,23 @@ final class TidySound {
     }
 }
 
+// MARK: - Full-bleed room wallpaper backdrop
+
+private struct TidyRoomBackdrop: View {
+    let scene: TidyScene
+
+    var body: some View {
+        Canvas { ctx, size in
+            let map = GameStageMap(size: size)
+            var g = ctx
+            g.scaleBy(x: map.scale, y: map.scale)
+            let logical = CGSize(width: size.width / map.scale, height: size.height / map.scale)
+            let floorY = (map.origin.y / map.scale) + (GameChromeLayout.height - 22)
+            TidySceneArt.room(scene, g, size: logical, floorY: floorY)
+        }
+    }
+}
+
 // MARK: - Root
 
 struct TidyGameView: View {
@@ -186,42 +204,157 @@ struct TidyGameView: View {
     }
 }
 
-// MARK: - Level picker
+// MARK: - Level picker (two pictorial tabs: Rooms 1-12 & Rooms 13-24 + star bar)
+
+private enum TidyPickerPage: Int, CaseIterable {
+    case cozy = 0
+    case sparkle = 1
+
+    var range: Range<Int> {
+        switch self {
+        case .cozy: return 0..<12
+        case .sparkle: return 12..<24
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .cozy: return "house.fill"
+        case .sparkle: return "sparkles"
+        }
+    }
+}
 
 struct TidyLevelPicker: View {
     @ObservedObject var store: TidyStore
     let exit: () -> Void
     let open: (Int) -> Void
 
+    @State private var page: TidyPickerPage = .cozy
+    @State private var showBook = false
+
     private var nextUp: Int { TidyLevels.all.firstIndex { !store.done.contains($0.id) } ?? 0 }
 
     var body: some View {
         ZStack {
-            DesignCanvas {
-                ZStack(alignment: .top) {
-                    Canvas { ctx, size in
-                        TidySceneArt.room(.bookshelf, ctx, size: size, floorY: size.height - 22)
-                    }
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(212), spacing: 26), count: 4), spacing: 26) {
-                            ForEach(TidyLevels.all.indices, id: \.self) { i in
-                                TidyLevelCard(level: TidyLevels.all[i], done: store.done.contains(TidyLevels.all[i].id), glow: i == nextUp) {
+            GameStage(background: {
+                TidyRoomBackdrop(scene: .bookshelf)
+            }) {
+                ZStack {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 108)
+                        let indices = Array(page.range)
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.fixed(216), spacing: 22), count: 4),
+                            spacing: 22
+                        ) {
+                            ForEach(indices, id: \.self) { i in
+                                let level = TidyLevels.all[i]
+                                TidyLevelCard(
+                                    level: level,
+                                    done: store.done.contains(level.id),
+                                    glow: i == nextUp
+                                ) {
                                     Sound.shared.tap()
                                     open(i)
                                 }
                             }
                         }
-                        .padding(.top, 116)
-                        .padding(.bottom, 40)
+                        .id(page)
+                        .transition(.opacity)
+                        Spacer(minLength: 28)
                     }
-                    HStack {
-                        HomeButton(action: exit)
-                        Spacer()
-                        TidyMusicButton(store: store)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 20)
+                    .padding(.horizontal, 28)
+
+                    GameTopBar(
+                        gameID: TidyGame.id,
+                        showStickerBook: true,
+                        showCoins: true,
+                        onExit: exit,
+                        onStickerBook: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showBook = true
+                            }
+                        },
+                        center: {
+                            pickerSwitcherBar
+                        },
+                        trailing: {
+                            TidyMusicButton(store: store, size: GameChromeLayout.buttonSize)
+                        }
+                    )
+
+                    StickerToast(game: TidyGame.id, target: GameChromeLayout.stickerTarget)
                 }
+                .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
+                .coinPurse(game: TidyGame.id)
+            }
+
+            if showBook {
+                StickerBookView(game: TidyGame.id) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(5)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            let cozyDone = TidyPickerPage.cozy.range.allSatisfy { store.done.contains(TidyLevels.all[$0].id) }
+            if cozyDone { page = .sparkle }
+        }
+    }
+
+    private var pickerSwitcherBar: some View {
+        let pageLevels = Array(TidyLevels.all[page.range])
+        return GameTrayCard(cornerRadius: 28, paddingH: 12, paddingV: 7) {
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    ForEach(TidyPickerPage.allCases, id: \.self) { tab in
+                        let selected = page == tab
+                        Button {
+                            guard page != tab else { return }
+                            Sound.shared.play(.pop, volume: 0.55)
+                            Sound.shared.tap()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                                page = tab
+                            }
+                        } label: {
+                            Image(systemName: tab.symbol)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(selected ? .white : Theme.ink.opacity(0.6))
+                                .frame(width: 52, height: 42)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(selected ? Theme.pink : Color.white)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(selected ? Theme.pink : Theme.blush, lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(Squish())
+                    }
+                }
+
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Theme.blush)
+                    .frame(width: 3, height: 32)
+
+                HStack(spacing: 3) {
+                    ForEach(pageLevels) { lvl in
+                        let lit = store.done.contains(lvl.id)
+                        Image(systemName: lit ? "star.fill" : "star")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(lit ? Theme.lemon : Theme.ink.opacity(0.22))
+                            .shadow(color: lit ? Theme.ink.opacity(0.28) : .clear, radius: 1, y: 1)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(.white.opacity(0.85)))
             }
         }
     }
@@ -238,26 +371,28 @@ private struct TidyLevelCard: View {
         Button(action: tap) {
             ZStack(alignment: .topTrailing) {
                 Canvas { ctx, size in
-                    let k = size.width / TidyScene.size.width
+                    let k = min(size.width / TidyScene.size.width, size.height / TidyScene.size.height)
                     var c = ctx
-                    c.translateBy(x: 0, y: (size.height - TidyScene.size.height * k) / 2)
+                    c.translateBy(x: (size.width - TidyScene.size.width * k) / 2,
+                                  y: (size.height - TidyScene.size.height * k) / 2)
                     c.scaleBy(x: k, y: k)
                     TidyRenderer.thumbnail(level, filled: done, c)
                 }
-                .frame(width: 212, height: 150)
-                .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.white.opacity(0.75)))
+                .frame(width: 216, height: 172)
+                .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Theme.cream.opacity(0.9)))
                 .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(glow ? Theme.pink : .white, lineWidth: glow ? 6 : 5))
+                    .stroke(glow ? Theme.pink : .white, lineWidth: glow ? 5.5 : 4.5))
                 .shadow(color: Theme.ink.opacity(0.18), radius: 8, y: 6)
                 if done {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(Theme.lemon)
                         .shadow(color: Theme.ink.opacity(0.35), radius: 0, y: 2)
-                        .padding(10)
+                        .padding(9)
                         .background(Circle().fill(.white))
-                        .offset(x: 10, y: -10)
+                        .overlay(Circle().stroke(Theme.blush, lineWidth: 2.5))
+                        .offset(x: 9, y: -9)
                 }
             }
             .scaleEffect(glow && bob ? 1.04 : 1)
@@ -271,8 +406,10 @@ private struct TidyLevelCard: View {
 
 struct TidyMusicButton: View {
     @ObservedObject var store: TidyStore
+    var size: CGFloat = GameChromeLayout.buttonSize
+
     var body: some View {
-        RoundButton(symbol: store.music ? "music.note" : "speaker.slash.fill", tint: Color(hex: 0xA77DEB)) {
+        RoundButton(symbol: store.music ? "music.note" : "speaker.slash.fill", tint: Color(hex: 0xA77DEB), size: size) {
             store.music.toggle()
             store.save()
             Sound.shared.tap()
@@ -293,6 +430,10 @@ struct TidyPlayView: View {
     @StateObject private var world: TidyWorld
     @State private var touching = false
     @State private var showDone = false
+    @State private var showBook = false
+    @State private var confirmReset = false
+    @State private var resetArmedAt = Date.distantPast
+    @State private var resetPulse = false
 
     init(index: Int, store: TidyStore, round: Int, next: @escaping () -> Void, levels: @escaping () -> Void,
          replay: @escaping () -> Void, exit: @escaping () -> Void) {
@@ -305,44 +446,97 @@ struct TidyPlayView: View {
         let args = ProcessInfo.processInfo.arguments
         var prefill = 0
         if round == 0, let i = args.firstIndex(of: "-tidyPrefill"), i + 1 < args.count, let n = Int(args[i + 1]) { prefill = n }
-        _world = StateObject(wrappedValue: TidyWorld(level: TidyLevels.all[index], prefill: prefill))
+        let w = TidyWorld(level: TidyLevels.all[index], prefill: prefill)
+        w.size = CGSize(width: GameChromeLayout.width, height: GameChromeLayout.height)
+        _world = StateObject(wrappedValue: w)
     }
 
     var body: some View {
-        DesignCanvas {
-            ZStack {
-                Canvas { ctx, size in
-                    TidySceneArt.room(world.level.scene, ctx, size: size, floorY: size.height - 22)
-                    var c = ctx
-                    c.translateBy(x: (size.width - TidyScene.size.width) / 2, y: 92)
-                    TidySceneArt.back(world.level.scene, c)
-                }
-                TimelineView(.animation) { tl in
+        ZStack {
+            GameStage(background: {
+                TidyRoomBackdrop(scene: world.level.scene)
+            }) {
+                ZStack {
                     Canvas { ctx, size in
-                        world.size = size
-                        world.step(to: tl.date)
-                        TidyRenderer.draw(world, ctx)
+                        var c = ctx
+                        c.translateBy(x: (size.width - TidyScene.size.width) / 2, y: 92)
+                        TidySceneArt.back(world.level.scene, c)
+                    }
+                    .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
+                    .allowsHitTesting(false)
+
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: showBook)) { tl in
+                        Canvas { ctx, _ in
+                            let _ = tl.date
+                            TidyRenderer.draw(world, ctx)
+                        }
+                        .onChange(of: tl.date) { date in
+                            world.step(to: date)
+                        }
+                    }
+                    .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { v in
+                                if !touching { touching = true; world.touchDown(v.location) } else { world.touchMoved(v.location) }
+                            }
+                            .onEnded { v in
+                                touching = false
+                                world.touchUp(v.location)
+                            }
+                    )
+
+                    GameTopBar(
+                        gameID: TidyGame.id,
+                        showStickerBook: true,
+                        showCoins: true,
+                        onExit: exit,
+                        onStickerBook: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showBook = true
+                            }
+                        },
+                        trailing: {
+                            HStack(spacing: 12) {
+                                RoundButton(symbol: "square.grid.2x2.fill", tint: Color(hex: 0xA77DEB), size: GameChromeLayout.buttonSize) {
+                                    Sound.shared.tap()
+                                    levels()
+                                }
+                                protectedResetButton
+                                TidyMusicButton(store: store, size: GameChromeLayout.buttonSize)
+                            }
+                        }
+                    )
+
+                    StickerToast(game: TidyGame.id, target: GameChromeLayout.stickerTarget)
+
+                    if showDone {
+                        doneButtons.transition(.scale(scale: 0.3).combined(with: .opacity))
                     }
                 }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { v in
-                            if !touching { touching = true; world.touchDown(v.location) } else { world.touchMoved(v.location) }
-                        }
-                        .onEnded { v in
-                            touching = false
-                            world.touchUp(v.location)
-                        }
-                )
-                topBar
-                if showDone { doneButtons.transition(.scale(scale: 0.3).combined(with: .opacity)) }
+                .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
+                .coinPurse(game: TidyGame.id)
+            }
+
+            if showBook {
+                StickerBookView(game: TidyGame.id) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = false
+                    }
+                }
+                .transition(.opacity)
+                .zIndex(5)
             }
         }
+        .ignoresSafeArea()
         .onChange(of: world.complete) { done in
             if done {
                 store.done.insert(world.level.id)
                 store.save()
+                if store.done.count >= 6 {
+                    StickerBook.shared.find(game: TidyGame.id, id: TidyFind.tidyChampion.rawValue)
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                     if world.complete { withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) { showDone = true } }
                 }
@@ -350,27 +544,53 @@ struct TidyPlayView: View {
                 withAnimation(.easeOut(duration: 0.2)) { showDone = false }
             }
         }
-        .onAppear(perform: demoHold)
+        .onAppear {
+            world.size = CGSize(width: GameChromeLayout.width, height: GameChromeLayout.height)
+            demoHold()
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                resetPulse = true
+            }
+        }
     }
 
-    private var topBar: some View {
-        VStack {
-            HStack(spacing: 18) {
-                HomeButton(action: exit)
-                RoundButton(symbol: "square.grid.2x2.fill", tint: Color(hex: 0xA77DEB)) {
-                    Sound.shared.tap()
-                    levels()
+    private var protectedResetButton: some View {
+        let size = GameChromeLayout.buttonSize
+        return Button {
+            handleResetTap()
+        } label: {
+            Image(systemName: "arrow.counterclockwise")
+                .font(.system(size: size * 0.42, weight: .bold))
+                .foregroundStyle(confirmReset ? .white : Color(hex: 0x4CC3C0))
+                .frame(width: size, height: size)
+                .background(Circle().fill(confirmReset ? Theme.pink : Color.white))
+                .overlay(Circle().stroke(confirmReset ? Color.white : Color(hex: 0x4CC3C0).opacity(0.35), lineWidth: 4.5))
+                .shadow(color: (confirmReset ? Theme.pink : Theme.ink).opacity(0.28), radius: confirmReset ? 9 : 6, y: 4)
+        }
+        .buttonStyle(Squish())
+        .scaleEffect(confirmReset && resetPulse ? 1.12 : 1)
+        .accessibilityLabel(confirmReset ? "Confirm Reset" : "Reset")
+    }
+
+    private func handleResetTap() {
+        if world.placedCount == 0 || confirmReset {
+            confirmReset = false
+            Sound.shared.tap()
+            replay()
+            return
+        }
+        let armed = Date()
+        resetArmedAt = armed
+        Sound.shared.play(.tap, volume: 0.6)
+        Sound.shared.tap()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.68)) {
+            confirmReset = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            if resetArmedAt == armed {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    confirmReset = false
                 }
-                Spacer()
-                RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x4CC3C0)) {
-                    Sound.shared.tap()
-                    replay()
-                }
-                TidyMusicButton(store: store)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
-            Spacer()
         }
     }
 
@@ -438,6 +658,7 @@ enum TidyRenderer {
         let wanted = heldBody.map { Set(w.eligible(for: $0)) } ?? []
         for i in w.level.slots.indices where w.filled[i] == nil {
             let s = w.level.slots[i]
+            let open = w.isOpen(i)
             let pulse = 0.5 + 0.5 * sin(w.time * 5)
             var alpha = s.strict ? 0.5 : 0.2
             var scale: CGFloat = 1
@@ -445,8 +666,11 @@ enum TidyRenderer {
             if wanted.contains(i) { alpha += 0.18 * pulse; scale = 1 + 0.03 * CGFloat(pulse) }
             if w.hover == i { alpha = 0.75; scale = 1.06; glow = true }
             if let h = w.hint, h.slot == i, w.time - h.at < 2.5 { alpha += 0.35 * pulse; scale = 1 + 0.08 * CGFloat(pulse); glow = pulse > 0.5 }
-            if !w.isOpen(i) { alpha *= 0.5 }
-            ghost(sc, s, alpha: alpha, scale: scale, glow: glow)
+            if !open { alpha *= 0.42 }
+            ghost(sc, s, alpha: alpha, scale: scale, glow: glow, lockedStack: !open && s.stack != nil)
+            if w.isActiveStackBase(i) {
+                drawStackBaseCue(sc, slot: s, time: w.time, highlighted: wanted.contains(i) || w.hover == i)
+            }
         }
         // Things already put away (and things about to land), then the furniture's front.
         let inPlace = w.bodies.filter { b in
@@ -504,8 +728,9 @@ enum TidyRenderer {
         }
     }
 
-    /// The see-through shape of what goes in a slot. Strict slots show the color they want.
-    static func ghost(_ ctx: GraphicsContext, _ s: TidySlot, alpha: Double, scale: CGFloat, glow: Bool) {
+    /// The see-through shape of what goes in a slot. Strict slots preserve a crisp white emblem cue over the tint;
+    /// locked upper stack slots show a clear dotted outline.
+    static func ghost(_ ctx: GraphicsContext, _ s: TidySlot, alpha: Double, scale: CGFloat, glow: Bool, lockedStack: Bool = false) {
         let tint: Color = s.strict ? TidyPalette.c(s.color).mix(.white, 0.15).color : TRGB.ink.color
         let big = CGRect(x: -200, y: -200, width: 400, height: 400)
         if glow {
@@ -531,6 +756,52 @@ enum TidyRenderer {
             l.blendMode = .sourceAtop
             l.fill(Path(big), with: .color(tint))
         }
+        if s.strict {
+            let emblemSize = min(22, min(s.kind.size.width, s.kind.size.height) * 0.58)
+            var e = ctx
+            e.translateBy(x: s.pos.x, y: s.pos.y)
+            e.rotate(by: .radians(Double(s.rot)))
+            e.scaleBy(x: scale, y: scale)
+            e.opacity = min(1, alpha + 0.35)
+            TPaint.emblem(e, s.color, at: CGPoint(x: 0, y: 1.2), size: emblemSize, color: TRGB.ink.color(0.22))
+            TPaint.emblem(e, s.color, at: .zero, size: emblemSize, color: .white.opacity(0.95))
+        }
+        if lockedStack {
+            var d = ctx
+            d.translateBy(x: s.pos.x, y: s.pos.y)
+            d.rotate(by: .radians(Double(s.rot)))
+            let sz = s.kind.size
+            let box = CGRect(x: -sz.width / 2 - 2, y: -sz.height / 2 - 2, width: sz.width + 4, height: sz.height + 4)
+            let corner = min(10, min(sz.width, sz.height) * 0.35)
+            d.stroke(
+                Path(roundedRect: box, cornerRadius: corner),
+                with: .color(TRGB.ink.color(0.3)),
+                style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [5, 5])
+            )
+        }
+    }
+
+    /// Subtle animated upward chevron & pulse showing the active bottom-most open slot of a stack.
+    private static func drawStackBaseCue(_ ctx: GraphicsContext, slot s: TidySlot, time: Double, highlighted: Bool) {
+        let bob = CGFloat(sin(time * 4.6)) * 3.5
+        let pulse = 0.55 + 0.45 * sin(time * 4.6)
+        let cy = s.pos.y + bob
+        var chevron = Path()
+        chevron.move(to: CGPoint(x: s.pos.x - 10, y: cy + 3))
+        chevron.addLine(to: CGPoint(x: s.pos.x, y: cy - 6))
+        chevron.addLine(to: CGPoint(x: s.pos.x + 10, y: cy + 3))
+
+        let alpha = highlighted ? 0.95 : (0.5 + 0.35 * pulse)
+        ctx.stroke(
+            chevron,
+            with: .color(.white.opacity(alpha)),
+            style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round)
+        )
+        ctx.stroke(
+            chevron,
+            with: .color(Theme.pink.opacity(alpha)),
+            style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round)
+        )
     }
 
     static func softShadow(_ ctx: GraphicsContext, _ center: CGPoint, width: CGFloat, height: CGFloat, alpha: Double) {
@@ -566,7 +837,6 @@ enum TidyRenderer {
                 var c = ctx
                 c.translateBy(x: p.pos.x, y: p.pos.y)
                 c.rotate(by: .radians(Double(p.rot)))
-                // Paper flipping over as it falls.
                 c.scaleBy(x: max(0.15, abs(cos(p.rot * 1.7))), y: 1)
                 c.opacity = Double(min(1, (1 - t) * 3))
                 let r = CGRect(x: -p.size / 2, y: -p.size * 0.32, width: p.size, height: p.size * 0.64)
@@ -599,11 +869,14 @@ private struct TidyTileIcon: View {
         Canvas { ctx, size in
             let k = min(size.width, size.height) / 300
             var c = ctx
+            c.translateBy(x: (size.width - 300 * k) / 2, y: (size.height - 300 * k) / 2)
             c.scaleBy(x: k, y: k)
-            // A little shelf with books, a plant and a mug, and the moving box below.
+            // A little shelf with books and a plant, and the moving box + teddy below.
             TidySceneArt.plank(c, 20, 150, 260, 18, TidySceneArt.wood)
-            let things: [(TidyKind, CGFloat, Int, CGFloat)] = [(.book, 52, 0, 0), (.book, 88, 2, 0), (.book, 124, 5, 0), (.book, 164, 7, 0.22),
-                                                               (.plant, 236, 3, 0)]
+            let things: [(TidyKind, CGFloat, Int, CGFloat)] = [
+                (.book, 52, 0, 0), (.book, 88, 2, 0), (.book, 124, 5, 0), (.book, 164, 7, 0.22),
+                (.plant, 236, 3, 0),
+            ]
             for (kind, x, col, rot) in things {
                 var d = c
                 let s = kind.size
@@ -612,11 +885,11 @@ private struct TidyTileIcon: View {
                 d.rotate(by: .radians(Double(rot)))
                 TidyArt.draw(kind, color: col, in: d)
             }
-            TidySceneArt.movingBox(c, CGRect(x: 40, y: 200, width: 130, height: 90), open: 1)
+            TidySceneArt.movingBox(c, CGRect(x: 36, y: 194, width: 130, height: 90), open: 1)
             var m = c
-            m.translateBy(x: 228, y: 258)
-            m.rotate(by: .radians(-0.2))
-            m.scaleBy(x: 1.3, y: 1.3)
+            m.translateBy(x: 226, y: 244)
+            m.rotate(by: .radians(-0.18))
+            m.scaleBy(x: 1.22, y: 1.22)
             TidyArt.draw(.teddy, color: 7, in: m)
         }
     }

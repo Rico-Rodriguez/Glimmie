@@ -152,13 +152,18 @@ final class TidyWorld: ObservableObject {
     private var lastPlace: Double = -10
     private var zCounter = 0
     private var heldVel = TVec.zero
+    private var didReward = false
 
     static let gravity: CGFloat = 2300
     static let sub: Double = 1.0 / 240
+    /// Unified snap & hover magnet radius so fast flick drops always match glowing slots.
+    static let snapRadius: CGFloat = 120
+    static let completionRewardCoins = 4
 
     var floorY: CGFloat { size.height - 22 }
     var origin: TVec { TVec((size.width - TidyScene.size.width) / 2, 92) }
     var boxRect: CGRect { CGRect(x: 18, y: floorY - 118, width: 150, height: 118) }
+    var placedCount: Int { filled.compactMap { $0 }.count }
 
     init(level: TidyLevel, prefill: Int = 0) {
         self.level = level
@@ -196,6 +201,15 @@ final class TidyWorld: ObservableObject {
         return true
     }
 
+    /// True when slot `i` is the active bottom-most open slot of a multi-item stack with upper slots still waiting.
+    func isActiveStackBase(_ i: Int) -> Bool {
+        guard isOpen(i), let g = level.slots[i].stack else { return false }
+        let y = level.slots[i].pos.y
+        return level.slots.enumerated().contains { j, o in
+            j != i && o.stack == g && filled[j] == nil && o.pos.y < y - 8
+        }
+    }
+
     /// A placed item can be lifted out unless something in its stack sits on top of it.
     func canLift(_ i: Int) -> Bool {
         let s = level.slots[i]
@@ -218,6 +232,31 @@ final class TidyWorld: ObservableObject {
             if d < bestD { bestD = d; best = i }
         }
         return best
+    }
+
+    /// Detects a near-miss drop on a wrong-color `strict` slot or a locked upper `stack` slot,
+    /// returning the open slot that `b` actually belongs in so we can highlight it.
+    private func rejectedHintSlot(for b: TidyBody, within r: CGFloat) -> Int? {
+        var nearWrong: Int?
+        var bestD = r
+        for i in level.slots.indices where filled[i] == nil && level.slots[i].kind == b.kind {
+            if isOpen(i) && fits(b, i) { continue }
+            let d = (slotPos(i) - b.pos).len
+            if d < bestD {
+                bestD = d
+                nearWrong = i
+            }
+        }
+        guard let rejected = nearWrong else { return nil }
+        let slot = level.slots[rejected]
+        if let stackGroup = slot.stack, !isOpen(rejected) {
+            if let base = level.slots.indices.first(where: {
+                isOpen($0) && level.slots[$0].stack == stackGroup && fits(b, $0)
+            }) {
+                return base
+            }
+        }
+        return eligible(for: b).first
     }
 
     // MARK: Touch
@@ -257,7 +296,7 @@ final class TidyWorld: ObservableObject {
         guard let h = held else { return }
         held = nil
         let b = bodies[h]
-        let near = hover ?? nearestSlot(for: b, within: 92)
+        let near = hover ?? nearestSlot(for: b, within: Self.snapRadius)
         hover = nil
         if let s = near, isOpen(s), fits(b, s) {
             b.state = .snapping
@@ -272,6 +311,14 @@ final class TidyWorld: ObservableObject {
             if sp > 2600 { v = v * (2600 / sp) }
             b.vel = v
             b.spin += v.x * 0.002
+            if let guideSlot = rejectedHintSlot(for: b, within: Self.snapRadius) {
+                hint = (b.id, guideSlot, time)
+                b.squashVel += 2.6
+                TidySound.shared.play(.boop, volume: 0.45, rate: 0.92)
+                TidySound.shared.haptic(.soft)
+                let col = TidyPalette.c(b.color).light
+                rings.append(TidyRing(pos: slotPos(guideSlot), born: time, color: col, size: max(b.size.width, b.size.height)))
+            }
         }
     }
 
@@ -359,32 +406,25 @@ final class TidyWorld: ObservableObject {
         b.lift = max(0, b.lift - dt * 6)
     }
 
-    /// How far above her finger a held item's middle floats, so neither her finger nor her hand hides
-    /// it or the spot it's going to (bigger things float higher so their bottom edge clears her finger).
     func lift(for b: TidyBody) -> CGFloat { FingerLift.carry(below: b.size.height * 0.5) }
 
-    /// Where the held item goes for her finger at f.
     private func carried(_ b: TidyBody, finger f: TVec) -> TVec {
         TVec(FingerLift.point(f.pt, lift: lift(for: b), top: 0, bottom: size.height, width: size.width))
     }
 
-    /// The finger point that holds item b with its middle at p (screenshot hooks and tests).
     func finger(toHold b: TidyBody, at p: CGPoint) -> CGPoint {
         FingerLift.finger(for: p, lift: lift(for: b), top: 0, bottom: size.height, width: size.width)
     }
 
     private func integrateHeld(_ b: TidyBody, _ dt: CGFloat) {
-        // The item glides up from under her finger to float above it (`grab` starts as where she
-        // touched it and eases to zero), so her finger doesn't hide it or its spot.
         grab = grab * (1 - min(1, dt * 7))
         var target = carried(b, finger: finger) + grab
         var baseRot: CGFloat = 0
-        hover = nearestSlot(for: b, within: 120)
+        hover = nearestSlot(for: b, within: Self.snapRadius)
         if let s = hover {
             let sp = slotPos(s)
             let d = (sp - b.pos).len
-            let k = max(0, 1 - d / 120)
-            // Magnet: the slot pulls the item a little, and the item turns to match it.
+            let k = max(0, 1 - d / Self.snapRadius)
             target = target + (sp - target) * (0.38 * k)
             baseRot = level.slots[s].rot * min(1, k * 1.6)
         }
@@ -393,7 +433,6 @@ final class TidyWorld: ObservableObject {
         let inst = (b.pos - old) * (1 / dt)
         heldVel = heldVel * 0.85 + inst * 0.15
         b.vel = heldVel
-        // It swings a little as she drags it, like it's hanging from her fingers.
         let tilt = max(-0.5, min(0.5, heldVel.x * 0.00045))
         let goal = baseRot + tilt
         b.spin += (shortest(goal - b.angle) * 170 - b.spin * 17) * dt
@@ -435,7 +474,6 @@ final class TidyWorld: ObservableObject {
         let rate = Float(0.92 + 0.045 * Double(min(combo, 9)))
         TidySound.shared.place(b.kind.material, rate: rate)
         TidySound.shared.haptic(b.kind.material == .plush ? .soft : .rigid)
-        // Neighbors on the same shelf feel it too.
         for o in bodies where o.state == .placed && o.id != b.id {
             let d = (o.pos - b.pos).len
             if d < 160 { o.squashVel -= 2.2 * (1 - d / 160) }
@@ -464,7 +502,6 @@ final class TidyWorld: ObservableObject {
         let invMb = b?.invMass ?? 0, invIb = b?.invInertia ?? 0
         let ra = point - a.pos
         let rb = b.map { point - $0.pos } ?? .zero
-        // Push apart.
         let total = invMa + invMb
         let corr = max(0, pen - 0.4) * 0.6 / total
         a.pos += n * (corr * invMa)
@@ -485,7 +522,6 @@ final class TidyWorld: ObservableObject {
             b.vel -= n * (j * invMb)
             b.spin -= rbN * j * invIb
         }
-        // Friction.
         var t = rel - n * vn
         let tl = t.len
         if tl > 1e-4 {
@@ -521,7 +557,6 @@ final class TidyWorld: ObservableObject {
                     }
                     if w.x - c.r < 0 { resolve(b, nil, point: TVec(0, w.y), n: TVec(1, 0), pen: c.r - w.x) }
                     if w.x + c.r > size.width { resolve(b, nil, point: TVec(size.width, w.y), n: TVec(-1, 0), pen: w.x + c.r - size.width) }
-                    // The moving box is solid.
                     let q = TVec(max(box.minX, min(box.maxX, w.x)), max(box.minY, min(box.maxY, w.y)))
                     let d = w - q
                     let dl = d.len
@@ -564,7 +599,6 @@ final class TidyWorld: ObservableObject {
         }
     }
 
-    /// A soft tap when something lands hard enough to hear.
     private func bump(_ b: TidyBody, _ impulse: CGFloat) {
         guard impulse > 260, time - b.lastSound > 0.12 else { return }
         b.lastSound = time
@@ -598,7 +632,6 @@ final class TidyWorld: ObservableObject {
             case .confetti:
                 p.vel.y += 520 * fdt
                 p.vel = p.vel * (1 - 1.6 * fdt)
-                // Flutter.
                 p.vel.x += CGFloat(sin((time - p.born) * 9 + Double(p.size))) * 260 * fdt
             }
             p.pos += p.vel * fdt
@@ -626,11 +659,16 @@ final class TidyWorld: ObservableObject {
     private func celebrate() {
         isDone = true
         celebrateAt = nil
-        // Published outside the frame being drawn.
+        if !didReward {
+            didReward = true
+            Coins.shared.earn(Self.completionRewardCoins, game: TidyGame.id, from: CGPoint(x: 512, y: 380))
+            for find in TidyFind.unlocks(for: level) {
+                StickerBook.shared.find(game: TidyGame.id, id: find.rawValue)
+            }
+        }
         DispatchQueue.main.async { [weak self] in self?.complete = self?.isDone ?? false }
         TidySound.shared.play(.chime, volume: 0.9)
         TidySound.shared.success()
-        // A wave of little hops across everything she put away.
         let sorted = bodies.sorted { $0.pos.x < $1.pos.x }
         for (i, b) in sorted.enumerated() {
             let delay = Double(i) * 0.06
