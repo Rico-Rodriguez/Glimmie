@@ -165,7 +165,7 @@ final class TidyWorld: ObservableObject {
     static var hasStarBroom: Bool { Coins.shared.owns(starBroomTreasureID) }
     static var hasPlushBear: Bool { Coins.shared.owns(plushBearTreasureID) }
 
-    var floorY: CGFloat { size.height - 22 }
+    var floorY: CGFloat { size.height - 62 }
     var origin: TVec { TVec((size.width - TidyScene.size.width) / 2, 92) }
     var boxRect: CGRect { CGRect(x: 18, y: floorY - 118, width: 150, height: 118) }
     var placedCount: Int { filled.compactMap { $0 }.count }

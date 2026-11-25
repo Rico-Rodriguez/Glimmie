@@ -189,7 +189,7 @@ private struct TidyRoomBackdrop: View {
             var g = ctx
             g.scaleBy(x: map.scale, y: map.scale)
             let logical = CGSize(width: size.width / map.scale, height: size.height / map.scale)
-            let floorY = (map.origin.y / map.scale) + (GameChromeLayout.height - 22)
+            let floorY = (map.origin.y / map.scale) + (GameChromeLayout.height - 62)
             TidySceneArt.room(scene, g, size: logical, floorY: floorY)
         }
     }
@@ -197,31 +197,19 @@ private struct TidyRoomBackdrop: View {
 
 // MARK: - Root
 
+enum TidyPickerMode: Int, CaseIterable {
+    case unpacking = 0
+    case classic = 1
+}
+
 private enum TidySession: Equatable {
+    case unpacking(room: UnpackingRoomID)
     case standard(index: Int, round: Int)
     case shuffled(roomIndex: Int, seed: UInt64)
 
-    var roomIndex: Int {
-        switch self {
-        case .standard(let index, _): return index
-        case .shuffled(let roomIndex, _): return roomIndex
-        }
-    }
-
-    var isInitialRound: Bool {
-        if case .standard(_, let round) = self { return round == 0 }
-        return false
-    }
-
-    var level: TidyLevel {
-        switch self {
-        case .standard(let index, _): return TidyLevels.all[index]
-        case .shuffled(let roomIndex, let seed): return TidyLevels.shuffled(roomIndex: roomIndex, seed: seed)
-        }
-    }
-
     var viewID: String {
         switch self {
+        case .unpacking(let room): return "unpack-\(room.rawValue)"
         case .standard(let index, let round): return "std-\(index)-\(round)"
         case .shuffled(let roomIndex, let seed): return "shuf-\(roomIndex)-\(seed)"
         }
@@ -231,44 +219,92 @@ private enum TidySession: Equatable {
 struct TidyGameView: View {
     let exit: () -> Void
     @StateObject private var store = TidyStore()
+    @StateObject private var unpackingStore = UnpackingStore()
+    @State private var pickerMode: TidyPickerMode = .unpacking
     @State private var session: TidySession?
     @State private var shuffleCounter: UInt64 = 1
 
     var body: some View {
         ZStack {
             if let active = session {
-                let roomIdx = active.roomIndex
-                TidyPlayView(
-                    level: active.level,
-                    roomIndex: roomIdx,
-                    allowDemoPrefill: active.isInitialRound,
-                    store: store,
-                    next: { advance(from: active) },
-                    levels: { withAnimation(.easeInOut(duration: 0.35)) { session = nil } },
-                    replay: { replayCurrent(active) },
-                    shuffle: { startShuffle(roomIndex: roomIdx) },
-                    exit: exit
-                )
-                .id(active.viewID)
-                .transition(.opacity)
+                switch active {
+                case .unpacking(let roomID):
+                    UnpackingPlayView(
+                        roomID: roomID,
+                        tidyStore: store,
+                        unpackingStore: unpackingStore,
+                        nextRoom: { openUnpacking(roomID.next) },
+                        levels: {
+                            pickerMode = .unpacking
+                            withAnimation(.easeInOut(duration: 0.35)) { session = nil }
+                        },
+                        exit: exit
+                    )
+                    .id(active.viewID)
+                    .transition(.opacity)
+                case .standard(let index, let round):
+                    TidyPlayView(
+                        level: TidyLevels.all[index],
+                        roomIndex: index,
+                        allowDemoPrefill: round == 0,
+                        store: store,
+                        next: { advanceClassic(from: active) },
+                        levels: {
+                            pickerMode = .classic
+                            withAnimation(.easeInOut(duration: 0.35)) { session = nil }
+                        },
+                        replay: { replayClassic(active) },
+                        shuffle: { startShuffle(roomIndex: index) },
+                        exit: exit
+                    )
+                    .id(active.viewID)
+                    .transition(.opacity)
+                case .shuffled(let roomIndex, let seed):
+                    TidyPlayView(
+                        level: TidyLevels.shuffled(roomIndex: roomIndex, seed: seed),
+                        roomIndex: roomIndex,
+                        allowDemoPrefill: false,
+                        store: store,
+                        next: { advanceClassic(from: active) },
+                        levels: {
+                            pickerMode = .classic
+                            withAnimation(.easeInOut(duration: 0.35)) { session = nil }
+                        },
+                        replay: { replayClassic(active) },
+                        shuffle: { startShuffle(roomIndex: roomIndex) },
+                        exit: exit
+                    )
+                    .id(active.viewID)
+                    .transition(.opacity)
+                }
             } else {
                 TidyLevelPicker(
                     store: store,
+                    unpackingStore: unpackingStore,
+                    mode: $pickerMode,
                     exit: exit,
-                    open: { go(to: $0) },
+                    openClassic: { go(to: $0) },
+                    openUnpacking: { openUnpacking($0) },
                     openShuffle: { startRandomClearedShuffle() }
                 )
                 .transition(.opacity)
             }
         }
+        .defersSystemGestures(on: .bottom)
         .onAppear {
             applyLaunchArguments()
             if store.music { TidySound.shared.startMusic() }
         }
         .onDisappear {
             store.save()
+            unpackingStore.saveSync()
             TidySound.shared.stopMusic()
         }
+    }
+
+    private func openUnpacking(_ room: UnpackingRoomID) {
+        TidySound.shared.play(.whoosh, volume: 0.5)
+        withAnimation(.easeInOut(duration: 0.35)) { session = .unpacking(room: room) }
     }
 
     private func go(to i: Int) {
@@ -295,16 +331,18 @@ struct TidyGameView: View {
         startShuffle(roomIndex: pick)
     }
 
-    private func replayCurrent(_ active: TidySession) {
+    private func replayClassic(_ active: TidySession) {
         switch active {
         case .standard(let index, let round):
             session = .standard(index: index, round: round + 1)
         case .shuffled(let roomIndex, _):
             session = .shuffled(roomIndex: roomIndex, seed: nextSeed())
+        case .unpacking:
+            break
         }
     }
 
-    private func advance(from active: TidySession) {
+    private func advanceClassic(from active: TidySession) {
         switch active {
         case .standard(let index, _):
             if index + 1 < TidyLevels.all.count {
@@ -315,13 +353,21 @@ struct TidyGameView: View {
             }
         case .shuffled(let roomIndex, _):
             startShuffle(roomIndex: (roomIndex + 1) % TidyLevels.all.count)
+        case .unpacking(let room):
+            openUnpacking(room.next)
         }
     }
 
-    /// Simulator screenshot hooks: -tidyLevel <n> opens a level (-tidyPrefill <k>, -tidyHold in TidyPlayView).
+    /// Simulator screenshot hooks: -tidyLevel <n>, -unpackingRoom <roomID>, -tidyDemoDone.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-unpackingRoom"), i + 1 < args.count,
+           let room = UnpackingRoomID(rawValue: args[i + 1]) {
+            session = .unpacking(room: room)
+            return
+        }
         if let i = args.firstIndex(of: "-tidyLevel"), i + 1 < args.count, let n = Int(args[i + 1]), TidyLevels.all.indices.contains(n) {
+            pickerMode = .classic
             session = .standard(index: n, round: 0)
         }
         if args.contains("-tidyDemoDone") {
@@ -353,47 +399,40 @@ private enum TidyPickerPage: Int, CaseIterable {
 
 struct TidyLevelPicker: View {
     @ObservedObject var store: TidyStore
+    @ObservedObject var unpackingStore: UnpackingStore
+    @Binding var mode: TidyPickerMode
     let exit: () -> Void
-    let open: (Int) -> Void
+    let openClassic: (Int) -> Void
+    let openUnpacking: (UnpackingRoomID) -> Void
     let openShuffle: () -> Void
 
     @State private var page: TidyPickerPage = .cozy
     @State private var showBook = false
     @State private var shuffleBob = false
 
-    private var nextUp: Int { TidyLevels.all.firstIndex { !store.done.contains($0.id) } ?? 0 }
-    private var allCleared: Bool { TidyLevels.all.allSatisfy { store.done.contains($0.id) } }
+    private var nextUpClassic: Int { TidyLevels.all.firstIndex { !store.done.contains($0.id) } ?? 0 }
+    private var nextUpUnpacking: UnpackingRoomID {
+        UnpackingRoomID.allCases.first { !unpackingStore.isCompleted($0) } ?? .bedroom
+    }
+    private var allClassicCleared: Bool { TidyLevels.all.allSatisfy { store.done.contains($0.id) } }
 
     var body: some View {
         ZStack {
             GameStage(background: {
-                TidyRoomBackdrop(scene: .bookshelf)
+                if mode == .unpacking {
+                    UnpackingRoomBackdrop(roomID: .bedroom)
+                } else {
+                    TidyRoomBackdrop(scene: .bookshelf)
+                }
             }) {
                 ZStack {
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 108)
-                        let indices = Array(page.range)
-                        LazyVGrid(
-                            columns: Array(repeating: GridItem(.fixed(216), spacing: 22), count: 4),
-                            spacing: 22
-                        ) {
-                            ForEach(indices, id: \.self) { i in
-                                let level = TidyLevels.all[i]
-                                TidyLevelCard(
-                                    level: level,
-                                    done: store.done.contains(level.id),
-                                    glow: i == nextUp
-                                ) {
-                                    Sound.shared.tap()
-                                    open(i)
-                                }
-                            }
-                        }
-                        .id(page)
-                        .transition(.opacity)
-                        Spacer(minLength: 28)
+                    if mode == .unpacking {
+                        unpackingGrid
+                            .transition(.opacity)
+                    } else {
+                        classicGrid
+                            .transition(.opacity)
                     }
-                    .padding(.horizontal, 28)
 
                     GameTopBar(
                         gameID: TidyGame.id,
@@ -406,11 +445,11 @@ struct TidyLevelPicker: View {
                             }
                         },
                         center: {
-                            pickerSwitcherBar
+                            modeSwitcherBar
                         },
                         trailing: {
                             HStack(spacing: 12) {
-                                if !store.done.isEmpty {
+                                if mode == .classic && !store.done.isEmpty {
                                     RoundButton(
                                         symbol: "die.face.5.fill",
                                         tint: Color(hex: 0xFFB84D),
@@ -420,7 +459,7 @@ struct TidyLevelPicker: View {
                                         Sound.shared.tap()
                                         openShuffle()
                                     }
-                                    .scaleEffect(allCleared && shuffleBob ? 1.09 : 1)
+                                    .scaleEffect(allClassicCleared && shuffleBob ? 1.09 : 1)
                                     .accessibilityLabel("Bonus Shuffle Room")
                                 }
                                 TidyMusicButton(store: store, size: GameChromeLayout.buttonSize)
@@ -454,9 +493,129 @@ struct TidyLevelPicker: View {
         }
     }
 
-    private var pickerSwitcherBar: some View {
+    private var unpackingGrid: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 112)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(294), spacing: 26), count: 3),
+                spacing: 26
+            ) {
+                ForEach(UnpackingRoomID.allCases) { roomID in
+                    UnpackingRoomCard(
+                        roomID: roomID,
+                        saved: unpackingStore.roomSave(for: roomID),
+                        done: unpackingStore.isCompleted(roomID),
+                        glow: roomID == nextUpUnpacking
+                    ) {
+                        Sound.shared.tap()
+                        openUnpacking(roomID)
+                    }
+                }
+            }
+            Spacer(minLength: 74)
+        }
+        .padding(.horizontal, 28)
+    }
+
+    private var classicGrid: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 92)
+            classicSubBar
+            let indices = Array(page.range)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.fixed(216), spacing: 22), count: 4),
+                spacing: 18
+            ) {
+                ForEach(indices, id: \.self) { i in
+                    let level = TidyLevels.all[i]
+                    TidyLevelCard(
+                        level: level,
+                        done: store.done.contains(level.id),
+                        glow: i == nextUpClassic,
+                        cardHeight: 158
+                    ) {
+                        Sound.shared.tap()
+                        openClassic(i)
+                    }
+                }
+            }
+            .id(page)
+            .transition(.opacity)
+            Spacer(minLength: 68)
+        }
+        .padding(.horizontal, 28)
+    }
+
+    /// Bold 2-Mode Pictorial Switcher: Unpacking (box + sparkle, default) vs Classic Tidy.
+    private var modeSwitcherBar: some View {
+        GameTrayCard(cornerRadius: 28, paddingH: 12, paddingV: 7) {
+            HStack(spacing: 12) {
+                HStack(spacing: 7) {
+                    modePillButton(for: .unpacking, label: "Unpacking Mode") {
+                        UnpackingModeIcon(selected: mode == .unpacking)
+                    }
+                    modePillButton(for: .classic, label: "Classic Tidy Mode") {
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 21, weight: .bold))
+                            .foregroundStyle(mode == .classic ? .white : Theme.ink.opacity(0.62))
+                    }
+                }
+
+                if mode == .unpacking {
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(Theme.blush)
+                        .frame(width: 3, height: 32)
+
+                    HStack(spacing: 5) {
+                        ForEach(UnpackingRoomID.allCases) { roomID in
+                            let lit = unpackingStore.isCompleted(roomID)
+                            Image(systemName: lit ? "star.fill" : "star")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(lit ? Theme.lemon : Theme.ink.opacity(0.22))
+                                .shadow(color: lit ? Theme.ink.opacity(0.28) : .clear, radius: 1, y: 1)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(.white.opacity(0.88)))
+                }
+            }
+        }
+    }
+
+    private func modePillButton<Icon: View>(
+        for tab: TidyPickerMode,
+        label: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        let selected = mode == tab
+        return Button {
+            guard mode != tab else { return }
+            Sound.shared.play(.pop, volume: 0.55)
+            Sound.shared.tap()
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.76)) {
+                mode = tab
+            }
+        } label: {
+            icon()
+                .frame(width: 60, height: 42)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(selected ? Theme.pink : Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(selected ? Theme.pink : Theme.blush, lineWidth: 2)
+                )
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(label)
+    }
+
+    /// Classic Tidy sub-switcher: Cozy 1-12 & Sparkle 13-24 + 12 stars.
+    private var classicSubBar: some View {
         let pageLevels = Array(TidyLevels.all[page.range])
-        return GameTrayCard(cornerRadius: 28, paddingH: 12, paddingV: 7) {
+        return GameTrayCard(cornerRadius: 24, paddingH: 12, paddingV: 6) {
             HStack(spacing: 12) {
                 HStack(spacing: 6) {
                     ForEach(TidyPickerPage.allCases, id: \.self) { tab in
@@ -470,16 +629,16 @@ struct TidyLevelPicker: View {
                             }
                         } label: {
                             Image(systemName: tab.symbol)
-                                .font(.system(size: 22, weight: .bold))
+                                .font(.system(size: 19, weight: .bold))
                                 .foregroundStyle(selected ? .white : Theme.ink.opacity(0.6))
-                                .frame(width: 52, height: 42)
+                                .frame(width: 48, height: 34)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .fill(selected ? Theme.pink : Color.white)
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(selected ? Color(hex: 0xA77DEB) : Color.white)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .stroke(selected ? Theme.pink : Theme.blush, lineWidth: 2)
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(selected ? Color(hex: 0xA77DEB) : Theme.blush, lineWidth: 2)
                                 )
                         }
                         .buttonStyle(Squish())
@@ -488,19 +647,19 @@ struct TidyLevelPicker: View {
 
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(Theme.blush)
-                    .frame(width: 3, height: 32)
+                    .frame(width: 3, height: 26)
 
                 HStack(spacing: 3) {
                     ForEach(pageLevels) { lvl in
                         let lit = store.done.contains(lvl.id)
                         Image(systemName: lit ? "star.fill" : "star")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(lit ? Theme.lemon : Theme.ink.opacity(0.22))
                             .shadow(color: lit ? Theme.ink.opacity(0.28) : .clear, radius: 1, y: 1)
                     }
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.vertical, 6)
                 .background(Capsule().fill(.white.opacity(0.85)))
             }
         }
@@ -511,6 +670,7 @@ private struct TidyLevelCard: View {
     let level: TidyLevel
     let done: Bool
     let glow: Bool
+    var cardHeight: CGFloat = 172
     let tap: () -> Void
     @State private var bob = false
 
@@ -525,7 +685,7 @@ private struct TidyLevelCard: View {
                     c.scaleBy(x: k, y: k)
                     TidyRenderer.thumbnail(level, filled: done, c)
                 }
-                .frame(width: 216, height: 172)
+                .frame(width: 216, height: cardHeight)
                 .background(RoundedRectangle(cornerRadius: 28, style: .continuous).fill(Theme.cream.opacity(0.9)))
                 .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -790,7 +950,7 @@ struct TidyPlayView: View {
                     levels()
                 }
             }
-            .padding(.bottom, 50)
+            .padding(.bottom, 74)
         }
     }
 

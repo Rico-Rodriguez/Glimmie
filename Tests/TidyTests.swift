@@ -316,4 +316,265 @@ final class TidyTests: XCTestCase {
         XCTAssertEqual(upgraded.rings, 2)
         XCTAssertGreaterThan(upgraded.lastPlace, 0)
     }
+
+    // MARK: - Home Indicator Floor Margin
+
+    func testClassicFloorLiftedAboveHomeIndicator() {
+        let w = TidyWorld(level: TidyLevels.toys1)
+        w.size = CGSize(width: GameChromeLayout.width, height: GameChromeLayout.height)
+        XCTAssertEqual(w.floorY, 772)
+        XCTAssertLessThanOrEqual(w.boxRect.maxY, 772)
+        w.simulate(seconds: 7)
+        for b in w.bodies {
+            XCTAssertLessThanOrEqual(b.pos.y, 774, "loose item should remain above iOS Home Indicator zone")
+        }
+    }
+
+    // MARK: - Unpacking Mode Tests
+
+    func testUnpackingRoomsAndItemQueuesAreValid() {
+        XCTAssertEqual(UnpackingRoomID.allCases.count, 6)
+        XCTAssertEqual(UnpackingRooms.all.count, 6)
+        XCTAssertEqual(Set(UnpackingRooms.all.map(\.id)), Set(UnpackingRoomID.allCases))
+        XCTAssertEqual(UnpackingItemKind.newUnpackingItems.count, 18)
+
+        for kind in UnpackingItemKind.allCases {
+            XCTAssertGreaterThan(kind.size.width, 14, kind.rawValue)
+            XCTAssertGreaterThan(kind.size.height, 14, kind.rawValue)
+            XCTAssertFalse(kind.allowedSurfaces.isEmpty, kind.rawValue)
+        }
+
+        var usedKinds: Set<UnpackingItemKind> = []
+        for room in UnpackingRooms.all {
+            XCTAssertGreaterThanOrEqual(room.boxes.count, 2, room.id.rawValue)
+            XCTAssertLessThanOrEqual(room.boxes.count, 3, room.id.rawValue)
+            XCTAssertLessThanOrEqual(room.floorY, 760, "\(room.id.rawValue) floor must stay clear of Home Indicator")
+
+            let items = room.allItems
+            XCTAssertGreaterThanOrEqual(items.count, 10, room.id.rawValue)
+            XCTAssertLessThanOrEqual(items.count, 15, room.id.rawValue)
+            XCTAssertEqual(Set(items.map(\.id)).count, items.count, "duplicate item IDs in \(room.id.rawValue)")
+
+            for surface in room.surfaces {
+                XCTAssertLessThanOrEqual(surface.restY, 760, "\(room.id.rawValue) \(surface.id)")
+                XCTAssertLessThanOrEqual(surface.rect.maxY, 760, "\(room.id.rawValue) \(surface.id)")
+            }
+            for box in room.boxes {
+                XCTAssertFalse(box.items.isEmpty, "\(room.id.rawValue) \(box.id)")
+                XCTAssertLessThanOrEqual(box.rect.maxY, 760, "\(room.id.rawValue) \(box.id)")
+            }
+
+            let surfaceKinds = Set(room.surfaces.map(\.kind))
+            for item in items {
+                usedKinds.insert(item.kind)
+                XCTAssertFalse(
+                    item.kind.allowedSurfaces.isDisjoint(with: surfaceKinds),
+                    "\(item.kind.rawValue) has no compatible surface in \(room.id.rawValue)"
+                )
+            }
+        }
+
+        for newKind in UnpackingItemKind.newUnpackingItems {
+            XCTAssertTrue(usedKinds.contains(newKind), "new Unpacking item \(newKind.rawValue) should appear in at least one room")
+        }
+    }
+
+    func testUnpackingBoxTapOpensFlapsThenPopsItemsOneByOneAndCollapses() {
+        let store = UnpackingStore(loadFromDisk: false)
+        let world = UnpackingWorld(roomID: .bedroom, store: store)
+        guard let box = world.boxes.first else { return XCTFail("expected at least one box") }
+
+        let initialCount = box.remaining.count
+        XCTAssertFalse(box.isOpened)
+        XCTAssertEqual(box.openProgress, 0)
+
+        // First tap opens the taped closed box (no item popped yet).
+        let firstResult = world.tapBox(box.id)
+        XCTAssertNil(firstResult)
+        XCTAssertTrue(box.isOpened)
+        XCTAssertEqual(box.remaining.count, initialCount)
+        world.simulate(seconds: 0.45)
+        XCTAssertEqual(box.openProgress, 1, accuracy: 0.02)
+        XCTAssertEqual(box.tapePeel, 1, accuracy: 0.02)
+
+        // Subsequent taps pop exactly one item at a time until empty.
+        for step in 1...initialCount {
+            let popped = world.tapBox(box.id)
+            XCTAssertNotNil(popped, "expected item #\(step) from box")
+            XCTAssertEqual(box.remaining.count, initialCount - step)
+            world.simulate(seconds: 0.45)
+            XCTAssertEqual(popped?.phase, .staged)
+        }
+
+        // Empty box folds flat and vanishes cleanly.
+        XCTAssertTrue(box.isCollapsing)
+        world.simulate(seconds: 1.0)
+        XCTAssertEqual(box.openProgress, 0, accuracy: 0.02)
+        XCTAssertEqual(box.collapseProgress, 1, accuracy: 0.02)
+        XCTAssertTrue(box.isGone)
+    }
+
+    func testUnpackingFreeFormPlacementAndIncompatibleDropBounce() {
+        let store = UnpackingStore(loadFromDisk: false)
+        let world = UnpackingWorld(roomID: .koreanKitchen, store: store)
+        guard let box = world.boxes.first else { return XCTFail("expected kitchen box") }
+        guard let counter = world.room.surfaces.first(where: { $0.kind == .desk }),
+              let wall = world.room.surfaces.first(where: { $0.id == "kit-wall" }) else {
+            return XCTFail("expected counter and wall surfaces")
+        }
+
+        // Open box and pop rice cooker (first item in kit-box-1).
+        world.tapBox(box.id)
+        guard let riceCooker = world.tapBox(box.id) else { return XCTFail("expected rice cooker") }
+        XCTAssertEqual(riceCooker.kind, .riceCooker)
+        world.simulate(seconds: 0.4)
+
+        // Dropping heavy rice cooker on the wall gently bounces back (zero fail state!).
+        let wallAccepted = world.dropItem(riceCooker.id, at: CGPoint(x: wall.rect.midX, y: wall.rect.midY))
+        XCTAssertFalse(wallAccepted)
+        XCTAssertEqual(riceCooker.phase, .bouncingBack)
+        XCTAssertNotNil(world.hintSurfaceID)
+        world.simulate(seconds: 0.5)
+        XCTAssertEqual(riceCooker.phase, .staged)
+
+        // Free-form horizontal placement anywhere along the counter settles at exact chosen X, grounded on restY!
+        let customLeftX = counter.rect.minX + 95
+        let placedLeft = world.dropItem(riceCooker.id, at: CGPoint(x: customLeftX, y: counter.rect.midY))
+        XCTAssertTrue(placedLeft)
+        XCTAssertEqual(riceCooker.phase, .placed)
+        XCTAssertEqual(riceCooker.surfaceID, counter.id)
+        XCTAssertEqual(riceCooker.pos.x, customLeftX, accuracy: 1.0)
+        XCTAssertEqual(riceCooker.pos.y, counter.restY - riceCooker.size.height * 0.5, accuracy: 1.0)
+
+        // Already-placed item can be picked up and moved to another spot on the same horizontal surface!
+        let customRightX = counter.rect.maxX - 95
+        let movedRight = world.dropItem(riceCooker.id, at: CGPoint(x: customRightX, y: counter.rect.midY))
+        XCTAssertTrue(movedRight)
+        XCTAssertEqual(riceCooker.pos.x, customRightX, accuracy: 1.0)
+
+        // Slippers belong on floor only — verify in bedroom.
+        let bedroom = UnpackingWorld(roomID: .bedroom, store: UnpackingStore(loadFromDisk: false))
+        let bedBox = bedroom.boxes[0]
+        bedroom.tapBox(bedBox.id)
+        var slippers: UnpackingItemState?
+        for _ in 0..<bedBox.spec.items.count {
+            let item = bedroom.tapBox(bedBox.id)
+            if item?.kind == .slippers { slippers = item }
+        }
+        guard let slip = slippers,
+              let shelf = bedroom.room.surfaces.first(where: { $0.kind == .shelf }),
+              let floor = bedroom.room.surfaces.first(where: { $0.kind == .floor }) else {
+            return XCTFail("expected slippers, shelf, and floor")
+        }
+        bedroom.simulate(seconds: 0.4)
+        XCTAssertFalse(bedroom.dropItem(slip.id, at: CGPoint(x: shelf.rect.midX, y: shelf.rect.midY)))
+        bedroom.simulate(seconds: 0.5)
+        XCTAssertTrue(bedroom.dropItem(slip.id, at: CGPoint(x: floor.rect.midX + 60, y: floor.rect.midY)))
+        XCTAssertEqual(slip.surfaceID, floor.id)
+        XCTAssertEqual(slip.pos.y, floor.restY - slip.size.height * 0.5, accuracy: 1.0)
+    }
+
+    func testUnpackingInteractivePlacedItemsAndStarBroomHook() {
+        Coins.shared.resetForTests(balance: 40)
+        defer { Coins.shared.resetForTests() }
+
+        let store = UnpackingStore(loadFromDisk: false)
+        let world = UnpackingWorld(roomID: .bedroom, store: store)
+        let box2 = world.boxes[1]
+        world.tapBox(box2.id)
+        guard let lamp = world.tapBox(box2.id),
+              let desk = world.room.surfaces.first(where: { $0.kind == .desk }) else {
+            return XCTFail("expected desk lamp and desk")
+        }
+        XCTAssertEqual(lamp.kind, .deskLamp)
+        world.simulate(seconds: 0.4)
+
+        XCTAssertTrue(world.dropItem(lamp.id, at: CGPoint(x: desk.rect.midX, y: desk.rect.midY)))
+        XCTAssertTrue(lamp.isLit, "desk lamp turns on with cozy glow when placed")
+        let baseRings = world.rings.count
+
+        // Quick tap on placed desk lamp toggles light on/off.
+        world.touchDown(lamp.pos)
+        world.touchUp(lamp.pos)
+        XCTAssertFalse(lamp.isLit)
+        world.touchDown(lamp.pos)
+        world.touchUp(lamp.pos)
+        XCTAssertTrue(lamp.isLit)
+
+        // Star Broom treasure adds extra golden starlight ring on placement in Unpacking too.
+        XCTAssertTrue(Coins.shared.buy(TidyWorld.starBroomTreasureID, price: 8))
+        guard let doll = world.tapBox(box2.id) else { return XCTFail("expected hanbok doll") }
+        world.simulate(seconds: 0.4)
+        let ringsBefore = world.rings.count
+        XCTAssertTrue(world.dropItem(doll.id, at: CGPoint(x: desk.rect.minX + 80, y: desk.rect.midY)))
+        XCTAssertEqual(world.rings.count, ringsBefore + 2)
+        XCTAssertEqual(baseRings, 1)
+    }
+
+    func testUnpackingRoomCompletionAwardsFiveCoinsAndPersistsCustomLayout() throws {
+        Coins.shared.resetForTests(balance: 10)
+        defer { Coins.shared.resetForTests() }
+
+        let store = UnpackingStore(loadFromDisk: false)
+        let world = UnpackingWorld(roomID: .bedroom, store: store)
+
+        var customPositions: [String: CGPoint] = [:]
+        var offsetStep: CGFloat = 0
+
+        for box in world.boxes {
+            world.tapBox(box.id) // open box
+            let count = box.remaining.count
+            for _ in 0..<count {
+                guard let item = world.tapBox(box.id) else {
+                    return XCTFail("expected item from \(box.id)")
+                }
+                world.simulate(seconds: 0.35)
+                guard let surface = world.room.surfaces.first(where: { item.kind.allowedSurfaces.contains($0.kind) }) else {
+                    return XCTFail("no compatible surface for \(item.kind.rawValue)")
+                }
+                let rawX = surface.rect.minX + 60 + offsetStep.truncatingRemainder(dividingBy: max(40, surface.rect.width - 120))
+                offsetStep += 47
+                let dropPt = CGPoint(x: rawX, y: surface.rect.midY)
+                XCTAssertTrue(world.dropItem(item.id, at: dropPt), "failed placing \(item.kind.rawValue)")
+                customPositions[item.id] = item.pos
+            }
+        }
+
+        world.simulate(seconds: 1.2)
+
+        XCTAssertTrue(world.allBoxesEmpty)
+        XCTAssertTrue(world.boxes.allSatisfy(\.isGone))
+        XCTAssertTrue(world.isDone)
+        XCTAssertTrue(world.complete)
+        XCTAssertEqual(Coins.shared.balance, 15, "completing an Unpacking room awards +5 Play Coins")
+        XCTAssertTrue(StickerBook.shared.has(game: TidyGame.id, id: TidyFind.firstRoom.rawValue))
+        XCTAssertTrue(store.isCompleted(.bedroom))
+
+        for light in world.items where light.kind.isLighting {
+            XCTAssertTrue(light.isLit, "warm lighting should turn on upon room completion")
+        }
+
+        // JSON round-trip of UnpackingSave preserves exact custom item layout!
+        let encoded = try JSONEncoder().encode(store.data)
+        let decoded = try JSONDecoder().decode(UnpackingSave.self, from: encoded)
+        XCTAssertEqual(decoded, store.data)
+
+        // Re-opening the completed room restores every custom position and does not double-award coins.
+        let reloadedStore = UnpackingStore(loadFromDisk: false)
+        reloadedStore.data = decoded
+        let reloaded = UnpackingWorld(roomID: .bedroom, store: reloadedStore)
+        XCTAssertTrue(reloaded.isDone)
+        XCTAssertTrue(reloaded.boxes.allSatisfy(\.isGone))
+        XCTAssertEqual(reloaded.items.count, customPositions.count)
+        for item in reloaded.items {
+            guard let expected = customPositions[item.id] else {
+                return XCTFail("missing custom position for \(item.id)")
+            }
+            XCTAssertEqual(item.phase, .placed)
+            XCTAssertEqual(item.pos.x, expected.x, accuracy: 0.5)
+            XCTAssertEqual(item.pos.y, expected.y, accuracy: 0.5)
+        }
+        reloaded.simulate(seconds: 0.5)
+        XCTAssertEqual(Coins.shared.balance, 15, "re-opening a saved completed room must not double-award coins")
+    }
 }
