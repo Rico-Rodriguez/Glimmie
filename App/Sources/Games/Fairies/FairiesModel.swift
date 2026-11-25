@@ -22,29 +22,28 @@ struct FairyPalette: Equatable {
     let eye: UInt32
 }
 
-enum FairyEncounterKind: String, CaseIterable, Codable, Equatable, Hashable {
-    case flutterDash
-    case bubblePop
-    case chimeEcho
-    case treatLure
-}
-
-enum MeadowTreatKind: String, CaseIterable, Codable, Identifiable, Hashable {
-    case strawberry
-    case honeyDrop
-    case bungeoppang
-    case silkSwirl
+enum FairyStation: String, CaseIterable, Codable, Equatable, Hashable, Identifiable {
+    case stage
+    case salon
+    case teaTable
 
     var id: String { rawValue }
+}
 
-    var accentHex: UInt32 {
-        switch self {
-        case .strawberry: return 0xFF6B92
-        case .honeyDrop: return 0xFFC53D
-        case .bungeoppang: return 0xF5B54D
-        case .silkSwirl: return 0x9EE3CB
-        }
-    }
+enum FairySalonTool: Equatable, Hashable {
+    case brush(WingBrushColor)
+    case glitter(UInt32)
+    case stamp(WingStampKind)
+    case wipe
+    case wandBuilder
+
+    static let glitterPalette: [UInt32] = [
+        0xFFE378,
+        0xFF8EC8,
+        0x8CE6FF,
+        0xD2A8FF,
+        0x9AEBC8,
+    ]
 }
 
 enum FairyWish: String, CaseIterable, Codable, Identifiable, Hashable {
@@ -54,6 +53,8 @@ enum FairyWish: String, CaseIterable, Codable, Identifiable, Hashable {
     case dance
     case sleep
     case carousel
+    case wingSalon
+    case pixieTea
 
     var id: String { rawValue }
 
@@ -64,7 +65,15 @@ enum FairyWish: String, CaseIterable, Codable, Identifiable, Hashable {
         case .swing: return .rainbowSwing
         case .dance: return .danceStage
         case .sleep: return .cloudBed
-        case .carousel: return nil
+        case .carousel, .wingSalon, .pixieTea: return nil
+        }
+    }
+
+    var matchingStation: FairyStation? {
+        switch self {
+        case .wingSalon: return .salon
+        case .pixieTea: return .teaTable
+        case .snack, .bubbles, .swing, .dance, .sleep, .carousel: return nil
         }
     }
 }
@@ -73,6 +82,199 @@ enum CompactTableTreatKind: String, CaseIterable, Equatable {
     case macaron
     case bungeoppang
     case celadonTea
+}
+
+enum TeaNectar: String, CaseIterable, Codable, Equatable, Hashable, Identifiable {
+    case rosePetal
+    case moonberry
+    case sunflowerHoney
+    case jadeMint
+
+    var id: String { rawValue }
+
+    var liquidHex: UInt32 {
+        switch self {
+        case .rosePetal: return 0xFF9AC8
+        case .moonberry: return 0xB89EFF
+        case .sunflowerHoney: return 0xFFD866
+        case .jadeMint: return 0x82E3C4
+        }
+    }
+
+    var highlightHex: UInt32 {
+        switch self {
+        case .rosePetal: return 0xFFD6EA
+        case .moonberry: return 0xE6DCFF
+        case .sunflowerHoney: return 0xFFF4B8
+        case .jadeMint: return 0xCCF8EA
+        }
+    }
+
+    var potHex: UInt32 {
+        switch self {
+        case .rosePetal: return 0xFFB8DA
+        case .moonberry: return 0xD2C0FF
+        case .sunflowerHoney: return 0xFFE694
+        case .jadeMint: return 0xA2ECD4
+        }
+    }
+
+    var flowerHex: UInt32 {
+        switch self {
+        case .rosePetal: return 0xFF6FA8
+        case .moonberry: return 0x9E7CF8
+        case .sunflowerHoney: return 0xFFB830
+        case .jadeMint: return 0x5CCCA8
+        }
+    }
+}
+
+enum TeaTransformKind: String, CaseIterable, Codable, Equatable, Hashable, Identifiable {
+    case glow
+    case tinyShrink
+    case rainbowTrail
+    case floatingBubbles
+
+    var id: String { rawValue }
+
+    var accentHex: UInt32 {
+        switch self {
+        case .glow: return 0xFFE066
+        case .tinyShrink: return 0x82E6C8
+        case .rainbowTrail: return 0xFF8EC8
+        case .floatingBubbles: return 0x98DEFF
+        }
+    }
+}
+
+enum SugarStarKind: String, CaseIterable, Codable, Equatable, Hashable, Identifiable {
+    case sunbeam
+    case pixieMint
+    case rainbowPrism
+    case cloudPearl
+
+    var id: String { rawValue }
+
+    var colorHex: UInt32 {
+        switch self {
+        case .sunbeam: return 0xFFE066
+        case .pixieMint: return 0x7CE6C4
+        case .rainbowPrism: return 0xFF94D2
+        case .cloudPearl: return 0x9CDFFF
+        }
+    }
+
+    var fizzHex: UInt32 {
+        switch self {
+        case .sunbeam: return 0xFFE680
+        case .pixieMint: return 0x94F0D8
+        case .rainbowPrism: return 0xEEA8FF
+        case .cloudPearl: return 0xB8ECFF
+        }
+    }
+
+    var transform: TeaTransformKind {
+        switch self {
+        case .sunbeam: return .glow
+        case .pixieMint: return .tinyShrink
+        case .rainbowPrism: return .rainbowTrail
+        case .cloudPearl: return .floatingBubbles
+        }
+    }
+}
+
+enum FairyTeaTreatKind: String, CaseIterable, Codable, Equatable, Hashable, Identifiable {
+    case macaron
+    case bungeoppang
+    case berryTart
+    case hwajeon
+
+    var id: String { rawValue }
+
+    var accentHex: UInt32 {
+        switch self {
+        case .macaron: return 0xFF9AC8
+        case .bungeoppang: return 0xF5BE5C
+        case .berryTart: return 0xFF6B92
+        case .hwajeon: return 0xFFD6E6
+        }
+    }
+}
+
+struct ActiveTeaTransform: Equatable {
+    let kind: TeaTransformKind
+    var remaining: Double
+    let duration: Double
+}
+
+struct PixieTeaWish: Codable, Equatable, Hashable {
+    let nectar: TeaNectar
+    let sugarStar: SugarStarKind
+    let treat: FairyTeaTreatKind
+}
+
+struct TeaCupDraft: Equatable {
+    var nectar: TeaNectar?
+    var fillLevel: CGFloat = 0
+    var sugarStars: [SugarStarKind] = []
+    var platedTreat: FairyTeaTreatKind?
+    var liquidHex: UInt32 = 0xFFE6F2
+    var fizzTimer: Double = 0
+    var steamPhase: Double = 0
+
+    var hasNectar: Bool {
+        nectar != nil && fillLevel >= 0.85
+    }
+
+    var isReadyToServe: Bool {
+        hasNectar && !sugarStars.isEmpty && platedTreat != nil
+    }
+
+    var dominantTransform: TeaTransformKind {
+        sugarStars.last?.transform ?? .glow
+    }
+}
+
+enum TeaSessionPhase: Equatable {
+    case awaitingPour(fairy: FairyKind, wish: PixieTeaWish, draft: TeaCupDraft)
+    case pouring(fairy: FairyKind, wish: PixieTeaWish, draft: TeaCupDraft, activeNectar: TeaNectar)
+    case ready(fairy: FairyKind, wish: PixieTeaWish, draft: TeaCupDraft)
+    case sipping(fairy: FairyKind, wish: PixieTeaWish, draft: TeaCupDraft, progress: CGFloat)
+    case transformed(fairy: FairyKind, wish: PixieTeaWish, transform: TeaTransformKind, remaining: Double)
+
+    var fairy: FairyKind {
+        switch self {
+        case .awaitingPour(let fairy, _, _),
+             .pouring(let fairy, _, _, _),
+             .ready(let fairy, _, _),
+             .sipping(let fairy, _, _, _),
+             .transformed(let fairy, _, _, _):
+            return fairy
+        }
+    }
+
+    var wish: PixieTeaWish {
+        switch self {
+        case .awaitingPour(_, let wish, _),
+             .pouring(_, let wish, _, _),
+             .ready(_, let wish, _),
+             .sipping(_, let wish, _, _),
+             .transformed(_, let wish, _, _):
+            return wish
+        }
+    }
+
+    var draft: TeaCupDraft? {
+        switch self {
+        case .awaitingPour(_, _, let draft),
+             .pouring(_, _, let draft, _),
+             .ready(_, _, let draft),
+             .sipping(_, _, let draft, _):
+            return draft
+        case .transformed:
+            return nil
+        }
+    }
 }
 
 enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
@@ -91,8 +293,7 @@ enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
-    static let starters: [FairyKind] = [.heart, .star]
-    static let pinnedDefaultsKey = "glimmie.pinnedFairy"
+    static let pinnedDefaultsKey = PinnedFairyCodec.legacyFairyKey
 
     var hairStyle: FairyHairStyle {
         switch self {
@@ -101,24 +302,6 @@ enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
         case .star, .moon: return .curls
         case .berry, .dewdrop, .blossom: return .bob
         case .silk: return .braidCrown
-        }
-    }
-
-    var encounterKind: FairyEncounterKind {
-        switch self {
-        case .heart, .ribbon, .blossom: return .flutterDash
-        case .dewdrop, .cloud: return .bubblePop
-        case .melody, .star, .moon: return .chimeEcho
-        case .berry, .peach, .honey, .silk: return .treatLure
-        }
-    }
-
-    var preferredSpot: MeadowSpot {
-        switch self {
-        case .heart, .blossom, .berry: return .blossomBush
-        case .dewdrop, .cloud, .melody: return .bubbleFountain
-        case .star, .moon, .silk: return .teacupLantern
-        case .ribbon, .peach, .honey: return .rainbowMushroom
         }
     }
 
@@ -224,98 +407,6 @@ enum FairyKind: String, CaseIterable, Codable, Identifiable, Hashable {
     }
 }
 
-enum FairiesMode: String, CaseIterable, Codable, Equatable {
-    case meadow
-    case compact
-}
-
-enum MeadowSpot: String, CaseIterable, Codable, Identifiable, Hashable {
-    case blossomBush
-    case bubbleFountain
-    case teacupLantern
-    case rainbowMushroom
-
-    var id: String { rawValue }
-
-    var center: CGPoint {
-        switch self {
-        case .blossomBush: return CGPoint(x: 186, y: 516)
-        case .bubbleFountain: return CGPoint(x: 416, y: 478)
-        case .teacupLantern: return CGPoint(x: 644, y: 404)
-        case .rainbowMushroom: return CGPoint(x: 842, y: 516)
-        }
-    }
-
-    var popOrigin: CGPoint {
-        switch self {
-        case .blossomBush: return CGPoint(x: 190, y: 438)
-        case .bubbleFountain: return CGPoint(x: 416, y: 382)
-        case .teacupLantern: return CGPoint(x: 644, y: 332)
-        case .rainbowMushroom: return CGPoint(x: 836, y: 420)
-        }
-    }
-
-    var hitRadius: CGFloat {
-        switch self {
-        case .blossomBush: return 96
-        case .bubbleFountain: return 92
-        case .teacupLantern: return 88
-        case .rainbowMushroom: return 96
-        }
-    }
-
-    var shimmerHex: UInt32 {
-        switch self {
-        case .blossomBush: return 0xFF9EC9
-        case .bubbleFountain: return 0x8EDBFF
-        case .teacupLantern: return 0xFFE27D
-        case .rainbowMushroom: return 0xC8A8FF
-        }
-    }
-}
-
-enum MeadowChime: Int, CaseIterable, Identifiable, Hashable {
-    case left = 0
-    case middle = 1
-    case right = 2
-
-    var id: Int { rawValue }
-
-    var sfx: SFX {
-        switch self {
-        case .left: return .note1
-        case .middle: return .note2
-        case .right: return .note3
-        }
-    }
-
-    var anchor: CGPoint {
-        switch self {
-        case .left: return CGPoint(x: 412, y: 120)
-        case .middle: return CGPoint(x: 512, y: 110)
-        case .right: return CGPoint(x: 612, y: 120)
-        }
-    }
-
-    var center: CGPoint {
-        switch self {
-        case .left: return CGPoint(x: 412, y: 186)
-        case .middle: return CGPoint(x: 512, y: 174)
-        case .right: return CGPoint(x: 612, y: 186)
-        }
-    }
-
-    var colorHex: UInt32 {
-        switch self {
-        case .left: return 0xFFA2CE
-        case .middle: return 0xFFE27D
-        case .right: return 0x99E6D8
-        }
-    }
-
-    var hitRadius: CGFloat { 50 }
-}
-
 enum CompactSpot: String, CaseIterable, Codable, Identifiable, Hashable {
     case cloudBed
     case rainbowSwing
@@ -395,27 +486,46 @@ struct FairiesSave: Equatable {
     var pinnedFairy: FairyKind?
     var totalCatches: Int
     var roamingFairies: [FairyKind]
+    var wingDesigns: [FairyKind: FairyWingDesign]
+    var wands: [FairyKind: FairyWandDesign]
+    var teasServed: Int
 
     init(
-        befriended: [FairyKind],
+        befriended: [FairyKind] = FairyKind.allCases,
         spotOccupants: [CompactSpot: FairyKind],
         accessories: [FairyKind: FairyAccessory],
         pinnedFairy: FairyKind?,
         totalCatches: Int,
-        roamingFairies: [FairyKind]? = nil
+        roamingFairies: [FairyKind]? = nil,
+        wingDesigns: [FairyKind: FairyWingDesign] = [:],
+        wands: [FairyKind: FairyWandDesign] = [:],
+        teasServed: Int = 0
     ) {
-        self.befriended = befriended
+        self.befriended = FairyKind.allCases
         self.spotOccupants = spotOccupants
         self.accessories = accessories
         self.pinnedFairy = pinnedFairy
-        self.totalCatches = totalCatches
+        self.totalCatches = max(0, totalCatches)
+        self.teasServed = max(0, teasServed)
+
+        var cleanDesigns: [FairyKind: FairyWingDesign] = [:]
+        for (kind, design) in wingDesigns {
+            var trimmed = design
+            trimmed.trimToBudget()
+            if !trimmed.isEmpty {
+                cleanDesigns[kind] = trimmed
+            }
+        }
+        self.wingDesigns = cleanDesigns
+        self.wands = wands
+
         if let roaming = roamingFairies {
             var unique: [FairyKind] = []
-            for kind in roaming where befriended.contains(kind) && !unique.contains(kind) && unique.count < Self.maxCompactFairies {
+            for kind in roaming where !unique.contains(kind) && unique.count < Self.maxCompactFairies {
                 unique.append(kind)
             }
             for spot in CompactSpot.allCases {
-                if let kind = spotOccupants[spot], befriended.contains(kind), !unique.contains(kind), unique.count < Self.maxCompactFairies {
+                if let kind = spotOccupants[spot], !unique.contains(kind), unique.count < Self.maxCompactFairies {
                     unique.append(kind)
                 }
             }
@@ -427,11 +537,15 @@ struct FairiesSave: Equatable {
 
     static var starter: FairiesSave {
         FairiesSave(
-            befriended: FairyKind.starters,
+            befriended: FairyKind.allCases,
             spotOccupants: [.danceStage: .heart, .cloudBed: .star],
             accessories: [:],
             pinnedFairy: nil,
-            totalCatches: 0
+            totalCatches: 0,
+            roamingFairies: [.heart, .star, .blossom],
+            wingDesigns: [:],
+            wands: [:],
+            teasServed: 0
         )
     }
 }
@@ -444,22 +558,20 @@ extension FairiesSave: Codable {
         case pinnedFairy
         case totalCatches
         case roamingFairies
+        case wingDesigns
+        case wands
+        case teasServed
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        let rawBefriended = (try? c.decode([FairyKind].self, forKey: .befriended)) ?? []
-        var unique: [FairyKind] = []
-        for kind in FairyKind.starters + rawBefriended where !unique.contains(kind) {
-            unique.append(kind)
-        }
-        self.befriended = unique
+        self.befriended = FairyKind.allCases
 
         let rawSpots = (try? c.decode([String: FairyKind].self, forKey: .spotOccupants)) ?? [:]
         var spots: [CompactSpot: FairyKind] = [:]
         var usedFairies: Set<FairyKind> = []
         for (k, v) in rawSpots {
-            if let spot = CompactSpot(rawValue: k), unique.contains(v), !usedFairies.contains(v) {
+            if let spot = CompactSpot(rawValue: k), !usedFairies.contains(v) {
                 spots[spot] = v
                 usedFairies.insert(v)
             }
@@ -475,14 +587,36 @@ extension FairiesSave: Codable {
         }
         self.accessories = acc
 
-        let rawPinned = try? c.decodeIfPresent(FairyKind.self, forKey: .pinnedFairy)
-        self.pinnedFairy = rawPinned.flatMap { unique.contains($0) ? $0 : nil }
-        self.totalCatches = max(0, (try? c.decode(Int.self, forKey: .totalCatches)) ?? 0)
+        self.pinnedFairy = try? c.decodeIfPresent(FairyKind.self, forKey: .pinnedFairy)
+        self.totalCatches = max(0, (try? c.decodeIfPresent(Int.self, forKey: .totalCatches)) ?? 0)
+        self.teasServed = max(0, (try? c.decodeIfPresent(Int.self, forKey: .teasServed)) ?? 0)
+
+        let rawDesigns = (try? c.decodeIfPresent([String: FairyWingDesign].self, forKey: .wingDesigns)) ?? [:]
+        var decodedDesigns: [FairyKind: FairyWingDesign] = [:]
+        for (k, v) in rawDesigns {
+            if let fairy = FairyKind(rawValue: k) {
+                var trimmed = v
+                trimmed.trimToBudget()
+                if !trimmed.isEmpty {
+                    decodedDesigns[fairy] = trimmed
+                }
+            }
+        }
+        self.wingDesigns = decodedDesigns
+
+        let rawWands = (try? c.decodeIfPresent([String: FairyWandDesign].self, forKey: .wands)) ?? [:]
+        var decodedWands: [FairyKind: FairyWandDesign] = [:]
+        for (k, v) in rawWands {
+            if let fairy = FairyKind(rawValue: k) {
+                decodedWands[fairy] = v
+            }
+        }
+        self.wands = decodedWands
 
         let decodedRoaming = try? c.decodeIfPresent([FairyKind].self, forKey: .roamingFairies)
         if let decodedRoaming {
             var uniqueRoaming: [FairyKind] = []
-            for kind in decodedRoaming where unique.contains(kind) && !uniqueRoaming.contains(kind) && uniqueRoaming.count < Self.maxCompactFairies {
+            for kind in decodedRoaming where !uniqueRoaming.contains(kind) && uniqueRoaming.count < Self.maxCompactFairies {
                 uniqueRoaming.append(kind)
             }
             for spot in CompactSpot.allCases {
@@ -492,7 +626,6 @@ extension FairiesSave: Codable {
             }
             self.roamingFairies = uniqueRoaming
         } else {
-            // Backward compatibility with legacy saves that only persisted spotOccupants.
             self.roamingFairies = CompactSpot.allCases.compactMap { spots[$0] }
         }
     }
@@ -513,6 +646,19 @@ extension FairiesSave: Codable {
         try c.encodeIfPresent(pinnedFairy, forKey: .pinnedFairy)
         try c.encode(totalCatches, forKey: .totalCatches)
         try c.encode(roamingFairies, forKey: .roamingFairies)
+
+        var designDict: [String: FairyWingDesign] = [:]
+        for (k, v) in wingDesigns where !v.isEmpty {
+            designDict[k.rawValue] = v
+        }
+        try c.encode(designDict, forKey: .wingDesigns)
+
+        var wandDict: [String: FairyWandDesign] = [:]
+        for (k, v) in wands {
+            wandDict[k.rawValue] = v
+        }
+        try c.encode(wandDict, forKey: .wands)
+        try c.encode(teasServed, forKey: .teasServed)
     }
 }
 
@@ -520,28 +666,35 @@ enum FGeo {
     static let compactCenter = CGPoint(x: 512, y: 406)
     static let compactWidth: CGFloat = 824
     static let compactHeight: CGFloat = 556
-    static let meadowHorizonY: CGFloat = 456
-    static let treatMatCenter = CGPoint(x: 512, y: 506)
-    static let treatMatRadius: CGFloat = 104
-    static let catchCenter = CGPoint(x: 512, y: 332)
     static let carouselCenter = CGPoint(x: 398, y: 444)
     static let chandelierCenter = CGPoint(x: 512, y: 244)
     static let returnDropY: CGFloat = 656
     static let returnBadgeCenter = CGPoint(x: 512, y: 644)
-    static let wandHomeCenter = CGPoint(x: 118, y: GameChromeLayout.dockY)
 
-    static let flutterPerches: [CGPoint] = [
-        CGPoint(x: 204, y: 404),
-        CGPoint(x: 312, y: 246),
-        CGPoint(x: 472, y: 342),
-        CGPoint(x: 716, y: 244),
-        CGPoint(x: 816, y: 402),
-    ]
+    static let salonMirrorCenter = CGPoint(x: 512, y: 390)
+    static let salonWingCenter = CGPoint(x: 512, y: 400)
+    static let salonWingHalfSpan = CGSize(width: 248, height: 184)
+    static let salonWandCenter = CGPoint(x: 512, y: 396)
+    static let salonWandFairyCenter = CGPoint(x: 274, y: 422)
+
+    static let teaFairyCenter = CGPoint(x: 332, y: 342)
+    static let teaWishBubbleCenter = CGPoint(x: 196, y: 214)
+    static let teaTableCenter = CGPoint(x: 512, y: 504)
+    static let teaCupCenter = CGPoint(x: 472, y: 472)
+    static let teaPlateCenter = CGPoint(x: 648, y: 486)
+
+    static func teapotShelfCenter(for nectar: TeaNectar) -> CGPoint {
+        switch nectar {
+        case .rosePetal: return CGPoint(x: 742, y: 242)
+        case .moonberry: return CGPoint(x: 866, y: 242)
+        case .sunflowerHoney: return CGPoint(x: 742, y: 356)
+        case .jadeMint: return CGPoint(x: 866, y: 356)
+        }
+    }
 
     static func clampToCompactInterior(_ point: CGPoint) -> CGPoint {
         let cy = compactCenter.y
         let y = max(258, min(556, point.y))
-        // Taper horizontal bounds gently near the pointed bottom of the heart compact.
         let lowerRatio = max(0, (y - (cy + 30)) / 140)
         let halfW: CGFloat = 296 - lowerRatio * 124
         let x = max(compactCenter.x - halfW, min(compactCenter.x + halfW, point.x))

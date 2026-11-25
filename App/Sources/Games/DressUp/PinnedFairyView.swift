@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Self-contained chibi pastel fairy companion shown beside the Dress Up doll when a fairy is pinned.
 struct PinnedFairySpec: Equatable {
     static let defaultsKey = "glimmie.pinnedFairy"
 
@@ -113,8 +112,49 @@ struct PinnedFairySpec: Equatable {
     }
 }
 
+struct ResolvedPinnedFairy: Equatable {
+    let spec: PinnedFairySpec
+    let look: PinnedFairyLook?
+
+    var wingDesign: FairyWingDesign? {
+        guard let design = look?.wingDesign, !design.isEmpty else { return nil }
+        return design
+    }
+
+    var wand: FairyWandDesign? {
+        look?.wand
+    }
+
+    var accessoryID: String? {
+        look?.accessoryID
+    }
+}
+
+extension PinnedFairySpec {
+    static func resolve(fairyID: String, lookData: Data?) -> ResolvedPinnedFairy? {
+        let trimmed = fairyID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let spec = spec(for: trimmed) else {
+            return nil
+        }
+        let look = PinnedFairyCodec.decodeLook(from: lookData, expectedFairyID: spec.id)
+        return ResolvedPinnedFairy(spec: spec, look: look)
+    }
+
+    static func resolve(from defaults: UserDefaults = .standard) -> ResolvedPinnedFairy? {
+        guard let spec = pinned(from: defaults) else {
+            return nil
+        }
+        let look = PinnedFairyCodec.decodeLook(
+            from: defaults.data(forKey: PinnedFairyLook.defaultsKey),
+            expectedFairyID: spec.id
+        )
+        return ResolvedPinnedFairy(spec: spec, look: look)
+    }
+}
+
 struct PinnedFairyCompanionView: View {
     let spec: PinnedFairySpec
+    var look: PinnedFairyLook? = nil
     var paused = false
     @State private var happyUntil = Date.distantPast
 
@@ -123,7 +163,7 @@ struct PinnedFairyCompanionView: View {
             let t = tl.date.timeIntervalSinceReferenceDate
             let isHappy = tl.date < happyUntil
             Canvas { ctx, size in
-                PinnedFairyPainter.draw(spec, in: ctx, size: size, t: t, happy: isHappy)
+                PinnedFairyPainter.draw(spec, look: look, in: ctx, size: size, t: t, happy: isHappy)
             }
         }
         .contentShape(Circle())
@@ -136,7 +176,14 @@ struct PinnedFairyCompanionView: View {
 }
 
 enum PinnedFairyPainter {
-    static func draw(_ spec: PinnedFairySpec, in ctx: GraphicsContext, size: CGSize, t: Double, happy: Bool) {
+    static func draw(
+        _ spec: PinnedFairySpec,
+        look: PinnedFairyLook? = nil,
+        in ctx: GraphicsContext,
+        size: CGSize,
+        t: Double,
+        happy: Bool
+    ) {
         let s = min(size.width, size.height) / 120
         let bob = CGFloat(sin(t * 2.7)) * 5.5 + (happy ? -CGFloat(abs(sin(t * 14))) * 8 : 0)
         let sway = sin(t * 1.9) * 4.0
@@ -147,7 +194,6 @@ enum PinnedFairyPainter {
         g.scaleBy(x: s, y: s)
         g.rotate(by: .degrees(sway))
 
-        // Soft fairy aura glow
         let aura = Path(ellipseIn: CGRect(x: -50, y: -50, width: 100, height: 100))
         g.fill(
             aura,
@@ -159,13 +205,21 @@ enum PinnedFairyPainter {
             )
         )
 
-        // Fluttering translucent wings
-        drawWings(spec, flap: flap, in: g)
+        FairyWingPainter.drawWings(
+            g,
+            wingCenter: CGPoint(x: 0, y: 12),
+            wingHalfSpan: CGSize(width: 44, height: 34),
+            baseHex: spec.wing,
+            innerHex: spec.wingInner,
+            outlineHex: spec.dressAccent,
+            design: look?.wingDesign,
+            flap: flap,
+            time: t,
+            showVeins: true
+        )
 
-        // Back hair silhouette
         drawBackHair(spec, in: g)
 
-        // Chibi pastel dress & little feet
         let body = Path { p in
             p.move(to: CGPoint(x: -11, y: 12))
             p.addQuadCurve(to: CGPoint(x: -20, y: 38), control: CGPoint(x: -18, y: 24))
@@ -188,14 +242,26 @@ enum PinnedFairyPainter {
             width: 2
         )
 
-        // Little hands
+        if let wand = look?.wand {
+            let handY: CGFloat = happy ? 11 : 21
+            let wave = CGFloat(sin(t * (happy ? 14 : 3.2))) * (happy ? 6 : 2.5)
+            FairyWingPainter.drawWand(
+                g,
+                design: wand,
+                tip: CGPoint(x: 34 + wave, y: handY - 26),
+                tail: CGPoint(x: 15, y: handY + 4),
+                time: t,
+                scale: 0.44,
+                waveEnergy: happy ? 0.9 : 0.15
+            )
+        }
+
         for side in [-1.0, 1.0] as [CGFloat] {
             let handY: CGFloat = happy ? 11 : 21
             let hand = Path(ellipseIn: CGRect(x: side * 15 - 4.5, y: handY - 4.5, width: 9, height: 9))
             StorybookArt.fillAndStroke(g, hand, fill: StorybookArt.color(spec.skin), stroke: StorybookArt.outline(for: spec.skin), width: 2)
         }
 
-        // Round chibi head
         let head = Path(ellipseIn: CGRect(x: -23, y: -27, width: 46, height: 42))
         StorybookArt.fillAndStroke(
             g, head,
@@ -204,13 +270,11 @@ enum PinnedFairyPainter {
             width: 2.6
         )
 
-        // Rosy cheeks
         for side in [-1.0, 1.0] as [CGFloat] {
             let cheek = Path(ellipseIn: CGRect(x: side * 13 - 5, y: -3, width: 10, height: 6))
             g.fill(cheek, with: .color(StorybookArt.color(spec.cheek, alpha: 0.65)))
         }
 
-        // Eyes & smile
         if happy {
             for side in [-1.0, 1.0] as [CGFloat] {
                 var arc = Path()
@@ -230,7 +294,6 @@ enum PinnedFairyPainter {
         smile.addQuadCurve(to: CGPoint(x: 4, y: 3), control: CGPoint(x: 0, y: happy ? 9 : 7))
         g.stroke(smile, with: .color(StorybookArt.color(spec.eye)), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
 
-        // Front bangs
         let bangs = Path { p in
             p.move(to: CGPoint(x: -23, y: -8))
             p.addCurve(to: CGPoint(x: 0, y: -31), control1: CGPoint(x: -24, y: -25), control2: CGPoint(x: -12, y: -31))
@@ -248,40 +311,15 @@ enum PinnedFairyPainter {
             width: 2.6
         )
 
-        // Unique head gem / emblem matching each of the 12 fairy IDs
         drawEmblem(spec, at: CGPoint(x: 0, y: -34), in: g)
 
-        // Orbiting fairy sparkle dust
+        if let accessoryID = look?.accessoryID {
+            FairyWingPainter.drawAccessoryOnHead(g, accessoryID: accessoryID, headScale: 0.9)
+        }
+
         let sp = 0.55 + 0.45 * sin(t * 4.2)
         StorybookArt.sparkle(g, at: CGPoint(x: -36, y: -28), radius: 6 * CGFloat(sp), color: Theme.lemon, opacity: 0.9)
         StorybookArt.sparkle(g, at: CGPoint(x: 37, y: -18), radius: 5 * CGFloat(1.1 - sp * 0.4), color: .white, opacity: 0.95)
-    }
-
-    private static func drawWings(_ spec: PinnedFairySpec, flap: CGFloat, in g: GraphicsContext) {
-        let sx = 1 + 0.14 * flap
-        for side in [-1.0, 1.0] as [CGFloat] {
-            var wg = g
-            wg.translateBy(x: side * 8, y: 12)
-            wg.scaleBy(x: side * sx, y: 1 - 0.04 * flap)
-
-            let upper = Path { p in
-                p.move(to: .zero)
-                p.addCurve(to: CGPoint(x: 36, y: -20), control1: CGPoint(x: 12, y: -24), control2: CGPoint(x: 32, y: -30))
-                p.addCurve(to: CGPoint(x: 12, y: 6), control1: CGPoint(x: 40, y: -8), control2: CGPoint(x: 26, y: 6))
-                p.closeSubpath()
-            }
-            wg.fill(upper, with: .color(StorybookArt.color(spec.wing, alpha: 0.85)))
-            wg.stroke(upper, with: .color(StorybookArt.outline(for: spec.dressAccent).opacity(0.65)), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-
-            let lower = Path { p in
-                p.move(to: CGPoint(x: 2, y: 4))
-                p.addCurve(to: CGPoint(x: 26, y: 20), control1: CGPoint(x: 16, y: 4), control2: CGPoint(x: 32, y: 12))
-                p.addCurve(to: CGPoint(x: 4, y: 14), control1: CGPoint(x: 20, y: 28), control2: CGPoint(x: 10, y: 22))
-                p.closeSubpath()
-            }
-            wg.fill(lower, with: .color(StorybookArt.color(spec.wingInner, alpha: 0.82)))
-            wg.stroke(lower, with: .color(StorybookArt.outline(for: spec.dressAccent).opacity(0.55)), style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
-        }
     }
 
     private static func drawBackHair(_ spec: PinnedFairySpec, in g: GraphicsContext) {
@@ -384,7 +422,7 @@ enum PinnedFairyPainter {
             let fl = DressUpCulturalOutfits.flowerPath(center: c, radius: 10, petals: 5)
             StorybookArt.fillAndStroke(g, fl, fill: primary, stroke: outline, width: 1.8)
             g.fill(Path(ellipseIn: CGRect(x: c.x - 3.5, y: c.y - 3.5, width: 7, height: 7)), with: .color(accent))
-        default: // "silk" and any fallback
+        default:
             let fl = DressUpCulturalOutfits.flowerPath(center: c, radius: 10, petals: 5)
             StorybookArt.fillAndStroke(g, fl, fill: primary, stroke: outline, width: 1.8)
             let pearl = Path(ellipseIn: CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8))
