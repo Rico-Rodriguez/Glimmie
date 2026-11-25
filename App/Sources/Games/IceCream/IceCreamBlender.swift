@@ -6,7 +6,8 @@ import SwiftUI
 // tapered walls and pile on each other. With the motor on, the blades whirl the jar into two rolling vortices
 // (out along the bottom, up the walls, in across the top, down the middle), the way a real blender pulls fruit
 // into its blades. A piece that passes the blades is cut smaller or split in two; what it loses becomes juice,
-// which raises the level and colors the drink. Milk pours in from the jug.
+// which raises the level and colors the drink. Milk pours in from the jug (or splashes in automatically when
+// she blends fruit alone so every smoothie pours full and creamy).
 //
 // The drink's surface stays level when the jar tips: the level is found from the jar's shape and how much is in
 // it, and whatever rises past the spout pours out in a stream that falls into the glass (or onto the counter).
@@ -124,26 +125,80 @@ extension IceSim {
         if f == .ice { IceSound.shared.play(.clink, volume: 0.6) }
     }
 
+    /// Adds a helpful splash of creamy milk when blending fruit with low or zero milk so it always pours full (>= 0.35).
+    func ensureBlendMilk() {
+        guard !chunks.isEmpty, jarVolume < 0.24 else { return }
+        let splash = 0.24 - jarVolume
+        jarVolume += splash
+        jarPaint.add(IceSim.milk, Double(splash) * 0.45)
+        sloshV += 2.6
+        IceSound.shared.play(.plunk, volume: 0.4)
+    }
+
+    /// 1-tap Blend: splashes in milk if needed, runs a lively 1.6s blend, then automatically pours smoothly into the glass.
+    func tapBlend() {
+        guard station == .smoothie, jarOnBase else { return }
+        if !chunks.isEmpty || jarVolume > 0.01 {
+            ensureBlendMilk()
+            blending = true
+            blendingToggle = true
+            blendAutoPour = true
+            blendToggleTime = 0
+            blendEmptyTime = 0
+            IceSound.shared.play(.lever, volume: 0.5, rate: 1.3)
+            Sound.shared.tap()
+        } else {
+            blending = true
+            blendingToggle = true
+            blendAutoPour = false
+            blendToggleTime = 0
+            blendEmptyTime = 0
+            IceSound.shared.play(.lever, volume: 0.4, rate: 1.2)
+            Sound.shared.tap()
+        }
+    }
+
+    private func dissolveRemainingChunks() {
+        guard !chunks.isEmpty else { return }
+        var addVol: CGFloat = 0
+        for c in chunks {
+            let lost = c.r * c.r * .pi
+            jarPaint.add(c.fruit.juice, Double(lost / IceSim.jarArea) * c.fruit.strength * 3)
+            jarFruit[c.fruit.rawValue] += lost / IceSim.jarArea
+            addVol += lost
+        }
+        chunks.removeAll()
+        if addVol > 0 { jarVolume = min(0.95, jarVolume + addVol / IceSim.jarArea * 0.9) }
+    }
+
     // MARK: Step
 
     func stepBlender(_ dt: CGFloat) {
         if blending && blendingToggle && jarOnBase {
             blendToggleTime += dt
             if chunks.isEmpty { blendEmptyTime += dt } else { blendEmptyTime = 0 }
-            if (blendEmptyTime > 1.1 && blendToggleTime > 1.6) || blendToggleTime > 9.0 {
+            if blendAutoPour && blendToggleTime >= 1.6 {
+                dissolveRemainingChunks()
                 blending = false
                 blendingToggle = false
+                blendAutoPour = false
                 blendToggleTime = 0
                 blendEmptyTime = 0
                 Sound.shared.play(.ding, volume: 0.45)
                 sparkle()
+                if jarVolume > 0.01 { autoPourJar() }
+            } else if !blendAutoPour && ((blendEmptyTime > 0.55 && blendToggleTime > 0.6) || blendToggleTime > 9.0) {
+                blending = false
+                blendingToggle = false
+                blendToggleTime = 0
+                blendEmptyTime = 0
             }
         } else {
             blendToggleTime = 0
             blendEmptyTime = 0
         }
         let on = blending && jarOnBase
-        motor += ((on ? 1 : 0) - motor) * min(1, dt * (on ? 3.2 : 1.6))
+        motor += ((on ? 1 : 0) - motor) * min(1, dt * (on ? 5.0 : 1.8))
         if motor < 0.002 { motor = 0 }
         bladeAngle += motor * dt * 55
         stepAutoPour(dt)
@@ -161,6 +216,7 @@ extension IceSim {
         guard station == .smoothie, jarOnBase else { return }
         blending = false
         blendingToggle = false
+        blendAutoPour = false
         held = nil
         returning.removeAll { $0.held == .milk }
         autoPour = .milk
@@ -178,6 +234,7 @@ extension IceSim {
         if build.base == nil { placeBase(.glass) }
         blending = false
         blendingToggle = false
+        blendAutoPour = false
         held = nil
         jarOnBase = false
         autoPour = .jar
@@ -226,11 +283,11 @@ extension IceSim {
                 jarAim *= (1 - min(1, dt * 4))
             }
             target.x += jarAim
-            jarP.x += (target.x - jarP.x) * min(1, dt * 7.5)
-            jarP.y += (target.y - jarP.y) * min(1, dt * 7.5)
-            let nearGlass = hypot(target.x - jarP.x, target.y - jarP.y) < 48
-            let want: CGFloat = nearGlass ? 1.65 + 0.65 * (1 - icClamp(jarVolume / 0.5)) : 0.25
-            jarTiltV += ((want - jarTilt) * 34 - jarTiltV * 8) * dt
+            jarP.x += (target.x - jarP.x) * min(1, dt * 8.5)
+            jarP.y += (target.y - jarP.y) * min(1, dt * 8.5)
+            let nearGlass = hypot(target.x - jarP.x, target.y - jarP.y) < 56
+            let want: CGFloat = nearGlass ? 1.85 + 0.65 * (1 - icClamp(jarVolume / 0.5)) : 0.25
+            jarTiltV += ((want - jarTilt) * 38 - jarTiltV * 8) * dt
             jarTilt += jarTiltV * dt
             if jarVolume <= 0.005 || build.fill >= 0.96 || autoPourTime > 3.2 {
                 autoPour = nil
@@ -289,7 +346,7 @@ extension IceSim {
                 c.v.dx += (vt.dx - c.v.dx) * pull + CGFloat.random(in: -1...1) * 90 * m
                 c.v.dy += (vt.dy - c.v.dy) * pull + CGFloat.random(in: -1...1) * 90 * m
                 // the blades
-                if c.p.y > -34 && abs(c.p.x) < 48 && m > 0.35 && CGFloat.random(in: 0...1) < 9 * m * dt {
+                if c.p.y > -34 && abs(c.p.x) < 48 && m > 0.35 && CGFloat.random(in: 0...1) < 14 * m * dt {
                     let r0 = c.r
                     if c.r > 8.5 {
                         c.r *= 0.69
@@ -315,7 +372,7 @@ extension IceSim {
                                          rate: Float(0.9 + CGFloat.random(in: 0...0.3)))
                 }
                 // fine blending wears every piece down
-                let wear = m * dt * 1.6
+                let wear = m * dt * 3.4
                 let r1 = c.r
                 c.r = max(0, c.r - wear)
                 let lost = (r1 * r1 - c.r * c.r) * .pi
@@ -436,6 +493,7 @@ extension IceSim {
         jarOnBase = true
         blending = false
         blendingToggle = false
+        blendAutoPour = false
         autoPour = nil
         autoPourTime = 0
         milkPour = 0

@@ -2,11 +2,12 @@ import SwiftUI
 
 // MARK: - Soft serve and whipped cream
 //
-// Holding a handle pushes a ridged rope out of the nozzle: beads 5 points apart, chained so the hanging part
-// sways and stretches under gravity. The stand turns under the nozzle like a hand turning a cone. When the lowest
+// Holding or tapping a handle pushes a ridged rope out of the nozzle: beads 5 points apart, chained so the hanging
+// part sways and stretches under gravity. The stand turns under the nozzle like a hand turning a cone. When the lowest
 // bead reaches the swirl it is laid there, on top of the bead laid one turn earlier, so the rope coils into rings.
 // The rings narrow as they climb (the stand slides so the nozzle stays over the ring), the stand sinks as the
-// swirl grows, and when she lets go the last bit pulls up into a curl on top.
+// swirl grows, and when she lets go the last bit pulls up into a curl on top. Pressing again unfurls the curl so she
+// can keep layering or mixing flavors until the swirl reaches max height.
 //
 // The whipped-cream can lays a small rosette the same way where she holds it.
 
@@ -28,6 +29,7 @@ extension IceSim {
     static let softSpeed: CGFloat = 210
     static let beadGap: CGFloat = 5
     static let ropeR: CGFloat = 13
+    static let maxRope = 320
 
     func resetSoft() {
         free = []
@@ -37,6 +39,7 @@ extension IceSim {
         whipSession = nil
         softAcc = 0
         lever = nil
+        softBurstTime = 0
         spin = 0
     }
 
@@ -53,29 +56,82 @@ extension IceSim {
         build.rope.last?.h ?? ropeFloor()
     }
 
-    /// She pressed (or let go of, with nil) a soft-serve handle.
+    private func unfurlSoftTip() {
+        guard build.ropeTipped else { return }
+        let trim = min(build.ropeTipCount, build.rope.count)
+        if trim > 0 { build.rope.removeLast(trim) }
+        build.ropeTipCount = 0
+        build.ropeTipped = false
+        prevTurn = min(prevTurn, max(0, build.rope.count - 1))
+        profileDirty = true
+    }
+
+    /// She pressed (or let go of, with nil) a soft-serve handle. Releasing early never locks out adding more swirls.
     func pressLever(_ i: Int?) {
         if let i = i {
             guard station == .soft else { return }
             if build.base == nil { placeBase(.waffle) }
             if build.base == .glass && build.fill > 0.01 { return }
-            // Never extrude a second messy blob onto a finished, already-tipped swirl peak
-            if softFull || build.ropeTipped {
+            if softFull || build.rope.count >= IceSim.maxRope {
+                softFull = true
                 IceSound.shared.play(.plop, volume: 0.35)
                 Sound.shared.tap()
                 return
             }
+            unfurlSoftTip()
+            softBurstTime = 0
             lever = i
             IceSound.shared.play(.lever, volume: 0.7)
             Sound.shared.tap()
             if build.ropeFlavor == nil { build.ropeFlavor = ICSoft(rawValue: i) }
-        } else if lever != nil {
-            lever = nil
-            IceSound.shared.play(.lever, volume: 0.45, rate: 0.8)
+        } else {
+            softBurstTime = 0
+            if lever != nil {
+                lever = nil
+                IceSound.shared.play(.lever, volume: 0.45, rate: 0.8)
+            }
         }
     }
 
+    /// 1-tap on any lever dispenses a smooth 0.9s automatic swirl layer so pre-readers can tap or hold.
+    func tapLever(_ i: Int, duration: CGFloat = 0.9) {
+        guard station == .soft else { return }
+        if build.base == nil { placeBase(.waffle) }
+        if build.base == .glass && build.fill > 0.01 { return }
+        if softFull || build.rope.count >= IceSim.maxRope {
+            softFull = true
+            IceSound.shared.play(.plop, volume: 0.35)
+            Sound.shared.tap()
+            return
+        }
+        unfurlSoftTip()
+        lever = i
+        softBurstTime = max(softBurstTime, duration)
+        if build.ropeFlavor == nil { build.ropeFlavor = ICSoft(rawValue: i) }
+        IceSound.shared.play(.lever, volume: 0.7)
+        Sound.shared.tap()
+    }
+
+    /// Keeps a freshly tapped lever flowing smoothly through a 0.9s automatic burst on release.
+    func triggerSoftBurst(_ i: Int, duration: CGFloat = 0.9) {
+        guard station == .soft, !softFull, build.rope.count < IceSim.maxRope else {
+            pressLever(nil)
+            return
+        }
+        unfurlSoftTip()
+        lever = i
+        softBurstTime = max(softBurstTime, duration)
+        if build.ropeFlavor == nil { build.ropeFlavor = ICSoft(rawValue: i) }
+    }
+
     func stepSoft(_ dt: CGFloat) {
+        if softBurstTime > 0 {
+            softBurstTime = max(0, softBurstTime - dt)
+            if softBurstTime == 0 && lever != nil {
+                lever = nil
+                IceSound.shared.play(.lever, volume: 0.45, rate: 0.8)
+            }
+        }
         for i in 0..<leverPull.count {
             let target: CGFloat = lever == i ? 1 : 0
             leverPull[i] += (target - leverPull[i]) * min(1, dt * 16)
@@ -169,9 +225,10 @@ extension IceSim {
         let loops = (spin - (build.rope.first?.turn ?? spin)) / (2 * .pi)
         rho = max(0, ropeStartRadius * (1 - loops / 6.4))
         let tall = h - ropeFloor()
-        if tall > 150 || (rho < 1 && loops > 6.9) {
+        if tall > 150 || (rho < 1 && loops > 6.9) || build.rope.count >= IceSim.maxRope {
             softFull = true
             lever = nil
+            softBurstTime = 0
             IceSound.shared.play(.lever, volume: 0.5, rate: 0.8)
             sparkle()
         }
@@ -182,6 +239,7 @@ extension IceSim {
     private func tipSwirl() {
         guard lever == nil, !build.ropeTipped, build.rope.count > 10, let last = build.rope.last else { return }
         build.ropeTipped = true
+        build.ropeTipCount = 4
         let c = last.c
         for k in 1...4 {
             let f = CGFloat(k)

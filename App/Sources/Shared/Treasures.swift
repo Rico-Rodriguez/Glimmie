@@ -55,7 +55,11 @@ enum Treasures {
 
         // Bakery (2)
         Treasure(id: "bakery/goldenBungeo", game: "bakery", price: 10, size: TreasureArt.goldenBungeoSize) { TreasureArt.goldenBungeo($0) },
-        Treasure(id: "bakery/rainbowBingsu", game: "bakery", price: 12, size: TreasureArt.rainbowBingsuSize) { TreasureArt.rainbowBingsu($0) },
+        Treasure(id: "bakery/strawberryCrown", game: "bakery", price: 12, size: TreasureArt.strawberryCrownSize) { TreasureArt.strawberryCrown($0) },
+
+        // Ice Cream (2)
+        Treasure(id: "icecream/unicornCone", game: "icecream", price: 10, size: TreasureArt.unicornConeSize) { TreasureArt.unicornCone($0) },
+        Treasure(id: "icecream/rainbowBingsu", game: "icecream", price: 12, size: TreasureArt.rainbowBingsuSize) { TreasureArt.rainbowBingsu($0) },
 
         // Pizza (2)
         Treasure(id: "pizza/goldOven", game: "pizza", price: 12, size: TreasureArt.goldOvenSize) { TreasureArt.goldOven($0) },

@@ -87,7 +87,7 @@ enum BungeoppangFilling: Int, CaseIterable, Codable {
 enum TreatKind: String, Codable, CaseIterable {
     case cake, cupcake, bungeoppang, iceCream
 
-    /// Treats baked in the Bakery kitchen (parlor treats are crafted in IceCreamView).
+    /// Treats baked in the Bakery kitchen (`.iceCream` is kept only to decode legacy bakery.json saves).
     static let kitchenCases: [TreatKind] = [.cake, .cupcake, .bungeoppang]
 }
 
@@ -207,10 +207,8 @@ final class BakeryStore: ObservableObject {
 
     init() {
         let s = GameStorage.load(BakerySave.self, game: BakeryStore.game, file: "bakery.json") ?? BakerySave()
-        let needsImport = s.importedIceCreamHearts != true
-        hearts = s.hearts + (needsImport ? ICStorage.load().hearts : 0)
+        hearts = s.hearts
         served = s.served
-        if needsImport { save() }
     }
 
     /// Serves a treat; the customer's stars go into the heart jar.

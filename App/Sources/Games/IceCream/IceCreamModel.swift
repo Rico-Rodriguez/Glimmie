@@ -217,6 +217,9 @@ enum ICBase: String, CaseIterable, Codable {
     }
 
     var isCone: Bool { self == .waffle || self == .choco }
+    var isParlorBase: Bool { self == .waffle || self == .choco || self == .cup }
+
+    static let parlorBases: [ICBase] = [.waffle, .choco, .cup]
 }
 
 enum ICTopping: String, CaseIterable, Codable {
@@ -224,6 +227,7 @@ enum ICTopping: String, CaseIterable, Codable {
     case redBean, mangoCubes, strawberries, injeolmi, condensedMilk
 
     static let parlor: [ICTopping] = [.sprinkles, .chocoSauce, .berrySauce, .whip, .cherry, .wafer, .straw]
+    static let smoothie: [ICTopping] = [.whip, .cherry, .sprinkles, .straw]
     static let bingsu: [ICTopping] = [.redBean, .mangoCubes, .strawberries, .injeolmi, .condensedMilk]
 
     var isBingsuChunk: Bool {
@@ -306,7 +310,7 @@ struct ICOrder: Equatable {
                 return b.softFlavor?.rawValue == flavors.first
             case .smoothie:
                 let total = b.fruitIn.reduce(0, +)
-                guard total > 0.05 else { return false }
+                guard total > 0.01 else { return false }
                 return flavors.allSatisfy { f in f < b.fruitIn.count && b.fruitIn[f] / total > 0.18 }
             case .bingsu:
                 let hero = ICBingsuHero(rawValue: flavors.first ?? 0) ?? .redBean
@@ -395,6 +399,28 @@ struct ICSave: Codable, Equatable {
 
 enum ICStorage {
     static func load() -> ICSave { GameStorage.load(ICSave.self, game: IceSim.gameID, file: "shop.json") ?? ICSave() }
+    static func save(_ s: ICSave) { GameStorage.save(s, game: IceSim.gameID, file: "shop.json") }
+}
+
+final class IceCreamStore: ObservableObject {
+    @Published var hearts: Int
+    @Published var served: Int
+
+    init() {
+        let s = ICStorage.load()
+        hearts = s.hearts
+        served = s.served
+    }
+
+    func recordServe(hearts earned: Int) {
+        hearts += max(1, earned)
+        served += 1
+        save()
+    }
+
+    func save() {
+        ICStorage.save(ICSave(hearts: hearts, served: served))
+    }
 }
 
 // MARK: - Sounds

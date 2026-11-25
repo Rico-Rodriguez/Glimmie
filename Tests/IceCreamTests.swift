@@ -287,23 +287,28 @@ final class IceCreamTests: XCTestCase {
         XCTAssertNil(sim.ballFlavor)
     }
 
-    func testSoftServeIgnoresLeverAfterTippedPeak() {
+    func testSoftServeResumesAfterTippedPeakAndTapBurstDispensesLayer() {
         let sim = freshSim()
         sim.setStation(.soft)
         sim.placeBase(.waffle)
         run(sim, seconds: 0.4)
-        sim.pressLever(ICSoft.vanilla.rawValue)
-        run(sim, seconds: 2.2)
-        sim.pressLever(nil)
-        run(sim, seconds: 1.2)
+        // 1-tap burst dispenses enough beads to pass hasTreat & softFlavor
+        sim.tapLever(ICSoft.vanilla.rawValue)
+        run(sim, seconds: 1.5)
+        XCTAssertTrue(sim.build.hasTreat, "1 tap on a soft-serve lever produces a servable swirl layer")
+        XCTAssertEqual(sim.build.softFlavor, .vanilla)
         XCTAssertTrue(sim.build.ropeTipped)
-        let beadCount = sim.build.rope.count
+        let firstCount = sim.build.rope.count
 
+        // Pressing a second flavor lever unfurls the temporary peak and adds more swirls (no soft-lock!)
         sim.pressLever(ICSoft.chocolate.rawValue)
-        run(sim, seconds: 0.8)
-        XCTAssertNil(sim.lever)
-        XCTAssertTrue(sim.build.ropeTipped)
-        XCTAssertEqual(sim.build.rope.count, beadCount)
+        XCTAssertFalse(sim.build.ropeTipped)
+        XCTAssertEqual(sim.lever, ICSoft.chocolate.rawValue)
+        run(sim, seconds: 1.2)
+        sim.pressLever(nil)
+        run(sim, seconds: 1.0)
+        XCTAssertGreaterThan(sim.build.rope.count, firstCount + 15)
+        XCTAssertTrue(sim.build.rope.contains { $0.c / 2 == ICSoft.chocolate.rawValue })
     }
 
     func testSoundsAreBundled() {
@@ -319,9 +324,12 @@ final class IceCreamTests: XCTestCase {
         XCTAssertFalse(sim.build.hasTreat)
 
         sim.tapShaver()
-        run(sim, seconds: 0.9)
-        XCTAssertGreaterThan(sim.build.snowLevel, 0.3)
+        run(sim, seconds: 1.2)
+        XCTAssertGreaterThanOrEqual(sim.build.snowLevel, 0.50, "1 tap must reach >= 0.50 snow so base star is never silently lost")
         XCTAssertTrue(sim.build.hasTreat)
+
+        let order = ICOrder(customer: 0, kind: .bingsu, base: .bowl, flavors: [ICBingsuHero.redBean.rawValue], topping: .condensedMilk)
+        XCTAssertTrue(order.matches(.base, sim.build))
 
         sim.pressShaver(true)
         run(sim, seconds: 2.0)
@@ -340,38 +348,179 @@ final class IceCreamTests: XCTestCase {
         XCTAssertTrue(sim.build.has(.strawberries))
         XCTAssertTrue(sim.build.has(.injeolmi))
         XCTAssertTrue(sim.build.has(.condensedMilk))
-
-        let order = ICOrder(customer: 0, kind: .bingsu, base: .bowl, flavors: [ICBingsuHero.redBean.rawValue], topping: .condensedMilk)
         XCTAssertEqual(order.stars(for: sim.build), 3)
-
-        let bakeryTreat = sim.build.toBakeryTreat()
-        XCTAssertEqual(bakeryTreat.kind, .iceCream)
-        XCTAssertFalse(bakeryTreat.toppings.isEmpty)
     }
 
-    func testDockLayoutCentersSmoothieAndBingsuWithoutBaseGap() {
+    func testDockLayoutIncludesInlineBasesFilteredSmoothieToppingsAndSafeDockY() {
+        XCTAssertEqual(ICGeo.dockY, 740)
+
         let scoop = IceCreamView.dockLayout(for: .scoop)
         XCTAssertTrue(scoop.hasBase)
+        XCTAssertEqual(scoop.baseSpots.count, 3)
         XCTAssertEqual(scoop.toppings, ICTopping.parlor)
+        XCTAssertLessThan(scoop.baseSpots.last?.x ?? 999, scoop.spots.first?.x ?? 0)
+
+        let soft = IceCreamView.dockLayout(for: .soft)
+        XCTAssertTrue(soft.hasBase)
+        XCTAssertEqual(soft.baseSpots.count, 3)
 
         let smoothie = IceCreamView.dockLayout(for: .smoothie)
         XCTAssertFalse(smoothie.hasBase)
-        XCTAssertEqual(smoothie.toppings, ICTopping.parlor)
-        XCTAssertLessThan(smoothie.spots.first?.x ?? 999, scoop.spots.first?.x ?? 0)
+        XCTAssertTrue(smoothie.baseSpots.isEmpty)
+        XCTAssertEqual(smoothie.toppings, ICTopping.smoothie)
+        XCTAssertEqual(smoothie.toppings, [.whip, .cherry, .sprinkles, .straw])
+        XCTAssertFalse(smoothie.toppings.contains(.wafer))
+        XCTAssertFalse(smoothie.toppings.contains(.chocoSauce))
+        XCTAssertFalse(smoothie.toppings.contains(.berrySauce))
 
         let bingsu = IceCreamView.dockLayout(for: .bingsu)
         XCTAssertFalse(bingsu.hasBase)
+        XCTAssertTrue(bingsu.baseSpots.isEmpty)
         XCTAssertEqual(bingsu.toppings, ICTopping.bingsu)
         XCTAssertEqual(bingsu.spots.count, 5)
     }
 
-    func testRainbowBingsuTreasureHookRespondsToOwnership() {
+    func testStandaloneEntryStickersAndStorePersistence() {
+        let ids = GameRegistry.all.map(\.id)
+        guard let bakeryIdx = ids.firstIndex(of: "bakery"),
+              let iceIdx = ids.firstIndex(of: IceSim.gameID) else {
+            return XCTFail("both bakery and icecream must be registered")
+        }
+        XCTAssertEqual(iceIdx, bakeryIdx + 1, "Ice Cream should sit right after Bakery in the drawer")
+        XCTAssertEqual(IceCreamGame.entry.id, "icecream")
+        XCTAssertEqual(IceCreamGame.entry.title, "Ice Cream")
+
+        let expectedStickers = [
+            "scoopMaster", "swirlStar", "smoothiePop",
+            "bingsuSnow", "rainbowSundae", "happyParlor",
+        ]
+        XCTAssertEqual(IceCreamFind.allCases.count, 6)
+        XCTAssertEqual(IceCreamFind.allCases.map(\.rawValue), expectedStickers)
+        XCTAssertEqual(IceCreamGame.entry.stickers.map(\.id), expectedStickers)
+
+        var sundae = ICBuild()
+        sundae.base = .cup
+        sundae.scoops = [
+            ICScoop(id: 1, flavor: .mint, swirl: nil, r: 44, dx: 0, h: 20),
+            ICScoop(id: 2, flavor: .strawberry, swirl: nil, r: 44, dx: 0, h: 80),
+        ]
+        XCTAssertEqual(Set(IceCreamFind.earned(for: sundae, stars: 3, totalServed: 1)), [.scoopMaster, .rainbowSundae, .happyParlor])
+
+        var bingsu = ICBuild()
+        bingsu.base = .bowl
+        bingsu.snowLevel = 0.8
+        XCTAssertEqual(Set(IceCreamFind.earned(for: bingsu, stars: 2, totalServed: 3)), [.bingsuSnow, .happyParlor])
+
+        let savedBefore = ICStorage.load()
+        defer { ICStorage.save(savedBefore) }
+        ICStorage.save(ICSave(hearts: 11, served: 4))
+        let store = IceCreamStore()
+        XCTAssertEqual(store.hearts, 11)
+        XCTAssertEqual(store.served, 4)
+        store.recordServe(hearts: 3)
+        XCTAssertEqual(ICStorage.load(), ICSave(hearts: 14, served: 5))
+    }
+
+    func testUnlockedBaseSwappingPreservesScoopsAndSoftServe() {
+        let sim = freshSim()
+        sim.placeBase(.waffle)
+        sim.dropScoop(flavor: .strawberry, swirl: nil, size: 1, dx: 0, fromY: 200)
+        run(sim, seconds: 1.5)
+        XCTAssertEqual(sim.build.scoops.count, 1)
+
+        sim.placeBase(.cup)
+        XCTAssertEqual(sim.build.base, .cup)
+        XCTAssertEqual(sim.build.scoops.count, 1, "swapping cone to cup preserves existing scoops")
+        XCTAssertEqual(sim.build.scoops[0].flavor, .strawberry)
+
+        sim.placeBase(.choco)
+        XCTAssertEqual(sim.build.base, .choco)
+        XCTAssertEqual(sim.build.scoops.count, 1)
+
+        let softSim = freshSim()
+        softSim.setStation(.soft)
+        softSim.placeBase(.waffle)
+        run(softSim, seconds: 0.4)
+        softSim.tapLever(ICSoft.twist.rawValue)
+        run(softSim, seconds: 1.4)
+        let beadsBefore = softSim.build.rope.count
+        XCTAssertGreaterThan(beadsBefore, 20)
+        softSim.placeBase(.cup)
+        XCTAssertEqual(softSim.build.base, .cup)
+        XCTAssertEqual(softSim.build.rope.count, beadsBefore, "swapping base preserves soft-serve swirls")
+    }
+
+    func testOneTapScoopFrontRowLockAndOffConeBallReset() {
+        let sim = freshSim()
+        // Front-row tub 3 (mint) 1-tap drops mint immediately and auto-places waffle cone
+        sim.tapTub(3)
+        run(sim, seconds: 1.5)
+        XCTAssertEqual(sim.build.base, .waffle)
+        XCTAssertEqual(sim.build.scoops.count, 1)
+        XCTAssertEqual(sim.build.scoops[0].flavor, .mint)
+
+        // Dragging from front-row tub 5 (mango) locks flavor even when tip lifts upward toward back row
+        let front = ICGeo.tubs[5]
+        let back = ICGeo.tubs[2]
+        sim.pickUpScoop(fromTub: 5, at: front)
+        for k in 0..<30 {
+            let x = front.x - 24 + CGFloat(k) * 2.5
+            sim.carry(to: CGPoint(x: x, y: back.y), finger: CGPoint(x: x, y: front.y))
+            sim.step(dt: 1.0 / 60)
+        }
+        XCTAssertGreaterThan(sim.ball, 0.5)
+        XCTAssertEqual(sim.ballFlavor, .mango, "front-row drag must never shift into back-row flavor")
+
+        // Releasing off-cone always resets ball to 0 (no stale ball trap!)
+        sim.carry(to: CGPoint(x: 200, y: 180), finger: CGPoint(x: 200, y: 260))
+        sim.step(dt: 1.0 / 60)
+        sim.release()
+        XCTAssertEqual(sim.ball, 0)
+        XCTAssertNil(sim.ballFlavor)
+        XCTAssertNil(sim.scoopLockedTub)
+    }
+
+    func testSmoothieAutoMilkBlendAndAutoPourProducesFullMatch() {
+        let sim = freshSim()
+        sim.setStation(.smoothie)
+        // Toss strawberry with ZERO milk poured first, then 1-tap Blend
+        sim.tossFruit(.strawberry)
+        run(sim, seconds: 0.5)
+        XCTAssertEqual(sim.jarVolume, 0, accuracy: 0.001)
+
+        sim.tapBlend()
+        XCTAssertGreaterThan(sim.jarVolume, 0.2, "tapping Blend with fruit auto-adds a helpful splash of milk")
+        run(sim, seconds: 6.0)
+
+        XCTAssertTrue(sim.jarOnBase, "jar glides home after auto-pour")
+        XCTAssertGreaterThanOrEqual(sim.build.fill, 0.35, "auto-milk + blend + auto-pour produces a full servable smoothie")
+        XCTAssertTrue(sim.build.hasTreat)
+        XCTAssertTrue(sim.canServe)
+
+        let order = ICOrder(customer: 0, kind: .smoothie, base: .glass, flavors: [ICFruit.strawberry.rawValue], topping: .straw)
+        XCTAssertTrue(order.matches(.base, sim.build))
+        XCTAssertTrue(order.matches(.flavor, sim.build))
+    }
+
+    func testRainbowBingsuAndUnicornConeTreasureHooksRespondToOwnership() {
         Coins.shared.resetForTests(balance: 40)
         defer { Coins.shared.resetForTests() }
 
-        XCTAssertEqual(ICArt.rainbowBingsuTreasureID, "bakery/rainbowBingsu")
+        XCTAssertEqual(ICArt.rainbowBingsuTreasureID, "icecream/rainbowBingsu")
+        XCTAssertFalse(ICArt.hasRainbowBingsu)
+        XCTAssertTrue(Coins.shared.buy("icecream/rainbowBingsu", price: 12))
+        XCTAssertTrue(ICArt.hasRainbowBingsu)
+
+        // Legacy bakery/rainbowBingsu ownership also unlocks Rainbow Bingsu seamlessly
+        Coins.shared.resetForTests(balance: 40)
         XCTAssertFalse(ICArt.hasRainbowBingsu)
         XCTAssertTrue(Coins.shared.buy("bakery/rainbowBingsu", price: 12))
         XCTAssertTrue(ICArt.hasRainbowBingsu)
+
+        // Unicorn Cone treasure hook
+        XCTAssertEqual(ICArt.unicornConeTreasureID, "icecream/unicornCone")
+        XCTAssertFalse(ICArt.hasUnicornCone)
+        XCTAssertTrue(Coins.shared.buy("icecream/unicornCone", price: 10))
+        XCTAssertTrue(ICArt.hasUnicornCone)
     }
 }

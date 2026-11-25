@@ -23,7 +23,6 @@ enum BakeryGame {
 struct BakeryGameView: View {
     let exit: () -> Void
     @StateObject private var store = BakeryStore()
-    @State private var dessertStation: ICStation?
     @State private var making: Treat?
     @State private var ready: Treat?
     @State private var startStep = 0
@@ -39,61 +38,35 @@ struct BakeryGameView: View {
                             onShop: { withAnimation(.easeInOut(duration: 0.35)) { making = nil } })
                     .transition(.opacity)
             } else {
-                ShopView(store: store, ready: $ready, order: $order, exit: exit, openStation: openStation) { kind in
-                    if kind == .iceCream {
-                        openStation(.scoop)
-                        return
-                    }
+                ShopView(store: store, ready: $ready, order: $order, exit: exit) { kind in
+                    guard TreatKind.kitchenCases.contains(kind) else { return }
                     BakerySound.shared.play(.plop)
                     Sound.shared.tap()
                     startStep = 0
                     withAnimation(.easeInOut(duration: 0.35)) { making = Treat(kind: kind) }
                 }
-                .opacity(dessertStation == nil ? 1 : 0)
-                .allowsHitTesting(dessertStation == nil)
-                .accessibilityHidden(dessertStation != nil)
                 .transition(.opacity)
-            }
-            if let station = dessertStation {
-                IceCreamView(station: station, bakery: store, exit: { openStation(nil) })
-                    .id(station)
-                    .transition(.opacity)
             }
         }
         .onAppear(perform: applyLaunchArguments)
         .onDisappear { store.save() }
     }
 
-    private func openStation(_ station: ICStation?) {
-        Sound.shared.play(.whoosh, volume: 0.6)
-        withAnimation(.easeInOut(duration: 0.3)) { dessertStation = station }
-    }
-
     /// Simulator screenshot hooks: -bakeryDecorate <cake|cupcake|bungeoppang>, -bakeryServe, -bakeryStep <n>.
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains(where: { $0.hasPrefix("-bakery") }) { order = BakeryOrder.random(customer: 2, seed: 11) }
-        if let i = args.firstIndex(of: "-bakeryDecorate"), i + 1 < args.count, let k = TreatKind(rawValue: args[i + 1]) {
-            if k == .iceCream {
-                dessertStation = .scoop
-            } else {
-                startStep = 3
-                making = Treat.sample(k, seed: 5)
-            }
+        if let i = args.firstIndex(of: "-bakeryDecorate"), i + 1 < args.count,
+           let k = TreatKind(rawValue: args[i + 1]), TreatKind.kitchenCases.contains(k) {
+            startStep = 3
+            making = Treat.sample(k, seed: 5)
         }
-        if let i = args.firstIndex(of: "-bakeryStep"), i + 2 < args.count, let k = TreatKind(rawValue: args[i + 1]), let n = Int(args[i + 2]) {
-            if k == .iceCream {
-                dessertStation = .scoop
-            } else {
-                startStep = n
-                var t = Treat(kind: k)
-                if n > 0 { t = Treat.sample(k, seed: 2); t.toppings = []; if k == .cake || k == .bungeoppang { t.frosting = nil }; if k == .cupcake { t.frostStage = 0 } }
-                making = t
-            }
-        }
-        if let i = args.firstIndex(of: "-iceDemo") {
-            let arg = i + 1 < args.count ? args[i + 1] : "soft"
-            dessertStation = arg == "bingsu" ? .bingsu : arg == "scoop" || arg == "sundae" ? .scoop : (arg == "blend" || arg == "pour" ? .smoothie : .soft)
+        if let i = args.firstIndex(of: "-bakeryStep"), i + 2 < args.count,
+           let k = TreatKind(rawValue: args[i + 1]), TreatKind.kitchenCases.contains(k), let n = Int(args[i + 2]) {
+            startStep = n
+            var t = Treat(kind: k)
+            if n > 0 { t = Treat.sample(k, seed: 2); t.toppings = []; if k == .cake || k == .bungeoppang { t.frosting = nil }; if k == .cupcake { t.frostStage = 0 } }
+            making = t
         }
         if args.contains("-bakeryServe") { ready = Treat.sample(.cake, seed: 9) }
         if args.contains("-bakeryRated") {
@@ -112,7 +85,6 @@ struct ShopView: View {
     @Binding var ready: Treat?
     @Binding var order: BakeryOrder
     let exit: () -> Void
-    let openStation: (ICStation) -> Void
     let make: (TreatKind) -> Void
 
     private enum Phase { case arriving, waiting, eating, happy, leaving }
@@ -261,8 +233,6 @@ struct ShopView: View {
             StickerBookButton(game: BakeryStore.game, size: GameChromeLayout.buttonSize) {
                 withAnimation(.spring(response: 0.35)) { showStickers = true }
             }
-            IceCreamParlorButton { openStation(.scoop) }
-                .accessibilityLabel("Ice Cream Parlor")
             Spacer()
             CoinCounter(game: "bakery", height: GameChromeLayout.buttonSize)
             ZStack(alignment: .bottomTrailing) {
@@ -337,22 +307,8 @@ struct ShopView: View {
             // the customer pays: coins hop out of their paws into the purse
             Coins.shared.earn(Coins.reward(stars: stars), game: "bakery", from: CGPoint(x: 470, y: 360))
             if !ShopView.demoServe {
-                StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.firstTreat.rawValue)
-                if matched {
-                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.threeStarBaker.rawValue)
-                }
-                if t.kind == .cake && t.tiers >= 3 {
-                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.tallCake.rawValue)
-                }
-                let colorfulDecor = t.toppings.contains { $0.sprite.hasPrefix("bit_") } || Set(t.toppings.map { $0.color }).count >= 3
-                if t.kind != .iceCream && t.frosting != nil && colorfulDecor {
-                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.rainbowFrost.rawValue)
-                }
-                if t.kind == .bungeoppang {
-                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.bungeoppang.rawValue)
-                }
-                if t.kind == .iceCream {
-                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.iceCreamPro.rawValue)
+                for find in BakeryFind.earned(for: t, stars: stars, totalServed: store.served.count) {
+                    StickerBook.shared.find(game: BakeryStore.game, id: find.rawValue)
                 }
             }
             withAnimation(.easeOut(duration: 0.25)) { ready = nil }
@@ -434,86 +390,6 @@ private struct FloatingHeart: View {
             .onAppear {
                 withAnimation(.easeOut(duration: 1.6).delay(Double(index) * 0.12)) { go = true }
             }
-    }
-}
-
-private struct IceCreamParlorButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Canvas { ctx, size in
-                let s = min(size.width, size.height) / 52
-                var g = ctx
-                g.translateBy(x: (size.width - 52 * s) / 2, y: (size.height - 52 * s) / 2)
-                g.scaleBy(x: s, y: s)
-
-                // Cute pastel Korean bingsu snow bowl tucked to the right behind the cone
-                var spoon = Path()
-                spoon.move(to: CGPoint(x: 38, y: 26))
-                spoon.addLine(to: CGPoint(x: 45, y: 12))
-                g.stroke(spoon, with: .color(StorybookArt.outline(for: 0xFF9EC4)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
-                g.stroke(spoon, with: .color(StorybookArt.color(0xFFD6E6)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-
-                let snow = Path(ellipseIn: CGRect(x: 27, y: 17, width: 19, height: 15))
-                StorybookArt.shape(g, snow, hex: 0xF7FBFF, width: 1.8)
-                let pat = Path(ellipseIn: CGRect(x: 33, y: 15.5, width: 7.5, height: 5))
-                StorybookArt.shape(g, pat, hex: 0x7A2E3B, width: 1.3)
-
-                var bowl = Path()
-                bowl.move(to: CGPoint(x: 26, y: 26))
-                bowl.addLine(to: CGPoint(x: 47, y: 26))
-                bowl.addQuadCurve(to: CGPoint(x: 41.5, y: 41.5), control: CGPoint(x: 47, y: 36))
-                bowl.addLine(to: CGPoint(x: 31.5, y: 41.5))
-                bowl.addQuadCurve(to: CGPoint(x: 26, y: 26), control: CGPoint(x: 26, y: 36))
-                bowl.closeSubpath()
-                StorybookArt.shape(g, bowl, hex: 0xB8EAE2, width: 2)
-
-                // Golden waffle cone in front
-                var cone = Path()
-                cone.move(to: CGPoint(x: 10.5, y: 26))
-                cone.addLine(to: CGPoint(x: 29.5, y: 26))
-                cone.addQuadCurve(to: CGPoint(x: 20, y: 46.5), control: CGPoint(x: 25.5, y: 39))
-                cone.addQuadCurve(to: CGPoint(x: 10.5, y: 26), control: CGPoint(x: 14.5, y: 39))
-                cone.closeSubpath()
-                StorybookArt.shape(g, cone, hex: 0xF2B572, width: 2.2)
-
-                var grid = Path()
-                grid.move(to: CGPoint(x: 14.5, y: 27.5)); grid.addLine(to: CGPoint(x: 23.5, y: 37.5))
-                grid.move(to: CGPoint(x: 25.5, y: 27.5)); grid.addLine(to: CGPoint(x: 16.5, y: 37.5))
-                g.stroke(grid, with: .color(StorybookArt.outline(for: 0xF2B572, factor: 0.72).opacity(0.65)),
-                         style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-
-                // Mint + strawberry double scoops with shine
-                let bottomScoop = Path(ellipseIn: CGRect(x: 9.5, y: 15.5, width: 21, height: 15.5))
-                StorybookArt.shape(g, bottomScoop, hex: 0x9BE3CA, width: 2.2)
-                StorybookArt.highlight(g, in: CGRect(x: 13, y: 18.2, width: 5, height: 3), opacity: 0.65)
-
-                let topScoop = Path(ellipseIn: CGRect(x: 11.5, y: 6.5, width: 17, height: 14))
-                StorybookArt.shape(g, topScoop, hex: 0xFF8FB8, width: 2.2)
-                StorybookArt.highlight(g, in: CGRect(x: 14.5, y: 8.8, width: 4.5, height: 2.8), opacity: 0.65)
-
-                let cherry = Path(ellipseIn: CGRect(x: 17, y: 2.5, width: 6.2, height: 6.2))
-                StorybookArt.shape(g, cherry, hex: 0xF45B7A, width: 1.6)
-                StorybookArt.highlight(g, in: CGRect(x: 18.4, y: 3.6, width: 2.1, height: 1.6), opacity: 0.75)
-
-                StorybookArt.sparkle(g, at: CGPoint(x: 7, y: 10), radius: 3.5, color: Theme.lemon)
-            }
-            .frame(width: 48, height: 48)
-            .frame(width: GameChromeLayout.buttonSize, height: GameChromeLayout.buttonSize)
-            .background(
-                Circle().fill(
-                    LinearGradient(
-                        colors: [Color(hex: 0xFFFDFB), Color(hex: 0xFFF1E6)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            )
-            .overlay(Circle().stroke(Theme.peach, lineWidth: 4.5))
-            .shadow(color: Theme.ink.opacity(0.22), radius: 6, y: 4)
-        }
-        .buttonStyle(Squish())
     }
 }
 

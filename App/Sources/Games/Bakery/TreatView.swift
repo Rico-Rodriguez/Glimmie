@@ -95,6 +95,9 @@ enum TreatPainter {
 
     // MARK: Korean Strawberry Fresh-Cream Cake
 
+    static let strawberryCrownTreasureID = "bakery/strawberryCrown"
+    static var hasStrawberryCrown: Bool { Coins.shared.owns(strawberryCrownTreasureID) }
+
     private static func drawKoreanStrawberryCreamCrown(tiers n: Int, color: RGB, in ctx: GraphicsContext) {
         // Fluffy fresh whipped cream tint (stays airy white-pastel even with colored frosting picks)
         let cream = color.mix(RGB(1, 1, 1), 0.55)
@@ -158,6 +161,77 @@ enum TreatPainter {
             leaf.closeSubpath()
             StorybookArt.fillAndStroke(ctx, leaf, fill: StorybookArt.color(0x63C978), stroke: StorybookArt.outline(for: 0x45A85C), width: 2.2)
         }
+
+        if hasStrawberryCrown {
+            drawStrawberryTiaraCrown(at: CGPoint(x: 300, y: top.t - 26), scale: n == 3 ? 0.86 : 1.0, in: ctx)
+        }
+    }
+
+    private static func drawStrawberryTiaraCrown(at center: CGPoint, scale: CGFloat, in ctx: GraphicsContext) {
+        let goldOutline = StorybookArt.outline(for: 0xD9961E)
+
+        var g = ctx
+        g.translateBy(x: center.x, y: center.y)
+        g.scaleBy(x: scale, y: scale)
+
+        // Warm golden starlight halo behind the jeweled berry tiara
+        g.fill(
+            Path(ellipseIn: CGRect(x: -54, y: -52, width: 108, height: 68)),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF3A8, alpha: 0.62), Color(hex: 0xFFCF4A, alpha: 0)]),
+                center: CGPoint(x: 0, y: -18),
+                startRadius: 4,
+                endRadius: 52
+            )
+        )
+
+        // Delicate curved golden filigree tiara crown
+        var tiara = Path()
+        tiara.move(to: CGPoint(x: -36, y: 2))
+        tiara.addLine(to: CGPoint(x: -40, y: -22))
+        tiara.addQuadCurve(to: CGPoint(x: -16, y: -10), control: CGPoint(x: -28, y: -8))
+        tiara.addLine(to: CGPoint(x: 0, y: -38))
+        tiara.addLine(to: CGPoint(x: 16, y: -10))
+        tiara.addQuadCurve(to: CGPoint(x: 40, y: -22), control: CGPoint(x: 28, y: -8))
+        tiara.addLine(to: CGPoint(x: 36, y: 2))
+        tiara.addQuadCurve(to: CGPoint(x: -36, y: 2), control: CGPoint(x: 0, y: 10))
+        tiara.closeSubpath()
+        g.fill(
+            tiara,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFF5B2), Color(hex: 0xFFCF4A), Color(hex: 0xE59B20)]),
+                startPoint: CGPoint(x: -36, y: -38),
+                endPoint: CGPoint(x: 36, y: 10)
+            )
+        )
+        g.stroke(tiara, with: .color(goldOutline), style: StrokeStyle(lineWidth: 2.8, lineCap: .round, lineJoin: .round))
+
+        // Pearl tips + ruby berry gem centerpiece
+        for (px, py) in [(-40.0, -24.0), (0.0, -40.0), (40.0, -24.0)] as [(CGFloat, CGFloat)] {
+            StorybookArt.fillAndStroke(
+                g,
+                Path(ellipseIn: CGRect(x: px - 4.5, y: py - 4.5, width: 9, height: 9)),
+                fill: Color(hex: 0xFFFDF8),
+                stroke: goldOutline,
+                width: 1.8
+            )
+        }
+        drawSlicedStrawberry(in: g, at: CGPoint(x: 0, y: -12), scale: 0.56, tilt: 0)
+
+        for gx in [-22.0, 22.0] as [CGFloat] {
+            StorybookArt.fillAndStroke(
+                g,
+                Path(ellipseIn: CGRect(x: gx - 4.5, y: -8, width: 9, height: 9)),
+                fill: Theme.pink,
+                stroke: goldOutline,
+                width: 1.6
+            )
+        }
+
+        // Sparkling golden star glints around the tiara
+        StorybookArt.sparkle(g, at: CGPoint(x: -44, y: -36), radius: 10, color: Color(hex: 0xFFF29C), opacity: 0.95)
+        StorybookArt.sparkle(g, at: CGPoint(x: 44, y: -34), radius: 9, color: .white, opacity: 0.92)
+        StorybookArt.sparkle(g, at: CGPoint(x: 18, y: -44), radius: 7.5, color: Theme.pink, opacity: 0.9)
     }
 
     static func drawSlicedStrawberry(in ctx: GraphicsContext, at c: CGPoint, scale: CGFloat, tilt: Double) {

@@ -83,8 +83,11 @@ final class CoinsTests: XCTestCase {
     func testEveryTreasureShowsUpInItsGameOnceBought() {
         let gameIDs = Set(GameRegistry.all.map(\.id))
         let allIDs = Set(Treasures.all.map(\.id))
-        XCTAssertEqual(Treasures.all.count, 30)
+        XCTAssertEqual(Treasures.all.count, 32)
         XCTAssertEqual(allIDs.count, Treasures.all.count)
+        XCTAssertTrue(allIDs.contains("icecream/rainbowBingsu"))
+        XCTAssertTrue(allIDs.contains("icecream/unicornCone"))
+        XCTAssertTrue(allIDs.contains("bakery/strawberryCrown"))
 
         let legacyIDs = [
             "garden/crystal", "garden/rainbow", "garden/unicorn",
@@ -103,7 +106,7 @@ final class CoinsTests: XCTestCase {
             XCTAssertGreaterThan(t.size.height, 0, t.id)
         }
 
-        XCTAssertEqual(GameRegistry.all.count, 12)
+        XCTAssertEqual(GameRegistry.all.count, 13)
         for game in GameRegistry.all {
             XCTAssertGreaterThanOrEqual(
                 Treasures.items(for: game.id).count,

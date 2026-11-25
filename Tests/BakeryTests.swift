@@ -287,13 +287,26 @@ final class BakeryTests: XCTestCase {
 
     // MARK: Stickers & Treat Case
 
-    func testBakeryFindsDefinesEightUniqueStickersWiredToEntry() {
+    func testBakeryFindsDefinesSixUniqueStickersWiredToEntry() {
+        let expected = [
+            "firstBake", "cakeArtist", "cupcakeStar",
+            "bungeoppang", "koreanStrawberryCake", "fiveStarBaker",
+        ]
         let stickers = BakeryFind.stickers
-        XCTAssertEqual(stickers.count, 8)
-        XCTAssertEqual(Set(stickers.map { $0.id }).count, 8)
-        XCTAssertTrue(BakeryFind.allCases.contains(.bungeoppang))
-        XCTAssertTrue(BakeryFind.allCases.contains(.bingsu))
-        XCTAssertEqual(BakeryGame.entry.stickers.map { $0.id }, BakeryFind.allCases.map { $0.rawValue })
+        XCTAssertEqual(stickers.count, 6)
+        XCTAssertEqual(Set(stickers.map { $0.id }).count, 6)
+        XCTAssertEqual(BakeryFind.allCases.map(\.rawValue), expected)
+        XCTAssertEqual(BakeryGame.entry.stickers.map { $0.id }, expected)
+
+        let strawCake = Treat.sample(.cake, seed: 4)
+        let cakeFinds = Set(BakeryFind.earned(for: strawCake, stars: 3, totalServed: 1))
+        XCTAssertEqual(cakeFinds, [.firstBake, .cakeArtist, .koreanStrawberryCake, .fiveStarBaker])
+
+        let cupcakeFinds = Set(BakeryFind.earned(for: Treat.sample(.cupcake, seed: 2), stars: 2, totalServed: 2))
+        XCTAssertEqual(cupcakeFinds, [.firstBake, .cupcakeStar])
+
+        let fishFinds = Set(BakeryFind.earned(for: Treat.sample(.bungeoppang, seed: 9), stars: 1, totalServed: 5))
+        XCTAssertEqual(fishFinds, [.firstBake, .bungeoppang, .fiveStarBaker])
     }
 
     func testKitchenOrdersExcludeIceCreamAndIncludeBungeoppang() {
@@ -348,5 +361,15 @@ final class BakeryTests: XCTestCase {
         XCTAssertFalse(BungeoppangArt.hasGoldenMold)
         XCTAssertTrue(Coins.shared.buy("bakery/goldenBungeo", price: 10))
         XCTAssertTrue(BungeoppangArt.hasGoldenMold)
+    }
+
+    func testStrawberryCrownTreasureHookRespondsToOwnership() {
+        Coins.shared.resetForTests(balance: 40)
+        defer { Coins.shared.resetForTests() }
+
+        XCTAssertEqual(TreatPainter.strawberryCrownTreasureID, "bakery/strawberryCrown")
+        XCTAssertFalse(TreatPainter.hasStrawberryCrown)
+        XCTAssertTrue(Coins.shared.buy("bakery/strawberryCrown", price: 12))
+        XCTAssertTrue(TreatPainter.hasStrawberryCrown)
     }
 }

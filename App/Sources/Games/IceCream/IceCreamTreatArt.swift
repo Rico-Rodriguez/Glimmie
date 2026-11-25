@@ -35,7 +35,7 @@ enum ICArt {
             scoop(g, s, at: CGPoint(x: S.x + s.dx + s.wob, y: S.y - s.h), seed: s.id)
         }
         rope(g, b, S, front: true)
-        baseFront(g, base, S, b)
+        baseFront(g, base, S, b, time: t)
         for sc in b.sauces { sauce(g, sc, b, S) }
         for piece in b.bingsuPieces {
             bingsuPiece(g, piece, at: CGPoint(x: S.x + piece.dx, y: S.y - piece.h))
@@ -116,7 +116,7 @@ enum ICArt {
         }
     }
 
-    private static func baseFront(_ g: GraphicsContext, _ base: ICBase, _ S: CGPoint, _ b: ICBuild) {
+    private static func baseFront(_ g: GraphicsContext, _ base: ICBase, _ S: CGPoint, _ b: ICBuild, time t: CGFloat) {
         switch base {
         case .waffle, .choco:
             let p = conePath(S)
@@ -125,6 +125,22 @@ enum ICArt {
                                             startPoint: CGPoint(x: S.x - 50, y: S.y), endPoint: CGPoint(x: S.x + 50, y: S.y + 40)))
             var grid = g
             grid.clip(to: p)
+            if hasUnicornCone {
+                grid.fill(
+                    p,
+                    with: .linearGradient(
+                        Gradient(colors: [
+                            Theme.pink.opacity(0.32),
+                            Theme.lemon.opacity(0.28),
+                            Theme.mint.opacity(0.3),
+                            Theme.sky.opacity(0.3),
+                            Theme.lilac.opacity(0.32),
+                        ]),
+                        startPoint: CGPoint(x: S.x - 42, y: S.y),
+                        endPoint: CGPoint(x: S.x + 28, y: S.y + 140)
+                    )
+                )
+            }
             var lines = Path()
             for k in -8...8 {
                 let x = S.x + CGFloat(k) * 17
@@ -160,6 +176,9 @@ enum ICArt {
             g.fill(rim, with: .color(rc.color))
             g.stroke(rim, with: .color(outline(rc)), lineWidth: 2.5)
             g.stroke(Path(CGRect(x: S.x - 46, y: S.y - 2, width: 92, height: 0.1)), with: .color(rc.shade(0.4).color(0.7)), lineWidth: 2)
+            if hasUnicornCone {
+                drawUnicornConeCharm(g, at: S, time: t)
+            }
         case .cup:
             let p = cupPath(S)
             g.fill(p, with: .color(ICColor(0xFFFFFF).color))
@@ -216,10 +235,62 @@ enum ICArt {
         }
     }
 
-    // MARK: Korean Bingsu Snow & Toppings
+    // MARK: Unicorn Cone & Korean Bingsu Treasures
 
-    static let rainbowBingsuTreasureID = "bakery/rainbowBingsu"
-    static var hasRainbowBingsu: Bool { Coins.shared.owns(rainbowBingsuTreasureID) }
+    static let unicornConeTreasureID = "icecream/unicornCone"
+    static var hasUnicornCone: Bool { Coins.shared.owns(unicornConeTreasureID) }
+
+    static let rainbowBingsuTreasureID = "icecream/rainbowBingsu"
+    static let legacyRainbowBingsuTreasureID = "bakery/rainbowBingsu"
+    static var hasRainbowBingsu: Bool {
+        Coins.shared.owns(rainbowBingsuTreasureID) || Coins.shared.owns(legacyRainbowBingsuTreasureID)
+    }
+
+    private static func drawUnicornConeCharm(_ g: GraphicsContext, at S: CGPoint, time t: CGFloat) {
+        let goldEdge = StorybookArt.outline(for: 0xE6A92E)
+        // Pastel star sparkles dotted along the rolled rim
+        let rimGems: [(CGFloat, Color)] = [(-36, Theme.pink), (-18, Theme.lemon), (18, Theme.mint), (36, Theme.sky)]
+        for (dx, col) in rimGems {
+            StorybookArt.sparkle(g, at: CGPoint(x: S.x + dx, y: S.y + 1), radius: 5.5, color: col)
+        }
+
+        // Sparkling golden spiraled unicorn horn charm perched on the front center of the cone rim
+        var charm = g
+        charm.translateBy(x: S.x, y: S.y + 20)
+        let medallion = circle(.zero, 15)
+        StorybookArt.fillAndStroke(charm, medallion, fill: Color(hex: 0xFFF5FA), stroke: goldEdge, width: 2.2)
+
+        var horn = Path()
+        horn.move(to: CGPoint(x: -7, y: 7))
+        horn.addLine(to: CGPoint(x: 0, y: -16))
+        horn.addLine(to: CGPoint(x: 7, y: 7))
+        horn.closeSubpath()
+        charm.fill(
+            horn,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFF4AD), Color(hex: 0xFFCF4A), Color(hex: 0xE59B20)]),
+                startPoint: CGPoint(x: 0, y: -16),
+                endPoint: CGPoint(x: 0, y: 7)
+            )
+        )
+        charm.stroke(horn, with: .color(goldEdge), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        for k in 1...3 {
+            let f = CGFloat(k) / 4
+            let y = 7 - 23 * f
+            let hw = 6.5 * (1 - f)
+            var ridge = Path()
+            ridge.move(to: CGPoint(x: -hw, y: y + 1.5))
+            ridge.addLine(to: CGPoint(x: hw, y: y - 1.5))
+            charm.stroke(ridge, with: .color(goldEdge.opacity(0.65)), lineWidth: 1.5)
+        }
+
+        // Twinkling pastel sparkles around the cone
+        let tw = 0.55 + 0.45 * sin(Double(t) * 4.2)
+        StorybookArt.sparkle(g, at: CGPoint(x: S.x - 42, y: S.y + 34), radius: 5.8, color: Theme.lemon, opacity: tw)
+        StorybookArt.sparkle(g, at: CGPoint(x: S.x + 42, y: S.y + 42), radius: 5.2, color: Theme.pink, opacity: 1.15 - tw * 0.4)
+        StorybookArt.sparkle(g, at: CGPoint(x: S.x - 24, y: S.y + 84), radius: 4.8, color: Theme.sky, opacity: tw)
+        StorybookArt.sparkle(g, at: CGPoint(x: S.x + 26, y: S.y + 92), radius: 5.0, color: .white, opacity: 1.15 - tw * 0.4)
+    }
 
     private static func bingsuSnow(_ g: GraphicsContext, _ b: ICBuild, _ S: CGPoint, time t: CGFloat) {
         let level = icClamp(b.snowLevel)

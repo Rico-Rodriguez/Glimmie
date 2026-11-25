@@ -21,9 +21,10 @@ enum ICGeo {
     static let counterY: CGFloat = 662
     static let standX: CGFloat = 600
     static let nozzle = CGPoint(x: 600, y: 304)
-    static let dockY: CGFloat = 772
+    static let dockY: CGFloat = 740
     /// The serving window.
     static let window = CGRect(x: 748, y: 150, width: 262, height: 372)
+    static let serveBell = CGPoint(x: 774, y: 520)
     static let customer = CGPoint(x: 879, y: 372)
     static let customerScale: CGFloat = 0.62
     static let handOff = CGPoint(x: 868, y: 492)
@@ -33,24 +34,25 @@ enum ICGeo {
     static let tubRX: CGFloat = 56
     static let tubRY: CGFloat = 21
     static let well = CGPoint(x: 476, y: 598)
-    // Soft serve: four big flavor buttons on the machine's face (vanilla, chocolate, twist, strawberry).
-    static let softButtons: [CGPoint] = [CGPoint(x: 418, y: 158), CGPoint(x: 494, y: 158),
-                                         CGPoint(x: 418, y: 232), CGPoint(x: 494, y: 232)]
-    static let softButtonR: CGFloat = 30
+    // Soft serve: four big pull-down pastel lever handles across the machine front (vanilla, chocolate, twist, strawberry).
+    static let softButtons: [CGPoint] = [CGPoint(x: 162, y: 232), CGPoint(x: 262, y: 232),
+                                         CGPoint(x: 362, y: 232), CGPoint(x: 462, y: 232)]
+    static let softButtonR: CGFloat = 48
     // Bingsu snow shaver.
     static let snowNozzle = CGPoint(x: 600, y: 310)
     static let snowButton = CGPoint(x: 454, y: 196)
     static let snowButtonR: CGFloat = 42
     static let snowChamber = CGRect(x: 536, y: 112, width: 128, height: 162)
+    static let snowIceTray = CGRect(x: 48, y: 556, width: 280, height: 112)
     // Blender.
-    static let jarHome = CGPoint(x: 178, y: 566)
+    static let jarHome = CGPoint(x: 154, y: 566)
     static let jarH: CGFloat = 270
     static let jarBottomHW: CGFloat = 56
     static let jarTopHW: CGFloat = 80
-    static let blendButton = CGPoint(x: 178, y: 620)
-    static let bins: [CGPoint] = [CGPoint(x: 334, y: 330), CGPoint(x: 410, y: 330), CGPoint(x: 486, y: 330),
-                                  CGPoint(x: 334, y: 446), CGPoint(x: 410, y: 446), CGPoint(x: 486, y: 446)]
-    static let milkHome = CGPoint(x: 450, y: 586)
+    static let blendButton = CGPoint(x: 154, y: 616)
+    static let bins: [CGPoint] = [CGPoint(x: 298, y: 326), CGPoint(x: 392, y: 326), CGPoint(x: 486, y: 326),
+                                  CGPoint(x: 298, y: 446), CGPoint(x: 392, y: 446), CGPoint(x: 486, y: 446)]
+    static let milkHome = CGPoint(x: 444, y: 584)
 
     static func jarHW(_ y: CGFloat) -> CGFloat {
         // y is jar-local, 0 at the inside bottom and negative going up
@@ -155,6 +157,8 @@ final class IceSim {
     var ballSwirl: ICFlavor?
     var scraping: CGFloat = 0
     var scoopIn: Int?
+    /// When dragging straight from a tub, locks scooping to that exact tub so FingerLift never jumps rows.
+    var scoopLockedTub: Int?
     private var lastScoopTip = CGPoint.zero
 
     // Held thing
@@ -172,6 +176,7 @@ final class IceSim {
     // Soft serve (IceCreamSoft.swift)
     var lever: Int?
     var leverPull: [CGFloat] = [0, 0, 0, 0]
+    var softBurstTime: CGFloat = 0
     var free: [ICFreeBead] = []
     var softAcc: CGFloat = 0
     var prevTurn = 0
@@ -199,6 +204,7 @@ final class IceSim {
     var jarFruit: [CGFloat] = [CGFloat](repeating: 0, count: ICFruit.allCases.count)
     var blending = false
     var blendingToggle = false
+    var blendAutoPour = false
     var blendToggleTime: CGFloat = 0
     var blendEmptyTime: CGFloat = 0
     var autoPour: ICAutoPour?
@@ -290,10 +296,12 @@ final class IceSim {
     func setStation(_ s: ICStation) {
         guard s != station, held == nil else { return }
         lever = nil
+        softBurstTime = 0
         shaving = false
         snowBurstTime = 0
         blending = false
         blendingToggle = false
+        blendAutoPour = false
         autoPour = nil
         autoPourTime = 0
         station = s
@@ -301,15 +309,51 @@ final class IceSim {
         if s == .bingsu && build.base == nil { placeBase(.bowl) }
     }
 
-    /// Puts a cone, cup, glass or bowl on the stand (swaps it while nothing is in it yet).
+    /// Puts or swaps a cone, cup, glass or bowl on the stand. Swapping between parlor bases preserves existing scoops/swirls.
     func placeBase(_ b: ICBase) {
         guard build.base != b else { return }
-        if build.base != nil && (!build.scoops.isEmpty || !build.rope.isEmpty || build.fill > 0.01 || build.snowLevel > 0.01) { return }
+        if let old = build.base, old.isParlorBase && b.isParlorBase {
+            let deltaH: CGFloat
+            if !build.scoops.isEmpty {
+                let oldRest = restHeight(0)
+                build.base = b
+                let newRest = restHeight(0)
+                deltaH = newRest - oldRest
+                for i in build.scoops.indices where build.scoops[i].landed {
+                    build.scoops[i].h += deltaH
+                }
+                build.scoops[0].squashV += 1.6
+            } else if !build.rope.isEmpty {
+                deltaH = b.floor - old.floor
+                build.base = b
+            } else {
+                deltaH = 0
+                build.base = b
+                resetSoft()
+            }
+            if deltaH != 0 {
+                for i in build.rope.indices { build.rope[i].h += deltaH }
+                for i in build.whip.indices { build.whip[i].h += deltaH }
+                if build.cherry != nil { build.cherry?.h += deltaH }
+                if build.wafer != nil { build.wafer?.h += deltaH }
+                if build.straw != nil { build.straw?.h += deltaH }
+                for i in build.sprinkles.indices where build.sprinkles[i].onTop {
+                    build.sprinkles[i].dy += deltaH
+                }
+            }
+            standV.dy -= 220
+            baseDrop = (b, time)
+            profileDirty = true
+            Sound.shared.play(.pop, volume: 0.7)
+            IceSound.shared.play(.tub, volume: 0.55)
+            return
+        }
         build = ICBuild()
         build.base = b
         baseDrop = (b, time)
         profileDirty = true
         resetSoft()
+        Sound.shared.play(.pop, volume: 0.65)
         IceSound.shared.play(b == .glass || b == .bowl ? .glass : .tub, volume: 0.7)
     }
 
@@ -352,7 +396,7 @@ final class IceSim {
         }
     }
 
-    /// Quick tap gives a playful burst of falling milk-snow so pre-readers can tap or hold.
+    /// Quick tap gives a playful burst of falling milk-snow (>= 0.50 snowLevel) so a single tap earns the base star.
     func tapShaver() {
         guard station == .bingsu else { return }
         if build.base != .bowl { placeBase(.bowl) }
@@ -361,7 +405,7 @@ final class IceSim {
             Sound.shared.tap()
             return
         }
-        snowBurstTime = max(snowBurstTime, 0.7)
+        snowBurstTime = max(snowBurstTime, 1.0)
         Sound.shared.tap()
     }
 
@@ -374,7 +418,7 @@ final class IceSim {
 
         shaveBladeAngle += dt * 30
         let prev = build.snowLevel
-        build.snowLevel = min(1, build.snowLevel + dt * 0.52)
+        build.snowLevel = min(1, build.snowLevel + dt * 0.56)
         profileDirty = true
 
         // Lift any toppings already on the snow so they ride on top of the rising mountain.
@@ -529,13 +573,21 @@ final class IceSim {
     func cancelInteraction() {
         if held == .jar || autoPour == .jar { releaseJar() }
         held = nil
+        scoopLockedTub = nil
+        scoopIn = nil
+        scraping = 0
+        ball = 0
+        ballFlavor = nil
+        ballSwirl = nil
         autoPour = nil
         autoPourTime = 0
         pressLever(nil)
+        softBurstTime = 0
         shaving = false
         snowBurstTime = 0
         blending = false
         blendingToggle = false
+        blendAutoPour = false
         milkPour = 0
         milkTilt = 0
         stream.removeAll()
@@ -569,6 +621,37 @@ final class IceSim {
 
     // MARK: Scooping
 
+    /// Picks up the dipper directly from a specific tub, locking scooping to that flavor so FingerLift never shifts rows.
+    func pickUpScoop(fromTub index: Int, at p: CGPoint) {
+        guard tubs.indices.contains(index) else { return }
+        ball = 0
+        ballFlavor = nil
+        ballSwirl = nil
+        scoopLockedTub = index
+        pickUp(.scoop, at: p)
+    }
+
+    /// 1-tap any flavor tub to drop a full bouncy scoop of that exact flavor straight onto the cone/cup.
+    func tapTub(_ index: Int) {
+        guard station == .scoop, tubs.indices.contains(index) else { return }
+        held = nil
+        scoopLockedTub = nil
+        scoopIn = nil
+        scraping = 0
+        ball = 0
+        ballFlavor = nil
+        ballSwirl = nil
+        if build.base == nil { placeBase(.waffle) }
+        let c = ICGeo.tubs[index]
+        tubs[index].marks.append([CGPoint(x: -16, y: -4), CGPoint(x: 0, y: 2), CGPoint(x: 16, y: -2)])
+        if tubs[index].marks.count > 9 { tubs[index].marks.removeFirst() }
+        tubs[index].level = max(0.25, tubs[index].level - 0.03)
+        returning.append(ICReturn(held: .scoop, from: c, to: ICGeo.well, start: time, tilt: 0))
+        dropScoop(flavor: tubs[index].flavor, swirl: nil, size: 0.95, dx: 0, fromY: max(120, S.y - 220))
+        IceSound.shared.play(.clink, volume: 0.45)
+        Sound.shared.tap()
+    }
+
     /// Which tub the dipper's bowl is in, if any.
     func tub(at p: CGPoint) -> Int? {
         guard station == .scoop else { return nil }
@@ -582,13 +665,24 @@ final class IceSim {
     }
 
     private func stepScooping(_ dt: CGFloat) {
-        guard let i = tub(at: tip) else {
+        let activeTub: Int?
+        if let locked = scoopLockedTub {
+            let inCabinet = finger.x < 460 && finger.y > 360 && finger.y < 630 && abs(tip.x - S.x) > 135
+            activeTub = inCabinet ? locked : nil
+        } else {
+            activeTub = tub(at: tip)
+        }
+        guard let i = activeTub else {
             scoopIn = nil
             scraping *= 0.8
             return
         }
         let c = ICGeo.tubs[i]
-        let local = CGPoint(x: tip.x - c.x, y: tip.y - c.y)
+        let probe = scoopLockedTub != nil ? finger : tip
+        let local = CGPoint(
+            x: icClamp(probe.x - c.x, -ICGeo.tubRX + 8, ICGeo.tubRX - 8),
+            y: icClamp(probe.y - c.y, -ICGeo.tubRY + 4, ICGeo.tubRY - 4)
+        )
         let moved = hypot(tip.x - lastScoopTip.x, tip.y - lastScoopTip.y)
         if scoopIn != i {
             // just dipped in: the groove starts here
@@ -607,10 +701,10 @@ final class IceSim {
         let speed = hypot(tipV.dx, tipV.dy)
         scraping = scraping * 0.8 + icClamp(speed / 700) * 0.2
         guard ball < 1 else { return }
-        let got = min(1 - ball, moved / 150)
+        let got = min(1 - ball, moved / 60)
         if got > 0 {
             if ballFlavor == nil { ballFlavor = tubs[i].flavor }
-            else if ballFlavor != tubs[i].flavor && ballSwirl == nil && got > 0.004 { ballSwirl = tubs[i].flavor }
+            else if scoopLockedTub == nil && ballFlavor != tubs[i].flavor && ballSwirl == nil && got > 0.004 { ballSwirl = tubs[i].flavor }
             ball += got
             tubs[i].level = max(0.25, tubs[i].level - got * 0.035)
             if ball >= 1 {
@@ -629,29 +723,21 @@ final class IceSim {
     var ballRadius: CGFloat { 26 + 22 * sqrt(icClamp(ball)) }
 
     private func releaseScoop() {
-        guard ball > 0.2, let f = ballFlavor else {
+        defer {
             ball = 0
             ballFlavor = nil
             ballSwirl = nil
-            return
+            scoopLockedTub = nil
         }
+        guard ball > 0.2, let f = ballFlavor else { return }
         // Over the stand: drop the scoop, auto-placing a waffle cone if the stand is empty
         let dx = tip.x - S.x
-        if abs(dx) < 110, tip.y < S.y + 30 {
+        if abs(dx) < 135, tip.y < S.y + 60 {
             if build.base == nil { placeBase(.waffle) }
             dropScoop(flavor: f, swirl: ballSwirl, size: ball, dx: dx, fromY: tip.y)
-            ball = 0
-            ballFlavor = nil
-            ballSwirl = nil
             return
         }
-        // over a tub: it goes back in
-        if tub(at: tip) != nil {
-            ball = 0
-            ballFlavor = nil
-            ballSwirl = nil
-            IceSound.shared.play(.plop, volume: 0.4)
-        }
+        IceSound.shared.play(.plop, volume: 0.35)
     }
 
     /// Drops a scoop from screen height `fromY` onto the treat.
@@ -768,6 +854,7 @@ final class IceSim {
     private func stepTopping(_ t: ICTopping, _ dt: CGFloat) {
         switch t {
         case .sprinkles:
+            guard tip.y < ICGeo.dockY - 60 else { return }
             // shaking throws more out; held still, a few still trickle
             let rate = 10 + shake * 110
             emitAcc += rate * dt
@@ -1025,10 +1112,18 @@ final class IceSim {
 
     // MARK: Serving
 
+    var canServe: Bool {
+        build.hasTreat && held == nil && !blending && autoPour == nil
+    }
+
     /// Hands the treat to the customer; it slides off the stand.
     func serve() -> ICBuild? {
-        guard build.hasTreat, held == nil, lever == nil, !blending, autoPour == nil, !shaving else { return nil }
+        guard canServe else { return nil }
+        softBurstTime = 0
+        lever = nil
         snowBurstTime = 0
+        shaving = false
+        blendAutoPour = false
         let b = build
         served = (b, S, time)
         bites = 0

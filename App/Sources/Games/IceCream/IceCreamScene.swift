@@ -79,11 +79,11 @@ enum ICScene {
         g.stroke(hole.offsetBy(dx: 0, dy: 0), with: .color((station == .bingsu ? ICColor(0xA8D6F0) : ICColor(0xF3B6CC)).color), lineWidth: 4)
         // shelves for the fruit bins
         if station == .smoothie {
-            for y in [CGFloat(368), 484] {
-                let shelf = Path(roundedRect: CGRect(x: 290, y: y, width: 240, height: 14), cornerRadius: 5)
+            for y in [CGFloat(364), 484] {
+                let shelf = Path(roundedRect: CGRect(x: 254, y: y, width: 276, height: 14), cornerRadius: 5)
                 g.fill(shelf, with: .color(ICColor(0xD9A56A).color))
                 g.stroke(shelf, with: .color(ICColor(0xA87440).color), lineWidth: 2.5)
-                g.fill(Path(CGRect(x: 296, y: y + 14, width: 228, height: 6)), with: .color(ICColor(0x5B3A68).color(0.08)))
+                g.fill(Path(CGRect(x: 260, y: y + 14, width: 264, height: 6)), with: .color(ICColor(0x5B3A68).color(0.08)))
             }
         }
         // decorative frosty snowflake medallions on the bingsu wall
@@ -335,29 +335,33 @@ enum ICScene {
 
     private static func machine(_ g: GraphicsContext, _ sim: IceSim, _ t: CGFloat) {
         let steel = ICColor(0xD5DEE7)
-        // a big machine: four big flavor buttons on its left face, the head and nozzle on the right
-        let body = Path(roundedRect: CGRect(x: 360, y: 64, width: 376, height: 206), cornerRadius: 30)
-        g.fill(body, with: .linearGradient(Gradient(colors: [steel.shade(0.4).color, steel.color, steel.shade(-0.2).color]),
-                                           startPoint: CGPoint(x: 360, y: 0), endPoint: CGPoint(x: 736, y: 0)))
+        let cream = ICColor(0xFFF7F4)
+        // Wide pastel parlor dispenser: four big pull-down lever handles on the left, dispensing head & star nozzle at x = 600.
+        let body = Path(roundedRect: CGRect(x: 96, y: 106, width: 604, height: 174), cornerRadius: 32)
+        g.fill(body, with: .linearGradient(Gradient(colors: [cream.color, steel.shade(0.32).color, steel.color]),
+                                           startPoint: CGPoint(x: 96, y: 106), endPoint: CGPoint(x: 700, y: 280)))
         g.stroke(body, with: .color(ICArt.outline(steel)), lineWidth: 3.5)
-        // pink top with two hopper lids
-        let top = Path(roundedRect: CGRect(x: 370, y: 72, width: 356, height: 42), cornerRadius: 20)
+
+        // Pastel pink top crown with three hopper lids
+        let top = Path(roundedRect: CGRect(x: 108, y: 112, width: 580, height: 38), cornerRadius: 18)
         g.fill(top, with: .color(ICColor(0xFF9EC4).color))
-        for x in [CGFloat(560), 668] {
-            let lid = Path(ellipseIn: CGRect(x: x - 38, y: 80, width: 76, height: 24))
+        for x in [CGFloat(190), 340, 490] {
+            let lid = Path(ellipseIn: CGRect(x: x - 44, y: 118, width: 88, height: 24))
             g.fill(lid, with: .color(ICColor(0xFFE3EE).color))
             g.stroke(lid, with: .color(ICColor(0xE07AA4).color), lineWidth: 2.5)
         }
-        // a cone painted on the front, above the head
+
+        // Decorative soft-serve cone emblem above the dispensing head
         var cone = Path()
-        cone.move(to: CGPoint(x: 588, y: 158))
-        cone.addLine(to: CGPoint(x: 612, y: 158))
-        cone.addLine(to: CGPoint(x: 600, y: 190))
+        cone.move(to: CGPoint(x: 588, y: 184))
+        cone.addLine(to: CGPoint(x: 612, y: 184))
+        cone.addLine(to: CGPoint(x: 600, y: 214))
         cone.closeSubpath()
         g.fill(cone, with: .color(ICColor(0xDDA25C).color))
-        g.fill(Path(ellipseIn: CGRect(x: 584, y: 136, width: 32, height: 26)), with: .color(ICColor(0xFFB3C9).color))
-        // the head the rope comes out of
-        let head = Path(roundedRect: CGRect(x: 540, y: 222, width: 120, height: 48), cornerRadius: 14)
+        g.fill(Path(ellipseIn: CGRect(x: 584, y: 162, width: 32, height: 24)), with: .color(ICColor(0xFFB3C9).color))
+
+        // Dispensing head and star-ridged nozzle
+        let head = Path(roundedRect: CGRect(x: 540, y: 226, width: 120, height: 48), cornerRadius: 14)
         g.fill(head, with: .color(steel.shade(-0.06).color))
         g.stroke(head, with: .color(ICArt.outline(steel)), lineWidth: 2.5)
         let n = ICGeo.nozzle
@@ -369,36 +373,64 @@ enum ICScene {
             if k == 0 { star.move(to: p) } else { star.addLine(to: p) }
         }
         star.closeSubpath()
-        let spout = Path(roundedRect: CGRect(x: n.x - 15, y: 266, width: 30, height: n.y - 270), cornerRadius: 5)
+        let spout = Path(roundedRect: CGRect(x: n.x - 15, y: 268, width: 30, height: n.y - 272), cornerRadius: 5)
         g.fill(spout, with: .color(steel.shade(-0.12).color))
         g.stroke(spout, with: .color(ICArt.outline(steel)), lineWidth: 2)
         g.fill(star, with: .color(steel.shade(-0.3).color))
-        // the flavor buttons: hold one and it sinks in while the swirl comes out
+
+        // Four big pull-down pastel lever handles: tap for a smooth 0.9s swirl burst or hold continuously.
         for (i, c) in ICGeo.softButtons.enumerated() {
             let press = sim.leverPull[i]
-            let r = ICGeo.softButtonR
             let f = ICSoft(rawValue: i) ?? .vanilla
             let (a, b) = f.colors
-            // a steel ring round each button
-            g.fill(ICArt.circle(c, r + 7), with: .color(steel.shade(-0.18).color))
-            g.stroke(ICArt.circle(c, r + 7), with: .color(ICArt.outline(steel)), lineWidth: 2)
-            var bg = g
-            bg.translateBy(x: c.x, y: c.y + 4 * press)
-            bg.scaleBy(x: 1 - 0.08 * press, y: 1 - 0.08 * press)
-            let knob = ICArt.circle(.zero, r)
-            bg.fill(knob, with: .color(a.color))
-            if a != b {
-                var half = Path()
-                half.addArc(center: .zero, radius: r, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false)
-                half.closeSubpath()
-                bg.fill(half, with: .color(b.color))
+
+            let slot = Path(roundedRect: CGRect(x: c.x - 12, y: 162, width: 24, height: 96), cornerRadius: 12)
+            g.fill(slot, with: .color(steel.shade(-0.26).color))
+            g.stroke(slot, with: .color(ICArt.outline(steel)), lineWidth: 2.2)
+
+            let handleCenterY = c.y - 4 + press * 30
+            if press > 0.05 {
+                let glow = Path(roundedRect: CGRect(x: c.x - 42, y: handleCenterY - 42, width: 84, height: 84), cornerRadius: 28)
+                g.stroke(glow, with: .color(Theme.lemon.opacity(Double(press) * 0.9)), lineWidth: 5)
             }
-            bg.stroke(knob, with: .color(ICArt.outline(a.mix(b, 0.5))), lineWidth: 3)
-            // a shine that dims as it's pushed in
-            var sh = bg
-            sh.opacity = Double(0.75 * (1 - press * 0.6))
-            sh.fill(ICArt.ellipse(CGPoint(x: -r * 0.35, y: -r * 0.4), r * 0.32, r * 0.2), with: .color(.white))
-            if sim.wanted(soft: f) { heart(g, at: CGPoint(x: c.x + r * 0.75, y: c.y - r * 0.75), t: t, size: 12) }
+
+            var arm = Path()
+            arm.move(to: CGPoint(x: c.x, y: 176))
+            arm.addLine(to: CGPoint(x: c.x, y: handleCenterY - 22))
+            g.stroke(arm, with: .color(ICArt.outline(steel)), style: StrokeStyle(lineWidth: 15, lineCap: .round))
+            g.stroke(arm, with: .color(steel.shade(0.25).color), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+
+            var hg = g
+            hg.translateBy(x: c.x, y: handleCenterY)
+            let scale: CGFloat = 1 + 0.05 * press
+            hg.scaleBy(x: scale, y: scale)
+            let grip = Path(roundedRect: CGRect(x: -34, y: -34, width: 68, height: 68), cornerRadius: 24)
+            hg.fill(grip.offsetBy(dx: 0, dy: 4), with: .color(Theme.ink.opacity(0.16)))
+            hg.fill(grip, with: .color(a.color))
+            if a != b {
+                var clipped = hg
+                clipped.clip(to: grip)
+                var half = Path()
+                half.move(to: CGPoint(x: 4, y: -38))
+                half.addLine(to: CGPoint(x: 38, y: -38))
+                half.addLine(to: CGPoint(x: 38, y: 38))
+                half.addLine(to: CGPoint(x: -6, y: 38))
+                half.closeSubpath()
+                clipped.fill(half, with: .color(b.color))
+            }
+            hg.stroke(grip, with: .color(.white.opacity(0.9)), lineWidth: 5.5)
+            hg.stroke(grip, with: .color(ICArt.outline(a.mix(b, 0.5))), lineWidth: 3)
+
+            hg.fill(ICArt.ellipse(CGPoint(x: -12, y: -18), 12, 6), with: .color(.white.opacity(0.65)))
+            var chev = Path()
+            chev.move(to: CGPoint(x: -10, y: 10))
+            chev.addLine(to: CGPoint(x: 0, y: 19))
+            chev.addLine(to: CGPoint(x: 10, y: 10))
+            hg.stroke(chev, with: .color(ICArt.outline(a.mix(b, 0.5)).opacity(0.55)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+
+            if sim.wanted(soft: f) {
+                heart(g, at: CGPoint(x: c.x + 28, y: handleCenterY - 28), t: t, size: 13)
+            }
         }
     }
 
@@ -642,19 +674,20 @@ enum ICScene {
         g.stroke(base, with: .color(ICArt.outline(pink)), lineWidth: 3)
         let bt = ICGeo.blendButton
         let glow = sim.blending ? 1.0 : 0.0
-        let button = ICArt.circle(bt, 24)
-        if sim.blendingToggle {
-            let pulse = 31 + sin(t * 7) * 3.5
-            g.stroke(ICArt.circle(bt, pulse), with: .color(Theme.lemon.opacity(0.85)), lineWidth: 4.5)
+        let readyToBlend = sim.jarOnBase && !sim.blending && (!sim.chunks.isEmpty || sim.jarVolume > 0.01) && sim.build.fill < 0.35
+        let button = ICArt.circle(bt, 28)
+        if sim.blendingToggle || readyToBlend {
+            let pulse = 35 + sin(t * 7) * 3.8
+            g.stroke(ICArt.circle(bt, pulse), with: .color(Theme.lemon.opacity(0.9)), lineWidth: 4.8)
         }
-        g.fill(ICArt.circle(bt, 30), with: .color(.white.opacity(0.9)))
+        g.fill(ICArt.circle(bt, 34), with: .color(.white.opacity(0.92)))
         g.fill(button, with: .color(ICColor(0x7EDB8C).mix(ICColor(0xFFE27A), CGFloat(glow)).color))
         g.stroke(button, with: .color(ICColor(0x3E9B54).color), lineWidth: 3)
         // a whirl on the button
         var whirl = Path()
         let wa = Double(sim.bladeAngle) * 0.4
-        whirl.addArc(center: bt, radius: 11, startAngle: .radians(wa), endAngle: .radians(wa + 4.5), clockwise: false)
-        g.stroke(whirl, with: .color(.white), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+        whirl.addArc(center: bt, radius: 13, startAngle: .radians(wa), endAngle: .radians(wa + 4.5), clockwise: false)
+        g.stroke(whirl, with: .color(.white), style: StrokeStyle(lineWidth: 4.5, lineCap: .round))
         if sim.held != .milk && sim.autoPour != .milk && !sim.returning.contains(where: { $0.held == .milk }) {
             var m = g
             m.translateBy(x: ICGeo.milkHome.x, y: ICGeo.milkHome.y)

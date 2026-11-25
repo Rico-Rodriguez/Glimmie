@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Extra treasure drawings (23 shop treasures across all 12 games)
+// MARK: - Extra treasure drawings (25 shop treasures across all 13 games)
 //
 // Each drawing stands on (0, 0) and goes up into negative y, matching `TreasureArt`.
 
@@ -800,7 +800,203 @@ extension TreasureArt {
         twinkle(g, 8, -88, 4)
     }
 
-    // MARK: Bakery — Pastel rainbow shaved-snow bingsu (빙수)
+    // MARK: Bakery — Golden jeweled strawberry tiara crown
+
+    static let strawberryCrownSize = CGSize(width: 128, height: 104)
+
+    static func strawberryCrown(_ g: GraphicsContext) {
+        let berryRed = Color(hex: 0xF03858)
+        let berryLine = StorybookArt.outline(for: 0xC82442)
+        let leafGreen = Color(hex: 0x6FD488)
+        let leafLine = StorybookArt.outline(for: 0x48A860)
+
+        g.fill(
+            oval(0, -52, 56, 40),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFF3A8).opacity(0.72), Color(hex: 0xFFD4EC).opacity(0.3), .clear]),
+                center: CGPoint(x: 0, y: -52),
+                startRadius: 6,
+                endRadius: 56
+            )
+        )
+
+        // Velvet pastel cushion under the tiara
+        blob(g, oval(0, -10, 52, 9), Color(hex: 0xFFE6F0), StorybookArt.outline(for: 0xF2A6C4), 2.2)
+
+        // Curved golden filigree tiara crown
+        let crown = Path { p in
+            p.move(to: CGPoint(x: -46, y: -16))
+            p.addLine(to: CGPoint(x: -52, y: -62))
+            p.addQuadCurve(to: CGPoint(x: -22, y: -42), control: CGPoint(x: -36, y: -38))
+            p.addLine(to: CGPoint(x: 0, y: -84))
+            p.addLine(to: CGPoint(x: 22, y: -42))
+            p.addQuadCurve(to: CGPoint(x: 52, y: -62), control: CGPoint(x: 36, y: -38))
+            p.addLine(to: CGPoint(x: 46, y: -16))
+            p.addQuadCurve(to: CGPoint(x: -46, y: -16), control: CGPoint(x: 0, y: -6))
+            p.closeSubpath()
+        }
+        g.fill(
+            crown,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFF5B2), gold, Color(hex: 0xE59B20)]),
+                startPoint: CGPoint(x: -48, y: -84),
+                endPoint: CGPoint(x: 48, y: -10)
+            )
+        )
+        strokePath(g, crown, goldLine, 3)
+
+        // Scalloped golden headband rim
+        var band = Path()
+        band.move(to: CGPoint(x: -48, y: -18))
+        band.addQuadCurve(to: CGPoint(x: 48, y: -18), control: CGPoint(x: 0, y: -7))
+        strokePath(g, band, goldLine, 12)
+        strokePath(g, band, Color(hex: 0xFFE582), 7.5)
+
+        // Pearl finial tips
+        for (px, py) in [(-52.0, -64.0), (0.0, -86.0), (52.0, -64.0)] as [(CGFloat, CGFloat)] {
+            blob(g, oval(px, py, 6, 6), Color(hex: 0xFFFDF8), goldLine, 2.2)
+            g.fill(oval(px - 1.8, py - 1.8, 2, 1.6), with: .color(.white))
+        }
+
+        // Flanking emerald mint leaves behind the centerpiece berry jewel
+        for side in [-1.0, 1.0] as [CGFloat] {
+            var leaf = Path()
+            leaf.move(to: CGPoint(x: side * 8, y: -56))
+            leaf.addQuadCurve(to: CGPoint(x: side * 26, y: -66), control: CGPoint(x: side * 14, y: -69))
+            leaf.addQuadCurve(to: CGPoint(x: side * 8, y: -56), control: CGPoint(x: side * 22, y: -53))
+            leaf.closeSubpath()
+            blob(g, leaf, leafGreen, leafLine, 2)
+        }
+
+        // Centerpiece plump ruby strawberry jewel
+        let berry = Path { p in
+            p.move(to: CGPoint(x: 0, y: -60))
+            p.addCurve(to: CGPoint(x: 16, y: -40), control1: CGPoint(x: 11, y: -58), control2: CGPoint(x: 18, y: -48))
+            p.addCurve(to: CGPoint(x: 0, y: -26), control1: CGPoint(x: 14, y: -30), control2: CGPoint(x: 6, y: -26))
+            p.addCurve(to: CGPoint(x: -16, y: -40), control1: CGPoint(x: -6, y: -26), control2: CGPoint(x: -14, y: -30))
+            p.addCurve(to: CGPoint(x: 0, y: -60), control1: CGPoint(x: -18, y: -48), control2: CGPoint(x: -11, y: -58))
+            p.closeSubpath()
+        }
+        blob(g, berry, berryRed, berryLine, 2.6)
+        g.fill(oval(-5, -49, 4.5, 3), with: .color(.white.opacity(0.78)))
+        for (sx, sy) in [(-6.0, -39.0), (6.0, -39.0), (0.0, -33.0), (0.0, -45.0)] as [(CGFloat, CGFloat)] {
+            g.fill(oval(sx, sy, 1.6, 2.2), with: .color(lemon))
+        }
+
+        // Side pink gems & headband pearls
+        for gx in [-28.0, 28.0] as [CGFloat] {
+            blob(g, oval(gx, -30, 6.5, 6.5), pink, StorybookArt.outline(for: 0xFF7CA8), 2)
+            g.fill(oval(gx - 2, -32, 2.2, 1.6), with: .color(.white.opacity(0.8)))
+        }
+        for bx in [-34.0, -17.0, 17.0, 34.0] as [CGFloat] {
+            blob(g, oval(bx, -14 + abs(bx) * 0.08, 3.6, 3.6), .white, goldLine, 1.5)
+        }
+
+        twinkle(g, -46, -86, 5.5)
+        twinkle(g, 48, -84, 5)
+        twinkle(g, 0, -98, 4.5, .white)
+    }
+
+    // MARK: Ice Cream — Sparkly pastel rainbow unicorn-horn waffle cone
+
+    static let unicornConeSize = CGSize(width: 116, height: 138)
+
+    static func unicornCone(_ g: GraphicsContext) {
+        let coneTan = Color(hex: 0xF0B870)
+        let coneLine = StorybookArt.outline(for: 0xD48E40)
+        let pinkLine = StorybookArt.outline(for: 0xFF8FB8)
+
+        g.fill(
+            oval(0, -82, 48, 44),
+            with: .radialGradient(
+                Gradient(colors: [Color(hex: 0xFFE6F4).opacity(0.75), Color(hex: 0xD8F6FF).opacity(0.32), .clear]),
+                center: CGPoint(x: 0, y: -82),
+                startRadius: 6,
+                endRadius: 48
+            )
+        )
+
+        // Pastel rainbow-washed waffle cone standing on tip at (0, -4)
+        let cone = Path { p in
+            p.move(to: CGPoint(x: -28, y: -62))
+            p.addLine(to: CGPoint(x: 28, y: -62))
+            p.addQuadCurve(to: CGPoint(x: 0, y: -4), control: CGPoint(x: 16, y: -26))
+            p.addQuadCurve(to: CGPoint(x: -28, y: -62), control: CGPoint(x: -16, y: -26))
+            p.closeSubpath()
+        }
+        g.fill(
+            cone,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFD2E6), Color(hex: 0xFFE8A6), Color(hex: 0xB8F0DC), Color(hex: 0xC6E4FF)]),
+                startPoint: CGPoint(x: -26, y: -62),
+                endPoint: CGPoint(x: 22, y: -8)
+            )
+        )
+        var gridClip = g
+        gridClip.clip(to: cone)
+        var grid = Path()
+        for k in -3...3 {
+            let x = CGFloat(k) * 14
+            grid.move(to: CGPoint(x: x - 24, y: -64)); grid.addLine(to: CGPoint(x: x + 28, y: -2))
+            grid.move(to: CGPoint(x: x + 28, y: -64)); grid.addLine(to: CGPoint(x: x - 24, y: -2))
+        }
+        gridClip.stroke(grid, with: .color(coneLine.opacity(0.42)), lineWidth: 2)
+        strokePath(g, cone, coneLine, 2.8)
+        blob(g, rrect(-31, -67, 62, 10, 5), coneTan, coneLine, 2.4)
+
+        // Cute pastel unicorn ears tucked behind the ice cream swirls
+        for side in [-1.0, 1.0] as [CGFloat] {
+            let ear = poly([CGPoint(x: side * 14, y: -92), CGPoint(x: side * 34, y: -116), CGPoint(x: side * 26, y: -82)])
+            blob(g, ear, Color(hex: 0xFFFDFB), line, 2.4)
+            let inner = poly([CGPoint(x: side * 17, y: -93), CGPoint(x: side * 29, y: -109), CGPoint(x: side * 24, y: -87)])
+            g.fill(inner, with: .color(pink))
+        }
+
+        // Sparkling spiraled golden unicorn horn rising from the top scoop
+        let horn = poly([CGPoint(x: -11, y: -98), CGPoint(x: 0, y: -134), CGPoint(x: 11, y: -98)])
+        g.fill(
+            horn,
+            with: .linearGradient(
+                Gradient(colors: [Color(hex: 0xFFF5B2), gold, Color(hex: 0xE59B20)]),
+                startPoint: CGPoint(x: 0, y: -134),
+                endPoint: CGPoint(x: 0, y: -98)
+            )
+        )
+        strokePath(g, horn, goldLine, 2.5)
+        for k in 1...3 {
+            let f = CGFloat(k) / 4
+            let y = -98 - 36 * f
+            let hw = 10 * (1 - f)
+            var ridge = Path()
+            ridge.move(to: CGPoint(x: -hw, y: y + 2))
+            ridge.addLine(to: CGPoint(x: hw, y: y - 2))
+            strokePath(g, ridge, goldLine.opacity(0.7), 1.8)
+        }
+
+        // Swirled pastel scoops (mint + strawberry + lilac cloud)
+        blob(g, oval(-13, -72, 19, 15), mint, StorybookArt.outline(for: 0x86DCC2), 2.5)
+        blob(g, oval(13, -72, 19, 15), sky, StorybookArt.outline(for: 0x88C4F2), 2.5)
+        blob(g, oval(0, -86, 23, 18), Color(hex: 0xFFB4D2), pinkLine, 2.6)
+        g.fill(oval(-8, -93, 8, 4.5), with: .color(.white.opacity(0.68)))
+
+        // Star sprinkles on the scoops & rim
+        let stars: [(CGFloat, CGFloat, CGFloat, Color)] = [
+            (-16, -74, 5.2, lemon),
+            (15, -72, 5.0, pink),
+            (0, -88, 5.8, lemon),
+            (-18, -62, 4.5, sky),
+            (18, -62, 4.5, lilac),
+        ]
+        for (sx, sy, sr, col) in stars {
+            blob(g, starPath(cx: sx, cy: sy, outer: sr, inner: sr * 0.46), col, goldLine.opacity(0.75), 1.2)
+        }
+
+        twinkle(g, -40, -112, 5.5)
+        twinkle(g, 40, -108, 5)
+        twinkle(g, 0, -135, 4.5, .white)
+    }
+
+    // MARK: Ice Cream — Pastel rainbow shaved-snow bingsu (빙수)
 
     static let rainbowBingsuSize = CGSize(width: 126, height: 124)
 
