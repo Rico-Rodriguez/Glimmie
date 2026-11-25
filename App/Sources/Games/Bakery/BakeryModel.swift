@@ -169,6 +169,12 @@ final class BakeryStore: ObservableObject {
         save()
     }
 
+    func removeServed(at index: Int) {
+        guard served.indices.contains(index) else { return }
+        served.remove(at: index)
+        save()
+    }
+
     func earnHearts(_ earned: Int) {
         hearts += earned
         save()

@@ -832,14 +832,68 @@ enum PizzaPainter {
     // MARK: - The customer and the order card
 
     static func drawCustomer(_ ctx: GraphicsContext, sim: PizzaSim) {
-        var g = ctx
+        let cx = PGeo.customer.x
+        let sillY: CGFloat = 324
+        let winW: CGFloat = 198
+        let winTop: CGFloat = 114
+        let archR: CGFloat = winW / 2
+        let archCenterY = winTop + archR * 0.52
+
+        // Outer arched pastel-brick pickup window frame
+        var outer = Path()
+        outer.move(to: CGPoint(x: cx - archR - 12, y: sillY))
+        outer.addLine(to: CGPoint(x: cx - archR - 12, y: archCenterY))
+        outer.addQuadCurve(to: CGPoint(x: cx + archR + 12, y: archCenterY), control: CGPoint(x: cx, y: winTop - 30))
+        outer.addLine(to: CGPoint(x: cx + archR + 12, y: sillY))
+        outer.closeSubpath()
+
+        ctx.fill(outer.offsetBy(dx: 0, dy: 6), with: .color(Theme.ink.opacity(0.18)))
+        ctx.fill(
+            outer,
+            with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0xF2A384), StorybookArt.color(0xDC7A5C)]),
+                startPoint: CGPoint(x: cx, y: winTop),
+                endPoint: CGPoint(x: cx, y: sillY)
+            )
+        )
+        ctx.stroke(outer, with: .color(StorybookArt.outline(for: 0xDC7A5C)), lineWidth: 3.5)
+
+        // Subtle brick accent courses along the arch border
+        var brickRing = Path()
+        brickRing.move(to: CGPoint(x: cx - archR - 6, y: sillY - 4))
+        brickRing.addLine(to: CGPoint(x: cx - archR - 6, y: archCenterY))
+        brickRing.addQuadCurve(to: CGPoint(x: cx + archR + 6, y: archCenterY), control: CGPoint(x: cx, y: winTop - 22))
+        brickRing.addLine(to: CGPoint(x: cx + archR + 6, y: sillY - 4))
+        ctx.stroke(brickRing, with: .color(StorybookArt.color(0xFFF1E4).opacity(0.45)), style: StrokeStyle(lineWidth: 10, dash: [3, 20]))
+
+        // Window opening behind the customer
+        var opening = Path()
+        opening.move(to: CGPoint(x: cx - archR + 4, y: sillY))
+        opening.addLine(to: CGPoint(x: cx - archR + 4, y: archCenterY + 4))
+        opening.addQuadCurve(to: CGPoint(x: cx + archR - 4, y: archCenterY + 4), control: CGPoint(x: cx, y: winTop - 8))
+        opening.addLine(to: CGPoint(x: cx + archR - 4, y: sillY))
+        opening.closeSubpath()
+
+        var inside = ctx
+        inside.clip(to: opening)
+        inside.fill(
+            Path(CGRect(x: cx - archR, y: winTop - 16, width: winW, height: sillY - winTop + 20)),
+            with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0xFFF6E8), StorybookArt.color(0xFFE3CE)]),
+                startPoint: CGPoint(x: cx, y: winTop),
+                endPoint: CGPoint(x: cx, y: sillY)
+            )
+        )
+
+        // Customer clipped cleanly inside the window so their bottom edge rests behind the wooden sill
+        var g = inside
         let t = sim.time
         let name = PizzaOrder.customers[max(0, min(PizzaOrder.customers.count - 1, sim.order.customer))]
         let bob = CGFloat(sin(t * 2.2)) * 4
         let w = t - sim.wiggleAt
-        g.translateBy(x: PGeo.customer.x, y: PGeo.customer.y + bob)
+        g.translateBy(x: PGeo.customer.x, y: PGeo.customer.y + 4 + bob)
         if w < 0.5 { g.rotate(by: .radians(sin(w * 30) * 0.08 * (0.5 - w) * 2)) }
-        g.scaleBy(x: 0.5, y: 0.5)
+        g.scaleBy(x: 0.48, y: 0.48)
         g.translateBy(x: -200, y: -220)
         let art = BakeryArt.shared
         art.draw("cust_\(name)", in: g)
@@ -849,6 +903,34 @@ enum PizzaPainter {
         art.draw(happy ? "eyes_happy" : (blink ? "eyes_blink" : "eyes_open"), in: g)
         let mouth = chewing ? (sin(t * 16) > 0 ? "mouth_chew" : "mouth_open") : (happy ? "mouth_open" : "mouth_smile")
         art.draw(mouth, in: g)
+
+        // Mini scalloped red-and-cream pizzeria awning valance at the top of the opening
+        let stripeW: CGFloat = 24
+        for i in 0..<8 {
+            let sx = cx - archR + 4 + CGFloat(i) * stripeW
+            let col = i.isMultiple(of: 2) ? StorybookArt.color(0xEB5E55) : StorybookArt.color(0xFFFDF8)
+            inside.fill(Path(CGRect(x: sx, y: winTop - 10, width: stripeW + 0.5, height: 34)), with: .color(col))
+            inside.fill(Path(ellipseIn: CGRect(x: sx, y: winTop + 14, width: stripeW, height: 18)), with: .color(col))
+        }
+
+        // Inner window trim
+        ctx.stroke(opening, with: .color(StorybookArt.color(0xFFF7F0)), lineWidth: 5)
+        ctx.stroke(opening, with: .color(StorybookArt.outline(for: 0xDC7A5C).opacity(0.65)), lineWidth: 2)
+
+        // Solid wooden pickup sill anchoring the bottom cleanly
+        let sillRect = CGRect(x: cx - archR - 20, y: sillY - 4, width: winW + 40, height: 24)
+        let sillPath = Path(roundedRect: sillRect, cornerRadius: 9)
+        ctx.fill(sillPath.offsetBy(dx: 0, dy: 5), with: .color(Theme.ink.opacity(0.2)))
+        ctx.fill(
+            sillPath,
+            with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0xE8B274), StorybookArt.color(0xC98847)]),
+                startPoint: CGPoint(x: cx, y: sillRect.minY),
+                endPoint: CGPoint(x: cx, y: sillRect.maxY)
+            )
+        )
+        ctx.stroke(sillPath, with: .color(StorybookArt.outline(for: 0xC98847)), lineWidth: 3)
+        StorybookArt.highlight(ctx, in: CGRect(x: sillRect.minX + 12, y: sillRect.minY + 3, width: sillRect.width - 24, height: 5), opacity: 0.45)
     }
 
     static func drawCard(_ ctx: GraphicsContext, sim: PizzaSim) {

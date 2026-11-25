@@ -115,7 +115,7 @@ struct LiftedSlice {
     var a1: Double
     var start: Double
     var strings: [CheeseString]
-    static let duration: Double = 1.35
+    static let duration: Double = 0.9
 }
 
 struct PizzaOrder: Equatable {
@@ -169,6 +169,7 @@ final class PizzaSim {
     // the order and the customer
     var order = PizzaOrder.random(customer: Int.random(in: 0..<PizzaOrder.customers.count))
     var stars: Int?
+    var paidThisPizza = false
     var happyUntil: Double = 0
     var chewUntil: Double = 0
     var wiggleAt: Double = -10
@@ -395,6 +396,9 @@ final class PizzaSim {
         dimples.removeAll()
         PizzaSound.shared.play(.slap)
         flourPuff(at: PGeo.center, count: 14, spread: avg + 20)
+        if !demo {
+            StickerBook.shared.find(game: PizzaSim.gameID, id: PizzaFind.doughTosser.rawValue)
+        }
     }
 
     func handBegan(_ p: CGPoint) {
@@ -630,11 +634,15 @@ final class PizzaSim {
         case .ladle:
             toolDown = !ball && onDough(tip, inset: 4) && liftK > 0.9
             guard toolDown else { spreadSpeed = 0; return }
-            if ladleLoad > 0 && speed < 260 {
-                let pourNow = min(ladleLoad, dt * 0.9)
+            let speedFactor = max(0, min(1, (520 - speed) / 420))
+            if ladleLoad > 0 && speedFactor > 0.05 {
+                let pourNow = min(ladleLoad, dt * 1.15 * speedFactor)
                 ladleLoad -= pourNow
-                pour(at: tip, amount: Float(pourNow) * 22)
+                pour(at: tip, amount: Float(pourNow) * 26)
                 if pourNow > 0 { PizzaSound.shared.play(.glop, volume: 0.55, gap: 0.6) }
+            }
+            if ladleLoad < 0.35 && sauceCoverage < 0.85 {
+                ladleLoad = min(1, ladleLoad + dt * 0.65)
             }
             if hypot(move.x, move.y) > 0.3 { spread(at: tip, by: move) }
             spreadSpeed += (min(1, speed / 500) - spreadSpeed) * min(1, dt * 10)
@@ -942,6 +950,9 @@ final class PizzaSim {
             dinged = true
             PizzaSound.shared.play(.ding)
             Sound.shared.play(.sparkle, volume: 0.6)
+            if !demo {
+                StickerBook.shared.find(game: PizzaSim.gameID, id: PizzaFind.woodFiredChef.rawValue)
+            }
         }
         stepBubbles(dt)
     }
@@ -1043,7 +1054,7 @@ final class PizzaSim {
         guard pts.count >= 2, let a = pts.first, let b = pts.last else { return }
         groove = (pts, time)
         let len = hypot(b.x - a.x, b.y - a.y)
-        guard len > meanR * 0.85 else { return }
+        guard len > meanR * 0.65 else { return }
         // distance from the middle to the line through a and b
         let nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len
         let dist = abs((PGeo.center.x - a.x) * nx + (PGeo.center.y - a.y) * ny)
@@ -1114,6 +1125,23 @@ final class PizzaSim {
             save.hearts += st
             save.pizzas += 1
             persist()
+            if !paidThisPizza {
+                paidThisPizza = true
+                Coins.shared.earn(Coins.reward(stars: st), game: PizzaSim.gameID,
+                                  from: CGPoint(x: PGeo.customer.x, y: PGeo.customer.y + 40))
+            }
+            if !demo {
+                StickerBook.shared.find(game: PizzaSim.gameID, id: PizzaFind.firstPizza.rawValue)
+                if st == 3 {
+                    StickerBook.shared.find(game: PizzaSim.gameID, id: PizzaFind.threeStarPizzaiolo.rawValue)
+                }
+                if save.pizzas >= 3 || Set(toppings.map { $0.kind }).count >= 3 {
+                    StickerBook.shared.find(game: PizzaSim.gameID, id: PizzaFind.masterChef.rawValue)
+                }
+            }
+        }
+        if !demo && !strings.isEmpty {
+            StickerBook.shared.find(game: PizzaSim.gameID, id: PizzaFind.cheesePull.rawValue)
         }
     }
 
@@ -1166,9 +1194,11 @@ final class PizzaSim {
             if allEaten {
                 PizzaSound.shared.play(.yay)
                 Sound.shared.play(.fanfare, volume: 0.5)
-                // the whole pizza is eaten: the customer pays, and the coins fly into the purse
-                Coins.shared.earn(Coins.reward(stars: stars ?? 1), game: PizzaSim.gameID,
-                                  from: CGPoint(x: PGeo.customer.x, y: PGeo.customer.y + 40))
+                if !paidThisPizza {
+                    paidThisPizza = true
+                    Coins.shared.earn(Coins.reward(stars: stars ?? 1), game: PizzaSim.gameID,
+                                      from: CGPoint(x: PGeo.customer.x, y: PGeo.customer.y + 40))
+                }
                 newPizzaAt = time + 2.6
             }
         }
@@ -1192,6 +1222,7 @@ final class PizzaSim {
 
     func reset() {
         stars = nil
+        paidThisPizza = false
         stage = .dough
         ball = true
         kneads = 0
@@ -1247,7 +1278,7 @@ final class PizzaSim {
         case .dough: return !ball && meanR > 180 && tossStart == nil
         case .sauce: return sauceCoverage > 0.55
         case .cheese: return cheeseCoverage > 0.5
-        case .toppings: return toppings.count >= 5
+        case .toppings: return order.wants.isEmpty ? toppings.count >= 4 : order.wants.allSatisfy { order.has($0, toppings) }
         case .bake: return bake >= 1
         case .slice: return stars != nil
         }

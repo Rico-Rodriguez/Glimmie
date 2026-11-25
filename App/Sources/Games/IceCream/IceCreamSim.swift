@@ -60,6 +60,10 @@ enum ICHeld: Equatable {
     case jar
 }
 
+enum ICAutoPour: Equatable {
+    case milk, jar
+}
+
 enum ICPartKind {
     case sprinkle, sauce, splash, drop, ice, sparkle, crumb, steam
 }
@@ -179,6 +183,12 @@ final class IceSim {
     var jarPaint = ICPaint()
     var jarFruit: [CGFloat] = [CGFloat](repeating: 0, count: ICFruit.allCases.count)
     var blending = false
+    var blendingToggle = false
+    var blendToggleTime: CGFloat = 0
+    var blendEmptyTime: CGFloat = 0
+    var autoPour: ICAutoPour?
+    var autoPourTime: CGFloat = 0
+    var autoMilkPos = ICGeo.milkHome
     var motor: CGFloat = 0
     var slosh: CGFloat = 0
     var sloshV: CGFloat = 0
@@ -265,6 +275,9 @@ final class IceSim {
         guard s != station, held == nil else { return }
         lever = nil
         blending = false
+        blendingToggle = false
+        autoPour = nil
+        autoPourTime = 0
         station = s
         if s == .smoothie && build.base == nil { placeBase(.glass) }
     }
@@ -309,6 +322,12 @@ final class IceSim {
         if h == .jar {
             jarOnBase = false
             blending = false
+            blendingToggle = false
+            if autoPour == .jar { autoPour = nil }
+        }
+        if h == .milk, autoPour == .milk {
+            autoPour = nil
+            milkPour = 0
         }
         if h == .scoop {
             IceSound.shared.play(.drip, volume: 0.4)
@@ -347,10 +366,13 @@ final class IceSim {
     }
 
     func cancelInteraction() {
-        if held == .jar { releaseJar() }
+        if held == .jar || autoPour == .jar { releaseJar() }
         held = nil
+        autoPour = nil
+        autoPourTime = 0
         pressLever(nil)
         blending = false
+        blendingToggle = false
         milkPour = 0
         milkTilt = 0
         stream.removeAll()
@@ -422,7 +444,7 @@ final class IceSim {
         let speed = hypot(tipV.dx, tipV.dy)
         scraping = scraping * 0.8 + icClamp(speed / 700) * 0.2
         guard ball < 1 else { return }
-        let got = min(1 - ball, moved / 240)
+        let got = min(1 - ball, moved / 150)
         if got > 0 {
             if ballFlavor == nil { ballFlavor = tubs[i].flavor }
             else if ballFlavor != tubs[i].flavor && ballSwirl == nil && got > 0.004 { ballSwirl = tubs[i].flavor }
@@ -444,10 +466,16 @@ final class IceSim {
     var ballRadius: CGFloat { 26 + 22 * sqrt(icClamp(ball)) }
 
     private func releaseScoop() {
-        guard ball > 0.2, let f = ballFlavor else { return }
-        // over the treat: it drops on
+        guard ball > 0.2, let f = ballFlavor else {
+            ball = 0
+            ballFlavor = nil
+            ballSwirl = nil
+            return
+        }
+        // Over the stand: drop the scoop, auto-placing a waffle cone if the stand is empty
         let dx = tip.x - S.x
-        if build.base != nil, abs(dx) < 110, tip.y < S.y + 30 {
+        if abs(dx) < 110, tip.y < S.y + 30 {
+            if build.base == nil { placeBase(.waffle) }
             dropScoop(flavor: f, swirl: ballSwirl, size: ball, dx: dx, fromY: tip.y)
             ball = 0
             ballFlavor = nil
@@ -814,7 +842,7 @@ final class IceSim {
 
     /// Hands the treat to the customer; it slides off the stand.
     func serve() -> ICBuild? {
-        guard build.hasTreat, held == nil, lever == nil, !blending else { return nil }
+        guard build.hasTreat, held == nil, lever == nil, !blending, autoPour == nil else { return nil }
         let b = build
         served = (b, S, time)
         bites = 0

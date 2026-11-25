@@ -99,13 +99,30 @@ struct KitchenView: View {
             Spacer()
             HStack(spacing: 16) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
-                    Sprite(s.icon.0, box: s.icon.1)
+                    let pill = Sprite(s.icon.0, box: s.icon.1)
                         .padding(9)
                         .frame(width: 66, height: 66)
-                        .background(Circle().fill(i == step ? Color.white : Color.white.opacity(0.55)))
+                        .background(Circle().fill(i == step ? Color.white : Color.white.opacity(i < step ? 0.88 : 0.55)))
                         .overlay(Circle().stroke(i < step ? Theme.mint : i == step ? Theme.pink : Color.clear, lineWidth: 5))
-                        .scaleEffect(i == step ? 1.15 : 0.9)
+                        .overlay(alignment: .bottomTrailing) {
+                            if i < step {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .black))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 24, height: 24)
+                                    .background(Circle().fill(Color(hex: 0x4FBF72)))
+                                    .overlay(Circle().stroke(.white, lineWidth: 2.5))
+                                    .offset(x: 4, y: 4)
+                            }
+                        }
+                        .scaleEffect(i == step ? 1.15 : 0.92)
                         .opacity(i <= step ? 1 : 0.6)
+                    if i < step {
+                        Button { stepBack(to: i) } label: { pill }
+                            .buttonStyle(Squish())
+                    } else {
+                        pill
+                    }
                 }
             }
             Spacer()
@@ -128,6 +145,14 @@ struct KitchenView: View {
         .padding(.horizontal, 26)
         .frame(maxHeight: .infinity, alignment: .top)
         .padding(.top, 20)
+    }
+
+    private func stepBack(to index: Int) {
+        guard index >= 0, index < step else { return }
+        Sound.shared.tap()
+        Sound.shared.play(.flip, volume: 0.65)
+        canNext = false
+        withAnimation(.easeInOut(duration: 0.35)) { step = index }
     }
 
     private func next() {
@@ -211,16 +236,93 @@ struct FlavorJar: View {
 }
 
 struct WoodSpoon: View {
+    var batter: RGB? = nil
+
     var body: some View {
-        ZStack {
-            Capsule().fill(Color(hex: 0xE9B07A)).overlay(Capsule().stroke(Color(hex: 0x9B6B52), lineWidth: 4))
-                .frame(width: 22, height: 170).offset(y: -90)
-            Ellipse().fill(Color(hex: 0xF2C28A)).overlay(Ellipse().stroke(Color(hex: 0x9B6B52), lineWidth: 4))
-                .frame(width: 60, height: 80)
-            Ellipse().fill(Color.white.opacity(0.4)).frame(width: 14, height: 30).offset(x: -12, y: -8)
+        Canvas { ctx, size in
+            var g = ctx
+            g.translateBy(x: size.width * 0.44, y: size.height * 0.78)
+            g.rotate(by: .degrees(24))
+            WoodSpoon.paint(g, batter: batter)
         }
-        .rotationEffect(.degrees(24))
+        .frame(width: 190, height: 260)
         .allowsHitTesting(false)
+    }
+
+    /// Draws the shaded wooden mixing spoon with its bowl centered at (0, 0) and handle extending toward -y.
+    static func paint(_ g: GraphicsContext, batter: RGB? = nil) {
+        let outline = StorybookArt.outline(for: 0xDF9F66, factor: 0.62)
+
+        // Tapered sculpted handle
+        var handle = Path()
+        handle.move(to: CGPoint(x: -7, y: -32))
+        handle.addCurve(to: CGPoint(x: -11.5, y: -162), control1: CGPoint(x: -8, y: -74), control2: CGPoint(x: -12.5, y: -126))
+        handle.addArc(center: CGPoint(x: 0, y: -164), radius: 11.5, startAngle: .degrees(180), endAngle: .degrees(0), clockwise: false)
+        handle.addCurve(to: CGPoint(x: 7, y: -32), control1: CGPoint(x: 12.5, y: -126), control2: CGPoint(x: 8, y: -74))
+        handle.closeSubpath()
+
+        g.fill(
+            handle,
+            with: .linearGradient(
+                Gradient(colors: [StorybookArt.color(0xF6C994), StorybookArt.color(0xE3A46B), StorybookArt.color(0xC9854C)]),
+                startPoint: CGPoint(x: -12, y: -90),
+                endPoint: CGPoint(x: 12, y: -90)
+            )
+        )
+        g.stroke(handle, with: .color(outline), style: StrokeStyle(lineWidth: 3.6, lineCap: .round, lineJoin: .round))
+
+        var grain = Path()
+        grain.move(to: CGPoint(x: -3, y: -158))
+        grain.addQuadCurve(to: CGPoint(x: -2, y: -44), control: CGPoint(x: -6, y: -104))
+        grain.move(to: CGPoint(x: 4, y: -146))
+        grain.addQuadCurve(to: CGPoint(x: 2.5, y: -56), control: CGPoint(x: 6, y: -100))
+        g.stroke(grain, with: .color(outline.opacity(0.28)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+
+        var hShine = Path()
+        hShine.move(to: CGPoint(x: -5.5, y: -152))
+        hShine.addLine(to: CGPoint(x: -3.2, y: -48))
+        g.stroke(hShine, with: .color(.white.opacity(0.5)), style: StrokeStyle(lineWidth: 3.2, lineCap: .round))
+
+        // Carved oval spoon bowl
+        let bowlRect = CGRect(x: -30, y: -40, width: 60, height: 80)
+        let bowl = Path(ellipseIn: bowlRect)
+        g.fill(
+            bowl,
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xF8CFA0), StorybookArt.color(0xE6AA72), StorybookArt.color(0xC9854D)]),
+                center: CGPoint(x: -10, y: -12),
+                startRadius: 4,
+                endRadius: 50
+            )
+        )
+        g.stroke(bowl, with: .color(outline), lineWidth: 3.8)
+
+        let dish = Path(ellipseIn: CGRect(x: -21, y: -27, width: 42, height: 55))
+        g.fill(
+            dish,
+            with: .radialGradient(
+                Gradient(colors: [StorybookArt.color(0xCE8E57, alpha: 0.55), StorybookArt.color(0xF3C38E, alpha: 0.2)]),
+                center: CGPoint(x: 6, y: 8),
+                startRadius: 2,
+                endRadius: 34
+            )
+        )
+
+        if let b = batter {
+            var cling = Path()
+            cling.move(to: CGPoint(x: -25, y: 4))
+            cling.addQuadCurve(to: CGPoint(x: 25, y: 4), control: CGPoint(x: 0, y: -14))
+            cling.addCurve(to: CGPoint(x: -25, y: 4), control1: CGPoint(x: 26, y: 40), control2: CGPoint(x: -26, y: 40))
+            cling.closeSubpath()
+            var clipped = g
+            clipped.clip(to: bowl)
+            clipped.fill(cling, with: .color(b.color))
+            clipped.stroke(cling, with: .color(Shades.outline(b).color.opacity(0.6)), lineWidth: 2)
+            StorybookArt.highlight(clipped, in: CGRect(x: -14, y: 6, width: 12, height: 8), opacity: 0.55)
+        }
+
+        StorybookArt.highlight(g, in: CGRect(x: -19, y: -23, width: 11, height: 24), opacity: 0.45)
+        StorybookArt.highlight(g, in: CGRect(x: -14, y: -32, width: 14, height: 5.5), opacity: 0.35)
     }
 }
 
@@ -253,9 +355,6 @@ struct MixStepView: View {
     /// What she's holding (mirrors `hands.holding` so the plates redraw).
     @State private var holding: String?
     @State private var progress: [String: Double] = [:]
-    /// A plate she tapped instead of dragging: its ghost shows the way to the bowl.
-    @State private var hintFor: Int?
-    @State private var hintAt = Date.distantPast
     @State private var touchStart: CGPoint?
     @State private var grainAcc = 0.0
     private let timer = Timer.publish(every: 1.0 / 60, on: .main, in: .common).autoconnect()
@@ -301,13 +400,14 @@ struct MixStepView: View {
             }
 
             if allIn && picked && !done && !stirring {
-                WoodSpoon()
-                    .scaleEffect(0.9)
-                    .offset(x: hint ? 90 : -90, y: hint ? -60 : -110)
+                WoodSpoon(batter: stirDistance > 0.1 ? TreatPainter.flavor(treat.flavor).color : nil)
+                    .scaleEffect(0.88)
+                    .offset(x: hint ? 76 : -76, y: hint ? -78 : -112)
                     .position(bowlCenter)
-                    .opacity(0.9)
+                    .opacity(0.94)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.18)))
                     .allowsHitTesting(false)
-                    .onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { hint = true } }
+                    .onAppear { withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) { hint = true } }
             }
             if burst > 0 { SparkleBurst(count: 16, radius: 260).id(burst).position(x: bowlCenter.x, y: bowlCenter.y - 80) }
 
@@ -370,23 +470,8 @@ struct MixStepView: View {
                 }
                 .frame(width: 118, height: 118)
                 .shadow(color: Theme.ink.opacity(0.18), radius: 5, y: 4)
-                .scaleEffect(hintFor == i ? 1.1 : 1)
                 .position(MixStepView.slots[i])
                 .animation(.spring(response: 0.3, dampingFraction: 0.55), value: isIn)
-            }
-            if let i = hintFor {
-                // a ghost of the ingredient glides to the bowl: "bring me over there"
-                TimelineView(.animation) { tl in
-                    let a = tl.date.timeIntervalSince(hintAt)
-                    let k = fxEase((a.truncatingRemainder(dividingBy: 1.1)) / 0.8)
-                    let from = MixStepView.slots[i]
-                    let to = CGPoint(x: bowlCenter.x + 30, y: bowlCenter.y - 170)
-                    Sprite(MixStepView.ingredients[i], box: Box.thing)
-                        .frame(width: 110, height: 110)
-                        .opacity(a < 2.2 ? 0.55 * Double(1 - k * 0.4) : 0)
-                        .position(x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k - 60 * sin(k * .pi))
-                }
-                .allowsHitTesting(false)
             }
         }
     }
@@ -421,7 +506,6 @@ struct MixStepView: View {
                         if hands.holding == .eggs && hands.parked && w != .eggs { hands.holding = nil }
                         hands.grab(w, at: b, now: now)
                         holding = w.rawValue
-                        hintFor = nil
                         Sound.shared.play(.pop, volume: 0.6)
                         Sound.shared.tap()
                     }
@@ -435,13 +519,7 @@ struct MixStepView: View {
                 guard frozenAt == nil, let w = hands.holding else { return }
                 let moved = hypot(v.translation.width, v.translation.height)
                 if moved < 14, let i = slot(at: design(v.location)), MixStepView.ingredients[i] == w.rawValue {
-                    // a tap on the plate: put it back and show the way to the bowl
-                    hands.holding = nil
-                    holding = nil
-                    hintFor = i
-                    hintAt = Date()
-                    Sound.shared.play(.boing, volume: 0.5)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { if hintFor == i { hintFor = nil } }
+                    tapPour(w, slotIndex: i)
                     return
                 }
                 let wentIn = hands.release(now: Date())
@@ -476,8 +554,66 @@ struct MixStepView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + fall) { BakerySound.shared.play(.plop, volume: 0.8) }
             holding = nil
             progress["eggs"] = hands.progress(.eggs)
-            if hands.finished.contains(.eggs) { finishIngredient(.eggs, delay: fall + 0.2) }
+            if hands.finished.contains(.eggs) {
+                finishIngredient(.eggs, delay: fall + 0.2)
+            } else {
+                // Present the 2nd egg parked on the bowl rim right after the 1st cracks
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+                    guard frozenAt == nil, !allIn, hands.holding == nil, !hands.finished.contains(.eggs) else { return }
+                    let rx: CGFloat = 236
+                    let now = Date()
+                    hands.grab(.eggs, at: CGPoint(x: rx, y: HandsOnBowl.rimY(rx) - 26 + HandsOnBowl.lift), now: now)
+                    _ = hands.release(now: now)
+                    holding = Ingredient.eggs.rawValue
+                    Sound.shared.play(.pop, volume: 0.5)
+                }
+            }
         }
+    }
+
+    private func tapPour(_ w: Ingredient, slotIndex i: Int) {
+        hands.holding = nil
+        hands.parked = false
+        holding = nil
+        guard !hands.finished.contains(w) else { return }
+        hands.finished.insert(w)
+        hands.amount[w] = 1
+        if w == .eggs { hands.eggsCracked = HandsOnBowl.eggs }
+        let ev = sim.pour(w, from: toBowl(MixStepView.slots[i]))
+        let lead = max(0, ev.start.timeIntervalSinceNow)
+        Sound.shared.tap()
+        func at(_ t: Double, _ f: @escaping () -> Void) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + lead + t, execute: f)
+        }
+        at(0) { Sound.shared.play(.whoosh, volume: 0.4) }
+        switch w {
+        case .flour:
+            at(ev.pourStart) { BakerySound.shared.play(.poof, volume: 0.85) }
+            at(ev.pourStart + 0.45) { BakerySound.shared.play(.shake, volume: 0.5) }
+        case .sugar:
+            at(ev.pourStart) { BakerySound.shared.play(.grains, volume: 0.85) }
+            at(ev.pourStart + 0.45) { BakerySound.shared.play(.grains, volume: 0.7) }
+        case .milk:
+            at(ev.pourStart) { BakerySound.shared.play(.glug, volume: 0.85) }
+            at(ev.pourStart + 0.5) { BakerySound.shared.play(.glug, volume: 0.7) }
+        case .butter:
+            let land = PourEvent.fallTime(from: ev.hover.y, to: BowlGeo.center.y - 8)
+            at(ev.pourStart + land) { BakerySound.shared.play(.plop, volume: 0.9) }
+        case .eggs:
+            for k in 0..<2 {
+                let tc = ev.crackTime(k)
+                let fall = 0.12 + PourEvent.fallTime(from: PourEvent.eggY + 14, to: BowlGeo.center.y)
+                at(tc) { Sound.shared.play(.crack, volume: 0.9) }
+                at(tc + fall) { BakerySound.shared.play(.plop, volume: 0.8) }
+            }
+        case .flavor:
+            break
+        }
+        withAnimation(.easeInOut(duration: max(0.35, lead + ev.pourEnd))) {
+            progress[w.rawValue] = 1
+        }
+        at(ev.pourEnd) { burst += 1 }
+        finishIngredient(w, delay: lead + ev.pourEnd)
     }
 
     /// Runs the pour while something is held over the bowl.
