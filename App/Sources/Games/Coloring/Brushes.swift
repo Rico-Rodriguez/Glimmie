@@ -511,7 +511,14 @@ extension ColoringPaper {
         while s <= travelled + len {
             let t = len > 0 ? (s - travelled) / len : 0
             let c = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-            stamp(at: c, shape: Int(s / spacing) % 3)
+            let shape: Int
+            switch stampShape {
+            case .heart: shape = 0
+            case .star: shape = 1
+            case .sparkle: shape = 2
+            case .cycle: shape = Int(s / spacing) % 3
+            }
+            stamp(at: c, shape: shape)
             s += spacing
         }
         nextStamp = s

@@ -56,15 +56,31 @@ final class ColoringStudio: ObservableObject {
     private(set) var paper: ColoringPaper?
 
     @Published private(set) var ready = false
-    @Published var tool: ColoringTool = .fill { didSet { if tool != .stickers { selected = nil } } }
+    @Published var tool: ColoringTool = .fill {
+        didSet {
+            if oldValue != .eraser && oldValue != .stickers {
+                previousColorTool = oldValue
+            }
+            if tool != .stickers { selected = nil }
+        }
+    }
+    private(set) var previousColorTool: ColoringTool = .fill
     @Published var color: PaintColor = ColoringPalette.colors[12]
+    @Published private(set) var customColor: PaintColor?
     @Published var fillStyle: ColoringFill = .solid
+    @Published var stampShape: ColoringStampShape = .cycle
     @Published var sizeIndex = 1
     @Published var stayInLines = true
     @Published var stickers: [ColorSticker] = []
     @Published var selected: UUID?
     @Published private(set) var canUndo = false
     @Published var burst: FillBurst?
+
+    private(set) var usedGlitter = false
+    private(set) var usedRainbow = false
+    private(set) var usedWatercolor = false
+    private(set) var usedMixer = false
+    private(set) var usedStickers = false
 
     /// Set by the canvas view: shows the paper's latest pixels.
     var redraw: () -> Void = {}
@@ -131,6 +147,43 @@ final class ColoringStudio: ObservableObject {
         redraw()
     }
 
+    // MARK: Color & tool helpers
+
+    func pickColor(_ newColor: PaintColor) {
+        color = newColor
+        if tool == .eraser {
+            tool = previousColorTool
+        }
+    }
+
+    func applyMixedColor(_ newColor: PaintColor) {
+        customColor = newColor
+        usedMixer = true
+        pickColor(newColor)
+    }
+
+    func earnedFinds() -> [ColoringFind] {
+        var finds: [ColoringFind] = [.firstMasterpiece]
+        if usedGlitter || !(paper?.flakes.isEmpty ?? true) { finds.append(.glitterArtist) }
+        if usedRainbow { finds.append(.rainbowPainter) }
+        if usedMixer { finds.append(.colorMixer) }
+        if usedStickers || !stickers.isEmpty { finds.append(.stickerStar) }
+        if usedWatercolor { finds.append(.watercolorDream) }
+        return finds
+    }
+
+    @discardableResult
+    func completeArtwork() -> [ColoringFind] {
+        saveIfNeeded(force: true)
+        var unlocked: [ColoringFind] = []
+        for find in earnedFinds() {
+            if StickerBook.shared.find(game: ColoringGallery.gameID, id: find.rawValue) {
+                unlocked.append(find)
+            }
+        }
+        return unlocked
+    }
+
     // MARK: Painting (paper pixel coordinates)
 
     func touchBegan(_ p: CGPoint, pressure: CGFloat = 0.6, tilt: CGFloat = 0) {
@@ -141,6 +194,8 @@ final class ColoringStudio: ObservableObject {
                 undo.append(Step(pixels: before, flakes: beforeFlakes, stickers: stickers))
                 if undo.count > Self.maxUndo { undo.removeFirst() }
                 dirty = true
+                if fillStyle == .glitter { usedGlitter = true }
+                if fillStyle == .rainbow { usedRainbow = true }
                 switch fillStyle {
                 case .glitter, .stars, .hearts: Sound.shared.play(.sparkle, volume: 0.7)
                 case .rainbow: Sound.shared.play(.ding, volume: 0.6)
@@ -152,6 +207,10 @@ final class ColoringStudio: ObservableObject {
         } else if let brush = tool.brush {
             pushUndo(pixels: true)
             stroking = true
+            paper.stampShape = stampShape
+            if brush == .glitter { usedGlitter = true }
+            if brush == .rainbow { usedRainbow = true }
+            if brush == .paint { usedWatercolor = true }
             paper.beginStroke(at: p, brush: brush, color: color, size: ColoringPaper.sizes[sizeIndex], stayInLines: stayInLines,
                               pressure: pressure, tilt: tilt)
             redraw()
@@ -224,6 +283,7 @@ final class ColoringStudio: ObservableObject {
 
     func addSticker(_ emoji: String) {
         pushUndo(pixels: false)
+        usedStickers = true
         // Drop it near the middle, nudged so several don't land on top of each other.
         let n = Double(stickers.count % 5)
         let s = ColorSticker(emoji: emoji, x: Double(ColoringPaper.width) / 2 + (n - 2) * 60, y: Double(ColoringPaper.height) / 2 + (n - 2) * 30)
@@ -337,6 +397,7 @@ final class ColoringCanvasView: UIView {
         for l in [colorLayer, lineLayer, haloLayer, glintLayer] { l.frame = content.bounds }
         CATransaction.commit()
         if let zoom = studio?.zoom {
+            zoom.canvasSize = bounds.size
             // The canvas changed size: keep the zoomed page covering it.
             let z = zoom.zoom.clamped(to: bounds.size)
             applyZoom(z, animated: false)

@@ -19,7 +19,7 @@ struct ColorSticker: Codable, Identifiable, Equatable {
     var scale: Double = 1
     var angle: Double = 0   // radians
 
-    /// Font size in paper pixels at scale 1.
+    /// Sticker side length in paper pixels at scale 1.
     static let baseSize: Double = 150
 }
 
@@ -39,7 +39,6 @@ final class ColoringGallery: ObservableObject {
 
     private init() {
         items = GameStorage.load([ColoringArtwork].self, game: Self.gameID, file: "gallery.json") ?? []
-        // Drop entries whose color layer is missing (for example a save cut short).
         items.removeAll { !FileManager.default.fileExists(atPath: folder.appendingPathComponent("\($0.id).png").path) }
     }
 
@@ -102,7 +101,7 @@ final class ColoringGallery: ObservableObject {
 }
 
 enum ColoringRender {
-    /// Color layer + line art + stickers, flattened into one picture `width` pixels wide.
+    /// Color layer + line art + die-cut vector stickers, flattened into one picture `width` pixels wide.
     static func picture(color: CGImage, page: String, stickers: [ColorSticker], width: CGFloat) -> UIImage {
         let size = CGSize(width: width, height: width * CGFloat(ColoringPaper.height) / CGFloat(ColoringPaper.width))
         let fmt = UIGraphicsImageRendererFormat()
@@ -114,16 +113,49 @@ enum ColoringRender {
             if let line = ColoringCatalog.lineArt(page) { UIImage(cgImage: line).draw(in: rect) }
             let k = width / CGFloat(ColoringPaper.width)
             for s in stickers {
-                let font = UIFont.systemFont(ofSize: CGFloat(ColorSticker.baseSize * s.scale) * k)
-                let str = NSAttributedString(string: s.emoji, attributes: [.font: font])
-                let b = str.size()
-                let g = ctx.cgContext
-                g.saveGState()
-                g.translateBy(x: CGFloat(s.x) * k, y: CGFloat(s.y) * k)
-                g.rotate(by: CGFloat(s.angle))
-                str.draw(at: CGPoint(x: -b.width / 2, y: -b.height / 2))
-                g.restoreGState()
+                ColoringVectorStickers.draw(
+                    s.emoji,
+                    in: ctx.cgContext,
+                    at: CGPoint(x: CGFloat(s.x) * k, y: CGFloat(s.y) * k),
+                    size: CGFloat(ColorSticker.baseSize * s.scale) * k,
+                    angle: CGFloat(s.angle)
+                )
             }
+        }
+    }
+}
+
+// MARK: - Photos save completion bridge
+
+private enum PhotoSaveState: Equatable {
+    case idle, saving, saved, failed
+}
+
+private final class PhotoAlbumSaver: NSObject {
+    private var onComplete: ((Error?) -> Void)?
+    private var activeRetention: PhotoAlbumSaver?
+
+    func save(_ image: UIImage, completion: @escaping (Error?) -> Void) {
+        onComplete = completion
+        activeRetention = self
+        UIImageWriteToSavedPhotosAlbum(
+            image,
+            self,
+            #selector(image(_:didFinishSavingWithError:contextInfo:)),
+            nil
+        )
+    }
+
+    @objc private func image(
+        _ image: UIImage,
+        didFinishSavingWithError error: NSError?,
+        contextInfo: UnsafeMutableRawPointer?
+    ) {
+        let done = onComplete
+        onComplete = nil
+        activeRetention = nil
+        DispatchQueue.main.async {
+            done?(error)
         }
     }
 }
@@ -139,27 +171,20 @@ struct ColoringGalleryView: View {
     var body: some View {
         VStack(spacing: 14) {
             HStack(spacing: 16) {
-                ColoringButton(icon: "chevron.backward", tint: Theme.lilac, action: onBack)
+                ColoringButton(icon: "chevron.backward", tint: Theme.lilac, size: GameChromeLayout.buttonSize, action: onBack)
                 Spacer()
                 Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 40, weight: .bold))
+                    .font(.system(size: 38, weight: .bold))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Color.clear.frame(width: 72, height: 72)
+                Color.clear.frame(width: GameChromeLayout.buttonSize, height: GameChromeLayout.buttonSize)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 22)
             .padding(.top, 18)
 
             if gallery.items.isEmpty {
                 Spacer()
-                VStack(spacing: 18) {
-                    Image(systemName: "paintbrush.pointed.fill")
-                        .font(.system(size: 90, weight: .bold))
-                        .foregroundStyle(Theme.pink)
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 50, weight: .bold))
-                        .foregroundStyle(Theme.lemon)
-                }
+                ColoringEmptyEaselView()
                 Spacer()
             } else {
                 ScrollView {
@@ -192,12 +217,13 @@ private struct ColoringArtThumb: View {
     let image: UIImage?
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 22).fill(.white)
+            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.white)
             if let image {
-                Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 16)).padding(8)
+                Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).padding(8)
             }
         }
         .aspectRatio(4 / 3, contentMode: .fit)
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Theme.blush, lineWidth: 3))
         .shadow(color: Theme.ink.opacity(0.18), radius: 6, y: 4)
     }
 }
@@ -207,7 +233,23 @@ private struct ColoringArtViewer: View {
     let onClose: () -> Void
     let onContinue: () -> Void
     @State private var askDelete = false
-    @State private var savedToPhotos = false
+    @State private var saveState: PhotoSaveState = .idle
+
+    private var saveIcon: String {
+        switch saveState {
+        case .idle, .saving: return "square.and.arrow.down.fill"
+        case .saved: return "checkmark"
+        case .failed: return "lock.fill"
+        }
+    }
+
+    private var saveTint: Color {
+        switch saveState {
+        case .idle, .saving: return Theme.sky
+        case .saved: return Theme.mint
+        case .failed: return Theme.peach
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -215,19 +257,18 @@ private struct ColoringArtViewer: View {
             VStack(spacing: 20) {
                 if let img = ColoringGallery.shared.thumbnail(art.id) {
                     Image(uiImage: img).resizable().scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 22))
-                        .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white, lineWidth: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white, lineWidth: 8))
                         .frame(maxWidth: 760, maxHeight: 560)
                 }
                 HStack(spacing: 28) {
                     ColoringButton(icon: "xmark", tint: Theme.lilac, action: onClose)
                     ColoringButton(icon: "paintbrush.pointed.fill", tint: Theme.pink, size: 96, action: onContinue)
-                    ColoringButton(icon: savedToPhotos ? "checkmark" : "square.and.arrow.down.fill", tint: Theme.sky) {
-                        guard !savedToPhotos, let pic = ColoringGallery.shared.fullPicture(art) else { return }
-                        UIImageWriteToSavedPhotosAlbum(pic, nil, nil, nil)
-                        Sound.shared.play(.ding)
-                        savedToPhotos = true
+                    ColoringButton(icon: saveIcon, tint: saveTint) {
+                        saveToPhotos()
                     }
+                    .opacity(saveState == .saving ? 0.65 : 1)
+                    .disabled(saveState == .saving || saveState == .saved)
                     ColoringButton(icon: "trash.fill", tint: Theme.peach) { askDelete = true }
                 }
             }
@@ -245,7 +286,23 @@ private struct ColoringArtViewer: View {
                     }
                 }
                 .padding(40)
-                .background(RoundedRectangle(cornerRadius: 36).fill(Theme.cream))
+                .background(RoundedRectangle(cornerRadius: 36, style: .continuous).fill(Theme.cream))
+                .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).stroke(.white, lineWidth: 5))
+            }
+        }
+    }
+
+    private func saveToPhotos() {
+        guard saveState == .idle || saveState == .failed,
+              let pic = ColoringGallery.shared.fullPicture(art) else { return }
+        saveState = .saving
+        PhotoAlbumSaver().save(pic) { error in
+            if error == nil {
+                saveState = .saved
+                Sound.shared.play(.ding)
+            } else {
+                saveState = .failed
+                Sound.shared.play(.boing, volume: 0.5)
             }
         }
     }

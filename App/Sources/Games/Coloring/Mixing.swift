@@ -50,8 +50,7 @@ struct ColoringHueSlider: View {
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { v in
                 let hh = Double(max(0, min(1, (v.location.x - h / 2) / max(1, w - h))))
-                studio.color = .slider(hh)
-                if studio.tool == .eraser { studio.tool = .marker }
+                studio.pickColor(.slider(hh))
                 // A soft tick every so often as she slides, like a dial.
                 let tick = Int(hh * 24)
                 if tick != lastTick { lastTick = tick; Sound.shared.play(.tap, volume: 0.25) }
@@ -216,17 +215,25 @@ struct ColoringMixer: View {
                 HStack(spacing: 16) {
                     ColoringButton(icon: "xmark", tint: Theme.peach, size: 64) { close() }
                     Spacer()
-                    ColoringButton(icon: "drop.triangle.fill", tint: Theme.sky, size: 64) {
+                    Button {
                         well.wipe()
                         picked = nil
                         Sound.shared.play(.whoosh, volume: 0.6)
+                    } label: {
+                        SpongeWipeIcon()
+                            .padding(8)
+                            .frame(width: 64, height: 64)
+                            .background(Circle().fill(Theme.sky))
+                            .overlay(Circle().stroke(.white, lineWidth: 5))
+                            .shadow(color: Theme.ink.opacity(0.25), radius: 6, y: 4)
                     }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("Wipe palette")
                     Spacer()
                     pickedDot
                     ColoringButton(icon: "checkmark", tint: Theme.mint, size: 64) {
                         if let c = picked {
-                            studio.color = c
-                            if studio.tool == .eraser { studio.tool = .marker }
+                            studio.applyMixedColor(c)
                             Sound.shared.play(.sparkle, volume: 0.7)
                         }
                         close()
@@ -284,10 +291,7 @@ struct ColoringMixer: View {
             LinearGradient(colors: [.white.opacity(0.28), .clear, .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .allowsHitTesting(false)
             if well.isEmpty {
-                Image(systemName: "paintpalette.fill")
-                    .font(.system(size: 70, weight: .bold))
-                    .foregroundStyle(Theme.blush)
-                    .allowsHitTesting(false)
+                MixerEmptyHintView()
             }
         }
         .frame(width: wellSize.width, height: wellSize.height)

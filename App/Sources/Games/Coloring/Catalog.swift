@@ -47,7 +47,7 @@ enum ColoringCatalog {
     }
 
     static func lineArt(_ page: String) -> CGImage? {
-        if ColoringCustom.isCustom(page) { return ColoringCustom.shared.lineArt(page) }   // nil (blank) if it was deleted
+        if ColoringCustom.isCustom(page) { return ColoringCustom.shared.lineArt(page) }
         guard page != blank, let url = GameFiles.url(page, "png", game: game) else { return nil }
         return UIImage(contentsOfFile: url.path)?.cgImage
     }
@@ -65,12 +65,5 @@ enum ColoringPalette {
 }
 
 enum ColoringStickers {
-    static let all: [String] = [
-        "🦄", "🌈", "⭐️", "💖", "✨", "🌟", "🎀", "👑", "💎", "🔮", "🪄", "🫧",
-        "🐱", "🐶", "🐰", "🐻", "🐼", "🦊", "🐸", "🐥", "🦋", "🐞", "🐝", "🐢",
-        "🐠", "🐬", "🐙", "🦀", "🐳", "🦖", "🦕", "🐉", "🐧", "🦉", "🐷", "🐮",
-        "🌸", "🌷", "🌻", "🍄", "🍀", "🌲", "☀️", "🌙", "☁️", "❄️", "⚡️", "🔥",
-        "🍓", "🍰", "🧁", "🍦", "🍭", "🍩", "🍪", "🍉", "🍒", "🍕", "🎂", "🍬",
-        "🎈", "🎁", "🎉", "🚗", "🚀", "🚂", "✈️", "⛵️", "🏰", "🎠", "🪐", "👽",
-    ]
+    static let all: [String] = ColoringVectorSticker.allCases.map(\.rawValue)
 }
