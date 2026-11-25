@@ -248,9 +248,6 @@ extension AquariumSim {
         let d = decor[i]
         let origin = CGPoint(x: d.x, y: d.y - 44)
         pearl = (d.id, time + 5.5)
-        if !floatingGifts.contains(where: { $0.kind == .pearl }) {
-            spawnFloatingGift(.pearl, at: CGPoint(x: origin.x, y: origin.y - 16))
-        }
         Sound.shared.play(.sparkle, volume: 0.55)
         for k in 0..<8 {
             let a = CGFloat(k) / 8 * 2 * .pi
@@ -271,12 +268,15 @@ extension AquariumSim {
         }
     }
 
+    func openChestPearlOrigin() -> CGPoint? {
+        guard let pl = pearl,
+              let d = decor.first(where: { $0.id == pl.id && !$0.held && !$0.falling }),
+              d.open > 0.15 else { return nil }
+        return CGPoint(x: d.x, y: d.y - 42 - 8 * d.open)
+    }
+
     func tapChestPearl(_ p: CGPoint) -> Bool {
-        guard !demo,
-              let pl = pearl,
-              let d = decor.first(where: { $0.id == pl.id }),
-              d.open > 0.15 else { return false }
-        let origin = CGPoint(x: d.x, y: d.y - 42 - 8 * d.open)
+        guard !demo, let origin = openChestPearlOrigin() else { return false }
         guard hypot(p.x - origin.x, p.y - origin.y) < 38 else { return false }
         guard !isFindClaimed(.pearl) else { return false }
         discover(.pearl, at: origin)

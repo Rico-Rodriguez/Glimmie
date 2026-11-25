@@ -315,8 +315,8 @@ enum AquaPainter {
         w.clip(to: Path(AGeo.tank))
 
         updraftColumns(w, sim, t)
-        clams(w, sim, t)
         for d in sim.decor where !d.held { AquaDecorPainter.draw(w, d, time: t) }
+        clams(w, sim, t)
         hiddenSurprises(w, sim, t)
         eggs(w, sim, t)
         finds(w, sim, t, layer: 0)

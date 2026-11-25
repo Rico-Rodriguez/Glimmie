@@ -351,7 +351,7 @@ struct AquariumView: View {
                         .opacity(lightsOn ? 0 : 1)
                         .animation(.easeInOut(duration: 0.65), value: lightsOn)
 
-                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: book)) { tl in
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: book || scenePhase != .active)) { tl in
                         Canvas { ctx, _ in
                             sim.step(tl.date)
                             AquaPainter.draw(ctx, sim: sim)

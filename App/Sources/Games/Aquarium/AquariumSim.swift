@@ -346,7 +346,7 @@ final class AquariumSim {
     }
 
     func resolveSandLayout() {
-        let resolved = AquaSandLayout.resolve(decor: decor, clams: clams, hiddenSpots: hiddenSpots)
+        let resolved = AquaSandLayout.resolve(decor: decor, eggs: eggs, clams: clams, hiddenSpots: hiddenSpots)
         clams = resolved.clams
         hiddenSpots = resolved.hiddenSpots
     }
@@ -552,12 +552,13 @@ final class AquariumSim {
 
     func addFish(_ kind: FishKind, x: CGFloat, y: CGFloat) {
         let n = kind.group
-        while fish.count + n > AquariumSim.maxFish {
-            if !evictOneOrdinaryFish() { break }
-        }
-        guard fish.count + n <= AquariumSim.maxFish else {
+        let evictable = fish.filter { !isProtectedFromEviction($0) }.count
+        guard fish.count - evictable + n <= AquariumSim.maxFish else {
             AquaSound.shared.play(.bloop, volume: 0.45)
             return
+        }
+        while fish.count + n > AquariumSim.maxFish {
+            if !evictOneOrdinaryFish() { break }
         }
         let cx = max(AGeo.left + 70, min(AGeo.right - 70, x))
         let above = y < surfaceY(cx)
@@ -653,6 +654,65 @@ final class AquariumSim {
         return (nil, clampedNestPoint(CGPoint(x: nookX, y: nookY), for: f))
     }
 
+    private func assignNightSleepSpots() {
+        var awakeIndices: [Int] = []
+        var takenIDs: Set<Int> = []
+        for i in fish.indices {
+            let f = fish[i]
+            guard !f.caught else { continue }
+            if case .sleeping(let did, _, _) = f.activity {
+                if let did { takenIDs.insert(did) }
+                continue
+            }
+            guard time >= f.activityCooldown,
+                  time >= f.fleeUntil,
+                  !isRibbonDanceActive,
+                  !(f.curious != nil && time < f.curiousUntil),
+                  !(f.appetite >= 1 && nearestFood(to: f.p, within: f.kind == .seahorse ? 260 : 480) != nil),
+                  nearestHoop(for: f, within: 360) == nil else {
+                continue
+            }
+            awakeIndices.append(i)
+        }
+        guard !awakeIndices.isEmpty else { return }
+
+        var freeBeds: [(AquaDecor, AquaDecorAnchorSpec)] = decor.compactMap { d in
+            guard !d.held && !d.falling && !takenIDs.contains(d.id),
+                  let spec = d.kind.anchorSpec(for: .sleepBed) else { return nil }
+            return (d, spec)
+        }
+        var remaining = awakeIndices
+        let until = time + 600
+
+        while !remaining.isEmpty && !freeBeds.isEmpty {
+            var bestPair: (fishPos: Int, bedPos: Int, dist: CGFloat)?
+            for (fiPos, fi) in remaining.enumerated() {
+                let fp = fish[fi].p
+                for (biPos, bed) in freeBeds.enumerated() {
+                    let bp = bed.1.worldPoint(for: bed.0)
+                    let d = hypot(bp.x - fp.x, bp.y - fp.y)
+                    if bestPair == nil || d < bestPair!.dist {
+                        bestPair = (fiPos, biPos, d)
+                    }
+                }
+            }
+            guard let pair = bestPair else { break }
+            let fi = remaining.remove(at: pair.fishPos)
+            let bed = freeBeds.remove(at: pair.bedPos)
+            let nest = clampedNestPoint(bed.1.worldPoint(for: bed.0), for: fish[fi])
+            fish[fi].activity = .sleeping(decorID: bed.0.id, nest: nest, until: until)
+            fish[fi].restUntil = until
+            fish[fi].nextSleepZ = time + Double.random(in: 0.4...1.0)
+        }
+
+        for fi in remaining {
+            let chosen = pickSleepSpot(for: fish[fi], index: fi)
+            fish[fi].activity = .sleeping(decorID: chosen.decorID, nest: chosen.nest, until: until)
+            fish[fi].restUntil = until
+            fish[fi].nextSleepZ = time + Double.random(in: 0.4...1.0)
+        }
+    }
+
     private func tryStartDecorActivity(for f: inout AquaFish) {
         let occupiedHideouts: Set<Int> = Set(fish.compactMap { other in
             guard other.id != f.id else { return nil }
@@ -683,6 +743,9 @@ final class AquariumSim {
     }
 
     private func stepFish(_ dt: CGFloat) {
+        if !lightsOn && night > 0.45 {
+            assignNightSleepSpots()
+        }
         let sleepy = 1 - 0.45 * night
         var shownHungryCount = fish.filter { $0.hungryCue > 0.2 && !$0.caught }.count
 
@@ -801,19 +864,19 @@ final class AquariumSim {
                     f.restUntil = max(f.restUntil, until)
                     goal = nest
                     let distToNest = hypot(nest.x - f.p.x, nest.y - f.p.y)
-                    if distToNest > 16 {
-                        speed = max(24, k.cruise * 0.85)
+                    if distToNest > 20 {
+                        speed = max(28, k.cruise * 0.9)
                     } else {
                         speed = 0
                         isSleepingSettled = true
                         if time >= f.nextSleepZ {
-                            f.nextSleepZ = time + Double.random(in: 2.0...3.4)
+                            f.nextSleepZ = time + Double.random(in: 1.3...2.1)
                             emitParticle(
                                 AquaParticle(
                                     kind: .sleepZ,
                                     p: CGPoint(x: f.p.x + f.facing.sign1 * 10, y: f.p.y - k.height * 0.4 * s - 8),
-                                    v: CGVector(dx: CGFloat.random(in: -6...6), dy: -20),
-                                    life: 2.1,
+                                    v: CGVector(dx: CGFloat.random(in: -6...6), dy: -18),
+                                    life: 2.6,
                                     size: 11,
                                     color: ARGB(0xDCE8FF)
                                 )
@@ -825,9 +888,9 @@ final class AquariumSim {
                     let until = time + 600
                     f.activity = .sleeping(decorID: chosen.decorID, nest: chosen.nest, until: until)
                     f.restUntil = until
-                    f.nextSleepZ = time + Double.random(in: 0.8...2.0)
+                    f.nextSleepZ = time + Double.random(in: 0.4...1.0)
                     goal = chosen.nest
-                    speed = max(24, k.cruise * 0.85)
+                    speed = max(28, k.cruise * 0.9)
                 } else {
                     f.curious = nil
                     if time > f.nextThink || hypot(goal.x - f.p.x, goal.y - f.p.y) < 24 {
@@ -940,7 +1003,7 @@ final class AquariumSim {
             var dx = goal.x - f.p.x
             var dy = goal.y - f.p.y
             let dist = max(1, hypot(dx, dy))
-            let arrive = feeding ? min(1, dist / 38) : (urgent ? 1 : min(1, dist / 90))
+            let arrive = (feeding || f.activity != .cruising) ? min(1, dist / 24) : (urgent ? 1 : min(1, dist / 90))
             dx = dx / dist * speed * arrive
             let verticalFactor: CGFloat
             if k == .seahorse {
@@ -987,13 +1050,13 @@ final class AquariumSim {
             }
 
             let edge: CGFloat = 70
-            if !isSleepingSettled && !isHidingPeeking {
+            if f.activity == .cruising {
                 if f.p.x < lim.minX + edge { dx += (lim.minX + edge - f.p.x) * 2.2 }
                 if f.p.x > lim.maxX - edge { dx -= (f.p.x - (lim.maxX - edge)) * 2.2 }
             }
             let topY = feeding ? AGeo.waterY + k.height * 0.3 * s + 2 : lim.minY
             let bottomY = feeding ? AGeo.sand(f.p.x) - k.height * 0.42 * s - 4 : floorY
-            if !feeding && !isSleepingSettled && !isHidingPeeking {
+            if !feeding && f.activity == .cruising {
                 if f.p.y < lim.minY + 30 { dy += (lim.minY + 30 - f.p.y) * 2 }
                 if f.p.y > floorY - 30 { dy -= (f.p.y - (floorY - 30)) * 2 }
             }
@@ -1928,15 +1991,25 @@ final class AquariumSim {
     }
 
     func tapDockNet(from origin: CGPoint = CGPoint(x: 608, y: AGeo.dockY)) {
-        if floatingGifts.isEmpty {
-            coaxFloatingGiftForNet()
-        }
         let target: CGPoint
         if let gift = floatingGifts.first {
             target = gift.p
             _ = collectFloatingGift(atIndex: 0)
+        } else if !demo, let chestPearl = openChestPearlOrigin(), !isFindClaimed(.pearl) {
+            target = chestPearl
+            discover(.pearl, at: chestPearl)
+            if time - lastGiftCoinAt >= Self.coinCooldown {
+                lastGiftCoinAt = time
+                queueCoin(2, from: chestPearl)
+            }
         } else {
-            target = CGPoint(x: 512, y: 372)
+            coaxFloatingGiftForNet()
+            if let gift = floatingGifts.first {
+                target = gift.p
+                _ = collectFloatingGift(atIndex: 0)
+            } else {
+                target = CGPoint(x: 512, y: 372)
+            }
         }
         AquaSound.shared.play(.swish, volume: 0.55)
         AquaSound.shared.play(.bloop, volume: 0.5, gap: 0.1)
@@ -1966,17 +2039,16 @@ final class AquariumSim {
     }
 
     private func coaxFloatingGiftForNet() {
-        if let chest = decor.first(where: { $0.kind == .chest && !$0.held && !$0.falling }) {
-            let kind: AquaFloatingGiftKind = !isFindClaimed(.pearl) ? .pearl : .bubbleGift
-            spawnFloatingGift(kind, at: CGPoint(x: chest.x, y: chest.y - 54))
-            return
-        }
         if let shell = decor.first(where: { $0.kind == .shell && !$0.held && !$0.falling }) {
             spawnFloatingGift(.starShell, at: CGPoint(x: shell.x, y: shell.y - 36))
             return
         }
         if let bubbler = decor.first(where: { $0.kind == .bubbler && !$0.held && !$0.falling }) {
             spawnFloatingGift(.bubbleGift, at: CGPoint(x: bubbler.x, y: bubbler.y - 44))
+            return
+        }
+        if let chest = decor.first(where: { $0.kind == .chest && !$0.held && !$0.falling }) {
+            spawnFloatingGift(.bubbleGift, at: CGPoint(x: chest.x, y: chest.y - 54))
             return
         }
         if let clam = clams.first {
@@ -2060,6 +2132,8 @@ final class AquariumSim {
         if isFalling {
             if startY < surfaceY(cx) { splash(at: cx, strength: 0.45) }
             else { AquaSound.shared.play(.bloop, volume: 0.55) }
+        } else {
+            resolveSandLayout()
         }
         if !demo { needsSave = true }
         return eggs.count - 1
@@ -2116,6 +2190,7 @@ final class AquariumSim {
         }
 
         let hatched = eggs.remove(at: i)
+        resolveSandLayout()
         if fish.count >= Self.maxFish {
             _ = evictOneOrdinaryFish()
         }
@@ -2162,6 +2237,7 @@ final class AquariumSim {
     }
 
     private func stepEggs(_ dt: CGFloat) {
+        var landedAny = false
         for i in eggs.indices {
             var e = eggs[i]
             e.shimmerPhase += dt * 2.5
@@ -2179,6 +2255,7 @@ final class AquariumSim {
                     e.vy = 0
                     e.falling = false
                     e.wobbleV = 6
+                    landedAny = true
                     emitParticle(
                         AquaParticle(
                             kind: .poof,
@@ -2198,6 +2275,7 @@ final class AquariumSim {
             e.wobble = max(-0.45, min(0.45, e.wobble + e.wobbleV * dt))
             eggs[i] = e
         }
+        if landedAny { resolveSandLayout() }
     }
 
     // MARK: - Interactive Yellow Submarine
@@ -2831,7 +2909,7 @@ final class AquariumSim {
             }
         } else {
             for i in fish.indices where !fish[i].caught {
-                fish[i].activityCooldown = min(fish[i].activityCooldown, time + Double.random(in: 0.1...0.8))
+                fish[i].activityCooldown = min(fish[i].activityCooldown, time)
             }
             fulfillWishIfMatching({ $0 == .nightGlow }, at: CGPoint(x: 512, y: 240))
         }
@@ -2847,11 +2925,9 @@ final class AquariumSim {
     private func isForegroundTarget(_ p: CGPoint) -> Bool {
         if floatingGifts.contains(where: { hypot($0.p.x - p.x, $0.p.y - p.y) <= 42 }) { return true }
         if !demo,
-           let pl = pearl,
            !isFindClaimed(.pearl),
-           let d = decor.first(where: { $0.id == pl.id }),
-           d.open > 0.15,
-           hypot(p.x - d.x, p.y - (d.y - 42 - 8 * d.open)) < 38 {
+           let origin = openChestPearlOrigin(),
+           hypot(p.x - origin.x, p.y - origin.y) < 38 {
             return true
         }
         if visitors.contains(where: { v in
@@ -2967,7 +3043,7 @@ final class AquariumSim {
         switch grab {
         case .submarine:
             if tap {
-                if tapFloatingGift(p) || tapVisitor(p) { return }
+                if tapForeground(p) { return }
                 for k in 0..<5 {
                     addBubble(
                         CGPoint(x: submarine.p.x - submarine.facing * 56, y: submarine.p.y - CGFloat(k) * 5),
@@ -3058,18 +3134,37 @@ final class AquariumSim {
 
     func tapFish(_ i: Int) {
         guard fish.indices.contains(i) else { return }
+        var poppedFromHideout = false
         if isFishSleeping(fish[i]) {
             fish[i].activity = .cruising
             fish[i].restUntil = -10
             fish[i].activityCooldown = time + 6.0
+        } else if case .hiding(let decorID, _, _) = fish[i].activity {
+            poppedFromHideout = true
+            fish[i].activity = .cruising
+            fish[i].activityCooldown = time + Double.random(in: 8...14)
+            fish[i].flipStart = time
+            let poppedDecor = decor.first(where: { $0.id == decorID })
+            let dir: CGFloat = poppedDecor.map { fish[i].p.x <= $0.x ? -1 : 1 } ?? fish[i].dir
+            fish[i].v = CGVector(dx: dir * 135, dy: -82)
+            AquaSound.shared.play(.boing, volume: 0.6)
+            if let d = poppedDecor {
+                let dk = d.kind
+                fulfillWishIfMatching({ wish in
+                    if case .decorPlay(let wk, .hideout) = wish { return wk == dk }
+                    return false
+                }, at: fish[i].p)
+            }
         }
         fish[i].happy = time
         fish[i].gulp = 1
-        fish[i].v.dx += fish[i].dir * 70
+        if !poppedFromHideout {
+            fish[i].v.dx += fish[i].dir * 70
+        }
         if fish[i].kind == .puffer {
             fish[i].puffUntil = time + 2.6
             AquaSound.shared.play(.puff, volume: 0.7)
-        } else {
+        } else if !poppedFromHideout {
             AquaSound.shared.play(.blub, volume: 0.65)
         }
         if fish[i].variant >= AquaRare.variant {
@@ -3265,6 +3360,17 @@ final class AquariumSim {
 
     private func scoop(at point: CGPoint) {
         if collectFloatingGifts(near: point, radius: 48) > 0 { return }
+        if !demo,
+           let chestPearl = openChestPearlOrigin(),
+           !isFindClaimed(.pearl),
+           hypot(chestPearl.x - point.x, chestPearl.y - point.y) <= 46 {
+            discover(.pearl, at: chestPearl)
+            if time - lastGiftCoinAt >= Self.coinCooldown {
+                lastGiftCoinAt = time
+                queueCoin(2, from: chestPearl)
+            }
+            return
+        }
         guard caught == nil else { return }
         var nearest = fishAt(point)
         if nearest == nil {

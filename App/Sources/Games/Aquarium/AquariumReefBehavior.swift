@@ -246,10 +246,17 @@ enum AquaSandLayout {
     static let sandMaxX: CGFloat = AGeo.right - 40
     static let defaultClamX: [CGFloat] = [188, 396, 628, 842]
     static let defaultHiddenX: [CGFloat] = [245, 455, 695, 865]
+    static let clamHalfWidth: CGFloat = 22
+    static let eggHalfWidth: CGFloat = 24
 
-    static func openIntervals(for decor: [AquaDecor], margin: CGFloat) -> [ClosedRange<CGFloat>] {
+    static func openIntervals(
+        for decor: [AquaDecor],
+        eggs: [AquaEgg] = [],
+        margin: CGFloat
+    ) -> [ClosedRange<CGFloat>] {
         let grounded = decor.filter { !$0.held && !$0.falling }
-        let blocked = mergedBlockedRanges(for: grounded, margin: margin)
+        let groundedEggs = eggs.filter { !$0.falling }
+        let blocked = mergedBlockedRanges(for: grounded, eggs: groundedEggs, margin: margin)
         var open: [ClosedRange<CGFloat>] = []
         var cursor = sandMinX
         for range in blocked {
@@ -266,24 +273,16 @@ enum AquaSandLayout {
 
     static func resolve(
         decor: [AquaDecor],
+        eggs: [AquaEgg] = [],
         clams: [AquaSingingClam],
         hiddenSpots: [AquaHiddenSpot]
     ) -> (clams: [AquaSingingClam], hiddenSpots: [AquaHiddenSpot]) {
         let grounded = decor.filter { !$0.held && !$0.falling }
-        let generous = openIntervals(for: grounded, margin: 12)
-        let generousSpan = generous.reduce(CGFloat(0)) { $0 + ($1.upperBound - $1.lowerBound) }
-        let tight = openIntervals(for: grounded, margin: 0)
-        let tightSpan = tight.reduce(CGFloat(0)) { $0 + ($1.upperBound - $1.lowerBound) }
-        let intervals: [ClosedRange<CGFloat>]
-        if generousSpan >= 180 {
-            intervals = generous
-        } else if tightSpan >= 48 {
-            intervals = tight
-        } else {
-            intervals = []
-        }
+        let groundedEggs = eggs.filter { !$0.falling }
+        let clamIntervals = selectIntervals(for: grounded, eggs: groundedEggs, preferredMargin: clamHalfWidth)
+        let spotIntervals = selectIntervals(for: grounded, eggs: groundedEggs, preferredMargin: 12)
+        let blockedRaw = mergedBlockedRanges(for: grounded, eggs: groundedEggs, margin: 0)
 
-        let blockedRaw = mergedBlockedRanges(for: grounded, margin: 0)
         var placedClams: [CGFloat] = []
         var resolvedClams = clams
         for idx in resolvedClams.indices {
@@ -291,10 +290,10 @@ enum AquaSandLayout {
             let preferred = defaultClamX[slotIndex]
             let chosen = pickSandX(
                 preferred: preferred,
-                openIntervals: intervals,
+                openIntervals: clamIntervals,
                 blocked: blockedRaw,
                 avoid: placedClams,
-                minSpacing: 44
+                minSpacing: 46
             )
             placedClams.append(chosen)
             resolvedClams[idx].x = chosen
@@ -308,10 +307,10 @@ enum AquaSandLayout {
             let preferred = defaultHiddenX[slotIndex]
             let chosen = pickSandX(
                 preferred: preferred,
-                openIntervals: intervals,
+                openIntervals: spotIntervals,
                 blocked: blockedRaw,
                 avoid: placedHidden + placedClams,
-                minSpacing: 30
+                minSpacing: 34
             )
             placedHidden.append(chosen)
             let yOff: CGFloat = resolvedHidden[idx].kind == .glowSeahorse ? -18 : 0
@@ -321,14 +320,41 @@ enum AquaSandLayout {
         return (resolvedClams, resolvedHidden)
     }
 
-    private static func mergedBlockedRanges(for grounded: [AquaDecor], margin: CGFloat) -> [ClosedRange<CGFloat>] {
-        let raw: [ClosedRange<CGFloat>] = grounded.compactMap { d in
+    private static func selectIntervals(
+        for grounded: [AquaDecor],
+        eggs groundedEggs: [AquaEgg],
+        preferredMargin: CGFloat
+    ) -> [ClosedRange<CGFloat>] {
+        let roomy = openIntervals(for: grounded, eggs: groundedEggs, margin: preferredMargin)
+        let roomySpan = roomy.reduce(CGFloat(0)) { $0 + ($1.upperBound - $1.lowerBound) }
+        if roomySpan >= 180 { return roomy }
+        let medium = openIntervals(for: grounded, eggs: groundedEggs, margin: min(12, preferredMargin))
+        let mediumSpan = medium.reduce(CGFloat(0)) { $0 + ($1.upperBound - $1.lowerBound) }
+        if mediumSpan >= 140 { return medium }
+        let tight = openIntervals(for: grounded, eggs: groundedEggs, margin: 0)
+        let tightSpan = tight.reduce(CGFloat(0)) { $0 + ($1.upperBound - $1.lowerBound) }
+        return tightSpan >= 48 ? tight : []
+    }
+
+    private static func mergedBlockedRanges(
+        for grounded: [AquaDecor],
+        eggs groundedEggs: [AquaEgg],
+        margin: CGFloat
+    ) -> [ClosedRange<CGFloat>] {
+        var raw: [ClosedRange<CGFloat>] = grounded.compactMap { d in
             let half = d.kind.size.width * 0.5 + margin
             let lo = max(sandMinX, d.x - half)
             let hi = min(sandMaxX, d.x + half)
             guard hi > lo else { return nil }
             return lo...hi
-        }.sorted { $0.lowerBound < $1.lowerBound }
+        }
+        for e in groundedEggs {
+            let half = eggHalfWidth + margin
+            let lo = max(sandMinX, e.x - half)
+            let hi = min(sandMaxX, e.x + half)
+            if hi > lo { raw.append(lo...hi) }
+        }
+        raw.sort { $0.lowerBound < $1.lowerBound }
 
         var merged: [ClosedRange<CGFloat>] = []
         for range in raw {

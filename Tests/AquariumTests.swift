@@ -692,11 +692,13 @@ final class AquariumTests: XCTestCase {
 
     func testSubmarineHullOnlyDragUsesFingerLiftAndLeavesOpenWaterTapsAndHoldsIntact() {
         let sim = freshSim()
+        sim.demo = false
         sim.toggleSubmarine()
+        sim.bubbles = []
         sim.submarine.p = CGPoint(x: 300, y: 360)
         sim.submarine.target = CGPoint(x: 300, y: 360)
 
-        let fIdx = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 730, y: 380))
+        let fIdx = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 840, y: 380))
 
         let openTap = CGPoint(x: 680, y: 380)
         sim.handBegan(openTap)
@@ -715,7 +717,17 @@ final class AquariumTests: XCTestCase {
         XCTAssertEqual(sim.submarine.target, CGPoint(x: 300, y: 360))
         sim.handEnded(holdSpot, tap: false)
 
-        let hullTouch = CGPoint(x: 312, y: 365)
+        let rarePos = CGPoint(x: 310, y: 365)
+        let rareIdx = sim.spawn(.axolotl, variant: AquaRare.variant, at: rarePos)
+        sim.fish[rareIdx].restUntil = 100
+        sim.handBegan(rarePos)
+        sim.handEnded(rarePos, tap: true)
+        XCTAssertTrue(
+            StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.starlightAxolotl.rawValue),
+            "parked submarine hull must not swallow foreground taps on rare fish"
+        )
+
+        let hullTouch = CGPoint(x: 300, y: 360)
         let dragFinger = CGPoint(x: 540, y: 490)
         sim.handBegan(hullTouch)
         XCTAssertTrue(sim.isGrabbingSubmarine)
@@ -728,24 +740,29 @@ final class AquariumTests: XCTestCase {
         XCTAssertFalse(sim.isGrabbingSubmarine)
     }
 
-    func testDynamicSandLayoutDodgesPlacedDecorAndPreservesState() {
+    func testDynamicSandLayoutDodgesPlacedDecorAndGroundedEggsWhilePreservingState() {
         let sim = freshSim()
         sim.clams[1].openUntil = 42
         sim.hiddenSpots[2].awakeUntil = 55
 
         let castleIdx = sim.addDecor(.castle, x: 396)
         let shipIdx = sim.addDecor(.ship, x: 695)
+        let eggIdx = sim.dropEgg(at: 188, y: AGeo.sand(188), species: .axolotl)
+        XCTAssertNotNil(eggIdx)
         let castle = sim.decor[castleIdx]
         let ship = sim.decor[shipIdx]
+        let eggX = sim.eggs[0].x
 
         for clam in sim.clams {
             XCTAssertGreaterThanOrEqual(abs(clam.x - castle.x), castle.kind.size.width * 0.5 - 1, "clam dodges castle footprint")
             XCTAssertGreaterThanOrEqual(abs(clam.x - ship.x), ship.kind.size.width * 0.5 - 1, "clam dodges ship footprint")
+            XCTAssertGreaterThanOrEqual(abs(clam.x - eggX), AquaSandLayout.eggHalfWidth - 1, "clam dodges grounded egg footprint")
             XCTAssertEqual(clam.y, AGeo.sand(clam.x) - 8, accuracy: 0.5)
         }
         for spot in sim.hiddenSpots {
             XCTAssertGreaterThanOrEqual(abs(spot.p.x - castle.x), castle.kind.size.width * 0.5 - 1, "hidden spot dodges castle")
             XCTAssertGreaterThanOrEqual(abs(spot.p.x - ship.x), ship.kind.size.width * 0.5 - 1, "hidden spot dodges ship")
+            XCTAssertGreaterThanOrEqual(abs(spot.p.x - eggX), AquaSandLayout.eggHalfWidth - 1, "hidden spot dodges grounded egg")
             let expectedY = AGeo.sand(spot.p.x) + (spot.kind == .glowSeahorse ? -18 : 0)
             XCTAssertEqual(spot.p.y, expectedY, accuracy: 0.5)
         }
@@ -903,29 +920,54 @@ final class AquariumTests: XCTestCase {
         XCTAssertEqual(sim.fish[hideFish].activity, .cruising, "tapping castle pops hidden fish out")
         XCTAssertGreaterThanOrEqual(sim.fish[hideFish].flipStart, 0)
         XCTAssertTrue(sim.particles.contains { $0.kind == .heart })
+
+        XCTAssertTrue(sim.sendFish(hideFish, toDecor: castleIdx, role: .hideout))
+        run(sim, seconds: 1.0)
+        _ = sim.spawnPlayWish(kind: .decorPlay(.castle, .hideout))
+        sim.tapFish(hideFish)
+        XCTAssertEqual(sim.fish[hideFish].activity, .cruising, "tapping a hiding fish directly pops it out")
+        XCTAssertNil(sim.activeWish, "tapping a hiding fish fulfills its hideout decor wish")
+        XCTAssertEqual(Coins.shared.balance, 3)
     }
 
-    func testDockNetAndDraggedNetScoopFloatingGiftsAndDiscoverPearlWithoutDeletingFish() {
+    func testDockNetAndDraggedNetScoopFloatingGiftsAndNeverStealPearlFromClosedChest() {
         let sim = freshSim()
         sim.demo = false
+        let chestIdx = sim.addDecor(.chest, x: 680)
         let fIdx = sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 420, y: 360))
         sim.fish[fIdx].restUntil = 100
-        sim.spawnFloatingGift(.pearl, at: CGPoint(x: 420, y: 360))
 
+        sim.tapDockNet()
+        XCTAssertFalse(
+            StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pearl.rawValue),
+            "tapping dock net must never steal pearl sticker from a closed chest"
+        )
+        XCTAssertEqual(Coins.shared.balance, 2)
+        XCTAssertEqual(sim.fish.count, 1)
+        XCTAssertFalse(sim.fish[0].caught)
+
+        sim.decor[chestIdx].open = 1
+        sim.decor[chestIdx].openUntil = sim.time + 10
+        sim.revealChestPearl(chestIdx)
+        XCTAssertEqual(sim.pearl?.id, sim.decor[chestIdx].id)
+        XCTAssertTrue(
+            sim.floatingGifts.filter({ $0.kind == .pearl }).isEmpty,
+            "opening chest renders one unified pearl without a duplicate floating pearl on top"
+        )
+
+        run(sim, seconds: AquariumSim.coinCooldown + 0.3)
+        sim.tapDockNet()
+        XCTAssertTrue(
+            StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pearl.rawValue),
+            "dock net scoops gleaming pearl once chest is open"
+        )
+
+        sim.spawnFloatingGift(.bubbleGift, at: CGPoint(x: 420, y: 360))
         sim.pickUp(.net, at: CGPoint(x: 420, y: 360))
         XCTAssertTrue(sim.floatingGifts.isEmpty)
         XCTAssertNil(sim.caught, "scooping a floating gift must not catch nearby fish")
         XCTAssertEqual(sim.fish.count, 1)
-        XCTAssertTrue(StickerBook.shared.has(game: AquariumSim.gameID, id: AquaFind.pearl.rawValue))
-        XCTAssertEqual(Coins.shared.balance, 2)
         sim.release(home: CGPoint(x: 608, y: AGeo.dockY))
-
-        run(sim, seconds: AquariumSim.coinCooldown + 0.3)
-        sim.tapDockNet()
-        XCTAssertTrue(sim.floatingGifts.isEmpty)
-        XCTAssertEqual(Coins.shared.balance, 4)
-        XCTAssertEqual(sim.fish.count, 1)
-        XCTAssertFalse(sim.fish[0].caught)
     }
 
     func testSpeciesDistinctEggPatternsCoverAllElevenSpecies() {
@@ -1006,6 +1048,23 @@ final class AquariumTests: XCTestCase {
         let protectedIDs = Set(sim.fish.map(\.id))
         sim.addFish(.goldfish, x: 500, y: 300)
         XCTAssertEqual(Set(sim.fish.map(\.id)), protectedIDs, "rare/raised fish must never be silently evicted")
+    }
+
+    func testAtomicSchoolingEvictionDeletesZeroFishWhenNotEnoughRoom() {
+        let sim = freshSim()
+        for k in 0..<22 {
+            sim.spawn(.axolotl, variant: AquaRare.variant, at: CGPoint(x: 180 + CGFloat(k * 25), y: 360))
+        }
+        let ord0 = sim.spawn(.goldfish, variant: 0, at: CGPoint(x: 320, y: 280))
+        let ord1 = sim.spawn(.clownfish, variant: 0, at: CGPoint(x: 420, y: 280))
+        let beforeIDs = Set(sim.fish.map(\.id))
+        let ordIDs = Set([sim.fish[ord0].id, sim.fish[ord1].id])
+        XCTAssertEqual(sim.fish.count, AquariumSim.maxFish)
+
+        sim.addFish(.tetra, x: 512, y: 300)
+        XCTAssertEqual(sim.fish.count, AquariumSim.maxFish)
+        XCTAssertEqual(Set(sim.fish.map(\.id)), beforeIDs, "atomic schooling check deletes zero fish when only 2 ordinary slots exist for 5 tetras")
+        XCTAssertTrue(ordIDs.isSubset(of: Set(sim.fish.map(\.id))))
     }
 
     func testLegacyFishSaveDefaultsGrewUpFalseAndRoundTripsRaisedFish() throws {
