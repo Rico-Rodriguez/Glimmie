@@ -1014,7 +1014,7 @@ private struct HybridAlmanacView: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, height: 126)
+            .frame(maxWidth: .infinity, minHeight: 126, maxHeight: 126)
             .background(
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
                     .fill(.white)

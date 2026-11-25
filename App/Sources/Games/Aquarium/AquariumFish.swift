@@ -906,7 +906,7 @@ enum AquaFishPainter {
 
         // Two bouncy bunny-ear rhinophores on the head
         let earSway = sin(phase * 0.9 + t * 2) * 1.8
-        for (idx, u) in [0.76, 0.85].enumerated() as [(Int, CGFloat)] {
+        for (idx, u) in ([0.76, 0.85] as [CGFloat]).enumerated() {
             let base = b.at(u, -0.78)
             let tip = CGPoint(x: base.x - (idx == 0 ? 5 : 1) + earSway, y: base.y - 13.5)
             var ear = Path()

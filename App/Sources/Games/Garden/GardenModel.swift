@@ -243,6 +243,7 @@ enum HybridKind: String, CaseIterable, Codable, Equatable {
         case .strawberry, .tomato: return .sparkleBerryVine
         case .tulip: return .moonberryTulip
         case .daisy, .carrot: return .starlightRose
+        case .pumpkin: return .crystalPumpkin
         }
     }
 }
