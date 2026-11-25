@@ -145,7 +145,7 @@ enum PizzaFind: String, CaseIterable {
                 endPoint: CGPoint(x: 0, y: 30)
             )
         )
-        g.stroke(dome, with: .color(StorybookArt.outline(for: 0xCC6445)), width: 3.4)
+        g.stroke(dome, with: .color(StorybookArt.outline(for: 0xCC6445)), lineWidth: 3.4)
 
         // Stone base hearth
         let hearth = Path(roundedRect: CGRect(x: -38, y: 24, width: 76, height: 12), cornerRadius: 5)
