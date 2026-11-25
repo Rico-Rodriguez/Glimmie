@@ -410,20 +410,32 @@ enum TidyArt {
     }
 
     static func fork(_ ctx: GraphicsContext, _ r: CGRect) {
-        var p = Path()
         let top = r.minY
-        p.addRoundedRect(in: CGRect(x: -11, y: top, width: 22, height: 34), cornerSize: CGSize(width: 6, height: 6))
-        p.move(to: TPaint.pt(-9, top + 30))
-        p.addQuadCurve(to: TPaint.pt(-4, top + 48), control: TPaint.pt(-6, top + 44))
-        p.addLine(to: TPaint.pt(4, top + 48))
-        p.addQuadCurve(to: TPaint.pt(9, top + 30), control: TPaint.pt(6, top + 44))
-        p.addRoundedRect(in: CGRect(x: -5, y: top + 46, width: 10, height: r.maxY - top - 46), cornerSize: CGSize(width: 5, height: 5))
-        for i in 0..<3 {
-            p.addRect(CGRect(x: -6.5 + CGFloat(i) * 5, y: top - 1, width: 3, height: 22))
-        }
-        let g = Gradient(stops: [.init(color: Color(hex: 0x8C97A8), location: 0), .init(color: Color(hex: 0xF4F7FB), location: 0.4),
-                                 .init(color: Color(hex: 0x9AA6B6), location: 1)])
-        ctx.fill(p, with: .linearGradient(g, startPoint: TPaint.pt(-11, 0), endPoint: TPaint.pt(11, 0)), style: FillStyle(eoFill: true))
+        var p = Path()
+        p.move(to: TPaint.pt(-10.5, top + 28))
+        p.addLine(to: TPaint.pt(-10.5, top + 2.5))
+        p.addQuadCurve(to: TPaint.pt(-7.2, top + 2.5), control: TPaint.pt(-8.85, top - 0.5))
+        p.addLine(to: TPaint.pt(-7.2, top + 21))
+        p.addLine(to: TPaint.pt(-4.8, top + 21))
+        p.addLine(to: TPaint.pt(-4.8, top + 2.5))
+        p.addQuadCurve(to: TPaint.pt(-1.4, top + 2.5), control: TPaint.pt(-3.1, top - 0.5))
+        p.addLine(to: TPaint.pt(-1.4, top + 21))
+        p.addLine(to: TPaint.pt(1.4, top + 21))
+        p.addLine(to: TPaint.pt(1.4, top + 2.5))
+        p.addQuadCurve(to: TPaint.pt(4.8, top + 2.5), control: TPaint.pt(3.1, top - 0.5))
+        p.addLine(to: TPaint.pt(4.8, top + 21))
+        p.addLine(to: TPaint.pt(7.2, top + 21))
+        p.addLine(to: TPaint.pt(7.2, top + 2.5))
+        p.addQuadCurve(to: TPaint.pt(10.5, top + 2.5), control: TPaint.pt(8.85, top - 0.5))
+        p.addLine(to: TPaint.pt(10.5, top + 28))
+        p.addQuadCurve(to: TPaint.pt(4.5, top + 47), control: TPaint.pt(10.5, top + 40))
+        p.addLine(to: TPaint.pt(5.5, r.maxY - 5))
+        p.addQuadCurve(to: TPaint.pt(0, r.maxY), control: TPaint.pt(5.5, r.maxY))
+        p.addQuadCurve(to: TPaint.pt(-5.5, r.maxY - 5), control: TPaint.pt(-5.5, r.maxY))
+        p.addLine(to: TPaint.pt(-4.5, top + 47))
+        p.addQuadCurve(to: TPaint.pt(-10.5, top + 28), control: TPaint.pt(-10.5, top + 40))
+        p.closeSubpath()
+        TPaint.metal(ctx, p, r)
         ctx.fill(Path(roundedRect: CGRect(x: -2, y: top + 56, width: 3, height: 40), cornerRadius: 1.5), with: .color(.white.opacity(0.8)))
     }
 
@@ -945,12 +957,24 @@ enum TidyArt {
         let win2 = TPaint.poly([TPaint.pt(10, -10), TPaint.pt(10, -21), TPaint.pt(15, -21), TPaint.pt(24, -10)])
         for w in [win, win2] {
             ctx.fill(w, with: .linearGradient(Gradient(colors: [Color(hex: 0xE6F6FF), Color(hex: 0x9CCBFF)]), startPoint: TPaint.pt(0, -21), endPoint: TPaint.pt(0, -10)))
+            ctx.stroke(w, with: .color(c.line.color(0.75)), lineWidth: 1.6)
         }
         TPaint.dot(ctx, 44, 2, 3.5, TidyPalette.c(2).light.color)
         for x in [-28.0, 28.0] {
-            let wheel = Path(ellipseIn: CGRect(x: CGFloat(x) - 13, y: 2, width: 26, height: 26))
-            ctx.fill(wheel, with: .color(Color(hex: 0x4F4560)))
-            ctx.fill(Path(ellipseIn: CGRect(x: CGFloat(x) - 6, y: 9, width: 12, height: 12)), with: .color(Color(hex: 0xDCE3EC)))
+            let cx = CGFloat(x)
+            let wheelRect = CGRect(x: cx - 13, y: 2, width: 26, height: 26)
+            let wheel = Path(ellipseIn: wheelRect)
+            ctx.fill(wheel, with: .radialGradient(
+                Gradient(colors: [Color(hex: 0x6A5F7E), Color(hex: 0x4B415C)]),
+                center: CGPoint(x: cx - 3, y: 11),
+                startRadius: 2,
+                endRadius: 15
+            ))
+            ctx.stroke(wheel, with: .color(Color(hex: 0x352542)), lineWidth: 2.2)
+            let hubRect = CGRect(x: cx - 6.5, y: 8.5, width: 13, height: 13)
+            TPaint.metal(ctx, Path(ellipseIn: hubRect), hubRect)
+            TPaint.dot(ctx, cx, 15, 2.2, Color(hex: 0x6E6A86))
+            TPaint.gloss(ctx, CGRect(x: cx - 8.5, y: 5, width: 6, height: 3.5), 0.35)
         }
         TPaint.gloss(ctx, CGRect(x: -38, y: -5, width: 20, height: 4), 0.6)
     }

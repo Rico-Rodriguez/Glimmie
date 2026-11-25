@@ -346,4 +346,70 @@ final class DressUpTests: XCTestCase {
         world.undo()
         XCTAssertFalse(world.look.makeup.isEmpty)
     }
+
+    func testDressUpStickersRegistered() {
+        StickerBook.shared.demo = true
+        let expected: Set<String> = [
+            "runwayStar", "outfitSet", "petBestie", "nailArtist",
+            "glamMakeup", "colorAlchemist", "storyDirector", "photoQueen",
+        ]
+        XCTAssertEqual(DressUpFind.allCases.count, 8)
+        XCTAssertEqual(DressUpFind.stickers.count, 8)
+        XCTAssertEqual(Set(DressUpFind.stickers.map(\.id)), expected)
+        XCTAssertEqual(DressUpGame.entry.stickers.map(\.id), DressUpFind.stickers.map(\.id))
+        DressUpFind.outfitSet.unlock()
+        XCTAssertTrue(StickerBook.shared.has(game: LookStore.game, id: DressUpFind.outfitSet.rawValue))
+    }
+
+    func testFashionBattleCountsMakeupNailsAndAwardsCoins() {
+        StickerBook.shared.demo = true
+        Coins.shared.resetForTests(balance: 0)
+        let theme = BattleTheme.all[0]
+        var look = Look.starter.sanitized()
+        let base = theme.points(look)
+
+        look.makeup = [BeautyStroke(tool: "blush", color: "#FF8FA8", pts: [220, 360, 236, 364])]
+        XCTAssertEqual(theme.points(look), base + 1)
+
+        var nail = NailPaint()
+        nail.color = "#F45C9A"
+        nail.mask = NailGrid.encode(NailGrid.inside)
+        look.nails = [nail]
+        XCTAssertEqual(theme.points(look), base + 2)
+
+        let scores = theme.stars(look, luck: [0, 0, 0])
+        XCTAssertEqual(scores.count, 3)
+        XCTAssertTrue(scores.allSatisfy { (1...5).contains($0) })
+
+        let lowReward = BattleTheme.coinReward(stars: [2, 2, 2], won: false)
+        XCTAssertTrue((3...5).contains(lowReward))
+
+        let paid = BattleTheme.awardRunway(stars: [5, 5, 5], won: true)
+        XCTAssertTrue((3...5).contains(paid))
+        XCTAssertEqual(Coins.shared.balance, paid)
+        XCTAssertEqual(Coins.shared.lastPay?.game, LookStore.game)
+        XCTAssertTrue(StickerBook.shared.has(game: LookStore.game, id: DressUpFind.runwayStar.rawValue))
+    }
+
+    func testColorMixerReceivesCategoryPalettes() {
+        XCTAssertEqual(ColorMixer.palette(forCategory: "hairBack", art: art), art.hair)
+        XCTAssertEqual(ColorMixer.palette(forCategory: "hairFront", art: art), art.hair)
+        XCTAssertEqual(ColorMixer.palette(forCategory: "eyes", art: art), art.eye)
+        XCTAssertEqual(ColorMixer.palette(forCategory: "dress", art: art), art.cloth)
+        XCTAssertEqual(ColorMixer.palette(forCategory: "hat", art: art), art.cloth)
+    }
+
+    func testBeautyWorldRoutesPointsThroughFingerLift() {
+        let world = BeautyWorld(look: Look.starter, mode: .makeup)
+        world.size = CGSize(width: 600, height: 790)
+        XCTAssertEqual(world.lift, FingerLift.tool)
+        let finger = CGPoint(x: 360, y: 500)
+        world.press(finger)
+        let expected = FingerLift.point(finger, lift: world.lift, top: 0, bottom: 790, width: 600)
+        XCTAssertEqual(world.tipOnStage?.x ?? -1, expected.x, accuracy: 0.001)
+        XCTAssertEqual(world.tipOnStage?.y ?? -1, expected.y, accuracy: 0.001)
+        world.tool = .glitter
+        XCTAssertEqual(world.lift, FingerLift.pour)
+        world.release()
+    }
 }

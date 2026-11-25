@@ -127,11 +127,26 @@ extension IceSim {
     // MARK: Step
 
     func stepBlender(_ dt: CGFloat) {
-        // motor spins up while she holds the button, and coasts down after
+        if blending && blendingToggle && jarOnBase {
+            blendToggleTime += dt
+            if chunks.isEmpty { blendEmptyTime += dt } else { blendEmptyTime = 0 }
+            if (blendEmptyTime > 1.1 && blendToggleTime > 1.6) || blendToggleTime > 9.0 {
+                blending = false
+                blendingToggle = false
+                blendToggleTime = 0
+                blendEmptyTime = 0
+                Sound.shared.play(.ding, volume: 0.45)
+                sparkle()
+            }
+        } else {
+            blendToggleTime = 0
+            blendEmptyTime = 0
+        }
         let on = blending && jarOnBase
         motor += ((on ? 1 : 0) - motor) * min(1, dt * (on ? 3.2 : 1.6))
         if motor < 0.002 { motor = 0 }
         bladeAngle += motor * dt * 55
+        stepAutoPour(dt)
         stepJarHome(dt)
         stepChunks(dt)
         stepPour(dt)
@@ -141,8 +156,91 @@ extension IceSim {
         spills.removeAll { $0.age > 16 }
     }
 
+    /// One-tap assist: glides the milk jug over the blender jar, pours a splash, and returns.
+    func autoPourMilk() {
+        guard station == .smoothie, jarOnBase else { return }
+        blending = false
+        blendingToggle = false
+        held = nil
+        returning.removeAll { $0.held == .milk }
+        autoPour = .milk
+        autoPourTime = 0
+        autoMilkPos = ICGeo.milkHome
+        milkTilt = 0
+        milkPour = 0
+        Sound.shared.play(.whoosh, volume: 0.4)
+        Sound.shared.tap()
+    }
+
+    /// One-tap assist: lifts the blender jar beside the glass, tips to pour cleanly, and glides home.
+    func autoPourJar() {
+        guard station == .smoothie, jarVolume > 0.01 else { return }
+        if build.base == nil { placeBase(.glass) }
+        blending = false
+        blendingToggle = false
+        held = nil
+        jarOnBase = false
+        autoPour = .jar
+        autoPourTime = 0
+        Sound.shared.play(.whoosh, volume: 0.45)
+        Sound.shared.tap()
+    }
+
+    private func stepAutoPour(_ dt: CGFloat) {
+        guard let mode = autoPour else { return }
+        autoPourTime += dt
+        switch mode {
+        case .milk:
+            let hover = CGPoint(x: jarP.x + 40, y: jarP.y - ICGeo.jarH - 34)
+            autoMilkPos.x += (hover.x - autoMilkPos.x) * min(1, dt * 8)
+            autoMilkPos.y += (hover.y - autoMilkPos.y) * min(1, dt * 8)
+            let close = hypot(hover.x - autoMilkPos.x, hover.y - autoMilkPos.y) < 28
+            let wantTilt: CGFloat = close && autoPourTime < 1.35 && jarVolume < 0.9 ? 1.35 : 0
+            milkTilt += (wantTilt - milkTilt) * min(1, dt * 8)
+            milkPour = close && milkTilt > 0.88 ? 1 : 0
+            if milkPour > 0 {
+                let room = 0.92 - jarVolume
+                let dv = min(room, 0.24 * dt)
+                if dv > 0 {
+                    jarVolume += dv
+                    jarPaint.add(IceSim.milk, Double(dv))
+                    sloshV += 0.6
+                }
+                streamTo(from: milkSpout(at: autoMilkPos), v: CGVector(dx: 40, dy: 30), floorY: jarLevel(), color: IceSim.milk)
+            } else {
+                stream = []
+            }
+            if autoPourTime >= 1.45 || jarVolume >= 0.9 {
+                autoPour = nil
+                milkPour = 0
+                stream = []
+                returning.append(ICReturn(held: .milk, from: autoMilkPos, to: ICGeo.milkHome, start: time, tilt: milkTilt))
+                milkTilt = 0
+            }
+        case .jar:
+            var target = CGPoint(x: S.x - 148, y: S.y - 168 + ICGeo.jarH / 2)
+            if pourRate > 0.01, let land = stream.last {
+                jarAim += (S.x - land.x) * min(1, dt * 3.5)
+                jarAim = icClamp(jarAim, -90, 90)
+            } else {
+                jarAim *= (1 - min(1, dt * 4))
+            }
+            target.x += jarAim
+            jarP.x += (target.x - jarP.x) * min(1, dt * 7.5)
+            jarP.y += (target.y - jarP.y) * min(1, dt * 7.5)
+            let nearGlass = hypot(target.x - jarP.x, target.y - jarP.y) < 48
+            let want: CGFloat = nearGlass ? 1.65 + 0.65 * (1 - icClamp(jarVolume / 0.5)) : 0.25
+            jarTiltV += ((want - jarTilt) * 34 - jarTiltV * 8) * dt
+            jarTilt += jarTiltV * dt
+            if jarVolume <= 0.005 || build.fill >= 0.96 || autoPourTime > 3.2 {
+                autoPour = nil
+                releaseJar()
+            }
+        }
+    }
+
     private func stepJarHome(_ dt: CGFloat) {
-        guard held != .jar, !jarOnBase else { return }
+        guard held != .jar, autoPour != .jar, !jarOnBase else { return }
         let home = ICGeo.jarHome
         jarP.x += (home.x - jarP.x) * min(1, dt * 9)
         jarP.y += (home.y - jarP.y) * min(1, dt * 9)
@@ -336,6 +434,12 @@ extension IceSim {
         jarP = ICGeo.jarHome
         jarTilt = 0
         jarOnBase = true
+        blending = false
+        blendingToggle = false
+        autoPour = nil
+        autoPourTime = 0
+        milkPour = 0
+        milkTilt = 0
         motor = 0
         slosh = 0
         sloshV = 0
@@ -375,12 +479,14 @@ extension IceSim {
         }
     }
 
-    /// The milk jug's spout, for the jug tipped by `milkTilt` at the tip.
-    func milkSpout() -> CGPoint {
+    /// The milk jug's spout, for the jug tipped by `milkTilt` at `origin`.
+    func milkSpout(at origin: CGPoint) -> CGPoint {
         let a = milkTilt
         let p = CGPoint(x: 30, y: -54)
-        return CGPoint(x: tip.x + p.x * cos(a) - p.y * sin(a), y: tip.y + p.x * sin(a) + p.y * cos(a))
+        return CGPoint(x: origin.x + p.x * cos(a) - p.y * sin(a), y: origin.y + p.x * sin(a) + p.y * cos(a))
     }
+
+    func milkSpout() -> CGPoint { milkSpout(at: tip) }
 
     func glassLiquidH() -> CGFloat {
         let b = ICBase.glass
@@ -388,9 +494,9 @@ extension IceSim {
     }
 
     private func stepPour(_ dt: CGFloat) {
-        guard held == .jar, jarVolume > 0.001 else {
+        guard (held == .jar || autoPour == .jar), jarVolume > 0.001 else {
             pourRate *= 0.8
-            if held != .milk { stream = [] }
+            if held != .milk && autoPour != .milk { stream = [] }
             return
         }
         let poly = jarInside()

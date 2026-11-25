@@ -232,6 +232,7 @@ struct PhotoView: View {
 
 struct PhotoStudio: View {
     @State var look: Look
+    var cancel: (() -> Void)? = nil
     let done: (Look) -> Void
 
     @State private var tab = 0
@@ -239,6 +240,7 @@ struct PhotoStudio: View {
     /// How far the moving sticker floats above her finger (glides up as she drags, see `FingerLift`).
     @State private var stickerLift = CGSize.zero
     @State private var overBin = false
+    @State private var placementIndex = 0
 
     private static let photoHeight: CGFloat = 760
     private var photoSize: CGSize { CGSize(width: Self.photoHeight * PhotoBase.aspect, height: Self.photoHeight) }
@@ -349,15 +351,21 @@ struct PhotoStudio: View {
         let k = sizes.firstIndex { $0 > look.stickers[i].size + 0.001 } ?? 0
         withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
             look.stickers[i].size = sizes[k]
-            look.stickers[i].turn = Double.random(in: -16...16)
         }
     }
 
     private func add(_ kind: String) {
         Sound.shared.play(.sparkle, volume: 0.7)
         Sound.shared.tap()
-        let s = PhotoSticker(kind: kind, x: .random(in: 0.2...0.8), y: .random(in: 0.12...0.6),
-                             size: kind.hasPrefix("pet:") || kind == "mypet" ? 0.28 : 0.2, turn: .random(in: -14...14))
+        let n = placementIndex
+        placementIndex += 1
+        let angle = Double(n) * 2.39996
+        let radius = min(0.24, 0.055 * sqrt(Double(n)))
+        let x = max(0.18, min(0.82, 0.5 + cos(angle) * radius))
+        let y = max(0.18, min(0.72, 0.44 + sin(angle) * radius * 0.85))
+        let turn = Double((n % 5) - 2) * 4.5
+        let s = PhotoSticker(kind: kind, x: x, y: y,
+                             size: kind.hasPrefix("pet:") || kind == "mypet" ? 0.28 : 0.2, turn: turn)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
             look.stickers.append(s)
             if look.stickers.count > Look.maxStickers { look.stickers.removeFirst(look.stickers.count - Look.maxStickers) }
@@ -368,13 +376,23 @@ struct PhotoStudio: View {
 
     private var panel: some View {
         VStack(spacing: 14) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 tabButton(0, symbol: "star.fill", tint: Color(hex: 0xFFC93C))
                 tabButton(1, symbol: "photo.artframe", tint: Color(hex: 0x9B79E0))
                 Spacer()
-                RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B)) {
+                if let cancel {
+                    RoundButton(symbol: "xmark", tint: Theme.pink, size: 60) {
+                        Sound.shared.play(.whoosh, volume: 0.6)
+                        cancel()
+                    }
+                }
+                RoundButton(symbol: "checkmark", tint: Color(hex: 0x6CCB8B), size: 60) {
                     Sound.shared.play(.fanfare, volume: 0.7)
-                    done(look.sanitized())
+                    let saved = look.sanitized()
+                    if !saved.stickers.isEmpty || saved.frame != nil {
+                        DressUpFind.photoQueen.unlock()
+                    }
+                    done(saved)
                 }
             }
             ScrollView(showsIndicators: false) {
@@ -382,8 +400,8 @@ struct PhotoStudio: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(.white.opacity(0.88)))
-        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 5))
+        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream.opacity(0.96)))
+        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(Theme.blush, lineWidth: 4))
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, y: 8)
     }
 
@@ -393,10 +411,10 @@ struct PhotoStudio: View {
             tab = i
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: 38, weight: .bold))
+                .font(.system(size: 34, weight: .bold))
                 .foregroundStyle(tab == i ? .white : tint)
-                .frame(width: 96, height: 78)
-                .background(RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .frame(width: 82, height: 64)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(tab == i ? Theme.pink.opacity(0.9) : Theme.blush.opacity(0.7)))
         }
         .buttonStyle(Squish())

@@ -283,4 +283,27 @@ final class BakeryTests: XCTestCase {
         XCTAssertTrue(hands.finished.contains(.butter))
         XCTAssertEqual(sim.blobs.filter { $0.cube }.count, 1)
     }
+
+    // MARK: Stickers & Treat Case
+
+    func testBakeryFindsDefinesSixUniqueStickersWiredToEntry() {
+        let stickers = BakeryFind.stickers
+        XCTAssertEqual(stickers.count, 6)
+        XCTAssertEqual(Set(stickers.map { $0.id }).count, 6)
+        XCTAssertEqual(BakeryGame.entry.stickers.map { $0.id }, BakeryFind.allCases.map { $0.rawValue })
+    }
+
+    func testRemoveServedRemovesSavedTreatSafely() {
+        let store = BakeryStore()
+        let before = store.served
+        let sample = Treat.sample(.cupcake, seed: 19)
+        store.served = [sample, Treat.sample(.cake, seed: 23)]
+        store.removeServed(at: 0)
+        XCTAssertEqual(store.served.count, 1)
+        XCTAssertEqual(store.served.first?.kind, .cake)
+        store.removeServed(at: 99)
+        XCTAssertEqual(store.served.count, 1)
+        store.served = before
+        store.save()
+    }
 }

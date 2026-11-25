@@ -1,18 +1,22 @@
 import SwiftUI
 
-/// The coloring screen: tools on the left, the page in the middle, colors on the right.
+/// The coloring screen: tools on the left, the sketchbook page in the middle, colors/stickers on the right.
 struct ColoringStudioView: View {
     @ObservedObject var studio: ColoringStudio
     let onBack: () -> Void
     let onDone: () -> Void
+    var onHome: (() -> Void)? = nil
+    var onStickerBook: (() -> Void)? = nil
+
     @State private var askClear = false
     @State private var celebrate = 0
     @State private var mixing = false
+    @State private var finishing = false
 
     var body: some View {
         VStack(spacing: 10) {
             topBar
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
                 toolColumn
                 VStack(spacing: 10) {
                     canvas
@@ -21,7 +25,7 @@ struct ColoringStudioView: View {
                 rightColumn
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
         }
         .overlay { if askClear { clearConfirm } }
         .overlay {
@@ -38,53 +42,92 @@ struct ColoringStudioView: View {
     // MARK: Top bar
 
     private var topBar: some View {
-        HStack(spacing: 16) {
-            ColoringButton(icon: "square.grid.2x2.fill", tint: Theme.lilac, action: onBack)
-            Spacer()
-            ColoringButton(icon: "arrow.uturn.backward", tint: studio.canUndo ? Theme.sky : Color.gray.opacity(0.4)) {
-                studio.undoLast()
+        HStack(spacing: 12) {
+            HStack(spacing: 14) {
+                if let onHome {
+                    HomeButton(size: GameChromeLayout.buttonSize, action: onHome)
+                }
+                if let onStickerBook {
+                    StickerBookButton(game: ColoringGallery.gameID, size: GameChromeLayout.buttonSize, action: onStickerBook)
+                }
+                ColoringButton(icon: "square.grid.2x2.fill", tint: Theme.lilac, size: GameChromeLayout.buttonSize, action: onBack)
+                    .accessibilityLabel("Pages")
             }
-            .disabled(!studio.canUndo)
-            ColoringButton(icon: "trash.fill", tint: Theme.peach) { askClear = true }
-            ColoringZoomResetButton(zoom: studio.zoom)
+
             Spacer()
-            ColoringButton(icon: "checkmark", tint: Theme.mint, size: 80) {
-                studio.saveIfNeeded(force: true)
-                Sound.shared.play(.fanfare, volume: 0.8)
-                celebrate += 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { onDone() }
+
+            HStack(spacing: 10) {
+                ColoringButton(icon: "arrow.uturn.backward", tint: studio.canUndo ? Theme.sky : Color.gray.opacity(0.4), size: GameChromeLayout.buttonSize) {
+                    studio.undoLast()
+                }
+                .disabled(!studio.canUndo)
+                .accessibilityLabel("Undo")
+
+                ColoringButton(icon: "trash.fill", tint: Theme.peach, size: GameChromeLayout.buttonSize) {
+                    askClear = true
+                }
+                .accessibilityLabel("Clear")
+
+                ColoringZoomControls(zoom: studio.zoom)
+            }
+
+            Spacer()
+
+            HStack(spacing: 12) {
+                CoinCounter(game: ColoringGallery.gameID, height: GameChromeLayout.buttonSize)
+                ColoringButton(icon: "checkmark", tint: Theme.mint, size: 70) {
+                    guard !finishing else { return }
+                    finishing = true
+                    let unlocked = studio.completeArtwork()
+                    Coins.shared.earn(4, game: ColoringGallery.gameID, from: CGPoint(x: 512, y: 420))
+                    if unlocked.isEmpty {
+                        Sound.shared.play(.fanfare, volume: 0.8)
+                    } else {
+                        Sound.shared.play(.cheer, volume: 0.7)
+                    }
+                    celebrate += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.85) { onDone() }
+                }
+                .disabled(finishing)
+                .accessibilityLabel("Done")
             }
         }
         .padding(.horizontal, 22)
-        .padding(.top, 12)
+        .padding(.top, 18)
     }
 
     // MARK: Tools
 
     private var toolColumn: some View {
-        VStack(spacing: 6) {
-            ForEach(ColoringTool.allCases, id: \.self) { t in
-                ColoringToolButton(tool: t, selected: studio.tool == t, tint: toolTint(t)) {
-                    studio.tool = t
+        GameTrayCard(cornerRadius: 26, paddingH: 8, paddingV: 8) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 5) {
+                    ForEach(ColoringTool.allCases, id: \.self) { t in
+                        ColoringToolButton(
+                            tool: t,
+                            selected: studio.tool == t,
+                            color: studio.color,
+                            stampShape: studio.stampShape
+                        ) {
+                            studio.tool = t
+                        }
+                    }
                 }
+                .padding(.vertical, 3)
+                .padding(.horizontal, 2)
             }
         }
-    }
-
-    private func toolTint(_ t: ColoringTool) -> Color {
-        switch t {
-        case .rainbow: return Color(hex: 0xFF9EC9)
-        case .eraser: return Color(hex: 0xB9B3C9)
-        case .stickers: return Theme.lemon
-        default: return Color(.sRGB, red: studio.color.r, green: studio.color.g, blue: studio.color.b)
-        }
+        .frame(width: 82)
     }
 
     // MARK: Canvas
 
     private var canvas: some View {
         GeometryReader { geo in
-            let fit = fitted(geo.size)
+            let fit = fitted(CGSize(width: max(40, geo.size.width - 20), height: max(40, geo.size.height - 20)))
+            let pageShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            let matShape = RoundedRectangle(cornerRadius: 22, style: .continuous)
+
             ZStack {
                 if studio.ready {
                     ColoringCanvas(studio: studio, tool: studio.tool)
@@ -95,14 +138,22 @@ struct ColoringStudioView: View {
                 ColoringStickerLayer(studio: studio, zoom: studio.zoom, scale: fit.width / CGFloat(ColoringPaper.width))
                 ColoringZoomed(zoom: studio.zoom) {
                     if let b = studio.burst {
-                        ColoringFillPop(burst: b, scale: fit.width / CGFloat(ColoringPaper.width)).id(b.id).allowsHitTesting(false)
+                        ColoringFillPop(burst: b, scale: fit.width / CGFloat(ColoringPaper.width)).id(b.id)
                     }
                 }
+                .allowsHitTesting(false)
             }
             .frame(width: fit.width, height: fit.height)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white, lineWidth: 6))
-            .shadow(color: Theme.ink.opacity(0.2), radius: 10, y: 6)
+            .clipShape(pageShape)
+            .overlay(pageShape.stroke(.white, lineWidth: 3).allowsHitTesting(false))
+            .overlay(SketchbookPageCorners().allowsHitTesting(false))
+            .background(
+                matShape
+                    .fill(Color(hex: 0xFAF0E4))
+                    .overlay(matShape.stroke(StorybookArt.outline(for: 0xE2C4A0), lineWidth: 3.5))
+                    .padding(-10)
+                    .shadow(color: Theme.ink.opacity(0.2), radius: 10, y: 6)
+            )
             .frame(width: geo.size.width, height: geo.size.height)
         }
     }
@@ -116,61 +167,110 @@ struct ColoringStudioView: View {
     // MARK: Options under the canvas
 
     @ViewBuilder private var optionsRow: some View {
-        HStack(spacing: 14) {
-            switch studio.tool {
-            case .fill:
-                ForEach(ColoringFill.allCases, id: \.self) { f in
-                    Button {
-                        Sound.shared.play(.tap, volume: 0.5)
-                        studio.fillStyle = f
-                    } label: {
-                        ColoringFillSwatch(style: f, color: studio.color, selected: studio.fillStyle == f)
-                    }
-                    .buttonStyle(Squish())
-                }
-            case .stickers:
-                if let id = studio.selected {
-                    ColoringButton(icon: "minus.magnifyingglass", tint: Theme.sky, size: 60) { resize(id, 0.8) }
-                    ColoringButton(icon: "plus.magnifyingglass", tint: Theme.sky, size: 60) { resize(id, 1.25) }
-                    ColoringButton(icon: "rotate.right.fill", tint: Theme.lilac, size: 60) { rotate(id) }
-                    ColoringButton(icon: "trash.fill", tint: Theme.peach, size: 60) { studio.removeSticker(id) }
-                } else {
-                    Image(systemName: "hand.point.up.left.fill").font(.system(size: 34, weight: .bold)).foregroundStyle(Theme.ink.opacity(0.5))
-                }
-            default:
-                ForEach(0..<ColoringPaper.sizes.count, id: \.self) { i in
-                    Button {
-                        Sound.shared.play(.tap, volume: 0.5)
-                        studio.sizeIndex = i
-                    } label: {
-                        ZStack {
-                            Circle().fill(.white).frame(width: 62, height: 62)
-                            Circle().fill(Theme.ink).frame(width: dotSize(i), height: dotSize(i))
+        GameTrayCard(cornerRadius: 26, paddingH: 14, paddingV: 7) {
+            HStack(spacing: 11) {
+                switch studio.tool {
+                case .fill:
+                    ForEach(ColoringFill.allCases, id: \.self) { f in
+                        Button {
+                            Sound.shared.play(.tap, volume: 0.5)
+                            studio.fillStyle = f
+                        } label: {
+                            ColoringFillSwatch(style: f, color: studio.color, selected: studio.fillStyle == f)
                         }
-                        .overlay(Circle().stroke(studio.sizeIndex == i ? Theme.pink : .clear, lineWidth: 5))
+                        .buttonStyle(Squish())
                     }
-                    .buttonStyle(Squish())
+                case .stickers:
+                    if let id = studio.selected {
+                        ColoringButton(icon: "minus.magnifyingglass", tint: Theme.sky, size: 54) { resize(id, 0.8) }
+                        ColoringButton(icon: "plus.magnifyingglass", tint: Theme.sky, size: 54) { resize(id, 1.25) }
+                        ColoringButton(icon: "rotate.right.fill", tint: Theme.lilac, size: 54) { rotate(id) }
+                        ColoringButton(icon: "trash.fill", tint: Theme.peach, size: 54) { studio.removeSticker(id) }
+                    } else {
+                        HStack(spacing: 10) {
+                            ColoringStickerArtView(id: "star", showShadow: false)
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "hand.point.up.left.fill")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(Theme.ink.opacity(0.45))
+                        }
+                        .padding(.horizontal, 10)
+                    }
+                case .stamps:
+                    brushSizeButtons
+                    trayDivider
+                    ForEach(ColoringStampShape.allCases, id: \.self) { shape in
+                        Button {
+                            Sound.shared.play(.tap, volume: 0.5)
+                            studio.stampShape = shape
+                        } label: {
+                            GameDockTile(
+                                size: 54,
+                                selected: studio.stampShape == shape,
+                                tint: studio.stampShape == shape ? Theme.blush.opacity(0.45) : .white,
+                                cornerRadius: 16
+                            ) {
+                                StampShapeIcon(shape: shape, color: studio.color)
+                                    .padding(6)
+                            }
+                        }
+                        .buttonStyle(Squish())
+                    }
+                    trayDivider
+                    stayInLinesButton
+                default:
+                    brushSizeButtons
+                    trayDivider
+                    stayInLinesButton
                 }
-                Spacer().frame(width: 20)
+            }
+            .frame(height: 58)
+        }
+    }
+
+    private var brushSizeButtons: some View {
+        HStack(spacing: 10) {
+            ForEach(0..<ColoringPaper.sizes.count, id: \.self) { i in
                 Button {
                     Sound.shared.play(.tap, volume: 0.5)
-                    studio.stayInLines.toggle()
+                    studio.sizeIndex = i
                 } label: {
-                    // Inside the lines (a shape with a dot in it) or anywhere.
-                    Image(systemName: studio.stayInLines ? "circle.inset.filled" : "scribble")
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 62, height: 62)
-                        .background(Circle().fill(studio.stayInLines ? Theme.mint : Theme.peach))
-                        .overlay(Circle().stroke(.white, lineWidth: 4))
+                    ZStack {
+                        Circle().fill(.white).frame(width: 54, height: 54)
+                        Circle().fill(Theme.ink).frame(width: dotSize(i), height: dotSize(i))
+                    }
+                    .overlay(Circle().stroke(studio.sizeIndex == i ? Theme.pink : Theme.blush, lineWidth: studio.sizeIndex == i ? 4.5 : 2.5))
+                    .scaleEffect(studio.sizeIndex == i ? 1.07 : 1)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.65), value: studio.sizeIndex)
                 }
                 .buttonStyle(Squish())
             }
         }
-        .frame(height: 70)
     }
 
-    private func dotSize(_ i: Int) -> CGFloat { [12, 24, 40][i] }
+    private var stayInLinesButton: some View {
+        Button {
+            Sound.shared.play(.tap, volume: 0.5)
+            studio.stayInLines.toggle()
+        } label: {
+            StayInLinesIcon(active: studio.stayInLines)
+                .padding(5)
+                .frame(width: 56, height: 56)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(studio.stayInLines ? Theme.mint.opacity(0.4) : Theme.peach.opacity(0.35)))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(studio.stayInLines ? Theme.mint : Theme.peach, lineWidth: 3.5))
+        }
+        .buttonStyle(Squish())
+        .accessibilityLabel(studio.stayInLines ? "Stay inside lines" : "Color freely")
+    }
+
+    private var trayDivider: some View {
+        Capsule()
+            .fill(Theme.blush)
+            .frame(width: 3, height: 34)
+            .padding(.horizontal, 2)
+    }
+
+    private func dotSize(_ i: Int) -> CGFloat { [11, 22, 36][i] }
 
     private func resize(_ id: UUID, _ k: Double) {
         guard var s = studio.stickers.first(where: { $0.id == id }) else { return }
@@ -188,41 +288,83 @@ struct ColoringStudioView: View {
 
     // MARK: Colors / sticker tray
 
-    @ViewBuilder private var rightColumn: some View {
-        if studio.tool == .stickers {
-            ScrollView(showsIndicators: false) {
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(58), spacing: 6), count: 3), spacing: 6) {
-                    ForEach(ColoringStickers.all, id: \.self) { e in
-                        Button { studio.addSticker(e) } label: {
-                            Text(e).font(.system(size: 40)).frame(width: 58, height: 58)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.8)))
+    private var rightColumn: some View {
+        GameTrayCard(cornerRadius: 28, paddingH: 10, paddingV: 10) {
+            if studio.tool == .stickers {
+                ScrollView(showsIndicators: false) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.fixed(58), spacing: 6), count: 3), spacing: 6) {
+                        ForEach(ColoringStickers.all, id: \.self) { id in
+                            Button { studio.addSticker(id) } label: {
+                                ColoringStickerArtView(id: id, showShadow: false)
+                                    .padding(4)
+                                    .frame(width: 58, height: 58)
+                                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white))
+                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.blush, lineWidth: 2))
+                            }
+                            .buttonStyle(Squish())
                         }
-                        .buttonStyle(Squish())
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else {
+                VStack(spacing: 10) {
+                    ColoringHueSlider(studio: studio)
+                    mixerRow
+                    colorGrid
+                }
+            }
+        }
+        .frame(width: 210)
+    }
+
+    private var mixerRow: some View {
+        HStack(spacing: 8) {
+            Button {
+                Sound.shared.play(.bubble, volume: 0.6)
+                withAnimation(.spring(response: 0.35)) { mixing = true }
+            } label: {
+                ZStack {
+                    Capsule().fill(.white)
+                    MixerPaletteIcon()
+                        .frame(width: 44, height: 44)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .overlay(
+                    Capsule().stroke(
+                        LinearGradient(
+                            colors: [Theme.pink, Theme.lemon, Theme.mint, Theme.sky, Theme.lilac],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        lineWidth: 3.5
+                    )
+                )
+                .shadow(color: Theme.ink.opacity(0.12), radius: 3, y: 2)
+            }
+            .buttonStyle(Squish())
+            .accessibilityLabel("Mix paint")
+
+            if let custom = studio.customColor {
+                Button {
+                    Sound.shared.play(.tap, volume: 0.45)
+                    studio.pickColor(custom)
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        ColoringColorDot(color: custom, selected: studio.color == custom)
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 13, weight: .black))
+                            .foregroundStyle(Theme.lemon)
+                            .shadow(color: Theme.ink.opacity(0.35), radius: 1)
+                            .offset(x: 2, y: -2)
                     }
                 }
-                .padding(.vertical, 4)
-            }
-            .frame(width: 190)
-        } else {
-            VStack(spacing: 10) {
-                ColoringHueSlider(studio: studio)
-                Button {
-                    Sound.shared.play(.bubble, volume: 0.6)
-                    withAnimation(.spring(response: 0.35)) { mixing = true }
-                } label: {
-                    Image(systemName: "paintpalette.fill")
-                        .symbolRenderingMode(.multicolor)
-                        .font(.system(size: 32, weight: .bold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(Capsule().fill(.white.opacity(0.9)))
-                        .overlay(Capsule().stroke(Theme.blush, lineWidth: 4))
-                }
                 .buttonStyle(Squish())
-                colorGrid
+                .transition(.scale.combined(with: .opacity))
+                .accessibilityLabel("Custom mixed color")
             }
-            .frame(width: 190)
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: studio.customColor)
     }
 
     private var colorGrid: some View {
@@ -232,8 +374,7 @@ struct ColoringStudioView: View {
                     let c = ColoringPalette.colors[i]
                     Button {
                         Sound.shared.play(.tap, volume: 0.4)
-                        studio.color = c
-                        if studio.tool == .eraser { studio.tool = .marker }
+                        studio.pickColor(c)
                     } label: {
                         ColoringColorDot(color: c, selected: studio.color == c)
                     }
@@ -260,7 +401,8 @@ struct ColoringStudioView: View {
                 }
             }
             .padding(40)
-            .background(RoundedRectangle(cornerRadius: 36).fill(Theme.cream))
+            .background(RoundedRectangle(cornerRadius: 36, style: .continuous).fill(Theme.cream))
+            .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).stroke(.white, lineWidth: 5))
         }
     }
 }
@@ -270,7 +412,8 @@ struct ColoringStudioView: View {
 private struct ColoringToolButton: View {
     let tool: ColoringTool
     let selected: Bool
-    let tint: Color
+    let color: PaintColor
+    let stampShape: ColoringStampShape
     let action: () -> Void
 
     var body: some View {
@@ -278,25 +421,49 @@ private struct ColoringToolButton: View {
             Sound.shared.play(.tap, volume: 0.5)
             action()
         } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 20).fill(selected ? tint : .white.opacity(0.85))
-                if tool == .rainbow {
-                    Image(systemName: "rainbow").symbolRenderingMode(.multicolor)
-                        .font(.system(size: 28, weight: .bold))
-                } else {
-                    Image(systemName: tool.icon)
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(selected ? Color.white : (tint == Color.white ? Theme.ink : tint))
-                        .shadow(color: .black.opacity(selected ? 0.25 : 0), radius: 1)
+            GameDockTile(
+                size: 62,
+                selected: selected,
+                tint: selected ? Theme.blush.opacity(0.55) : .white,
+                cornerRadius: 18
+            ) {
+                ZStack {
+                    ColoringToolIcon(tool: tool, color: color, stampShape: stampShape)
+                        .padding(5)
+                    if tool == .glitter {
+                        ColoringTwinkles(count: 4).allowsHitTesting(false)
+                    }
                 }
-                if tool == .glitter { ColoringTwinkles(count: 4).allowsHitTesting(false) }
             }
-            .frame(width: 64, height: 64)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(selected ? Theme.pink : .white, lineWidth: selected ? 5 : 3))
-            .scaleEffect(selected ? 1.06 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: selected)
         }
         .buttonStyle(Squish())
+    }
+}
+
+/// Decorative pastel sketchbook photo-mount corners overlaid non-interactively around the canvas edges.
+private struct SketchbookPageCorners: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let len: CGFloat = 22
+            let inset: CGFloat = 1.5
+            let corners: [(CGPoint, CGPoint, CGPoint)] = [
+                (CGPoint(x: inset, y: inset), CGPoint(x: inset + len, y: inset), CGPoint(x: inset, y: inset + len)),
+                (CGPoint(x: size.width - inset, y: inset), CGPoint(x: size.width - inset - len, y: inset), CGPoint(x: size.width - inset, y: inset + len)),
+                (CGPoint(x: inset, y: size.height - inset), CGPoint(x: inset + len, y: size.height - inset), CGPoint(x: inset, y: size.height - inset - len)),
+                (CGPoint(x: size.width - inset, y: size.height - inset), CGPoint(x: size.width - inset - len, y: size.height - inset), CGPoint(x: size.width - inset, y: size.height - inset - len)),
+            ]
+            for (a, b, c) in corners {
+                var p = Path()
+                p.move(to: a)
+                p.addLine(to: b)
+                p.addLine(to: c)
+                p.closeSubpath()
+                ctx.fill(p, with: .color(StorybookArt.color(0xFFE5EE, alpha: 0.85)))
+                ctx.stroke(p, with: .color(StorybookArt.outline(for: 0xE2C4A0).opacity(0.5)), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .allowsHitTesting(false)
     }
 }
 
@@ -306,9 +473,9 @@ private struct ColoringColorDot: View {
     var body: some View {
         Circle()
             .fill(Color(.sRGB, red: color.r, green: color.g, blue: color.b))
-            .frame(width: 50, height: 50)
-            .overlay(Circle().stroke(.white, lineWidth: 4))
-            .overlay(Circle().stroke(selected ? Theme.pink : Theme.ink.opacity(0.15), lineWidth: selected ? 4 : 1).padding(selected ? -5 : 0))
+            .frame(width: 48, height: 48)
+            .overlay(Circle().stroke(.white, lineWidth: 3.5))
+            .overlay(Circle().stroke(selected ? Theme.pink : Theme.ink.opacity(0.15), lineWidth: selected ? 4 : 1).padding(selected ? -4.5 : 0))
             .scaleEffect(selected ? 1.08 : 1)
             .shadow(color: Theme.ink.opacity(0.18), radius: 3, y: 2)
     }
@@ -323,11 +490,11 @@ private struct ColoringFillSwatch: View {
     var body: some View {
         Image(uiImage: ColoringFillSwatch.image(style, color))
             .resizable()
-            .frame(width: 60, height: 60)
+            .frame(width: 54, height: 54)
             .overlay { if style == .glitter { ColoringTwinkles(count: 5) } }
             .clipShape(Circle())
-            .overlay(Circle().stroke(.white, lineWidth: 4))
-            .overlay(Circle().stroke(selected ? Theme.pink : .clear, lineWidth: 4).padding(-5))
+            .overlay(Circle().stroke(.white, lineWidth: 3.5))
+            .overlay(Circle().stroke(selected ? Theme.pink : .clear, lineWidth: 4).padding(-4.5))
             .scaleEffect(selected ? 1.08 : 1)
             .shadow(color: Theme.ink.opacity(0.18), radius: 3, y: 2)
     }
@@ -422,21 +589,45 @@ private struct ColoringStickerItem: View {
 
     var body: some View {
         let k = scale * zoom.scale   // paper pixels to screen points
-        let size = CGFloat(ColorSticker.baseSize * sticker.scale) * k
+        let size = max(24, CGFloat(ColorSticker.baseSize * sticker.scale) * k)
         let x = zoom.offset.x + CGFloat(sticker.x) * k, y = zoom.offset.y + CGFloat(sticker.y) * k
         // Zoomed far out of view: don't catch taps meant for the buttons around the page.
         let inView = x >= 0 && y >= 0 && x <= CGFloat(ColoringPaper.width) * scale && y <= CGFloat(ColoringPaper.height) * scale
-        let picture = Text(sticker.emoji)
-            .font(.system(size: size))
-            .padding(size * 0.08)
-            .background(
-                Circle().stroke(style: StrokeStyle(lineWidth: 3, dash: [8, 6]))
-                    .foregroundStyle(Theme.pink)
-                    .opacity(selected && editable ? 1 : 0)
-            )
-            .scaleEffect(pinch)
-            .rotationEffect(.radians(sticker.angle + twist.radians))
-            .position(x: x + drag.width, y: y + drag.height)
+        let showFrame = selected && editable
+
+        let picture = ZStack {
+            ColoringStickerArtView(id: sticker.emoji)
+                .frame(width: size, height: size)
+                .padding(showFrame ? 10 : 0)
+                .background(
+                    RoundedRectangle(cornerRadius: max(14, size * 0.18), style: .continuous)
+                        .stroke(style: StrokeStyle(lineWidth: 3.5, dash: [8, 6]))
+                        .foregroundStyle(Theme.pink)
+                        .opacity(showFrame ? 1 : 0)
+                )
+        }
+        .overlay(alignment: .topTrailing) {
+            if showFrame {
+                Button {
+                    studio.removeSticker(sticker.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .black))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Theme.pink))
+                        .overlay(Circle().stroke(.white, lineWidth: 3))
+                        .shadow(color: Theme.ink.opacity(0.25), radius: 3, y: 2)
+                }
+                .buttonStyle(Squish())
+                .offset(x: 10, y: -10)
+                .accessibilityLabel("Delete sticker")
+            }
+        }
+        .scaleEffect(pinch)
+        .rotationEffect(.radians(sticker.angle + twist.radians))
+        .position(x: x + drag.width, y: y + drag.height)
+
         if editable {
             picture
                 .allowsHitTesting(inView)

@@ -12,30 +12,47 @@ enum SFX: String, CaseIterable {
 final class Sound {
     static let shared = Sound()
 
+    private let queue = DispatchQueue(label: "glimmie.sound", qos: .userInitiated)
     private var players: [SFX: [AVAudioPlayer]] = [:]
+    private var haptics: UIImpactFeedbackGenerator?
 
     private init() {
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
-        for s in SFX.allCases {
-            guard let url = Bundle.main.url(forResource: s.rawValue, withExtension: "wav") else { continue }
-            players[s] = (0..<3).compactMap { _ in
-                let p = try? AVAudioPlayer(contentsOf: url)
-                p?.prepareToPlay()
-                return p
+        queue.async {
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            try? AVAudioSession.sharedInstance().setActive(true)
+            for s in SFX.allCases {
+                guard let url = Bundle.main.url(forResource: s.rawValue, withExtension: "wav") else { continue }
+                self.players[s] = (0..<3).compactMap { _ in
+                    let p = try? AVAudioPlayer(contentsOf: url)
+                    p?.prepareToPlay()
+                    return p
+                }
             }
         }
     }
 
     func play(_ s: SFX, volume: Float = 1) {
-        guard let pool = players[s] else { return }
-        let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
-        p.volume = volume
-        p.currentTime = 0
-        p.play()
+        queue.async {
+            guard let pool = self.players[s], !pool.isEmpty else { return }
+            let p = pool.first(where: { !$0.isPlaying }) ?? pool[0]
+            p.volume = volume
+            p.currentTime = 0
+            p.play()
+        }
     }
 
     func tap() {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        if Thread.isMainThread {
+            triggerTap()
+        } else {
+            DispatchQueue.main.async { self.triggerTap() }
+        }
+    }
+
+    private func triggerTap() {
+        let gen = haptics ?? UIImpactFeedbackGenerator(style: .soft)
+        if haptics == nil { haptics = gen }
+        gen.impactOccurred()
+        gen.prepare()
     }
 }

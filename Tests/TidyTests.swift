@@ -2,6 +2,12 @@ import XCTest
 @testable import Glimmie
 
 final class TidyTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        Coins.shared.resetForTests()
+        StickerBook.shared.demo = true
+    }
+
     func testLevels() {
         let all = TidyLevels.all
         XCTAssertEqual(all.count, 24)
@@ -122,5 +128,88 @@ final class TidyTests: XCTestCase {
         let back = try JSONDecoder().decode(TidyStore.Save.self, from: JSONEncoder().encode(s))
         XCTAssertEqual(back.done, s.done)
         XCTAssertEqual(back.music, false)
+    }
+
+    func testAllSixTidyStickersRegistered() {
+        XCTAssertEqual(TidyFind.allCases.count, 6)
+        XCTAssertEqual(TidyFind.stickers.count, 6)
+        XCTAssertEqual(TidyGame.entry.stickers.count, 6)
+        XCTAssertEqual(Set(TidyGame.entry.stickers.map(\.id)), Set(TidyFind.allCases.map(\.rawValue)))
+    }
+
+    func testCompletionAwardsFourCoinsAndUnlocksMatchingStickers() {
+        let w = TidyWorld(level: TidyLevels.bookshelf1)
+        w.simulate(seconds: 4)
+        w.placeSome(TidyLevels.bookshelf1.slots.count - 1)
+        guard let last = w.bodies.first(where: { $0.state == .loose }),
+              let slot = w.eligible(for: last).first else {
+            return XCTFail("expected one remaining loose item")
+        }
+        let coinsBefore = Coins.shared.balance
+        let target = w.finger(toHold: last, at: w.slotPos(slot).pt)
+        w.touchDown(last.pos.pt)
+        XCTAssertEqual(w.held, last.id)
+        w.touchMoved(target)
+        w.simulate(seconds: 0.5)
+        w.touchUp(target)
+        w.simulate(seconds: 1.5)
+
+        XCTAssertTrue(w.isDone)
+        XCTAssertEqual(Coins.shared.balance, coinsBefore + 4)
+        XCTAssertTrue(StickerBook.shared.has(game: TidyGame.id, id: TidyFind.firstRoom.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: TidyGame.id, id: TidyFind.toyMaster.rawValue))
+        XCTAssertTrue(StickerBook.shared.has(game: TidyGame.id, id: TidyFind.colorSorter.rawValue))
+    }
+
+    func testUnified120ptDropSnap() {
+        XCTAssertEqual(TidyWorld.snapRadius, 120)
+        let w = TidyWorld(level: TidyLevels.fridge1)
+        w.simulate(seconds: 4)
+        guard let b = w.bodies.first(where: { $0.kind == .cheese && $0.state == .loose }),
+              let slot = w.eligible(for: b).first else {
+            return XCTFail("expected cheese and eligible slot")
+        }
+        // Position body 108pt from its slot (beyond the old 92pt limit, inside unified 120pt) and release immediately.
+        w.touchDown(b.pos.pt)
+        guard w.held == b.id else { return XCTFail("failed to grab cheese") }
+        let sp = w.slotPos(slot)
+        b.pos = TVec(sp.x + 108, sp.y)
+        w.touchUp(w.finger(toHold: b, at: b.pos.pt))
+        XCTAssertEqual(b.state, .snapping)
+        XCTAssertEqual(b.slot, slot)
+    }
+
+    func testWrongColorAndLockedStackDropSetsHintToOpenSlot() {
+        let shelf = TidyWorld(level: TidyLevels.bookshelf1)
+        shelf.simulate(seconds: 4)
+        guard let redBook = shelf.bodies.first(where: { $0.kind == .book && $0.color == 0 }),
+              let blueSlot = TidyLevels.bookshelf1.slots.firstIndex(where: { $0.kind == .book && $0.color == 5 }),
+              let redSlot = TidyLevels.bookshelf1.slots.firstIndex(where: { $0.kind == .book && $0.color == 0 }) else {
+            return XCTFail("expected red book and blue/red slots")
+        }
+        // Move far enough from redSlot (>120pt) or test against cupboard locked stack where distance is distinct
+        redBook.pos = TVec(140, 260)
+        shelf.touchDown(redBook.pos.pt)
+        XCTAssertEqual(shelf.held, redBook.id)
+        // Place red book near blue slot while outside red slot's snap radius
+        redBook.pos = TVec(shelf.slotPos(blueSlot).x + 70, shelf.slotPos(blueSlot).y)
+        shelf.touchUp(shelf.finger(toHold: redBook, at: redBook.pos.pt))
+        XCTAssertEqual(redBook.state, .loose)
+        XCTAssertEqual(shelf.hint?.slot, redSlot)
+
+        let cupboard = TidyWorld(level: TidyLevels.cupboard1)
+        cupboard.simulate(seconds: 4)
+        let plateSlots = TidyLevels.cupboard1.slots.indices.filter { TidyLevels.cupboard1.slots[$0].kind == .plate }
+        let topPlateSlot = plateSlots.min { TidyLevels.cupboard1.slots[$0].pos.y < TidyLevels.cupboard1.slots[$1].pos.y }!
+        let bottomPlateSlot = plateSlots.max { TidyLevels.cupboard1.slots[$0].pos.y < TidyLevels.cupboard1.slots[$1].pos.y }!
+        let plate = cupboard.bodies.first(where: { $0.kind == .plate })!
+        plate.pos = TVec(140, 260)
+        cupboard.touchDown(plate.pos.pt)
+        XCTAssertEqual(cupboard.held, plate.id)
+        // Put plate above the locked top plate slot (>120pt from bottom plate slot, within 120pt of top plate slot).
+        plate.pos = TVec(cupboard.slotPos(topPlateSlot).x, cupboard.slotPos(topPlateSlot).y - 95)
+        cupboard.touchUp(cupboard.finger(toHold: plate, at: plate.pos.pt))
+        XCTAssertEqual(plate.state, .loose)
+        XCTAssertEqual(cupboard.hint?.slot, bottomPlateSlot)
     }
 }

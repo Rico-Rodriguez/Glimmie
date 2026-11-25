@@ -64,9 +64,6 @@ final class PetStore: ObservableObject {
 
 private enum PetTab: String, CaseIterable { case care, closet, salon, pets }
 
-/// The things on the care shelf, in order, with the section each starts.
-private let careItems = ["fish", "bone", "carrot", "berry", "cookie", "cupcake",
-                         "sponge", "shower", "towel", "brush", "ball", "yarn", "feather", "bed"]
 private let foods: Set<String> = ["fish", "bone", "carrot", "berry", "cookie", "cupcake"]
 
 struct PetCornerView: View {
@@ -110,7 +107,10 @@ struct PetCornerView: View {
                             .gesture(stageGesture)
                         VStack(spacing: 10) {
                             topBar
-                            hearts
+                            if editingName {
+                                nameEditor
+                                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                            }
                         }
                         .frame(width: leftW)
                         SparkleBurst(colors: [Color(hex: 0xF45C9A), .white, Theme.lemon], count: 18, radius: 240)
@@ -160,6 +160,7 @@ struct PetCornerView: View {
         guard n > 0 else { return }
         let before = store.save.love[kind] ?? 0
         store.save.love[kind] = before + n
+        DressUpFind.petBestie.unlock()
         if (before + n) / 5 > before / 5 || wanted {
             bigBurst += 1
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { Sound.shared.play(.fanfare, volume: 0.8) }
@@ -182,14 +183,24 @@ struct PetCornerView: View {
     // MARK: Top bar
 
     private var topBar: some View {
-        HStack {
-            RoundButton(symbol: "chevron.down", tint: Theme.pink) {
+        HStack(spacing: 12) {
+            RoundButton(symbol: "chevron.down", tint: Theme.pink, size: GameChromeLayout.buttonSize) {
                 Sound.shared.play(.whoosh, volume: 0.6)
                 close()
             }
-            Spacer()
-            nameTag
-            Spacer()
+            Spacer(minLength: 6)
+            hearts
+            Spacer(minLength: 6)
+            RoundButton(symbol: "pencil", tint: Color(hex: 0x9B79E0), size: 52) {
+                Sound.shared.play(.tap)
+                if editingName {
+                    commitName()
+                } else {
+                    draft = store.save.name(kind)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { editingName = true }
+                    nameFocused = true
+                }
+            }
             Button {
                 if along {
                     Sound.shared.play(.whoosh)
@@ -199,87 +210,110 @@ struct PetCornerView: View {
                     takeAlong(pet)
                 }
             } label: {
-                Image(systemName: along ? "house.fill" : "hand.raised.fill")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 76, height: 76)
-                    .background(Circle().fill(along ? Color(hex: 0x6CCB8B) : Color(hex: 0xF45C9A)))
-                    .overlay(Circle().stroke(.white, lineWidth: 5))
-                    .shadow(color: Theme.ink.opacity(0.25), radius: 6, y: 4)
+                ZStack {
+                    Circle().fill(along ? Color(hex: 0x6CCB8B) : Color(hex: 0xF45C9A))
+                    Image(systemName: along ? "pawprint.circle.fill" : "figure.stand")
+                        .font(.system(size: along ? 30 : 27, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: GameChromeLayout.buttonSize, height: GameChromeLayout.buttonSize)
+                .overlay(Circle().stroke(.white, lineWidth: 4.5))
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: along ? "checkmark.circle.fill" : "pawprint.circle.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(along ? .white : Theme.lemon)
+                        .background(Circle().fill(along ? Color(hex: 0x45A868) : Color(hex: 0xD94580)).padding(2))
+                        .offset(x: 3, y: 3)
+                }
+                .shadow(color: Theme.ink.opacity(0.24), radius: 6, y: 4)
             }
             .buttonStyle(Squish())
         }
-        .padding(.horizontal, 26)
-        .padding(.top, 22)
+        .padding(.horizontal, 22)
+        .padding(.top, 18)
     }
 
-    private var nameTag: some View {
-        HStack(spacing: 12) {
-            if editingName {
-                TextField("Name", text: $draft)
-                    .font(.system(size: 40, weight: .heavy, design: .rounded))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 280)
-                    .focused($nameFocused)
-                    .submitLabel(.done)
-                    .onSubmit(commitName)
-                Button(action: commitName) {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 40)).foregroundStyle(Color(hex: 0x6CCB8B))
-                }
-            } else {
-                Text(store.save.name(kind))
-                    .font(.system(size: 42, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                    .onTapGesture {
-                        draft = store.save.name(kind)
-                        editingName = true
-                        nameFocused = true
-                    }
-                Button {
-                    Sound.shared.play(.ding)
-                    var n = PetSave.nameIdeas.randomElement() ?? "Mochi"
-                    if n == store.save.name(kind) { n = PetSave.nameIdeas.randomElement() ?? n }
-                    store.save.names[kind] = n
-                } label: {
-                    Image(systemName: "dice.fill").font(.system(size: 30)).foregroundStyle(Color(hex: 0x9B79E0))
-                }
-                .buttonStyle(Squish())
+    private var nameEditor: some View {
+        HStack(spacing: 10) {
+            TextField("", text: $draft)
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Theme.ink)
+                .frame(width: 220)
+                .focused($nameFocused)
+                .submitLabel(.done)
+                .onSubmit(commitName)
+            Button {
+                Sound.shared.play(.ding)
+                var n = PetSave.nameIdeas.randomElement() ?? "Mochi"
+                if n == draft { n = PetSave.nameIdeas.randomElement() ?? n }
+                draft = n
+                store.save.names[kind] = n
+            } label: {
+                Image(systemName: "dice.fill")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(Color(hex: 0x9B79E0))
             }
+            .buttonStyle(Squish())
+            Button {
+                Sound.shared.play(.whoosh, volume: 0.5)
+                withAnimation(.spring(response: 0.3)) { editingName = false }
+                nameFocused = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Theme.pink)
+            }
+            .buttonStyle(Squish())
+            Button(action: commitName) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Color(hex: 0x6CCB8B))
+            }
+            .buttonStyle(Squish())
         }
-        .padding(.horizontal, 26).padding(.vertical, 10)
-        .background(Capsule().fill(.white.opacity(0.92)))
-        .overlay(Capsule().stroke(Theme.blush, lineWidth: 4))
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(Theme.cream.opacity(0.96)))
+        .overlay(Capsule().stroke(Theme.blush, lineWidth: 3.5))
+        .shadow(color: Theme.ink.opacity(0.18), radius: 10, y: 5)
     }
 
     private func commitName() {
         let n = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if !n.isEmpty { store.save.names[kind] = String(n.prefix(16)) }
-        editingName = false
+        withAnimation(.spring(response: 0.3)) { editingName = false }
         nameFocused = false
     }
 
     private var hearts: some View {
         let love = store.save.love[kind] ?? 0
         let filled = love % 5 == 0 && love > 0 ? 5 : love % 5
-        return HStack(spacing: 8) {
+        let crowns = min(5, love / 5)
+        return HStack(spacing: 6) {
             ForEach(0..<5, id: \.self) { i in
                 Image(systemName: i < filled ? "heart.fill" : "heart")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(i < filled ? Color(hex: 0xF45C9A) : Color(hex: 0xF45C9A).opacity(0.35))
-                    .scaleEffect(i == filled - 1 ? 1.15 : 1)
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(i < filled ? Color(hex: 0xF45C9A) : Color(hex: 0xF45C9A).opacity(0.32))
+                    .scaleEffect(i == filled - 1 ? 1.14 : 1)
             }
-            if love >= 5 {
-                HStack(spacing: 2) {
-                    Image(systemName: "crown.fill").foregroundStyle(Color(hex: 0xF2B83E))
-                    Text("\(love / 5)").foregroundStyle(Theme.ink)
+            if crowns > 0 {
+                HStack(spacing: 3) {
+                    ForEach(0..<crowns, id: \.self) { _ in
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Color(hex: 0xF2B83E))
+                            .shadow(color: Color(hex: 0xD98D26).opacity(0.35), radius: 1, y: 1)
+                    }
                 }
-                .font(.system(size: 28, weight: .heavy, design: .rounded))
+                .padding(.leading, 4)
             }
         }
-        .padding(.horizontal, 18).padding(.vertical, 8)
-        .background(Capsule().fill(.white.opacity(0.85)))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(Theme.cream.opacity(0.95)))
+        .overlay(Capsule().stroke(Theme.blush, lineWidth: 3.5))
+        .shadow(color: Theme.ink.opacity(0.14), radius: 6, y: 3)
         .animation(.spring(response: 0.3, dampingFraction: 0.5), value: love)
     }
 
@@ -297,8 +331,8 @@ struct PetCornerView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(.white.opacity(0.9)))
-        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 5))
+        .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream.opacity(0.96)))
+        .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(Theme.blush, lineWidth: 4))
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, y: 8)
     }
 
@@ -340,41 +374,60 @@ struct PetCornerView: View {
         return p
     }
 
-    // Care: snacks, bath things, toys and the bed. Drag one onto the pet, or tap it.
+    private static let careGroups: [(items: [String], columns: Int, bg: Color, border: Color)] = [
+        (["fish", "bone", "carrot", "berry", "cookie", "cupcake"], 3, Color(hex: 0xFFF5E6), Color(hex: 0xF7D7B2)),
+        (["sponge", "shower", "towel", "brush"], 4, Color(hex: 0xECF6FF), Color(hex: 0xC6E1FA)),
+        (["ball", "yarn", "feather"], 3, Color(hex: 0xE9FAF3), Color(hex: 0xBCEBD9)),
+        (["bed"], 1, Color(hex: 0xF1EDFF), Color(hex: 0xD4C8FA)),
+    ]
+
+    // Care: snacks, bath things, toys and the bed, grouped in tidy pastel sections.
     private var careShelf: some View {
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: 3)
-        return LazyVGrid(columns: cols, spacing: 12) {
-            ForEach(careItems, id: \.self) { id in careTile(id) }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 12) {
+                ForEach(0..<Self.careGroups.count, id: \.self) { gIdx in
+                    let group = Self.careGroups[gIdx]
+                    let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: group.columns)
+                    LazyVGrid(columns: cols, spacing: 10) {
+                        ForEach(group.items, id: \.self) { id in
+                            careTile(id, compact: group.columns == 4)
+                        }
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(group.bg))
+                    .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(group.border, lineWidth: 2.5))
+                }
+            }
+            .padding(4)
         }
-        .padding(4)
     }
 
-    private func careTile(_ id: String) -> some View {
+    private func careTile(_ id: String, compact: Bool = false) -> some View {
         let fav = foods.contains(id) && PetSave.favorites[kind] == id && (store.save.love[kind] ?? 0) >= 3
+        let tileHeight: CGFloat = id == "bed" ? 76 : (compact ? 82 : 86)
         return ZStack(alignment: .topTrailing) {
             Group {
                 if id == "bed" {
                     Image(systemName: "moon.stars.fill")
-                        .font(.system(size: 46, weight: .bold))
+                        .font(.system(size: 40, weight: .bold))
                         .foregroundStyle(Color(hex: 0x6B6FD6))
                 } else {
-                    PetPropThumb(name: id).padding(10)
+                    PetPropThumb(name: id).padding(compact ? 6 : 8)
                 }
             }
-            .frame(height: 100)
+            .frame(height: tileHeight)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(tileTint(id)))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white, lineWidth: 3))
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white.opacity(0.92)))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(tileTint(id), lineWidth: 3))
             if fav {
-                // after a few hearts she learns what it likes best
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(Color(hex: 0xF45C9A))
-                    .padding(6)
+                    .padding(5)
             }
         }
         .contentShape(Rectangle())
-        .gesture(
+        .highPriorityGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("corner"))
                 .onChanged { v in life.trayChanged(id, v.location, translation: v.translation) }
                 .onEnded { v in life.trayEnded(id, v.location, predicted: v.predictedEndLocation) }
@@ -660,11 +713,12 @@ struct PetCornerView: View {
                                 .stroke(p == kind ? Theme.pink : Color(hex: 0xF5DDE8), lineWidth: p == kind ? 6 : 3))
                             .overlay(alignment: .topTrailing) {
                                 if look.pet?.kind == p {
-                                    Image(systemName: "hand.raised.fill")
-                                        .font(.system(size: 16, weight: .bold))
+                                    Image(systemName: "pawprint.circle.fill")
+                                        .font(.system(size: 18, weight: .bold))
                                         .foregroundStyle(.white)
-                                        .padding(6)
-                                        .background(Circle().fill(Color(hex: 0xF45C9A)))
+                                        .padding(5)
+                                        .background(Circle().fill(Color(hex: 0x6CCB8B)))
+                                        .overlay(Circle().stroke(.white, lineWidth: 2))
                                         .offset(x: 4, y: -4)
                                 }
                             }
@@ -677,48 +731,74 @@ struct PetCornerView: View {
     }
 }
 
-/// A little bottle of fur dye.
+/// A curved storybook bottle of fur dye.
 private struct DyeBottle: View {
     let index: Int
     var body: some View {
         Canvas { ctx, size in
             let w = size.width, h = size.height
-            let body = Path(roundedRect: CGRect(x: w * 0.22, y: h * 0.34, width: w * 0.56, height: h * 0.54), cornerRadius: w * 0.16)
-            let neck = Path(roundedRect: CGRect(x: w * 0.38, y: h * 0.14, width: w * 0.24, height: h * 0.24), cornerRadius: w * 0.06)
-            ctx.fill(neck, with: .color(Color(hex: 0xE6E1F0)))
-            ctx.stroke(neck, with: .color(Color(hex: 0xB9B3C9)), lineWidth: 2)
-            var g = ctx
-            g.translateBy(x: w * 0.22, y: h * 0.34)
-            g.scaleBy(x: w * 0.56 / 600, y: h * 0.54 / 660)
+            let cap = Path(roundedRect: CGRect(x: w * 0.36, y: h * 0.1, width: w * 0.28, height: h * 0.2), cornerRadius: w * 0.08)
+            StorybookArt.fillAndStroke(
+                ctx,
+                cap,
+                fill: StorybookArt.color(0xEFE8FA),
+                stroke: StorybookArt.outline(for: 0xC9B6FF),
+                width: 2.2
+            )
+            StorybookArt.highlight(ctx, in: CGRect(x: w * 0.4, y: h * 0.13, width: w * 0.07, height: h * 0.12), opacity: 0.75)
+
+            var body = Path()
+            body.move(to: CGPoint(x: w * 0.34, y: h * 0.28))
+            body.addQuadCurve(to: CGPoint(x: w * 0.66, y: h * 0.28), control: CGPoint(x: w * 0.5, y: h * 0.25))
+            body.addCurve(to: CGPoint(x: w * 0.8, y: h * 0.78), control1: CGPoint(x: w * 0.8, y: h * 0.38), control2: CGPoint(x: w * 0.84, y: h * 0.62))
+            body.addQuadCurve(to: CGPoint(x: w * 0.2, y: h * 0.78), control: CGPoint(x: w * 0.5, y: h * 0.92))
+            body.addCurve(to: CGPoint(x: w * 0.34, y: h * 0.28), control1: CGPoint(x: w * 0.16, y: h * 0.62), control2: CGPoint(x: w * 0.2, y: h * 0.38))
+            body.closeSubpath()
+
+            var clipped = ctx
+            clipped.clip(to: body)
+            clipped.translateBy(x: w * 0.18, y: h * 0.26)
+            clipped.scaleBy(x: w * 0.64 / 600, y: h * 0.64 / 660)
             if let shade = PetPainter.dyeSwatch(index) {
-                g.fill(Path(CGRect(x: 0, y: 0, width: 600, height: 660)), with: shade)
+                clipped.fill(Path(CGRect(x: 0, y: 0, width: 600, height: 660)), with: shade)
             }
-            var b = ctx
-            b.clip(to: body)
-            ctx.stroke(body, with: .color(.white), lineWidth: 3)
-            b.fill(Path(ellipseIn: CGRect(x: w * 0.3, y: h * 0.42, width: w * 0.1, height: h * 0.22)), with: .color(.white.opacity(0.6)))
-            ctx.stroke(body, with: .color(Theme.ink.opacity(0.35)), lineWidth: 1.5)
+            let outline: Color
+            if let rgb = PetPainter.dyes[safe: index] {
+                outline = Shades.outline(rgb).color
+            } else {
+                outline = StorybookArt.outline(for: 0xFF8FB8)
+            }
+            ctx.stroke(body, with: .color(outline), style: StrokeStyle(lineWidth: 2.5, lineJoin: .round))
+            StorybookArt.highlight(ctx, in: CGRect(x: w * 0.27, y: h * 0.39, width: w * 0.12, height: h * 0.26), opacity: 0.62)
         }
-        .mask(Canvas { ctx, size in
-            let w = size.width, h = size.height
-            ctx.fill(Path(roundedRect: CGRect(x: w * 0.22, y: h * 0.34, width: w * 0.56, height: h * 0.54), cornerRadius: w * 0.16), with: .color(.black))
-            ctx.fill(Path(roundedRect: CGRect(x: w * 0.38, y: h * 0.14, width: w * 0.24, height: h * 0.24), cornerRadius: w * 0.06), with: .color(.black))
-        })
     }
 }
 
-/// A bottle of nail polish.
+/// A curved storybook bottle of nail polish.
 private struct PolishBottle: View {
     let color: RGB
     var body: some View {
         Canvas { ctx, size in
             let w = size.width, h = size.height
-            let cap = Path(roundedRect: CGRect(x: w * 0.4, y: h * 0.12, width: w * 0.2, height: h * 0.32), cornerRadius: w * 0.05)
-            let jar = Path(roundedRect: CGRect(x: w * 0.27, y: h * 0.42, width: w * 0.46, height: h * 0.44), cornerRadius: w * 0.14)
-            ctx.fill(cap, with: .color(Color(hex: 0x5B3A68)))
-            ctx.fill(jar, with: .color(color.color))
-            ctx.stroke(jar, with: .color(Shades.outline(color).color), lineWidth: 2)
-            ctx.fill(Path(ellipseIn: CGRect(x: w * 0.34, y: h * 0.5, width: w * 0.09, height: h * 0.18)), with: .color(.white.opacity(0.7)))
+            let cap = Path(roundedRect: CGRect(x: w * 0.38, y: h * 0.09, width: w * 0.24, height: h * 0.32), cornerRadius: w * 0.07)
+            StorybookArt.fillAndStroke(
+                ctx,
+                cap,
+                fill: StorybookArt.color(0x6C4D80),
+                stroke: StorybookArt.outline(for: 0x5B3A68),
+                width: 2.2
+            )
+            StorybookArt.highlight(ctx, in: CGRect(x: w * 0.42, y: h * 0.13, width: w * 0.055, height: h * 0.22), opacity: 0.42)
+
+            var jar = Path()
+            jar.move(to: CGPoint(x: w * 0.33, y: h * 0.39))
+            jar.addQuadCurve(to: CGPoint(x: w * 0.67, y: h * 0.39), control: CGPoint(x: w * 0.5, y: h * 0.35))
+            jar.addCurve(to: CGPoint(x: w * 0.77, y: h * 0.82), control1: CGPoint(x: w * 0.77, y: h * 0.48), control2: CGPoint(x: w * 0.79, y: h * 0.68))
+            jar.addQuadCurve(to: CGPoint(x: w * 0.23, y: h * 0.82), control: CGPoint(x: w * 0.5, y: h * 0.92))
+            jar.addCurve(to: CGPoint(x: w * 0.33, y: h * 0.39), control1: CGPoint(x: w * 0.21, y: h * 0.68), control2: CGPoint(x: w * 0.23, y: h * 0.48))
+            jar.closeSubpath()
+            StorybookArt.fillAndStroke(ctx, jar, fill: color.color, stroke: Shades.outline(color).color, width: 2.4)
+            StorybookArt.highlight(ctx, in: CGRect(x: w * 0.3, y: h * 0.48, width: w * 0.11, height: h * 0.23), opacity: 0.65)
         }
     }
 }

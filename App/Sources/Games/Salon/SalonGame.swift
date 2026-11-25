@@ -3,11 +3,11 @@ import SwiftUI
 // MARK: - Hair Salon (a game in the drawer)
 //
 // A client sits in the salon chair with messy hair (sometimes with a leaf or a twig in it). She can
-// wash it (shampoo foam and a shower), towel it, iron it straight, cut it (the pieces fall and pile up on the
-// floor), blow-dry it, curl it, dye it (14 colors, rainbow, or back to natural), add
+// comb it, wash it (shampoo foam and a shower), towel it, blow-dry it, straighten it, curl it, cut it
+// (the pieces fall and pile up on the floor), dye it (14 colors, rainbow, or back to natural), add
 // glitter, grow it back with a magic potion, and put in bows, clips, flowers, scrunchies (which
-// gather the hair into ponytails) and the Dress Up hats and crowns. The camera puts the look on the
-// photo wall (the last 30); tapping a photo brings that client back. Everything is open; no words.
+// gather the hair into ponytails, braids, and buns) and Dress Up hats and crowns. The camera puts the
+// look on the photo wall (the last 30); tapping a photo brings that client back. Everything is open; no words.
 //
 // The hair is a physics simulation (SalonHair.swift) drawn as fine strands (SalonPaint.swift); the
 // client's face is the Dress Up art.
@@ -20,7 +20,8 @@ enum SalonGame {
         title: "Salon",
         tint: Color(hex: 0xC9B6FF),
         icon: { AnyView(SalonTileIcon()) },
-        play: { exit in AnyView(SalonView(exit: exit)) }
+        play: { exit in AnyView(SalonView(exit: exit)) },
+        stickers: SalonFind.stickers
     )
 }
 
@@ -52,6 +53,12 @@ final class SalonStore: ObservableObject {
         if photos.count > SalonStore.maxPhotos { photos.removeLast(photos.count - SalonStore.maxPhotos) }
         GameStorage.save(photos, game: SalonGame.id, file: "photos.json")
     }
+
+    func deletePhoto(id: UUID) {
+        photos.removeAll { $0.id == id }
+        SalonPortrait.evict(id: id)
+        GameStorage.save(photos, game: SalonGame.id, file: "photos.json")
+    }
 }
 
 // MARK: - Portraits (photo wall and drawer tile)
@@ -65,6 +72,10 @@ enum SalonPortrait {
         let s = HairSim(save: v.hair, palette: SalonWorld.hairPalette)
         sims[v.id] = s
         return s
+    }
+
+    static func evict(id: UUID) {
+        sims.removeValue(forKey: id)
     }
 
     /// Draws a client with her hair, standing still, into `ctx` (already in doll coordinates).
@@ -111,18 +122,54 @@ struct SalonPortraitView: View {
     }
 }
 
-/// The drawer tile shows her latest client.
+/// The drawer tile shows her latest client with a crisp miniature pink scissors & sparkle badge
+/// so Hair Salon immediately stands out from Dress Up.
 private struct SalonTileIcon: View {
     private static var cached: (key: String, look: Look, sim: HairSim, cape: Int)?
 
     var body: some View {
         let t = SalonTileIcon.current()
-        Canvas { ctx, size in
-            var g = ctx
-            ArtPainter.fit(&g, box: CGRect(x: 96, y: 96, width: 408, height: 440), into: size)
-            SalonPortrait.paint(look: t.look, sim: t.sim, cape: t.cape, in: g)
+        ZStack {
+            Canvas { ctx, size in
+                var g = ctx
+                ArtPainter.fit(&g, box: CGRect(x: 96, y: 96, width: 408, height: 440), into: size)
+                SalonPortrait.paint(look: t.look, sim: t.sim, cape: t.cape, in: g)
+            }
+            .padding(-16)
+
+            Canvas { ctx, size in
+                let side = min(size.width, size.height)
+                let r = side * 0.21
+                let center = CGPoint(x: size.width - r - side * 0.04, y: size.height - r - side * 0.04)
+                let circle = Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2))
+
+                var badgeCtx = ctx
+                badgeCtx.addFilter(.shadow(color: Theme.ink.opacity(0.24), radius: side * 0.03, x: 0, y: side * 0.02))
+                StorybookArt.fillAndStroke(badgeCtx, circle, fill: .white, stroke: Theme.pink, width: max(2.2, side * 0.028))
+
+                var sc = ctx
+                sc.translateBy(x: center.x, y: center.y)
+                sc.rotate(by: .degrees(-20))
+                let scScale = (r * 1.48) / 100
+                sc.scaleBy(x: scScale, y: scScale)
+                sc.translateBy(x: -50, y: -50)
+                SalonToolArt.draw(.scissors, dye: RGB(1, 0.56, 0.72), open: 0.72, in: sc)
+
+                StorybookArt.sparkle(
+                    ctx,
+                    at: CGPoint(x: center.x - r * 0.92, y: center.y - r * 0.72),
+                    radius: max(3.5, side * 0.055),
+                    color: Theme.lemon
+                )
+                StorybookArt.sparkle(
+                    ctx,
+                    at: CGPoint(x: center.x + r * 0.78, y: center.y - r * 0.92),
+                    radius: max(2.8, side * 0.04),
+                    color: Theme.pink
+                )
+            }
+            .allowsHitTesting(false)
         }
-        .padding(-16)
     }
 
     static func current() -> (look: Look, sim: HairSim, cape: Int) {
@@ -152,13 +199,17 @@ struct SalonView: View {
     @State private var glitter = 0
     @State private var hat: String?
     @State private var showPhotos = false
+    @State private var showBook = false
     @State private var flash = 0.0
     @State private var burstID = 0
     @State private var pressStart: (tool: SalonTool, wasSelected: Bool)?
     @State private var sideTie = 0
+    @State private var draggingFromHair = false
+    @State private var overReturnBadge = false
+    @State private var carryingFromTray = false
+    @State private var suppressClipTapUntil = Date.distantPast
     /// A quick tap on her hair with a tool picked: the tool does that spot by itself (see `ToolTap`).
     @State private var auto = AutoTool()
-    @State private var size = CGSize(width: 1024, height: 834)
     @Environment(\.scenePhase) private var phase
 
     private let autosave = Timer.publish(every: 8, on: .main, in: .common).autoconnect()
@@ -170,12 +221,13 @@ struct SalonView: View {
         _hat = State(initialValue: w.hat)
     }
 
-    static let shelfRight: CGFloat = 236
-    static let trayWidth: CGFloat = 272
+    static let shelfRight: CGFloat = 222
+    static let trayWidth: CGFloat = 258
+    private static let returnDropPoint = CGPoint(x: SalonWorld.defaultCenterX, y: GameChromeLayout.height - 58)
 
     var body: some View {
-        DesignCanvas {
-            GeometryReader { geo in
+        ZStack {
+            GameStage(background: { SalonBackdropView() }) {
                 ZStack {
                     stage
                     HStack(alignment: .top, spacing: 0) {
@@ -186,44 +238,137 @@ struct SalonView: View {
                                 .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                     }
-                    .padding(.top, 100)
+                    .padding(.top, 98)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 16)
-                    topBar
+
                     turnButtons
+
+                    if draggingFromHair {
+                        ReturnDropBadge(hovered: overReturnBadge)
+                            .position(SalonView.returnDropPoint)
+                            .transition(.scale.combined(with: .opacity))
+                            .allowsHitTesting(false)
+                    }
+
+                    GameTopBar(
+                        gameID: SalonGame.id,
+                        showStickerBook: true,
+                        showCoins: true,
+                        onExit: {
+                            saveCurrent()
+                            exit()
+                        },
+                        onStickerBook: {
+                            saveCurrent()
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                showBook = true
+                            }
+                        },
+                        trailing: {
+                            HStack(spacing: 12) {
+                                RoundButton(
+                                    symbol: "person.crop.circle.badge.plus",
+                                    tint: Color(hex: 0x9B79E0),
+                                    size: GameChromeLayout.buttonSize
+                                ) {
+                                    switchToNewClient()
+                                }
+                                .accessibilityLabel("New Client")
+
+                                RoundButton(
+                                    symbol: "camera.fill",
+                                    tint: Theme.pink,
+                                    size: GameChromeLayout.buttonSize
+                                ) {
+                                    snap()
+                                }
+                                .accessibilityLabel("Take Photo")
+
+                                ZStack(alignment: .topTrailing) {
+                                    RoundButton(
+                                        symbol: "photo.on.rectangle.angled",
+                                        tint: Color(hex: 0x46B7B0),
+                                        size: GameChromeLayout.buttonSize
+                                    ) {
+                                        Sound.shared.play(.pop)
+                                        Sound.shared.tap()
+                                        withAnimation(.easeInOut(duration: 0.3)) { showPhotos = true }
+                                    }
+                                    .accessibilityLabel("Photo Wall")
+
+                                    if !store.photos.isEmpty {
+                                        Text("\(store.photos.count)")
+                                            .font(.system(size: 16, weight: .heavy, design: .rounded))
+                                            .foregroundStyle(.white)
+                                            .frame(minWidth: 26, minHeight: 26)
+                                            .background(Circle().fill(Theme.pink))
+                                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                                            .offset(x: 6, y: -5)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+                            }
+                        }
+                    )
+
                     if burstID > 0 {
                         SparkleBurst(colors: [.white, Theme.lemon, Theme.pink, Theme.lilac], count: 16, radius: 240)
                             .id(burstID)
                             .position(world.toDesign(HairV(300, 300)))
                     }
+
                     Color.white.opacity(flash).allowsHitTesting(false)
-                    if showPhotos {
-                        SalonPhotoWall(store: store, onPick: { v in
-                            SalonSound.shared.play(.chime, volume: 0.6)
-                            saveCurrent()
-                            world.load(v)
-                            hat = world.hat
-                            withAnimation(.easeInOut(duration: 0.3)) { showPhotos = false }
-                        }, onClose: {
-                            withAnimation(.easeInOut(duration: 0.3)) { showPhotos = false }
-                        })
-                        .transition(.opacity)
-                    }
+
+                    StickerToast(game: SalonGame.id, target: GameChromeLayout.stickerTarget)
                 }
+                .frame(width: GameChromeLayout.width, height: GameChromeLayout.height)
                 .coordinateSpace(name: "salon")
+                .coinPurse(game: SalonGame.id)
                 .onAppear {
-                    size = geo.size
-                    world.centerX = geo.size.width / 2 - 25
+                    world.centerX = SalonWorld.defaultCenterX
                     _ = SalonSound.shared
                     applyLaunchArguments()
                 }
-                .onChange(of: geo.size) { s in
-                    size = s
-                    world.centerX = s.width / 2 - 25
+            }
+
+            if showPhotos {
+                SalonPhotoWall(
+                    store: store,
+                    onPick: { v in
+                        SalonSound.shared.play(.chime, volume: 0.6)
+                        backupStyledClientIfNeeded()
+                        saveCurrent()
+                        world.load(v)
+                        hat = world.hat
+                        withAnimation(.easeInOut(duration: 0.3)) { showPhotos = false }
+                    },
+                    onDelete: { id in
+                        Sound.shared.play(.whoosh, volume: 0.45)
+                        Sound.shared.tap()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
+                            store.deletePhoto(id: id)
+                        }
+                    },
+                    onClose: {
+                        withAnimation(.easeInOut(duration: 0.3)) { showPhotos = false }
+                    }
+                )
+                .transition(.opacity)
+                .zIndex(4)
+            }
+
+            if showBook {
+                StickerBookView(game: SalonGame.id) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        showBook = false
+                    }
                 }
+                .transition(.opacity)
+                .zIndex(5)
             }
         }
-        .background(Color(hex: 0xF6DDF2).ignoresSafeArea())
+        .ignoresSafeArea()
         .onDisappear { saveCurrent() }
         .onReceive(autosave) { _ in
             if world.changed {
@@ -238,10 +383,41 @@ struct SalonView: View {
         SalonStore.saveCurrent(world.visit(positions: true))
     }
 
+    /// Auto-saves an edited client to the photo wall before switching away so no hairstyle is ever lost.
+    private func backupStyledClientIfNeeded() {
+        if world.hasBeenStyled && !world.savedSinceStyle {
+            store.addPhoto(world.visit(positions: true))
+            world.markSavedToWall()
+        }
+    }
+
+    private func switchToNewClient() {
+        SalonSound.shared.play(.chime, volume: 0.6)
+        Sound.shared.play(.whoosh, volume: 0.5)
+        Sound.shared.tap()
+        backupStyledClientIfNeeded()
+        saveCurrent()
+        world.newClient()
+        hat = nil
+        saveCurrent()
+    }
+
+    private func isOverReturnDrop(finger p: CGPoint) -> Bool {
+        let badge = SalonView.returnDropPoint
+        if hypot(p.x - badge.x, p.y - badge.y) < 76 { return true }
+        if let item = world.draggedItemDesignPoint, hypot(item.x - badge.x, item.y - badge.y) < 76 { return true }
+        return false
+    }
+
+    private func isOverRightTray(_ p: CGPoint) -> Bool {
+        guard let t = tool, t.hasTray else { return false }
+        return p.x >= GameChromeLayout.width - SalonView.trayWidth - 14
+    }
+
     // MARK: Stage
 
     private var stage: some View {
-        TimelineView(.animation) { tl in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: showPhotos || showBook)) { tl in
             Canvas { ctx, s in
                 world.frame(at: tl.date)
                 world.draw(ctx, size: s, now: tl.date)
@@ -253,10 +429,34 @@ struct SalonView: View {
                 .onChanged { v in
                     if auto.running { auto.cancel() }
                     if world.finger == nil { world.press(v.location) } else { world.move(v.location) }
+                    let dragging = world.isDraggingFromHair
+                    if dragging != draggingFromHair {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+                            draggingFromHair = dragging
+                        }
+                    }
+                    let hovered = dragging && (isOverReturnDrop(finger: v.location) || isOverRightTray(v.location))
+                    if hovered != overReturnBadge {
+                        overReturnBadge = hovered
+                    }
                 }
                 .onEnded { v in
-                    world.release()
-                    if let t = tool, t != .clips, ToolTap.isTap(v.translation) { autoDo(at: v.location) }
+                    let wasTap = ToolTap.isTap(v.translation)
+                    let discard = draggingFromHair && (isOverReturnDrop(finger: v.location) || isOverRightTray(v.location))
+                    world.release(discarding: discard)
+                    if draggingFromHair || overReturnBadge {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
+                            draggingFromHair = false
+                            overReturnBadge = false
+                        }
+                    }
+                    if let t = tool, t != .clips, wasTap {
+                        if t == .scissors {
+                            world.tapSnip(at: v.location)
+                        } else {
+                            autoDo(at: v.location)
+                        }
+                    }
                 }
         )
     }
@@ -274,14 +474,14 @@ struct SalonView: View {
 
     /// Arrows on each side of the chair base spin her around, so she can do the back and sides too.
     private var turnButtons: some View {
-        let y = min(size.height - 52, world.floorDesign - 24)
+        let y = min(GameChromeLayout.height - 52, world.floorDesign - 24)
         return ZStack {
-            RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x9B79E0), size: 76) {
+            RoundButton(symbol: "arrow.counterclockwise", tint: Color(hex: 0x9B79E0), size: 74) {
                 Sound.shared.tap()
                 world.turn(-1)
             }
             .position(x: world.centerX - 200, y: y)
-            RoundButton(symbol: "arrow.clockwise", tint: Color(hex: 0x9B79E0), size: 76) {
+            RoundButton(symbol: "arrow.clockwise", tint: Color(hex: 0x9B79E0), size: 74) {
                 Sound.shared.tap()
                 world.turn(1)
             }
@@ -289,48 +489,7 @@ struct SalonView: View {
         }
     }
 
-    // MARK: Top bar
-
-    private var topBar: some View {
-        VStack {
-            HStack(spacing: 18) {
-                HomeButton {
-                    saveCurrent()
-                    exit()
-                }
-                Spacer()
-                RoundButton(symbol: "person.crop.circle.badge.plus", tint: Color(hex: 0x9B79E0)) {
-                    SalonSound.shared.play(.chime, volume: 0.6)
-                    Sound.shared.play(.whoosh, volume: 0.5)
-                    Sound.shared.tap()
-                    saveCurrent()
-                    world.newClient()
-                    hat = nil
-                    saveCurrent()
-                }
-                RoundButton(symbol: "camera.fill", tint: Theme.pink) { snap() }
-                ZStack(alignment: .topTrailing) {
-                    RoundButton(symbol: "photo.on.rectangle.angled", tint: Color(hex: 0x46B7B0)) {
-                        Sound.shared.play(.pop)
-                        Sound.shared.tap()
-                        withAnimation(.easeInOut(duration: 0.3)) { showPhotos = true }
-                    }
-                    if !store.photos.isEmpty {
-                        Text("\(store.photos.count)")
-                            .font(.system(size: 18, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
-                            .frame(minWidth: 30, minHeight: 30)
-                            .background(Circle().fill(Theme.pink))
-                            .offset(x: 8, y: -6)
-                            .allowsHitTesting(false)
-                    }
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            Spacer()
-        }
-    }
+    // MARK: Camera snap
 
     private func snap() {
         SalonSound.shared.play(.shutter, volume: 0.8)
@@ -338,6 +497,11 @@ struct SalonView: View {
         Sound.shared.tap()
         world.cheer()
         store.addPhoto(world.visit(positions: true))
+        world.markSavedToWall()
+        SalonFind.salonStar.unlock()
+        if world.consumeCoinReward() {
+            Coins.shared.earn(4, game: SalonGame.id, from: CGPoint(x: 512, y: 360))
+        }
         burstID += 1
         flash = 0.9
         withAnimation(.easeOut(duration: 0.5)) { flash = 0 }
@@ -345,33 +509,33 @@ struct SalonView: View {
 
     // MARK: Tool shelf
 
+    private var naturalHairColor: RGB {
+        SalonWorld.hairPalette[safe: world.look.hair] ?? RGB(0.42, 0.27, 0.2)
+    }
+
     private var shelf: some View {
         let tools = SalonTool.allCases
-        return VStack(spacing: 10) {
-            ForEach(0..<(tools.count + 1) / 2, id: \.self) { row in
-                HStack(spacing: 10) {
-                    ForEach(tools[(row * 2)..<min(tools.count, row * 2 + 2)]) { t in
-                        toolButton(t)
+        return GameTrayCard(cornerRadius: 28, paddingH: 10, paddingV: 10) {
+            VStack(spacing: 10) {
+                ForEach(0..<(tools.count + 1) / 2, id: \.self) { row in
+                    HStack(spacing: 10) {
+                        ForEach(tools[(row * 2)..<min(tools.count, row * 2 + 2)]) { t in
+                            toolButton(t)
+                        }
                     }
                 }
             }
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.6)))
-        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white, lineWidth: 4))
     }
 
     private func toolButton(_ t: SalonTool) -> some View {
         let on = tool == t
-        return ZStack {
-            RoundedRectangle(cornerRadius: 24, style: .continuous).fill(t.tint)
-            SalonToolPicture(tool: t, dye: SalonView.swatch(dye), open: 0.6).padding(8)
+        let isRainbowDye = t == .dye && dye == SalonWorld.rainbowIndex
+        let brushColor = SalonView.swatch(dye, natural: naturalHairColor)
+        return GameDockTile(size: 86, selected: on, tint: .white, cornerRadius: 22) {
+            SalonToolPicture(tool: t, dye: brushColor, rainbow: isRainbowDye, open: 0.6)
+                .padding(8)
         }
-        .frame(width: 92, height: 92)
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(on ? Theme.pink : .white, lineWidth: on ? 6 : 4))
-        .shadow(color: on ? Theme.pink.opacity(0.5) : Theme.ink.opacity(0.14), radius: on ? 9 : 4, y: on ? 0 : 3)
-        .scaleEffect(on ? 1.06 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: on)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("salon"))
@@ -406,30 +570,30 @@ struct SalonView: View {
 
     // MARK: Trays
 
-    static func swatch(_ i: Int) -> RGB {
+    static func swatch(_ i: Int, natural: RGB = RGB(0.42, 0.27, 0.2)) -> RGB {
         if i < SalonWorld.dyeColors.count { return SalonWorld.dyeColors[i] }
-        return RGB(1, 0.6, 0.8)
+        if i == SalonWorld.naturalIndex { return natural }
+        return SalonWorld.dyeColors[0]
     }
 
     @ViewBuilder
     private func tray(_ t: SalonTool) -> some View {
-        VStack(spacing: 10) {
-            switch t {
-            case .dye: dyeTray
-            case .glitter: glitterTray
-            default: clipTray
+        GameTrayCard(cornerRadius: 28, paddingH: 12, paddingV: 12) {
+            VStack(spacing: 10) {
+                switch t {
+                case .dye: dyeTray
+                case .glitter: glitterTray
+                default: clipTray
+                }
             }
+            .frame(width: SalonView.trayWidth - 24)
         }
-        .padding(12)
-        .frame(width: SalonView.trayWidth)
-        .background(RoundedRectangle(cornerRadius: 30, style: .continuous).fill(.white.opacity(0.72)))
-        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white, lineWidth: 4))
     }
 
     private var dyeTray: some View {
         let n = SalonWorld.dyeColors.count + 2
-        let cols = Array(repeating: GridItem(.fixed(70), spacing: 12), count: 3)
-        return LazyVGrid(columns: cols, spacing: 12) {
+        let cols = Array(repeating: GridItem(.fixed(68), spacing: 10), count: 3)
+        return LazyVGrid(columns: cols, spacing: 10) {
             ForEach(0..<n, id: \.self) { i in
                 Button {
                     dye = i
@@ -437,8 +601,8 @@ struct SalonView: View {
                     Sound.shared.play(.pop, volume: 0.5)
                     Sound.shared.tap()
                 } label: {
-                    DyeSwatch(index: i, natural: SalonWorld.hairPalette[safe: world.look.hair] ?? RGB(0.4, 0.3, 0.2), on: dye == i)
-                        .frame(width: 70, height: 70)
+                    DyeSwatch(index: i, natural: naturalHairColor, on: dye == i)
+                        .frame(width: 68, height: 68)
                 }
                 .buttonStyle(Squish())
             }
@@ -446,8 +610,8 @@ struct SalonView: View {
     }
 
     private var glitterTray: some View {
-        let cols = Array(repeating: GridItem(.fixed(100), spacing: 14), count: 2)
-        return LazyVGrid(columns: cols, spacing: 14) {
+        let cols = Array(repeating: GridItem(.fixed(96), spacing: 12), count: 2)
+        return LazyVGrid(columns: cols, spacing: 12) {
             ForEach(0..<SalonWorld.glitterColors.count, id: \.self) { i in
                 Button {
                     glitter = i
@@ -456,7 +620,7 @@ struct SalonView: View {
                     Sound.shared.tap()
                 } label: {
                     GlitterSwatch(color: SalonWorld.glitterColors[i], on: glitter == i)
-                        .frame(width: 100, height: 100)
+                        .frame(width: 96, height: 96)
                 }
                 .buttonStyle(Squish())
             }
@@ -472,75 +636,88 @@ struct SalonView: View {
                        "h_unicorn", "h_cat", "h_bunny", "h_starcrown", "h_halo", "h_sunflower"]
 
     private var clipTray: some View {
-        let cols = Array(repeating: GridItem(.fixed(70), spacing: 10), count: 3)
-        return VStack(spacing: 12) {
-            LazyVGrid(columns: cols, spacing: 10) {
-                ForEach(0..<SalonView.clipChoices.count, id: \.self) { i in
-                    clipChoice(SalonView.clipChoices[i])
-                }
-            }
-            Capsule().fill(Theme.pink.opacity(0.3)).frame(width: 180, height: 5)
-            LazyVGrid(columns: cols, spacing: 10) {
-                ForEach(SalonView.hats, id: \.self) { h in
-                    Button {
-                        Sound.shared.play(.pop, volume: 0.6)
-                        Sound.shared.play(.sparkle, volume: 0.3)
-                        Sound.shared.tap()
-                        world.wearHat(h)
-                        hat = world.hat
-                        world.sparkle(at: HairV(300, 170), count: 6)
-                    } label: {
-                        ItemThumb(item: h, look: world.look)
-                            .padding(6)
-                            .frame(width: 70, height: 70)
-                            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(hat == h ? Theme.blush : .white))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(hat == h ? Theme.pink : Theme.pink.opacity(0.2), lineWidth: hat == h ? 4 : 2))
+        let cols = Array(repeating: GridItem(.fixed(68), spacing: 10), count: 3)
+        return ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 12) {
+                LazyVGrid(columns: cols, spacing: 10) {
+                    ForEach(0..<SalonView.clipChoices.count, id: \.self) { i in
+                        clipChoice(SalonView.clipChoices[i])
                     }
-                    .buttonStyle(Squish())
+                }
+                Capsule().fill(Theme.pink.opacity(0.32)).frame(width: 170, height: 5)
+                LazyVGrid(columns: cols, spacing: 10) {
+                    ForEach(SalonView.hats, id: \.self) { h in
+                        Button {
+                            Sound.shared.play(.pop, volume: 0.6)
+                            Sound.shared.play(.sparkle, volume: 0.3)
+                            Sound.shared.tap()
+                            world.wearHat(h)
+                            hat = world.hat
+                            world.sparkle(at: HairV(300, 170), count: 6)
+                        } label: {
+                            ItemThumb(item: h, look: world.look)
+                                .padding(6)
+                                .frame(width: 68, height: 68)
+                                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(hat == h ? Theme.blush : .white))
+                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(hat == h ? Theme.pink : Theme.blush, lineWidth: hat == h ? 4 : 2.2))
+                        }
+                        .buttonStyle(Squish())
+                    }
                 }
             }
+            .padding(.vertical, 2)
         }
+        .scrollDisabled(carryingFromTray)
+        .frame(maxHeight: 656)
     }
 
     private func clipChoice(_ c: SalonCarry) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white)
-            Canvas { ctx, size in
-                var g = ctx
-                g.translateBy(x: size.width / 2, y: size.height / 2)
-                g.scaleBy(x: 1.05, y: 1.05)
-                switch c {
-                case .clip(let kind, let color): ClipPainter.draw(kind, color: color, in: g)
-                case .scrunchie(let color):
-                    g.scaleBy(x: 1.3, y: 1.3)
-                    ClipPainter.drawScrunchie(color: color, in: g)
+        Button {
+            guard Date() > suppressClipTapUntil else { return }
+            Sound.shared.play(.pop, volume: 0.5)
+            Sound.shared.tap()
+            placeForHer(c)
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white)
+                Canvas { ctx, size in
+                    var g = ctx
+                    g.translateBy(x: size.width / 2, y: size.height / 2)
+                    g.scaleBy(x: 1.05, y: 1.05)
+                    switch c {
+                    case .clip(let kind, let color): ClipPainter.draw(kind, color: color, in: g)
+                    case .scrunchie(let color):
+                        g.scaleBy(x: 1.3, y: 1.3)
+                        ClipPainter.drawScrunchie(color: color, in: g)
+                    }
                 }
             }
+            .frame(width: 68, height: 68)
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.blush, lineWidth: 2.2))
         }
-        .frame(width: 70, height: 70)
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Theme.pink.opacity(0.2), lineWidth: 2))
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .named("salon"))
+        .buttonStyle(Squish())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 10, coordinateSpace: .named("salon"))
                 .onChanged { v in
                     if world.carry == nil {
-                        world.carry = c
+                        let pullingLeft = v.translation.width < -10 && abs(v.translation.width) >= abs(v.translation.height) * 0.65
+                        let outsideTray = v.location.x < GameChromeLayout.width - SalonView.trayWidth - 6
+                        guard pullingLeft || outsideTray else { return }
+                        carryingFromTray = true
+                        world.startCarry(c, at: v.location, fromHair: false, initialOffset: .zero)
                         Sound.shared.play(.pop, volume: 0.5)
                         Sound.shared.tap()
                     }
-                    world.carryPoint = v.location
+                    world.moveCarry(to: v.location)
                 }
                 .onEnded { v in
-                    let tapped = abs(v.translation.width) < 12 && abs(v.translation.height) < 12
-                    if tapped {
-                        world.carry = nil
-                        world.carryPoint = nil
-                        placeForHer(c)
-                    } else if v.location.x < size.width - SalonView.trayWidth - 20 {
+                    guard carryingFromTray || world.carry != nil else { return }
+                    carryingFromTray = false
+                    suppressClipTapUntil = Date().addingTimeInterval(0.18)
+                    if v.location.x < GameChromeLayout.width - SalonView.trayWidth - 14 {
                         world.dropCarry(at: v.location)
                     } else {
-                        world.carry = nil
-                        world.carryPoint = nil
+                        world.cancelCarry()
                     }
                 }
         )
@@ -556,10 +733,12 @@ struct SalonView: View {
                 let taken = world.sim.clips.contains { cl in world.sim.clipPosition(cl).map { $0.dist(s) < 30 } ?? false }
                 if taken { continue }
                 world.carry = c
+                world.carryPoint = nil
                 world.dropCarry(at: SalonWorld.carrying(to: world.toDesign(s)))
                 return
             }
             world.carry = c
+            world.carryPoint = nil
             world.dropCarry(at: SalonWorld.carrying(to: world.toDesign(HairV(300, 170))))
         case .scrunchie(let color):
             sideTie += 1
@@ -576,6 +755,8 @@ struct SalonView: View {
     private func applyLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-salonDemo"), i + 1 < args.count else { return }
+        Coins.shared.demo = true
+        StickerBook.shared.demo = true
         let name = args[i + 1]
         if name == "photos" {
             for k in 0..<6 {
@@ -609,7 +790,7 @@ private struct DyeSwatch: View {
                                                     center: CGPoint(x: r.midX, y: r.midY)))
                 ctx.stroke(blob, with: .color(.white), lineWidth: 3)
             } else {
-                let c = index == SalonWorld.naturalIndex ? natural : SalonView.swatch(index)
+                let c = SalonView.swatch(index, natural: natural)
                 ctx.fill(blob, with: .color(c.color))
                 ctx.stroke(blob, with: .color(Shades.outline(c).color), lineWidth: 3)
                 if index == SalonWorld.naturalIndex {
@@ -641,13 +822,13 @@ private struct GlitterSwatch: View {
             let jar = Path(roundedRect: r, cornerRadius: 22, style: .continuous)
             ctx.fill(jar, with: .color(.white))
             for i in 0..<18 {
-                let x = r.minX + 10 + CGFloat((i * 37) % 64)
-                let y = r.minY + 12 + CGFloat((i * 53) % 60)
+                let x = r.minX + 10 + CGFloat((i * 37) % 60)
+                let y = r.minY + 12 + CGFloat((i * 53) % 56)
                 let s: CGFloat = i % 3 == 0 ? 7 : 4
                 ctx.fill(ClipPainter.star(s, points: 4, inner: 0.35).applying(CGAffineTransform(translationX: x, y: y)),
                          with: .color((i % 2 == 0 ? color : color.mix(Shades.white, 0.5)).color))
             }
-            ctx.stroke(jar, with: .color(on ? Theme.pink : Theme.pink.opacity(0.25)), lineWidth: on ? 5 : 2.5)
+            ctx.stroke(jar, with: .color(on ? Theme.pink : Theme.blush), lineWidth: on ? 5 : 2.5)
         }
     }
 }
@@ -657,52 +838,74 @@ private struct GlitterSwatch: View {
 private struct SalonPhotoWall: View {
     @ObservedObject var store: SalonStore
     let onPick: (SalonVisit) -> Void
+    let onDelete: (UUID) -> Void
     let onClose: () -> Void
 
     var body: some View {
         ZStack {
             Theme.ink.opacity(0.35).ignoresSafeArea()
                 .onTapGesture(perform: onClose)
-            VStack(spacing: 16) {
-                HStack {
-                    Spacer()
-                    RoundButton(symbol: "xmark", tint: Theme.pink) {
-                        Sound.shared.play(.whoosh, volume: 0.5)
-                        onClose()
-                    }
-                }
-                if store.photos.isEmpty {
-                    Spacer()
-                    Image(systemName: "camera.fill")
-                        .font(.system(size: 90, weight: .bold))
-                        .foregroundStyle(Theme.pink.opacity(0.5))
-                    Spacer()
-                } else {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(150), spacing: 18), count: 5), spacing: 18) {
-                            ForEach(store.photos) { v in
-                                Button {
-                                    onPick(v)
-                                } label: {
-                                    SalonPortraitView(visit: v)
-                                        .frame(width: 150, height: 175)
-                                        .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                            .fill(LinearGradient(colors: [Color(hex: 0xFFF1F8), Color(hex: 0xEDE4FF)], startPoint: .top, endPoint: .bottom)))
-                                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white, lineWidth: 6))
-                                        .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
-                                }
-                                .buttonStyle(Squish())
-                            }
+            DesignCanvas {
+                VStack(spacing: 16) {
+                    HStack {
+                        Spacer()
+                        RoundButton(symbol: "xmark", tint: Theme.pink) {
+                            Sound.shared.play(.whoosh, volume: 0.5)
+                            onClose()
                         }
-                        .padding(.vertical, 10)
+                        .accessibilityLabel("Close")
+                    }
+                    if store.photos.isEmpty {
+                        Spacer()
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 90, weight: .bold))
+                            .foregroundStyle(Theme.pink.opacity(0.5))
+                        Spacer()
+                    } else {
+                        ScrollView(.vertical, showsIndicators: false) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.fixed(150), spacing: 18), count: 5), spacing: 20) {
+                                ForEach(store.photos) { v in
+                                    ZStack(alignment: .topTrailing) {
+                                        Button {
+                                            onPick(v)
+                                        } label: {
+                                            SalonPortraitView(visit: v)
+                                                .frame(width: 150, height: 175)
+                                                .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                                    .fill(LinearGradient(colors: [Color(hex: 0xFFF1F8), Color(hex: 0xEDE4FF)], startPoint: .top, endPoint: .bottom)))
+                                                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                                                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white, lineWidth: 6))
+                                                .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+                                        }
+                                        .buttonStyle(Squish())
+
+                                        Button {
+                                            onDelete(v.id)
+                                        } label: {
+                                            Image(systemName: "trash.fill")
+                                                .font(.system(size: 14, weight: .bold))
+                                                .foregroundStyle(.white)
+                                                .frame(width: 34, height: 34)
+                                                .background(Circle().fill(Color(hex: 0xF06A8E)))
+                                                .overlay(Circle().stroke(.white, lineWidth: 2.5))
+                                                .shadow(color: Theme.ink.opacity(0.22), radius: 3, y: 2)
+                                        }
+                                        .buttonStyle(Squish())
+                                        .accessibilityLabel("Delete Photo")
+                                        .offset(x: 8, y: -8)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
+                        }
                     }
                 }
+                .padding(26)
+                .frame(width: 900, height: 700)
+                .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream))
+                .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 8))
             }
-            .padding(26)
-            .frame(width: 900, height: 700)
-            .background(RoundedRectangle(cornerRadius: 40, style: .continuous).fill(Theme.cream))
-            .overlay(RoundedRectangle(cornerRadius: 40, style: .continuous).stroke(.white, lineWidth: 8))
         }
     }
 }

@@ -528,31 +528,25 @@ final class BowlSim {
         guard let s = spoon else { return }
         let e = BowlGeo.art(s)
         let pc = poolColor(now)
-        // the batter hugging the spoon where it goes in
+        // Batter meniscus hugging the dipped spoon bowl
         var m = g
         m.opacity = 0.55
-        m.fill(Path(ellipseIn: CGRect(x: e.x - 22, y: e.y - 6, width: 44, height: 13)), with: .color(Shades.shade(pc).color))
-        m.opacity = 0.9
+        m.fill(Path(ellipseIn: CGRect(x: e.x - 26, y: e.y - 6, width: 52, height: 15)), with: .color(Shades.shade(pc).color))
+
+        // Shaded StorybookArt wooden spoon dipping smoothly into the batter
+        var sp = g
+        sp.translateBy(x: e.x, y: e.y + 8)
+        sp.rotate(by: .degrees(24))
+        sp.scaleBy(x: 0.92, y: 0.92)
+        WoodSpoon.paint(sp, batter: pc)
+
+        // Front batter lip wrapping smoothly over the immersed tip
+        m.opacity = 0.95
         var lip = Path()
-        lip.addArc(center: CGPoint(x: e.x, y: e.y), radius: 1, startAngle: .degrees(20), endAngle: .degrees(160), clockwise: false)
-        m.stroke(lip.applying(CGAffineTransform(translationX: -e.x, y: -e.y)).applying(CGAffineTransform(scaleX: 20, y: 6))
-                    .applying(CGAffineTransform(translationX: e.x, y: e.y)), with: .color(Shades.light(pc).color), lineWidth: 3)
-        // the handle
-        let top = CGPoint(x: e.x + 70, y: e.y - 150)
-        var h = Path()
-        h.move(to: CGPoint(x: e.x, y: e.y - 2))
-        h.addLine(to: top)
-        g.stroke(h, with: .color(Color(hex: 0x9B6B52)), style: StrokeStyle(lineWidth: 20, lineCap: .round))
-        g.stroke(h, with: .color(Color(hex: 0xE9B07A)), style: StrokeStyle(lineWidth: 13, lineCap: .round))
-        var shine = Path()
-        shine.move(to: CGPoint(x: e.x + 18, y: e.y - 44))
-        shine.addLine(to: CGPoint(x: e.x + 56, y: e.y - 126))
-        g.stroke(shine, with: .color(.white.opacity(0.45)), style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-        // a little batter clinging to the spoon
-        var cl = Path()
-        cl.move(to: CGPoint(x: e.x - 4, y: e.y - 4))
-        cl.addLine(to: CGPoint(x: e.x + 9, y: e.y - 24))
-        g.stroke(cl, with: .color(pc.color), style: StrokeStyle(lineWidth: 12, lineCap: .round))
+        lip.addArc(center: .zero, radius: 1, startAngle: .degrees(14), endAngle: .degrees(166), clockwise: false)
+        let lipPath = lip.applying(CGAffineTransform(scaleX: 24, y: 7)).applying(CGAffineTransform(translationX: e.x, y: e.y + 1))
+        m.stroke(lipPath, with: .color(pc.color), style: StrokeStyle(lineWidth: 7, lineCap: .round))
+        m.stroke(lipPath.offsetBy(dx: 0, dy: -2), with: .color(Shades.light(pc).color), style: StrokeStyle(lineWidth: 2.8, lineCap: .round))
     }
 
     // MARK: Pours

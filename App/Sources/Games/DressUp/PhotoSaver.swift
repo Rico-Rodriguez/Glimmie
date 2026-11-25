@@ -15,9 +15,44 @@ enum PhotoSaver {
     }
 
     @MainActor
+    @discardableResult
     static func save(_ look: Look) -> Bool {
         guard let img = image(for: look) else { return false }
-        UIImageWriteToSavedPhotosAlbum(img, nil, nil, nil)
+        SaveTarget(completion: nil).start(image: img)
         return true
+    }
+
+    @MainActor
+    static func save(_ look: Look, completion: @escaping (Bool) -> Void) {
+        guard let img = image(for: look) else {
+            completion(false)
+            return
+        }
+        SaveTarget(completion: completion).start(image: img)
+    }
+}
+
+private final class SaveTarget: NSObject {
+    private static var active: [ObjectIdentifier: SaveTarget] = [:]
+    private let completion: ((Bool) -> Void)?
+
+    init(completion: ((Bool) -> Void)?) {
+        self.completion = completion
+        super.init()
+    }
+
+    func start(image: UIImage) {
+        let key = ObjectIdentifier(self)
+        Self.active[key] = self
+        UIImageWriteToSavedPhotosAlbum(image, self, #selector(didFinish(_:error:contextInfo:)), nil)
+    }
+
+    @objc private func didFinish(_ image: UIImage, error: NSError?, contextInfo: UnsafeRawPointer?) {
+        let key = ObjectIdentifier(self)
+        Self.active.removeValue(forKey: key)
+        let ok = (error == nil)
+        DispatchQueue.main.async {
+            self.completion?(ok)
+        }
     }
 }

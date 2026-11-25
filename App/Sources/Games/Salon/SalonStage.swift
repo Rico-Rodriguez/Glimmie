@@ -3,8 +3,10 @@ import SwiftUI
 // MARK: - Drawing the salon chair each frame
 
 extension SalonWorld {
-    func draw(_ ctx: GraphicsContext, size: CGSize, now: Date) {
-        SalonRoom.draw(in: ctx, size: size, floorY: floorDesign, center: centerX)
+    func draw(_ ctx: GraphicsContext, size: CGSize, now: Date, drawRoom: Bool = false) {
+        if drawRoom {
+            SalonRoom.draw(in: ctx, size: size, floorY: floorDesign, center: centerX)
+        }
 
         let k = SalonWorld.k
         var art = ctx
@@ -21,8 +23,11 @@ extension SalonWorld {
                  with: .color(Theme.ink.opacity(0.1)))
         SalonFurniture.drawChairBase(in: art)
         SalonPortrait.paint(look: look, e: e, sim: sim, cape: cape, t: t, client: client, art: art, foam: true)
+        if tool == nil || tool == .clips {
+            ClipPainter.drawTieCues(sim, t: t, in: client)
+        }
         drawBits(in: art, t: t)
-        drawHeld(in: ctx, art: art)
+        drawHeld(in: ctx, art: art, now: now)
     }
 
     private func drawBits(in ctx: GraphicsContext, t: Double) {
@@ -107,11 +112,11 @@ extension SalonWorld {
     }
 
     /// The tool in her hand, or the clip she's carrying (design space).
-    private func drawHeld(in ctx: GraphicsContext, art: GraphicsContext) {
+    private func drawHeld(in ctx: GraphicsContext, art: GraphicsContext, now: Date) {
         if let c = carry, let p = carryPoint {
             var g = ctx
-            let up = SalonWorld.carried(p)
-            g.translateBy(x: up.x, y: up.y)
+            let at = CGPoint(x: p.x + carryOffset.width, y: p.y + carryOffset.height)
+            g.translateBy(x: at.x, y: at.y)
             g.scaleBy(x: SalonWorld.k * 1.15, y: SalonWorld.k * 1.15)
             g.addFilter(.shadow(color: Theme.ink.opacity(0.25), radius: 6, x: 0, y: 6))
             switch c {
@@ -121,11 +126,37 @@ extension SalonWorld {
         }
         if let m = moving, let f = finger {
             var g = ctx
-            let up = SalonWorld.carried(f)
-            g.translateBy(x: up.x, y: up.y)
+            let at = CGPoint(x: f.x + movingOffset.width, y: f.y + movingOffset.height)
+            g.translateBy(x: at.x, y: at.y)
             g.scaleBy(x: SalonWorld.k * 1.15, y: SalonWorld.k * 1.15)
             g.addFilter(.shadow(color: Theme.ink.opacity(0.25), radius: 6, x: 0, y: 6))
             ClipPainter.draw(m.kind, color: m.color, in: g)
+        }
+        if finger == nil, let flash = scissorsFlash {
+            let elapsed = now.timeIntervalSince(flash.started)
+            if elapsed >= 0 && elapsed < 0.26 {
+                let u = elapsed / 0.26
+                let halfSpan = 35 * SalonWorld.k
+                var glint = Path()
+                glint.move(to: CGPoint(x: flash.at.x - halfSpan, y: flash.at.y))
+                glint.addLine(to: CGPoint(x: flash.at.x + halfSpan, y: flash.at.y))
+                ctx.stroke(
+                    glint,
+                    with: .color(.white.opacity(0.95 * (1 - u))),
+                    style: StrokeStyle(lineWidth: 5 * CGFloat(1 - u * 0.5), lineCap: .round)
+                )
+                var sc = ctx
+                sc.translateBy(x: flash.at.x, y: flash.at.y)
+                sc.rotate(by: .degrees(-18))
+                sc.scaleBy(x: 1.25, y: 1.25)
+                sc.translateBy(x: -SalonTool.scissors.tip.x, y: -SalonTool.scissors.tip.y)
+                sc.opacity = min(1, (1 - u) * 1.5)
+                sc.addFilter(.shadow(color: Theme.ink.opacity(0.25), radius: 6, x: 0, y: 5))
+                let bladeOpen = CGFloat(max(0, 0.72 * (1 - u * 2.6)))
+                sc.drawLayer { l in
+                    SalonToolArt.draw(.scissors, dye: RGB(1, 0.5, 0.75), open: bladeOpen, in: l)
+                }
+            }
         }
         guard let t = tool, t != .clips, let f = finger else { return }
         let tipD = tipDesign(f)
@@ -155,8 +186,9 @@ extension SalonWorld {
         if working { g.opacity = FingerLift.seeThrough }
         g.addFilter(.shadow(color: Theme.ink.opacity(0.28), radius: 7, x: 0, y: 7))
         let dye = dyeFor(dyeColor, at: a, strandTime: 0)
+        let isRainbow = t == .dye && dyeColor == SalonWorld.rainbowIndex
         g.drawLayer { l in
-            SalonToolArt.draw(t, dye: dye, open: scissorsOpen, in: l)
+            SalonToolArt.draw(t, dye: dye, rainbow: isRainbow, open: scissorsOpen, in: l)
         }
     }
 }
@@ -166,6 +198,8 @@ extension SalonWorld {
 enum SalonDemo {
     /// Sets up `name` and returns the tool to hold.
     static func run(_ name: String, in w: SalonWorld) -> SalonTool? {
+        Coins.shared.demo = true
+        StickerBook.shared.demo = true
         w.tool = nil
         switch name {
         case "wash":

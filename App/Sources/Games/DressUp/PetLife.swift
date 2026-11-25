@@ -788,11 +788,7 @@ final class PetLife {
             var sc = Self.toolScale
             if foods.contains(id) { sc = 0.82 }
             if id == "bed" {
-                var m = ctx
-                m.opacity = 0.9
-                let r = CGRect(x: drawAt.x - 40, y: drawAt.y - 40, width: 80, height: 80)
-                m.fill(Path(ellipseIn: r), with: .color(Color(hex: 0x6B6FD6)))
-                m.fill(Path(ellipseIn: r.offsetBy(dx: 16, dy: -10)), with: .color(Color(hex: 0xE6E4FF)))
+                drawDraggedPillow(at: drawAt, in: ctx)
             } else {
                 // over the pet a tool turns see-through
                 let tip = tipPoint()
@@ -830,7 +826,7 @@ final class PetLife {
                 d.addQuadCurve(to: CGPoint(x: r.midX, y: r.minY - b.size * 0.4), control: CGPoint(x: r.minX - b.size * 0.3, y: r.maxY))
                 g.fill(d, with: .color(b.color))
             case .zzz:
-                g.draw(Text("z").font(.system(size: b.size, weight: .heavy, design: .rounded)).foregroundColor(.white), at: b.p)
+                drawDreamBubble(at: b.p, size: b.size, in: g)
             case .confetti:
                 var c = g
                 c.translateBy(x: b.p.x, y: b.p.y)
@@ -868,6 +864,71 @@ final class PetLife {
         } else {
             PetPainter.prop(icon, at: .zero, scale: 0.68, in: g)
         }
+    }
+
+    private func drawDraggedPillow(at p: CGPoint, in ctx: GraphicsContext) {
+        var g = ctx
+        g.translateBy(x: p.x, y: p.y)
+        g.rotate(by: .degrees(sin(t * 5) * 4))
+
+        var pillow = Path()
+        pillow.move(to: CGPoint(x: -44, y: -24))
+        pillow.addQuadCurve(to: CGPoint(x: 44, y: -24), control: CGPoint(x: 0, y: -36))
+        pillow.addQuadCurve(to: CGPoint(x: 46, y: 24), control: CGPoint(x: 56, y: 0))
+        pillow.addQuadCurve(to: CGPoint(x: -46, y: 24), control: CGPoint(x: 0, y: 38))
+        pillow.addQuadCurve(to: CGPoint(x: -44, y: -24), control: CGPoint(x: -56, y: 0))
+        pillow.closeSubpath()
+
+        StorybookArt.fillAndStroke(
+            g,
+            pillow,
+            fill: StorybookArt.color(0xC9C2FF),
+            stroke: StorybookArt.outline(for: 0x8F86E6),
+            width: 3.6
+        )
+        StorybookArt.highlight(g, in: CGRect(x: -30, y: -22, width: 32, height: 11), opacity: 0.55)
+
+        var stitch = Path()
+        stitch.move(to: CGPoint(x: -36, y: -17))
+        stitch.addQuadCurve(to: CGPoint(x: 36, y: -17), control: CGPoint(x: 0, y: -26))
+        stitch.addQuadCurve(to: CGPoint(x: 36, y: 17), control: CGPoint(x: 44, y: 0))
+        stitch.addQuadCurve(to: CGPoint(x: -36, y: 17), control: CGPoint(x: 0, y: 26))
+        stitch.addQuadCurve(to: CGPoint(x: -36, y: -17), control: CGPoint(x: -44, y: 0))
+        stitch.closeSubpath()
+        g.stroke(stitch, with: .color(.white.opacity(0.65)), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+
+        var moon = Path()
+        moon.addArc(center: CGPoint(x: -2, y: 0), radius: 14, startAngle: .degrees(35), endAngle: .degrees(325), clockwise: false)
+        moon.addArc(center: CGPoint(x: 5, y: -3), radius: 11, startAngle: .degrees(305), endAngle: .degrees(55), clockwise: true)
+        moon.closeSubpath()
+        StorybookArt.fillAndStroke(g, moon, fill: Theme.lemon, stroke: StorybookArt.outline(for: 0xE6A93B), width: 2)
+        StorybookArt.sparkle(g, at: CGPoint(x: 16, y: -8), radius: 6, color: .white)
+        StorybookArt.sparkle(g, at: CGPoint(x: 12, y: 10), radius: 4.5, color: Theme.lemon)
+    }
+
+    private func drawDreamBubble(at p: CGPoint, size s: CGFloat, in ctx: GraphicsContext) {
+        let r = s * 0.56
+        let bubble = Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2))
+        StorybookArt.fillAndStroke(
+            ctx,
+            bubble,
+            fill: StorybookArt.color(0xE8E4FF, alpha: 0.42),
+            stroke: .white.opacity(0.85),
+            width: 2.2
+        )
+        StorybookArt.highlight(
+            ctx,
+            in: CGRect(x: p.x - r * 0.52, y: p.y - r * 0.62, width: r * 0.48, height: r * 0.28),
+            opacity: 0.72
+        )
+
+        var moon = Path()
+        let mr = r * 0.46
+        moon.addArc(center: CGPoint(x: p.x - r * 0.08, y: p.y + r * 0.04), radius: mr, startAngle: .degrees(35), endAngle: .degrees(325), clockwise: false)
+        moon.addArc(center: CGPoint(x: p.x + r * 0.14, y: p.y - r * 0.08), radius: mr * 0.82, startAngle: .degrees(305), endAngle: .degrees(55), clockwise: true)
+        moon.closeSubpath()
+        ctx.fill(moon, with: .color(Theme.lemon))
+        StorybookArt.sparkle(ctx, at: CGPoint(x: p.x + r * 0.36, y: p.y - r * 0.24), radius: r * 0.28, color: .white)
     }
 
     private func heartPath(in r: CGRect) -> Path {

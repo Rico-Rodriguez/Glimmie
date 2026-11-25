@@ -324,6 +324,10 @@ enum PaintBrush: String, CaseIterable, Codable {
     case marker, crayon, pencil, paint, glitter, rainbow, stamps, eraser
 }
 
+enum ColoringStampShape: String, CaseIterable, Codable {
+    case heart, star, sparkle, cycle
+}
+
 /// The color layer under a page's line art: a 1600x1200 bitmap she paints on.
 /// Coordinates are pixels with the origin at the top left. Use it from the main thread.
 /// The brushes themselves live in Brushes.swift.
@@ -344,6 +348,7 @@ final class ColoringPaper {
     var tint: UnsafeMutablePointer<UInt32>?   // per-pixel color, for the rainbow brush
     var strokeBox: PixelBox?
     var brush: PaintBrush = .marker
+    var stampShape: ColoringStampShape = .cycle
     var brushColor = PaintColor.white
     var brushSize: CGFloat = 20
     var radius: Float = 10

@@ -201,6 +201,7 @@ private final class StageHand {
 struct PotionLabView: View {
     let exit: () -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var sim = PotionSim()
     @State private var liquid = PotionLiquid()
     @State private var hand = StageHand()
@@ -216,7 +217,7 @@ struct PotionLabView: View {
                 PotionBackdropView(moonlit: sim.moonlit)
             } content: {
                 ZStack {
-                    TimelineView(.animation(minimumInterval: 1.0 / 60)) { tl in
+                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: showStickerBook || showSpellbook)) { tl in
                         Canvas { ctx, _ in
                             sim.step(tl.date)
                             playSounds()
@@ -235,18 +236,25 @@ struct PotionLabView: View {
                         gameID: PotionSim.gameID,
                         showStickerBook: true,
                         showCoins: true,
-                        onExit: exit,
+                        onExit: {
+                            sim.save()
+                            PotionSound.shared.stopLoops()
+                            exit()
+                        },
                         onStickerBook: {
+                            PotionSound.shared.stopLoops()
                             withAnimation(.easeOut(duration: 0.2)) { showStickerBook = true }
                         },
                         trailing: {
                             RoundButton(symbol: "sparkles", tint: Theme.lilac, size: GameChromeLayout.buttonSize) {
                                 Sound.shared.play(.sparkle, volume: 0.65)
                                 Sound.shared.tap()
+                                PotionSound.shared.stopLoops()
                                 withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
                                     showSpellbook = true
                                 }
                             }
+                            .accessibilityLabel("Spellbook")
                             RoundButton(
                                 symbol: sim.moonlit ? "moon.stars.fill" : "sun.max.fill",
                                 tint: sim.moonlit ? Theme.lilac : Theme.lemon,
@@ -255,22 +263,23 @@ struct PotionLabView: View {
                                 Sound.shared.tap()
                                 sim.toggleMoonlit()
                             }
+                            .accessibilityLabel(sim.moonlit ? "Moonlight" : "Daylight")
                         }
                     )
 
                     StickerToast(game: PotionSim.gameID, target: GameChromeLayout.stickerTarget)
-
-                    if showSpellbook {
-                        PotionSpellbookView {
-                            Sound.shared.play(.flip, volume: 0.6)
-                            withAnimation(.easeOut(duration: 0.2)) { showSpellbook = false }
-                        }
-                        .transition(.opacity)
-                        .zIndex(4)
-                    }
                 }
                 .coordinateSpace(name: "potionStage")
                 .coinPurse(game: PotionSim.gameID)
+            }
+
+            if showSpellbook {
+                PotionSpellbookView {
+                    Sound.shared.play(.flip, volume: 0.6)
+                    withAnimation(.easeOut(duration: 0.2)) { showSpellbook = false }
+                }
+                .transition(.opacity)
+                .zIndex(8)
             }
 
             if showStickerBook {
@@ -281,7 +290,14 @@ struct PotionLabView: View {
                 .zIndex(10)
             }
         }
+        .ignoresSafeArea()
         .onAppear(perform: start)
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                sim.save()
+                PotionSound.shared.stopLoops()
+            }
+        }
         .onDisappear {
             sim.save()
             PotionSound.shared.stopLoops()
@@ -340,6 +356,7 @@ struct PotionLabView: View {
                         .animation(.spring(response: 0.28, dampingFraction: 0.65), value: selected)
                     }
                     .buttonStyle(Squish())
+                    .accessibilityLabel(kind.rawValue.capitalized)
                 }
             }
             .padding(.horizontal, 12)
@@ -366,6 +383,7 @@ struct PotionLabView: View {
                 .scaleEffect(sim.hasActiveEffect && bottlePulse ? 1.08 : 1.0)
             }
             .buttonStyle(Squish())
+            .accessibilityLabel("Splash Clean")
             .position(PotionGeometry.waterResetCenter)
         }
     }
@@ -413,6 +431,7 @@ struct PotionLabView: View {
                 .scaleEffect(bottlePulse ? 1.07 : 0.98)
             }
             .buttonStyle(Squish())
+            .accessibilityLabel("Bottle Potion")
             .position(PotionGeometry.bottleFillCenter)
             .transition(.scale.combined(with: .opacity))
         }
@@ -472,6 +491,7 @@ struct PotionLabView: View {
                                 }
                             }
                     )
+                    .accessibilityLabel(kind.accessibilityName)
                 }
             }
         }
@@ -580,6 +600,21 @@ struct PotionLabView: View {
     }
 }
 
+private extension PIngredient {
+    var accessibilityName: String {
+        switch self {
+        case .fairyRose: return "Fairy Rose"
+        case .mermaidWave: return "Mermaid Wave"
+        case .starGlitter: return "Star Glitter"
+        case .rainbowMane: return "Rainbow Mane"
+        case .frostFlake: return "Frost Flake"
+        case .bubbleBerry: return "Bubble Berry"
+        case .dragonChili: return "Dragon Chili"
+        case .sleepyLavender: return "Sleepy Lavender"
+        }
+    }
+}
+
 // MARK: - Spoiler-Free Picture Spellbook Overlay (Zero English Prose)
 
 struct PotionSpellbookView: View {
@@ -592,43 +627,46 @@ struct PotionSpellbookView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.32)
-                .contentShape(Rectangle())
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
                 .onTapGesture(perform: close)
 
-            GameTrayCard(cornerRadius: 40, paddingH: 26, paddingV: 24) {
-                VStack(spacing: 14) {
-                    // Purely pictorial star progress bar (10 stars, filled for discovered potions).
-                    HStack(spacing: 8) {
-                        ForEach(PotionKind.allCases) { kind in
-                            let found = StickerBook.shared.has(game: PotionSim.gameID, id: kind.rawValue)
-                            Image(systemName: found ? "star.fill" : "star")
-                                .font(.system(size: 22, weight: .bold))
-                                .foregroundStyle(found ? Theme.lemon : Theme.ink.opacity(0.2))
-                                .shadow(color: found ? Theme.ink.opacity(0.22) : .clear, radius: 1, y: 1)
+            DesignCanvas {
+                GameTrayCard(cornerRadius: 40, paddingH: 26, paddingV: 24) {
+                    VStack(spacing: 14) {
+                        // Purely pictorial star progress bar (10 stars, filled for discovered potions).
+                        HStack(spacing: 8) {
+                            ForEach(PotionKind.allCases) { kind in
+                                let found = StickerBook.shared.has(game: PotionSim.gameID, id: kind.rawValue)
+                                Image(systemName: found ? "star.fill" : "star")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(found ? Theme.lemon : Theme.ink.opacity(0.2))
+                                    .shadow(color: found ? Theme.ink.opacity(0.22) : .clear, radius: 1, y: 1)
+                            }
                         }
-                    }
 
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(PotionKind.allCases) { kind in
-                            PotionRecipeCard(kind: kind)
+                        LazyVGrid(columns: columns, spacing: 12) {
+                            ForEach(PotionKind.allCases) { kind in
+                                PotionRecipeCard(kind: kind)
+                            }
                         }
                     }
+                    .frame(width: 840)
                 }
-                .frame(width: 840)
-            }
-            .overlay(alignment: .topTrailing) {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 26, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 62, height: 62)
-                        .background(Circle().fill(Theme.pink))
-                        .overlay(Circle().stroke(.white, lineWidth: 5))
-                        .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+                .overlay(alignment: .topTrailing) {
+                    Button(action: close) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 26, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 62, height: 62)
+                            .background(Circle().fill(Theme.pink))
+                            .overlay(Circle().stroke(.white, lineWidth: 5))
+                            .shadow(color: Theme.ink.opacity(0.25), radius: 5, y: 3)
+                    }
+                    .buttonStyle(Squish())
+                    .accessibilityLabel("Close")
+                    .offset(x: 18, y: -18)
                 }
-                .buttonStyle(Squish())
-                .offset(x: 18, y: -18)
             }
         }
     }

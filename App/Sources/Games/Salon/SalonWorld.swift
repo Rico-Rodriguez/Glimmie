@@ -89,6 +89,8 @@ final class SalonWorld {
     // layout (design space is DesignCanvas's, 834 tall)
     static let k: CGFloat = 1.02
     static let headY: CGFloat = 298
+    static let defaultCenterX: CGFloat = 487
+    static let floorDesignDefault: CGFloat = headY + (SalonBody.floorY - 287) * k
     /// Clips ride well above her finger so she can see where they go (see `FingerLift`).
     static func carried(_ finger: CGPoint) -> CGPoint {
         FingerLift.point(finger, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
@@ -97,7 +99,7 @@ final class SalonWorld {
     static func carrying(to p: CGPoint) -> CGPoint {
         FingerLift.finger(for: p, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
     }
-    var centerX: CGFloat = 487
+    var centerX: CGFloat = SalonWorld.defaultCenterX
 
     func toDesign(_ a: HairV) -> CGPoint {
         CGPoint(x: centerX + (a.x - 300) * SalonWorld.k, y: SalonWorld.headY + (a.y - 287) * SalonWorld.k)
@@ -121,15 +123,32 @@ final class SalonWorld {
     var dyeColor: Int = 0
     var glitterColor: Int = 0
     var carry: SalonCarry?
-    /// Where the carried clip is (design space), while she drags it from the tray.
+    /// Where the carried clip is (design space), while she drags it from the tray or hair.
     var carryPoint: CGPoint?
-    /// A clip she picked off the hair to move.
+    var carryOffset: CGSize = .zero
+    private(set) var carryFromHair = false
+    /// A clip she picked off the hair to move, lifted smoothly from its hair position.
     var moving: HairClip?
+    var movingOffset: CGSize = .zero
     var movingTie: Int?
     /// A scrunchie she touched: a tap switches its style, a drag picks it up.
     private var tappedTie: Int?
+    /// Brief scissors snip animation shown when she taps to cut.
+    private(set) var scissorsFlash: (at: CGPoint, started: Date)?
     /// Where the chair is turning to (0 facing us, steps of a sixth of a turn).
     private(set) var turnTarget: CGFloat = 0
+
+    var isDraggingFromHair: Bool { moving != nil || (carry != nil && carryFromHair) }
+
+    var draggedItemDesignPoint: CGPoint? {
+        if moving != nil, let f = finger {
+            return CGPoint(x: f.x + movingOffset.width, y: f.y + movingOffset.height)
+        }
+        if carry != nil, let p = carryPoint {
+            return CGPoint(x: p.x + carryOffset.width, y: p.y + carryOffset.height)
+        }
+        return nil
+    }
 
     // finger (design space)
     private(set) var finger: CGPoint?
@@ -152,6 +171,11 @@ final class SalonWorld {
     private var happyUntil = Date.distantPast
     private var hopAt = Date.distantPast
     var changed = false
+
+    // styling progress (for coin reward gating and safe photo-wall auto-backup)
+    private(set) var hasBeenStyled = false
+    private(set) var hasUnrewardedStyling = false
+    private(set) var savedSinceStyle = false
 
     static let dyeColors: [RGB] = [
         RGB(hex: "#FF5C9A"), RGB(hex: "#FF9EC0"), RGB(hex: "#E8475A"), RGB(hex: "#FFA24C"), RGB(hex: "#FFE27A"),
@@ -239,7 +263,14 @@ final class SalonWorld {
         visitID = UUID()
         bits.removeAll()
         moving = nil
+        movingOffset = .zero
+        cancelCarry()
+        tappedTie = nil
+        scissorsFlash = nil
         turnTarget = 0
+        hasBeenStyled = false
+        hasUnrewardedStyling = false
+        savedSinceStyle = false
         changed = true
     }
 
@@ -251,8 +282,33 @@ final class SalonWorld {
         look.picks["hat"] = hat
         visitID = UUID()
         bits.removeAll()
+        moving = nil
+        movingOffset = .zero
+        cancelCarry()
+        tappedTie = nil
+        scissorsFlash = nil
         turnTarget = sim.yaw
+        hasBeenStyled = false
+        hasUnrewardedStyling = false
+        savedSinceStyle = false
         changed = true
+    }
+
+    func markStyled() {
+        hasBeenStyled = true
+        hasUnrewardedStyling = true
+        savedSinceStyle = false
+        changed = true
+    }
+
+    func consumeCoinReward() -> Bool {
+        guard hasUnrewardedStyling else { return false }
+        hasUnrewardedStyling = false
+        return true
+    }
+
+    func markSavedToWall() {
+        savedSinceStyle = true
     }
 
     func visit(positions: Bool) -> SalonVisit {
@@ -264,7 +320,10 @@ final class SalonWorld {
     func wearHat(_ id: String?) {
         hat = (hat == id) ? nil : id
         look.picks["hat"] = hat
-        changed = true
+        markStyled()
+        if let h = hat, ["h_crown", "h_tiara", "h_starcrown", "h_halo", "h_unicorn"].contains(h) {
+            SalonFind.sparkleCrown.unlock()
+        }
     }
 
     func cheer() {
@@ -295,55 +354,94 @@ final class SalonWorld {
         lastTip = tip(p)
         downAt = Date()
         movedSinceDown = 0
-        let q = tip(p)
         if tool == .clips && carry == nil {
-            grabClip(near: toArt(p))
-        }
-        if tool == .scissors {
-            snip(HairV(q.x - 16, q.y), HairV(q.x + 16, q.y))
+            grabClip(near: toArt(p), fingerDesign: p)
+        } else if tool == nil && carry == nil {
+            grabTie(near: toArt(p))
         }
     }
 
     func move(_ p: CGPoint) {
         if let f = finger { movedSinceDown += hypot(p.x - f.x, p.y - f.y) }
         finger = p
-        if let i = tappedTie, movedSinceDown > 12 {
+        if moving != nil && movedSinceDown > 4 {
+            let target = FingerLift.offset(p, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
+            movingOffset = FingerLift.ease(movingOffset, toward: target, by: 0.25)
+        }
+        if let i = tappedTie, movedSinceDown > 18 {
             tappedTie = nil
             if i < sim.ties.count {
-                let color = sim.ties[i].color
-                sim.ties.remove(at: i)
-                carry = .scrunchie(color)
-                carryPoint = p
+                let tie = sim.ties.remove(at: i)
+                let tieDesign = toDesign(tie.at)
+                let initOff = CGSize(width: tieDesign.x - p.x, height: tieDesign.y - p.y)
+                startCarry(.scrunchie(tie.color), at: p, fromHair: true, initialOffset: initOff)
                 SalonSound.shared.play(.boing, volume: 0.35, gap: 0.2)
                 changed = true
             }
         }
         path.append(p)
-        if carry != nil { carryPoint = p }
+        if carry != nil { moveCarry(to: p) }
     }
 
-    func release() {
+    func startCarry(_ c: SalonCarry, at designPoint: CGPoint, fromHair: Bool = false, initialOffset: CGSize = .zero) {
+        carry = c
+        carryPoint = designPoint
+        carryFromHair = fromHair
+        carryOffset = initialOffset
+    }
+
+    func moveCarry(to designPoint: CGPoint) {
+        carryPoint = designPoint
+        let target = FingerLift.offset(designPoint, lift: FingerLift.item, bottom: DesignCanvas<EmptyView>.designHeight)
+        carryOffset = FingerLift.ease(carryOffset, toward: target, by: 0.28)
+    }
+
+    func cancelCarry() {
+        carry = nil
+        carryPoint = nil
+        carryFromHair = false
+        carryOffset = .zero
+    }
+
+    func discardCarried() {
+        moving = nil
+        movingOffset = .zero
+        cancelCarry()
+        Sound.shared.play(.whoosh, volume: 0.55)
+        Sound.shared.tap()
+        changed = true
+    }
+
+    func release(discarding: Bool = false) {
         guard finger != nil else { return }
-        let q = finger.map { toArt($0) } ?? HairV(300, 300)
-        let lifted = finger.map { toArt(SalonWorld.carried($0)) } ?? q
+        let f = finger ?? CGPoint(x: centerX, y: SalonWorld.headY)
+        let q = toArt(f)
         let quick = movedSinceDown < 12 && Date().timeIntervalSince(downAt) < 0.35
-        if tappedTie != nil {
+        if let i = tappedTie {
             tappedTie = nil
-            _ = restyle(at: q)
-        } else if tool == nil && quick {
+            _ = restyle(tieIndex: i)
+        } else if tool == nil && quick && moving == nil && carry == nil {
             if !restyle(at: q) && cos(sim.yaw) > 0.5 && SalonBody.onFace(q) { tickle() }
         }
-        if carry != nil, let f = finger {
-            dropCarry(at: f)
-        }
-        if let c = moving {
-            moving = nil
-            if !sim.attach(c.kind, color: c.color, at: lifted) {
-                fall(HairClip(kind: c.kind, color: c.color, strand: 0, node: 0, dx: 0, dy: 0), at: lifted, v: HairV(0, -60))
-            } else {
-                SalonSound.shared.play(.clip)
+        if discarding && isDraggingFromHair {
+            discardCarried()
+        } else {
+            if carry != nil {
+                dropCarry(at: f)
             }
-            changed = true
+            if let c = moving {
+                let dropDesign = CGPoint(x: f.x + movingOffset.width, y: f.y + movingOffset.height)
+                let dropArt = toArt(dropDesign)
+                moving = nil
+                movingOffset = .zero
+                if !sim.attach(c.kind, color: c.color, at: dropArt) {
+                    fall(HairClip(kind: c.kind, color: c.color, strand: 0, node: 0, dx: 0, dy: 0), at: dropArt, v: HairV(0, -60))
+                } else {
+                    SalonSound.shared.play(.clip)
+                    markStyled()
+                }
+                changed = true
+            }
         }
         finger = nil
         path.removeAll()
@@ -354,15 +452,21 @@ final class SalonWorld {
     /// A clip or bow from the tray lands at design point p.
     func dropCarry(at p: CGPoint) {
         guard let c = carry else { return }
-        carry = nil
-        carryPoint = nil
-        let q = toArt(SalonWorld.carried(p))
+        let targetDesign: CGPoint
+        if carryPoint != nil {
+            targetDesign = CGPoint(x: p.x + carryOffset.width, y: p.y + carryOffset.height)
+        } else {
+            targetDesign = SalonWorld.carried(p)
+        }
+        cancelCarry()
+        let q = toArt(targetDesign)
         switch c {
         case .clip(let kind, let color):
             if sim.attach(kind, color: color, at: q) {
                 SalonSound.shared.play(.clip)
                 sparkle(at: q, count: 6)
                 cheerSmall()
+                markStyled()
             } else if q.y > 0 && q.y < 900 && q.x > 0 && q.x < 600 {
                 fall(HairClip(kind: kind, color: color, strand: 0, node: 0, dx: 0, dy: 0), at: q, v: HairV(0, -40))
             }
@@ -371,6 +475,7 @@ final class SalonWorld {
                 break
             } else if sim.attach(.ribbon, color: color, at: q) {
                 SalonSound.shared.play(.clip)
+                markStyled()
             }
         }
         changed = true
@@ -383,31 +488,54 @@ final class SalonWorld {
         SalonSound.shared.play(.boing, volume: 0.4, gap: 0.2)
         sparkle(at: q, count: 8)
         cheerSmall()
-        changed = true
+        markStyled()
         return true
     }
 
-    private func grabClip(near q: HairV) {
-        var best: (Int, CGFloat)?
+    private func grabClip(near q: HairV, fingerDesign: CGPoint) {
+        var best: (Int, CGFloat, HairV)?
         for (i, c) in sim.clips.enumerated() {
             guard let at = sim.clipPosition(c) else { continue }
             let d = at.dist(q)
-            if d < 44 && d < (best?.1 ?? .greatestFiniteMagnitude) { best = (i, d) }
+            if d < 44 && d < (best?.1 ?? .greatestFiniteMagnitude) { best = (i, d, at) }
         }
         if let b = best {
             moving = sim.clips.remove(at: b.0)
+            let clipDesign = toDesign(b.2)
+            movingOffset = CGSize(width: clipDesign.x - fingerDesign.x, height: clipDesign.y - fingerDesign.y)
             SalonSound.shared.play(.clip, volume: 0.5)
             return
         }
-        for (i, t) in sim.ties.enumerated() where t.at.dist(q) < 40 {
-            tappedTie = i
-            return
+        grabTie(near: q)
+    }
+
+    private func grabTie(near q: HairV) {
+        var best: (Int, CGFloat)?
+        for (i, t) in sim.ties.enumerated() where SalonBody.visible(t.at, t.z, squash: sim.squash) {
+            let d = t.at.dist(q)
+            if d < 48 && d < (best?.1 ?? .greatestFiniteMagnitude) { best = (i, d) }
+        }
+        if let b = best {
+            tappedTie = b.0
         }
     }
 
     /// A tap on a scrunchie: ponytail, then braid, then bun, then back to a ponytail.
     private func restyle(at q: HairV) -> Bool {
         guard let style = sim.restyle(near: q) else { return false }
+        finishRestyle(style, at: q)
+        return true
+    }
+
+    private func restyle(tieIndex i: Int) -> Bool {
+        guard sim.ties.indices.contains(i) else { return false }
+        let at = sim.ties[i].at
+        guard let style = sim.restyle(tieIndex: i) else { return false }
+        finishRestyle(style, at: at)
+        return true
+    }
+
+    private func finishRestyle(_ style: HairTie.Style, at q: HairV) {
         SalonSound.shared.play(.clip)
         if style == .bun {
             SalonSound.shared.play(.boing, volume: 0.5, gap: 0.2)
@@ -416,8 +544,27 @@ final class SalonWorld {
         }
         sparkle(at: q, count: 10)
         cheerSmall()
-        changed = true
-        return true
+        markStyled()
+        if style == .braid || style == .bun {
+            SalonFind.updoArtist.unlock()
+        }
+    }
+
+    /// One crisp horizontal 70pt scissors snip centered on a tap in design space.
+    @discardableResult
+    func tapSnip(at designPoint: CGPoint) -> [HairV] {
+        scissorsFlash = (designPoint, Date())
+        scissorsOpen = 0
+        return tapSnip(atArt: toArt(designPoint))
+    }
+
+    @discardableResult
+    func tapSnip(atArt q: HairV) -> [HairV] {
+        let cuts = snip(HairV(q.x - 35, q.y), HairV(q.x + 35, q.y))
+        if cuts.isEmpty {
+            SalonSound.shared.play(.snip, volume: 0.45, gap: 0.07)
+        }
+        return cuts
     }
 
     private func tickle() {
@@ -463,6 +610,9 @@ final class SalonWorld {
             blinkUntil = now.addingTimeInterval(0.14)
             nextBlink = now.addingTimeInterval(Double.random(in: 2.4...5, using: &rng))
         }
+        if let flash = scissorsFlash, now.timeIntervalSince(flash.started) > 0.26 {
+            scissorsFlash = nil
+        }
         if finger == nil && tool == .scissors { scissorsOpen += (0.6 - scissorsOpen) * 0.2 }
     }
 
@@ -476,22 +626,65 @@ final class SalonWorld {
         let moved = q.dist(q0)
         switch tool {
         case nil:
+            guard tappedTie == nil && moving == nil && carry == nil else { return }
             var a = q0
+            var caught = 0
+            let droppedBefore = sim.dropped.count
             for p in pts.dropFirst() {
                 let b = tip(p)
-                sim.comb(from: a, to: b, radius: 40, detangle: 0)
+                caught += sim.comb(from: a, to: b, radius: 40, detangle: 0.08, gloss: 0.02)
                 a = b
+            }
+            if sim.dropped.count > droppedBefore {
+                for d in sim.dropped[droppedBefore...] where d.clip != nil {
+                    sparkle(at: d.at, count: 6)
+                }
+                Sound.shared.play(.sparkle, volume: 0.4)
+                cheerSmall()
+                markStyled()
+            } else if caught > 0 {
+                changed = true
+            }
+        case .comb?:
+            var a = q0
+            var caught = 0
+            let droppedBefore = sim.dropped.count
+            for p in pts.dropFirst() {
+                let b = tip(p)
+                caught += sim.comb(from: a, to: b, radius: 42 * FingerLift.spread, detangle: 0.25, gloss: 0.12, looseChance: 0.6)
+                a = b
+            }
+            if caught == 0 && moved > 0.3 {
+                caught = sim.comb(from: q0, to: q, radius: 42 * FingerLift.spread, detangle: 0.25, gloss: 0.12, looseChance: 0.6)
+            }
+            if caught > 0 {
+                SalonSound.shared.play(.comb, volume: 0.55, gap: 0.22)
+                markStyled()
+                if Double.random(in: 0..<1, using: &rng) < 0.22 {
+                    sparkle(at: q + HairV(rnd(-20, 20), rnd(-14, 14)), count: 1)
+                }
+            }
+            if sim.dropped.count > droppedBefore {
+                for d in sim.dropped[droppedBefore...] where d.clip != nil {
+                    sparkle(at: d.at, count: 7)
+                }
+                Sound.shared.play(.sparkle, volume: 0.45)
+                cheerSmall()
             }
         case .scissors?:
             var a = q0
             for p in pts.dropFirst() {
                 let b = tip(p)
-                snip(a, b)
+                _ = snip(a, b)
                 a = b
             }
             if moved > 0.5 { scissorsOpen = 0.5 + 0.5 * CGFloat(sin(time * 26)) }
         case .shampoo?:
-            if sim.lather(q, dt: h) > 0 { SalonSound.shared.play(.squish, volume: 0.5, gap: 0.28) }
+            if sim.lather(q, dt: h) > 0 {
+                SalonSound.shared.play(.squish, volume: 0.5, gap: 0.28)
+                markStyled()
+                if sim.foam.count >= 10 { SalonFind.bubbleWash.unlock() }
+            }
             if Double.random(in: 0..<1, using: &rng) < 0.25 {
                 bits.append(SalonBit(kind: .bubble, p: q + HairV(rnd(-20, 20), rnd(-10, 10)) * FingerLift.spread, v: HairV(rnd(-20, 20), rnd(-70, -30)),
                                      life: rndD(1.2, 2.2), size: rnd(4, 9)))
@@ -504,21 +697,31 @@ final class SalonWorld {
             }
             SalonSound.shared.play(.water, volume: 0.45, gap: 0.42)
         case .towel?:
-            if moved > 1.5 && sim.towel(q, dt: h) > 0 { SalonSound.shared.play(.rub, volume: 0.45, gap: 0.3) }
+            if moved > 1.5 && sim.towel(q, dt: h) > 0 {
+                SalonSound.shared.play(.rub, volume: 0.45, gap: 0.3)
+                markStyled()
+            }
         case .dryer?:
             let dir = (SalonBody.center - q).unit
             sim.dryer = (q, dir)
-            sim.touch(q + dir * 140, radius: 170, freeOnly: true) { si, _, f in
-                sim.strands[si].wet = max(0, sim.strands[si].wet - h * 0.09 * f)
+            let dried = sim.dry(from: q, dir: dir, dt: h)
+            if dried > 0 {
+                markStyled()
+                if Double.random(in: 0..<1, using: &rng) < 0.35 {
+                    let puffAt = q + dir * rnd(50, 175) + dir.perp * rnd(-35, 35)
+                    bits.append(SalonBit(kind: .sparkle, p: puffAt, v: dir * rnd(80, 160) + HairV(0, rnd(-40, 10)),
+                                         life: rndD(0.45, 0.8), size: rnd(6, 11), color: [RGB(1, 0.92, 0.62), RGB(1, 0.98, 0.9), RGB(1, 0.8, 0.68)].randomElement()!))
+                }
             }
-            if Double.random(in: 0..<1, using: &rng) < 0.5 {
-                let side = dir.perp * rnd(-14, 14)
-                bits.append(SalonBit(kind: .air, p: q + side, v: dir * rnd(380, 520) + dir.perp * rnd(-40, 40), life: 0.45, size: rnd(14, 26)))
+            if Double.random(in: 0..<1, using: &rng) < 0.6 {
+                let side = dir.perp * rnd(-16, 16)
+                bits.append(SalonBit(kind: .air, p: q + side, v: dir * rnd(360, 500) + dir.perp * rnd(-30, 30), life: 0.45, size: rnd(14, 26)))
             }
             SalonSound.shared.play(.dryer, volume: 0.5, gap: 0.5)
         case .curler?:
             if sim.curlUp(q, dt: h) > 0 {
                 SalonSound.shared.play(.sizzle, volume: 0.35, gap: 0.45)
+                markStyled()
                 if Double.random(in: 0..<1, using: &rng) < 0.3 { steam(at: q) }
             }
         case .straightener?:
@@ -531,6 +734,7 @@ final class SalonWorld {
             }
             if sim.straighten(q, dt: h) > 0 {
                 SalonSound.shared.play(.sizzle, volume: 0.3, gap: 0.5)
+                markStyled()
                 if Double.random(in: 0..<1, using: &rng) < 0.25 { steam(at: q) }
                 if Double.random(in: 0..<1, using: &rng) < 0.15 { sparkle(at: q + HairV(rnd(-20, 20), rnd(0, 40)), count: 1) }
             }
@@ -538,14 +742,25 @@ final class SalonWorld {
             let pick = dyeColor
             let t0 = time
             let n = sim.dye(q, dt: h) { p in self.dyeFor(pick, at: p, strandTime: t0) }
-            if n > 0 { SalonSound.shared.play(.comb, volume: 0.3, gap: 0.3) }
+            if n > 0 {
+                SalonSound.shared.play(.comb, volume: 0.3, gap: 0.3)
+                markStyled()
+                if pick == SalonWorld.rainbowIndex {
+                    SalonFind.rainbowStylist.unlock()
+                }
+            }
             if moved > 1 && Double.random(in: 0..<1, using: &rng) < 0.5 {
                 bits.append(SalonBit(kind: .dye, p: q, v: HairV(rnd(-60, 60), rnd(-60, 20)), life: 0.5, size: rnd(2, 4),
                                      color: dyeFor(pick, at: q, strandTime: t0)))
             }
         case .glitter?:
             let c = SalonWorld.glitterColors[min(glitterColor, SalonWorld.glitterColors.count - 1)]
-            _ = sim.sprinkleGlitter(q, color: c)
+            if sim.sprinkleGlitter(q, color: c) > 0 {
+                markStyled()
+                if hat != nil && sim.flakes.count >= 8 {
+                    SalonFind.sparkleCrown.unlock()
+                }
+            }
             for _ in 0..<2 {
                 bits.append(SalonBit(kind: .glitter, p: q + HairV(rnd(-10, 10), rnd(-6, 6)) * FingerLift.spread, v: HairV(rnd(-50, 50), rnd(-20, 60)),
                                      life: rndD(2.5, 5), size: rnd(2.5, 4.5), color: c, spin: rnd(-6, 6)))
@@ -555,6 +770,7 @@ final class SalonWorld {
         case .grow?:
             if sim.grow(near: q, radius: 64 * FingerLift.spread, dt: h) {
                 SalonSound.shared.play(.magic, volume: 0.45, gap: 0.7)
+                markStyled()
             }
             if Double.random(in: 0..<1, using: &rng) < 0.35 {
                 bits.append(SalonBit(kind: .sparkle, p: q + HairV(rnd(-26, 26), rnd(-10, 30)), v: HairV(rnd(-20, 20), rnd(20, 70)),
@@ -591,9 +807,10 @@ final class SalonWorld {
         }
     }
 
-    private func snip(_ a: HairV, _ b: HairV) {
+    @discardableResult
+    private func snip(_ a: HairV, _ b: HairV) -> [HairV] {
         let cuts = sim.cut(from: a, to: b)
-        guard !cuts.isEmpty else { return }
+        guard !cuts.isEmpty else { return [] }
         SalonSound.shared.play(.snip, volume: 0.7, gap: 0.07)
         scissorsOpen = 0
         for c in cuts.prefix(4) {
@@ -603,7 +820,9 @@ final class SalonWorld {
                                      spin: rnd(-8, 8), angle: rnd(0, 3)))
             }
         }
-        changed = true
+        markStyled()
+        SalonFind.firstCut.unlock()
+        return cuts
     }
 
     private func steam(at q: HairV) {
@@ -649,15 +868,27 @@ final class SalonWorld {
                 b.v.y += 1500 * h
                 let next = b.p + b.v * h
                 if b.hits < 3 {
+                    var rinsed = false
                     for (si, box) in sim.boxes.enumerated() where box.contains(next.cg) {
                         let s = sim.strands[si]
                         if s.p.contains(where: { $0.dist(next) < s.width * 0.55 }) {
                             sim.makeWet(si, 0.022)
-                            if sim.rinse(next, radius: 16) > 0 { SalonSound.shared.play(.bloop, volume: 0.25, gap: 0.2) }
+                            if b.hits == 0 { markStyled() }
+                            if sim.rinse(next, radius: 28) > 0 {
+                                SalonSound.shared.play(.bloop, volume: 0.25, gap: 0.2)
+                                SalonFind.bubbleWash.unlock()
+                                markStyled()
+                                rinsed = true
+                            }
                             b.v = HairV(b.v.x * 0.5, b.v.y * 0.45)
                             b.hits += 1
                             break
                         }
+                    }
+                    if !rinsed && !sim.foam.isEmpty && sim.rinse(next, radius: 28) > 0 {
+                        SalonSound.shared.play(.bloop, volume: 0.25, gap: 0.2)
+                        SalonFind.bubbleWash.unlock()
+                        markStyled()
                     }
                     if SalonBody.onFace(next) {
                         shutUntil = now.addingTimeInterval(0.6)

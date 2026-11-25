@@ -15,7 +15,8 @@ enum BakeryGame {
         title: "Bakery",
         tint: Color(hex: 0xFFC09F),
         icon: { AnyView(TreatView(treat: .tile, plate: false, box: CGRect(x: 150, y: 150, width: 300, height: 395))) },
-        play: { exit in AnyView(BakeryGameView(exit: exit)) }
+        play: { exit in AnyView(BakeryGameView(exit: exit)) },
+        stickers: BakeryFind.stickers
     )
 }
 
@@ -117,6 +118,7 @@ struct ShopView: View {
     @State private var hearts = 0
     @State private var jarBounce = false
     @State private var showCase = false
+    @State private var showStickers = false
     @State private var burst = 0
 
     var body: some View {
@@ -127,6 +129,7 @@ struct ShopView: View {
                     customerLayer
                     counterLayer
                     topBar
+                    StickerToast(game: BakeryStore.game, target: GameChromeLayout.stickerTarget)
                 }
                 .frame(width: 1024, height: 834)
                 .coinPurse(game: "bakery")
@@ -134,13 +137,22 @@ struct ShopView: View {
             if showCase {
                 TreatCase(store: store, close: { withAnimation(.spring(response: 0.4)) { showCase = false } }) { t in
                     withAnimation(.spring(response: 0.4)) { showCase = false }
-                    if ready == nil && phase == .waiting {
+                    if phase != .eating {
                         BakerySound.shared.play(.magic)
+                        bites = 0
+                        treatLift = false
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) { ready = t }
                     }
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(3)
+            }
+            if showStickers {
+                StickerBookView(game: BakeryStore.game) {
+                    withAnimation(.spring(response: 0.35)) { showStickers = false }
+                }
+                .transition(.opacity)
+                .zIndex(4)
             }
         }
         .onAppear {
@@ -190,9 +202,9 @@ struct ShopView: View {
             .offset(y: bob ? -6 : 4)
             .position(x: 470 + custX, y: 390)
             .onTapGesture { tickle() }
-            // floating hearts
+            // floating hearts track the customer cleanly
             ForEach(0..<hearts, id: \.self) { i in
-                FloatingHeart(index: i).position(x: 470, y: 260)
+                FloatingHeart(index: i).position(x: 470 + custX, y: 260)
             }
         }
     }
@@ -229,34 +241,34 @@ struct ShopView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 18) {
-            HomeButton { store.save(); exit() }
-            ScoopStationButton { openStation(.scoop) }
-                .accessibilityLabel("Ice Cream Scoops")
-            RoundButton(symbol: "snowflake", tint: Color(hex: 0x9B79E0)) { openStation(.soft) }
-                .accessibilityLabel("Soft Serve")
-            RoundButton(symbol: "cup.and.saucer.fill", tint: Color(hex: 0x46B7B0)) { openStation(.smoothie) }
-                .accessibilityLabel("Smoothie Bar")
+        HStack(spacing: 14) {
+            HomeButton(size: GameChromeLayout.buttonSize) { store.save(); exit() }
+            StickerBookButton(game: BakeryStore.game, size: GameChromeLayout.buttonSize) {
+                withAnimation(.spring(response: 0.35)) { showStickers = true }
+            }
+            IceCreamParlorButton { openStation(.scoop) }
+                .accessibilityLabel("Ice Cream Parlor")
             Spacer()
-            CoinCounter(game: "bakery", height: 64)
+            CoinCounter(game: "bakery", height: GameChromeLayout.buttonSize)
             ZStack(alignment: .bottomTrailing) {
-                Sprite("heartjar", box: Box.thing).frame(width: 86, height: 86)
+                Sprite("heartjar", box: Box.thing).frame(width: 78, height: 78)
                 Text("\(store.hearts)")
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 3)
+                    .padding(.horizontal, 9).padding(.vertical, 2)
                     .background(Capsule().fill(Color(hex: 0xF45C9A)))
-                    .offset(x: 10, y: 4)
+                    .offset(x: 8, y: 4)
             }
             .scaleEffect(jarBounce ? 1.3 : 1)
-            RoundButton(symbol: "square.grid.2x2.fill", tint: Color(hex: 0x46B7B0)) {
+            RoundButton(symbol: "square.grid.2x2.fill", tint: Color(hex: 0x46B7B0), size: GameChromeLayout.buttonSize) {
                 Sound.shared.play(.whoosh)
                 withAnimation(.spring(response: 0.4)) { showCase = true }
             }
+            .accessibilityLabel("Treat Case")
         }
-        .padding(.horizontal, 26)
+        .padding(.horizontal, 22)
+        .padding(.top, 18)
         .frame(maxHeight: .infinity, alignment: .top)
-        .padding(.top, 22)
     }
 
     // MARK: Story
@@ -309,6 +321,22 @@ struct ShopView: View {
             store.serve(t, hearts: stars)
             // the customer pays: coins hop out of their paws into the purse
             Coins.shared.earn(Coins.reward(stars: stars), game: "bakery", from: CGPoint(x: 470, y: 360))
+            if !ShopView.demoServe {
+                StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.firstTreat.rawValue)
+                if matched {
+                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.threeStarBaker.rawValue)
+                }
+                if t.kind == .cake && t.tiers >= 3 {
+                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.tallCake.rawValue)
+                }
+                let colorfulDecor = t.toppings.contains { $0.sprite.hasPrefix("bit_") } || Set(t.toppings.map { $0.color }).count >= 3
+                if t.kind != .iceCream && t.frosting != nil && colorfulDecor {
+                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.rainbowFrost.rawValue)
+                }
+                if t.kind == .iceCream {
+                    StickerBook.shared.find(game: BakeryStore.game, id: BakeryFind.iceCreamPro.rawValue)
+                }
+            }
             withAnimation(.easeOut(duration: 0.25)) { ready = nil }
             BakerySound.shared.play(.yay)
             Sound.shared.play(matched ? .fanfare : .cheer, volume: 0.7)
@@ -390,53 +418,82 @@ private struct FloatingHeart: View {
     }
 }
 
-private struct ScoopStationButton: View {
+private struct IceCreamParlorButton: View {
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Canvas { ctx, size in
-                let s = min(size.width, size.height) / 48
+                let s = min(size.width, size.height) / 52
                 var g = ctx
-                g.translateBy(x: (size.width - 48 * s) / 2, y: (size.height - 48 * s) / 2)
+                g.translateBy(x: (size.width - 52 * s) / 2, y: (size.height - 52 * s) / 2)
                 g.scaleBy(x: s, y: s)
 
+                // Little smoothie cup tucked to the right behind the cone
+                var straw = Path()
+                straw.move(to: CGPoint(x: 37, y: 24))
+                straw.addLine(to: CGPoint(x: 42, y: 10))
+                g.stroke(straw, with: .color(StorybookArt.outline(for: 0xFF7FA8)), style: StrokeStyle(lineWidth: 3.4, lineCap: .round))
+                g.stroke(straw, with: .color(.white), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+
+                var cup = Path()
+                cup.move(to: CGPoint(x: 29, y: 22))
+                cup.addLine(to: CGPoint(x: 44, y: 22))
+                cup.addLine(to: CGPoint(x: 41.5, y: 42))
+                cup.addQuadCurve(to: CGPoint(x: 31.5, y: 42), control: CGPoint(x: 36.5, y: 44.5))
+                cup.closeSubpath()
+                StorybookArt.shape(g, cup, hex: 0xB8E8FF, width: 2)
+                var drink = Path()
+                drink.move(to: CGPoint(x: 30.8, y: 27))
+                drink.addLine(to: CGPoint(x: 42.2, y: 27))
+                drink.addLine(to: CGPoint(x: 40.5, y: 41))
+                drink.addQuadCurve(to: CGPoint(x: 32.5, y: 41), control: CGPoint(x: 36.5, y: 43))
+                drink.closeSubpath()
+                g.fill(drink, with: .color(StorybookArt.color(0xFFB36E)))
+
+                // Golden waffle cone in front
                 var cone = Path()
-                cone.move(to: CGPoint(x: 15.5, y: 26))
-                cone.addLine(to: CGPoint(x: 32.5, y: 26))
-                cone.addQuadCurve(to: CGPoint(x: 24, y: 44.5), control: CGPoint(x: 29, y: 38))
-                cone.addQuadCurve(to: CGPoint(x: 15.5, y: 26), control: CGPoint(x: 19, y: 38))
+                cone.move(to: CGPoint(x: 10.5, y: 26))
+                cone.addLine(to: CGPoint(x: 29.5, y: 26))
+                cone.addQuadCurve(to: CGPoint(x: 20, y: 46.5), control: CGPoint(x: 25.5, y: 39))
+                cone.addQuadCurve(to: CGPoint(x: 10.5, y: 26), control: CGPoint(x: 14.5, y: 39))
                 cone.closeSubpath()
                 StorybookArt.shape(g, cone, hex: 0xF2B572, width: 2.2)
 
                 var grid = Path()
-                grid.move(to: CGPoint(x: 19, y: 27.5))
-                grid.addLine(to: CGPoint(x: 27.5, y: 36.5))
-                grid.move(to: CGPoint(x: 29, y: 27.5))
-                grid.addLine(to: CGPoint(x: 20.5, y: 36.5))
-                g.stroke(
-                    grid,
-                    with: .color(StorybookArt.outline(for: 0xF2B572, factor: 0.72).opacity(0.6)),
-                    style: StrokeStyle(lineWidth: 1.4, lineCap: .round)
-                )
+                grid.move(to: CGPoint(x: 14.5, y: 27.5)); grid.addLine(to: CGPoint(x: 23.5, y: 37.5))
+                grid.move(to: CGPoint(x: 25.5, y: 27.5)); grid.addLine(to: CGPoint(x: 16.5, y: 37.5))
+                g.stroke(grid, with: .color(StorybookArt.outline(for: 0xF2B572, factor: 0.72).opacity(0.65)),
+                         style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
 
-                let bottomScoop = Path(ellipseIn: CGRect(x: 14.5, y: 15.5, width: 19, height: 15))
+                // Mint + strawberry double scoops with shine
+                let bottomScoop = Path(ellipseIn: CGRect(x: 9.5, y: 15.5, width: 21, height: 15.5))
                 StorybookArt.shape(g, bottomScoop, hex: 0x9BE3CA, width: 2.2)
-                StorybookArt.highlight(g, in: CGRect(x: 17.5, y: 18, width: 4.5, height: 2.8), opacity: 0.55)
+                StorybookArt.highlight(g, in: CGRect(x: 13, y: 18.2, width: 5, height: 3), opacity: 0.65)
 
-                let topScoop = Path(ellipseIn: CGRect(x: 16, y: 7, width: 16, height: 13.5))
+                let topScoop = Path(ellipseIn: CGRect(x: 11.5, y: 6.5, width: 17, height: 14))
                 StorybookArt.shape(g, topScoop, hex: 0xFF8FB8, width: 2.2)
-                StorybookArt.highlight(g, in: CGRect(x: 18.8, y: 9.2, width: 4.2, height: 2.6), opacity: 0.55)
+                StorybookArt.highlight(g, in: CGRect(x: 14.5, y: 8.8, width: 4.5, height: 2.8), opacity: 0.65)
 
-                let cherry = Path(ellipseIn: CGRect(x: 21, y: 3.5, width: 6, height: 6))
+                let cherry = Path(ellipseIn: CGRect(x: 17, y: 2.5, width: 6.2, height: 6.2))
                 StorybookArt.shape(g, cherry, hex: 0xF45B7A, width: 1.6)
-                StorybookArt.highlight(g, in: CGRect(x: 22.3, y: 4.5, width: 2, height: 1.6), opacity: 0.7)
+                StorybookArt.highlight(g, in: CGRect(x: 18.4, y: 3.6, width: 2.1, height: 1.6), opacity: 0.75)
+
+                StorybookArt.sparkle(g, at: CGPoint(x: 7, y: 10), radius: 3.5, color: Theme.lemon)
             }
             .frame(width: 48, height: 48)
-            .frame(width: 72, height: 72)
-            .background(Circle().fill(.white))
-            .overlay(Circle().stroke(Theme.peach.opacity(0.35), lineWidth: 4))
-            .shadow(color: Theme.ink.opacity(0.2), radius: 6, y: 4)
+            .frame(width: GameChromeLayout.buttonSize, height: GameChromeLayout.buttonSize)
+            .background(
+                Circle().fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0xFFFDFB), Color(hex: 0xFFF1E6)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            )
+            .overlay(Circle().stroke(Theme.peach, lineWidth: 4.5))
+            .shadow(color: Theme.ink.opacity(0.22), radius: 6, y: 4)
         }
         .buttonStyle(Squish())
     }
@@ -448,24 +505,30 @@ struct ShopBackground: View {
     var body: some View {
         ZStack(alignment: .top) {
             Canvas { ctx, size in
-                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(hex: 0xFFF3F7)))
+                ctx.fill(
+                    Path(CGRect(origin: .zero, size: size)),
+                    with: .linearGradient(
+                        Gradient(colors: [Color(hex: 0xFFF5F8), Color(hex: 0xFFEBF2)]),
+                        startPoint: .zero,
+                        endPoint: CGPoint(x: 0, y: size.height)
+                    )
+                )
                 let w: CGFloat = 54
                 var x: CGFloat = 0
                 var i = 0
                 while x < size.width {
                     if i % 2 == 0 {
-                        ctx.fill(Path(CGRect(x: x, y: 0, width: w, height: size.height)), with: .color(Color(hex: 0xFFE4EE)))
+                        ctx.fill(Path(CGRect(x: x, y: 0, width: w, height: size.height)), with: .color(Color(hex: 0xFFE2ED).opacity(0.75)))
                     }
                     x += w; i += 1
                 }
-                // little hearts on the wallpaper
+                // Little storybook heart motifs on the wallpaper
                 var y: CGFloat = 150
                 var row = 0
                 while y < size.height * 0.75 {
                     var hx: CGFloat = row % 2 == 0 ? 27 : 81
                     while hx < size.width {
-                        let r = CGRect(x: hx - 6, y: y - 6, width: 12, height: 12)
-                        ctx.fill(Path(ellipseIn: r), with: .color(Color(hex: 0xFFFFFF, alpha: 0.7)))
+                        StorybookArt.heart(ctx, at: CGPoint(x: hx, y: y), size: 15, color: .white, opacity: 0.76)
                         hx += 108
                     }
                     y += 90; row += 1
@@ -521,23 +584,75 @@ struct KitchenBackground: View {
                 var x: CGFloat = 0
                 var c = r
                 while x < size.width {
+                    let tileRect = CGRect(x: x + 3, y: y + 3, width: tile - 6, height: tile - 6)
                     if c % 2 == 0 {
-                        ctx.fill(Path(roundedRect: CGRect(x: x + 3, y: y + 3, width: tile - 6, height: tile - 6), cornerRadius: 10),
-                                 with: .color(Color(hex: 0xD9EFFF)))
+                        ctx.fill(Path(roundedRect: tileRect, cornerRadius: 10), with: .color(Color(hex: 0xD9EFFF)))
+                        ctx.fill(
+                            Path(roundedRect: CGRect(x: tileRect.minX + 6, y: tileRect.minY + 4, width: tileRect.width - 12, height: 6), cornerRadius: 3),
+                            with: .color(.white.opacity(0.35))
+                        )
                     }
                     x += tile; c += 1
                 }
                 y += tile; r += 1
             }
-            // countertop
-            ctx.fill(Path(CGRect(x: 0, y: wallH, width: size.width, height: 26)), with: .color(Color(hex: 0xFFF6EC)))
-            ctx.fill(Path(CGRect(x: 0, y: wallH + 26, width: size.width, height: size.height - wallH)), with: .color(Color(hex: 0xFFD9C2)))
-            ctx.fill(Path(CGRect(x: 0, y: wallH + 26, width: size.width, height: 8)), with: .color(Color(hex: 0xF2BFA6)))
-            var x: CGFloat = 30
+
+            // Soft backsplash shadow right above the counter
+            ctx.fill(
+                Path(CGRect(x: 0, y: wallH - 14, width: size.width, height: 14)),
+                with: .linearGradient(
+                    Gradient(colors: [Theme.ink.opacity(0), Theme.ink.opacity(0.08)]),
+                    startPoint: CGPoint(x: 0, y: wallH - 14),
+                    endPoint: CGPoint(x: 0, y: wallH)
+                )
+            )
+
+            // Countertop with subtle lip depth and top highlight
+            ctx.fill(
+                Path(CGRect(x: 0, y: wallH, width: size.width, height: 28)),
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0xFFFBF5), Color(hex: 0xFFF1E3)]),
+                    startPoint: CGPoint(x: 0, y: wallH),
+                    endPoint: CGPoint(x: 0, y: wallH + 28)
+                )
+            )
+            ctx.fill(Path(CGRect(x: 0, y: wallH, width: size.width, height: 4)), with: .color(.white.opacity(0.85)))
+            ctx.fill(Path(CGRect(x: 0, y: wallH + 28, width: size.width, height: size.height - wallH)), with: .color(Color(hex: 0xFFD9C2)))
+            ctx.fill(
+                Path(CGRect(x: 0, y: wallH + 28, width: size.width, height: 12)),
+                with: .linearGradient(
+                    Gradient(colors: [Color(hex: 0xE6AD90).opacity(0.75), Color(hex: 0xFFD9C2).opacity(0)]),
+                    startPoint: CGPoint(x: 0, y: wallH + 28),
+                    endPoint: CGPoint(x: 0, y: wallH + 40)
+                )
+            )
+
+            // Recessed cabinet doors with trim and warm ceramic knobs
+            let cabTrim = StorybookArt.outline(for: 0xFFD9C2, factor: 0.8)
+            let knobOutline = StorybookArt.outline(for: 0xE8A878, factor: 0.72)
+            let doorH = max(40, size.height - wallH - 86)
+            var x: CGFloat = 28
             while x < size.width {
-                ctx.fill(Path(roundedRect: CGRect(x: x, y: wallH + 60, width: 140, height: size.height - wallH - 90), cornerRadius: 20),
-                         with: .color(Color(hex: 0xFFE6D6)))
-                x += 180
+                let doorRect = CGRect(x: x, y: wallH + 54, width: 146, height: doorH)
+                let doorPath = Path(roundedRect: doorRect, cornerRadius: 18)
+                ctx.fill(doorPath, with: .color(Color(hex: 0xFFE8D8)))
+                ctx.stroke(doorPath, with: .color(cabTrim.opacity(0.55)), lineWidth: 3)
+
+                let insetRect = doorRect.insetBy(dx: 12, dy: 12)
+                if insetRect.height > 12 {
+                    let insetPath = Path(roundedRect: insetRect, cornerRadius: 11)
+                    ctx.fill(insetPath, with: .color(Color(hex: 0xFFDFCC).opacity(0.65)))
+                    ctx.stroke(insetPath, with: .color(.white.opacity(0.55)), lineWidth: 2)
+                }
+
+                // Cute cabinet handle/knob
+                let knobC = CGPoint(x: doorRect.maxX - 24, y: doorRect.minY + min(34, doorH * 0.35))
+                let knob = Path(ellipseIn: CGRect(x: knobC.x - 9, y: knobC.y - 9, width: 18, height: 18))
+                ctx.fill(knob.offsetBy(dx: 0, dy: 2.5), with: .color(Theme.ink.opacity(0.14)))
+                StorybookArt.fillAndStroke(ctx, knob, fill: StorybookArt.color(0xFFF6EC), stroke: knobOutline, width: 2.5)
+                StorybookArt.highlight(ctx, in: CGRect(x: knobC.x - 5, y: knobC.y - 5.5, width: 5, height: 3.5), opacity: 0.85)
+
+                x += 178
             }
         }
         .ignoresSafeArea()
@@ -567,17 +682,40 @@ struct TreatCase: View {
                     } else {
                         ScrollView(.vertical, showsIndicators: false) {
                             LazyVGrid(columns: Array(repeating: GridItem(.fixed(170), spacing: 18), count: 5), spacing: 18) {
-                                ForEach(Array(store.served.enumerated()), id: \.offset) { _, t in
-                                    Button { pick(t) } label: {
-                                        TreatView(treat: t)
-                                            .padding(10)
-                                            .frame(width: 170, height: 170)
-                                            .background(RoundedRectangle(cornerRadius: 30, style: .continuous).fill(Color(hex: 0xFFF7F2)))
-                                            .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(Theme.blush, lineWidth: 5))
+                                ForEach(Array(store.served.enumerated()), id: \.offset) { idx, t in
+                                    ZStack(alignment: .topTrailing) {
+                                        Button { pick(t) } label: {
+                                            TreatView(treat: t)
+                                                .padding(10)
+                                                .frame(width: 170, height: 170)
+                                                .background(RoundedRectangle(cornerRadius: 30, style: .continuous).fill(Color(hex: 0xFFF7F2)))
+                                                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(Theme.blush, lineWidth: 5))
+                                        }
+                                        .buttonStyle(Squish())
+
+                                        Button {
+                                            Sound.shared.play(.whoosh, volume: 0.5)
+                                            Sound.shared.tap()
+                                            withAnimation(.spring(response: 0.3)) {
+                                                store.removeServed(at: idx)
+                                            }
+                                        } label: {
+                                            Image(systemName: "xmark")
+                                                .font(.system(size: 15, weight: .black))
+                                                .foregroundStyle(.white)
+                                                .frame(width: 34, height: 34)
+                                                .background(Circle().fill(Color(hex: 0xF45C9A)))
+                                                .overlay(Circle().stroke(.white, lineWidth: 3))
+                                                .shadow(color: Theme.ink.opacity(0.2), radius: 3, y: 2)
+                                        }
+                                        .buttonStyle(Squish())
+                                        .accessibilityLabel("Delete Treat")
+                                        .offset(x: 8, y: -8)
                                     }
-                                    .buttonStyle(Squish())
                                 }
                             }
+                            .padding(.top, 10)
+                            .padding(.horizontal, 10)
                             .padding(.bottom, 30)
                         }
                     }

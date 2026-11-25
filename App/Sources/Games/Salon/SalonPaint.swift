@@ -757,28 +757,71 @@ enum ClientPainter {
 
 enum SalonFurniture {
     static func drawChairBack(yaw: CGFloat = 0, in base: GraphicsContext) {
-        // the chair turns with her: its back is only in view while she faces us
-        guard cos(yaw) > 0 else { return }
+        let facing = cos(yaw)
+        let sx = SalonBody.bodyScale(yaw)
         var ctx = base
         ctx.translateBy(x: 300, y: 0)
-        ctx.scaleBy(x: SalonBody.bodyScale(yaw), y: 1)
+        ctx.scaleBy(x: sx, y: 1)
         ctx.translateBy(x: -300, y: 0)
-        let back = Path(roundedRect: CGRect(x: 138, y: 412, width: 324, height: 300), cornerRadius: 70, style: .continuous)
-        ctx.fill(back, with: .linearGradient(Gradient(colors: [Color(hex: 0xC4A3F0), Color(hex: 0x9C7AD8)]),
-                                             startPoint: CGPoint(x: 0, y: 412), endPoint: CGPoint(x: 0, y: 712)))
-        ctx.stroke(back, with: .color(Color(hex: 0x6C4F9C)), style: StrokeStyle(lineWidth: 4.5))
-        // tufted buttons
-        for row in 0..<3 {
-            for col in 0..<4 {
-                let x = 178 + CGFloat(col) * 82 + (row % 2 == 0 ? 0 : 41)
-                guard x < 440 else { continue }
-                let y = 462 + CGFloat(row) * 70
-                ctx.fill(Path(ellipseIn: CGRect(x: x - 5, y: y - 5, width: 10, height: 10)), with: .color(Color(hex: 0x7F5FB8)))
-            }
+
+        let chairOutline = Color(hex: 0x6C4F9C)
+
+        // Chrome swivel collar grounding the seat cushion onto the hydraulic pole at every angle
+        let collar = Path(roundedRect: CGRect(x: 256, y: 694, width: 88, height: 18), cornerRadius: 9)
+        ctx.fill(collar, with: .linearGradient(Gradient(colors: [Color(hex: 0xEEF2FA), Color(hex: 0xAEB6C8)]),
+                                               startPoint: CGPoint(x: 0, y: 694), endPoint: CGPoint(x: 0, y: 712)))
+        ctx.stroke(collar, with: .color(Color(hex: 0x7C8299)), lineWidth: 3)
+
+        // Curved plush swivel backrest (slightly sculpted when viewed from the side/back so hair shines)
+        let topY: CGFloat = facing >= 0 ? 412 : 430
+        let backRect = CGRect(x: 138, y: topY, width: 324, height: 706 - topY)
+        let back = Path(roundedRect: backRect, cornerRadius: 74, style: .continuous)
+        let topCol = facing >= 0 ? Color(hex: 0xC6A6F2) : Color(hex: 0xB898E8)
+        let botCol = facing >= 0 ? Color(hex: 0x9C7AD8) : Color(hex: 0x8B6AC9)
+        ctx.fill(back, with: .linearGradient(Gradient(colors: [topCol, botCol]),
+                                             startPoint: CGPoint(x: 0, y: topY), endPoint: CGPoint(x: 0, y: 706)))
+        ctx.stroke(back, with: .color(chairOutline), style: StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
+
+        // Rounded swivel armrests on left and right edges
+        for side in [-1.0, 1.0] {
+            let ax: CGFloat = side < 0 ? 118 : 444
+            let arm = Path(roundedRect: CGRect(x: ax, y: 554, width: 38, height: 124), cornerRadius: 19, style: .continuous)
+            ctx.fill(arm, with: .linearGradient(Gradient(colors: [Color(hex: 0xD4B8FA), Color(hex: 0xA482DF)]),
+                                                startPoint: CGPoint(x: ax, y: 554), endPoint: CGPoint(x: ax + 38, y: 678)))
+            ctx.stroke(arm, with: .color(chairOutline), lineWidth: 4)
         }
-        var sheen = ctx
-        sheen.opacity = 0.35
-        sheen.fill(Path(roundedRect: CGRect(x: 160, y: 426, width: 120, height: 24), cornerRadius: 12), with: .color(.white))
+
+        // Grounded curved seat cushion base
+        let seat = Path(roundedRect: CGRect(x: 134, y: 660, width: 332, height: 48), cornerRadius: 24, style: .continuous)
+        ctx.fill(seat, with: .linearGradient(Gradient(colors: [Color(hex: 0xB492E8), Color(hex: 0x8F6ECA)]),
+                                             startPoint: CGPoint(x: 0, y: 660), endPoint: CGPoint(x: 0, y: 708)))
+        ctx.stroke(seat, with: .color(chairOutline), lineWidth: 4.2)
+
+        if facing > 0.05 {
+            var front = ctx
+            front.opacity = Double(min(1, facing * 1.4))
+            // Tufted velvet buttons on the interior backrest
+            for row in 0..<3 {
+                for col in 0..<4 {
+                    let x = 178 + CGFloat(col) * 82 + (row % 2 == 0 ? 0 : 41)
+                    guard x < 440 else { continue }
+                    let y = 462 + CGFloat(row) * 70
+                    front.fill(Path(ellipseIn: CGRect(x: x - 5, y: y - 5, width: 10, height: 10)), with: .color(Color(hex: 0x7F5FB8)))
+                }
+            }
+            var sheen = front
+            sheen.opacity = front.opacity * 0.35
+            sheen.fill(Path(roundedRect: CGRect(x: 162, y: 426, width: 120, height: 24), cornerRadius: 12), with: .color(.white))
+        } else if facing < -0.05 {
+            var shell = ctx
+            shell.opacity = Double(min(1, -facing * 1.4))
+            // Sculpted curved rear trim rail + dainty golden salon emblem
+            let inset = Path(roundedRect: CGRect(x: 160, y: topY + 20, width: 280, height: 210), cornerRadius: 56, style: .continuous)
+            shell.stroke(inset, with: .color(Color(hex: 0xE2CEFA, alpha: 0.55)), style: StrokeStyle(lineWidth: 3.5))
+            let crest = Path(ellipseIn: CGRect(x: 280, y: topY + 46, width: 40, height: 28))
+            StorybookArt.fillAndStroke(shell, crest, fill: Color(hex: 0xFFE38A), stroke: StorybookArt.outline(for: 0xD89A3C), width: 2.8)
+            StorybookArt.heart(shell, at: CGPoint(x: 300, y: topY + 60), size: 12, color: Theme.pink)
+        }
     }
 
     static func drawChairBase(in ctx: GraphicsContext) {
@@ -1012,6 +1055,28 @@ enum ClipPainter {
         var g = ctx
         g.opacity = 0.6
         g.fill(Path(ellipseIn: CGRect(x: -12, y: -10, width: 8, height: 5)), with: .color(Shades.light(c).color))
+    }
+
+    static func drawTieCues(_ sim: HairSim, t: Double, in ctx: GraphicsContext) {
+        guard !sim.ties.isEmpty else { return }
+        let pulse = 0.5 + 0.5 * sin(t * 4.2)
+        let r: CGFloat = 27 + CGFloat(pulse) * 4.5
+        for tie in sim.ties where SalonBody.visible(tie.at, tie.z, squash: sim.squash) {
+            let c = tie.at.cg
+            let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r * 0.82, width: r * 2, height: r * 1.64))
+            ctx.stroke(
+                ring,
+                with: .color(Theme.lemon.opacity(0.45 + 0.35 * pulse)),
+                style: StrokeStyle(lineWidth: 2.8, lineCap: .round, dash: [7, 7])
+            )
+            let ang = t * 1.9
+            for k in 0..<2 {
+                let a = ang + Double(k) * .pi
+                let sx = c.x + CGFloat(cos(a)) * (r + 2)
+                let sy = c.y + CGFloat(sin(a)) * (r * 0.82 + 2)
+                StorybookArt.sparkle(ctx, at: CGPoint(x: sx, y: sy), radius: 5.5 + CGFloat(pulse) * 2, color: k == 0 ? Theme.lemon : .white, opacity: 0.9)
+            }
+        }
     }
 
     static func drawAll(_ sim: HairSim, in ctx: GraphicsContext) {
